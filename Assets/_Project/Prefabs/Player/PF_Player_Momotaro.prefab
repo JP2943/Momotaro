@@ -219,6 +219,8 @@ GameObject:
   - component: {fileID: 6631744296188449875}
   - component: {fileID: 5838329289031371413}
   - component: {fileID: 2551886566982069501}
+  - component: {fileID: 8396739125580413611}
+  - component: {fileID: 4008253560333073998}
   m_Layer: 0
   m_Name: PF_Player_Momotaro
   m_TagString: Untagged
@@ -268,9 +270,9 @@ Rigidbody:
   m_ImplicitTensor: 1
   m_UseGravity: 0
   m_IsKinematic: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_Constraints: 112
-  m_CollisionDetection: 0
+  m_CollisionDetection: 1
 --- !u!114 &2551886566982069501
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -288,3 +290,31 @@ MonoBehaviour:
   _physicsRoot: {fileID: 1263056487831795878}
   _visualRoot: {fileID: 4355083005161958313}
   _shadowRoot: {fileID: 8868357067955834961}
+--- !u!114 &8396739125580413611
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4981683825053767301}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bea8de4b831248b0b352e395f2f2b33e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Player.PlayerMotor
+  _root: {fileID: 2551886566982069501}
+  _movement: {fileID: 11400000, guid: 3152bfd9b95a3b34baf7ef40703ad159, type: 2}
+--- !u!114 &4008253560333073998
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4981683825053767301}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1dc60b70b26b4851aeaa755bb86157aa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Player.PlayerFacing
+  _deadzone: 0.2
+  _initial: 0

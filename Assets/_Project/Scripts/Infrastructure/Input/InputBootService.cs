@@ -54,6 +54,8 @@ namespace Momotaro.Infrastructure.Input
             try
             {
                 _playerInputAdapter = new PlayerInputAdapter(asset);
+                // Gameplay 層（Player コンポーネント）が参照する提供点へ注入する。
+                PlayerInputProvider.Current = _playerInputAdapter.Input;
             }
             catch (Exception ex)
             {
@@ -91,6 +93,11 @@ namespace Momotaro.Infrastructure.Input
                 {
                     _modes.RemoveListener(_playerInputAdapter);
                 }
+            }
+
+            if (_playerInputAdapter != null && ReferenceEquals(PlayerInputProvider.Current, _playerInputAdapter.Input))
+            {
+                PlayerInputProvider.Current = null;
             }
 
             _playerInputAdapter?.Dispose();
