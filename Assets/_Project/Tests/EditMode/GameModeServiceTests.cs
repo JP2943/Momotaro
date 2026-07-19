@@ -18,6 +18,24 @@ namespace Momotaro.Tests.EditMode
             }
         }
 
+        // 通知中に自分自身を購読解除するリスナー。
+        private sealed class SelfRemovingListener : IGameModeListener
+        {
+            private readonly IGameModeService _service;
+            public int CallCount { get; private set; }
+
+            public SelfRemovingListener(IGameModeService service)
+            {
+                _service = service;
+            }
+
+            public void OnModeChanged(GameModeChanged change)
+            {
+                CallCount++;
+                _service.RemoveListener(this);
+            }
+        }
+
         [SetUp]
         public void SetUp()
         {
@@ -87,6 +105,27 @@ namespace Momotaro.Tests.EditMode
             service.ChangeMode(GameMode.Event);
 
             Assert.AreEqual(1, listener.Received.Count);
+        }
+
+        [Test]
+        public void Notify_ListenerRemovingItself_DoesNotSkipOtherListeners()
+        {
+            var service = new GameModeService(GameMode.Loading);
+            var selfRemoving = new SelfRemovingListener(service);
+            var other = new RecordingListener();
+            service.AddListener(selfRemoving);
+            service.AddListener(other);
+
+            // 通知中に selfRemoving が自身を解除しても、後続の other は通知を受けるべき。
+            service.ChangeMode(GameMode.Exploration);
+
+            Assert.AreEqual(1, selfRemoving.CallCount);
+            Assert.AreEqual(1, other.Received.Count, "自己解除で後続リスナーが飛ばされてはいけない");
+
+            // 解除済みなので次回は selfRemoving に届かない。
+            service.ChangeMode(GameMode.Combat);
+            Assert.AreEqual(1, selfRemoving.CallCount);
+            Assert.AreEqual(2, other.Received.Count);
         }
 
         [Test]

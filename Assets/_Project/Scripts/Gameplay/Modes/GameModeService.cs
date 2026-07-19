@@ -63,10 +63,12 @@ namespace Momotaro.Gameplay.Modes
 
         private void NotifyListeners(GameModeChanged change)
         {
-            // コールバック内での購読解除に備え、コピーを走査する。
-            for (int i = 0; i < _listeners.Count; i++)
+            // コールバック内での購読解除（自己/他リスナーの Remove）で後続が飛ばされないよう、
+            // 走査前にスナップショットを取る。
+            IGameModeListener[] snapshot = _listeners.ToArray();
+            for (int i = 0; i < snapshot.Length; i++)
             {
-                _listeners[i].OnModeChanged(change);
+                snapshot[i].OnModeChanged(change);
             }
         }
     }

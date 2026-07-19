@@ -1,6 +1,9 @@
+using System;
 using Momotaro.Core.Logging;
+using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.SceneFlow;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
 namespace Momotaro.Infrastructure.Bootstrap
@@ -23,8 +26,13 @@ namespace Momotaro.Infrastructure.Bootstrap
         /// <summary>実体が生成済みか。</summary>
         public static bool HasInstance => _instance != null;
 
+        [Header("Input")]
+        [Tooltip("常駐 InputService が使用する Action Asset（IA_Momotaro）。未設定時は project-wide actions を試す。")]
+        [SerializeField] private InputActionAsset _inputActions;
+
         private readonly ServiceRegistry _registry = new ServiceRegistry();
         private ISceneFlow _sceneFlow;
+        private IDisposable _inputBootService;
 
         /// <summary>初期化が完了し Launcher 遷移可能となったか（テスト・診断用）。</summary>
         public bool BootstrapSucceeded { get; private set; }
@@ -51,6 +59,10 @@ namespace Momotaro.Infrastructure.Bootstrap
 
         private void OnDestroy()
         {
+            // Input のイベント購読（InputSystem.onEvent / GameMode リスナー）を確実に解除する。
+            _inputBootService?.Dispose();
+            _inputBootService = null;
+
             if (_instance == this)
             {
                 _instance = null;
@@ -93,13 +105,19 @@ namespace Momotaro.Infrastructure.Bootstrap
         /// </summary>
         private void BuildRegistry()
         {
-            // GameMode を先に用意し、以降のサービス・Scene Flow が参照できるようにする。
-            _registry.Register(new GameModeBootService());
+            // GameMode を先に用意し、以降のサービス・Scene Flow・Input が参照できるようにする。
+            var gameMode = new GameModeBootService();
+            _registry.Register(gameMode);
 
             // Scene Flow は常駐ルートのコンポーネントとして生成し、DontDestroyOnLoad を共有する。
             var sceneFlow = gameObject.AddComponent<SceneFlowManager>();
             _sceneFlow = sceneFlow;
             _registry.Register(sceneFlow);
+
+            // Input を常駐サービスとして接続し、GameMode 変更で Action Map を切り替える。
+            var input = new InputBootService(_inputActions, gameMode.Modes);
+            _inputBootService = input;
+            _registry.Register(input);
         }
     }
 }
