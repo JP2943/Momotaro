@@ -1,5 +1,6 @@
 using System;
 using Momotaro.Core.Logging;
+using Momotaro.Gameplay.Player;
 using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.SceneFlow;
 using UnityEngine;
@@ -32,7 +33,10 @@ namespace Momotaro.Infrastructure.Bootstrap
 
         private readonly ServiceRegistry _registry = new ServiceRegistry();
         private ISceneFlow _sceneFlow;
-        private IDisposable _inputBootService;
+        private InputBootService _inputBootService;
+
+        /// <summary>Player 向け入力（P1-02）。未初期化・アセット未設定時は null。</summary>
+        public IPlayerInput PlayerInput => _inputBootService?.PlayerInput;
 
         /// <summary>初期化が完了し Launcher 遷移可能となったか（テスト・診断用）。</summary>
         public bool BootstrapSucceeded { get; private set; }

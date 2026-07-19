@@ -15,7 +15,7 @@ namespace Momotaro.Infrastructure.SceneFlow
     [DisallowMultipleComponent]
     public sealed class SceneFlowManager : MonoBehaviour, ISceneFlow, IGameService
     {
-        private const float FadeDuration = 0.3f;
+        [SerializeField] private float _fadeDuration = 0.3f;
 
         private readonly TransitionGuard _guard = new TransitionGuard();
         private IScreenFader _fader = new NullScreenFader();
@@ -92,7 +92,7 @@ namespace Momotaro.Infrastructure.SceneFlow
 
         private IEnumerator Fade(float targetAlpha)
         {
-            if (FadeDuration <= 0f)
+            if (_fadeDuration <= 0f)
             {
                 _fader.Alpha = targetAlpha;
                 yield break;
@@ -100,10 +100,10 @@ namespace Momotaro.Infrastructure.SceneFlow
 
             float start = _fader.Alpha;
             float elapsed = 0f;
-            while (elapsed < FadeDuration)
+            while (elapsed < _fadeDuration)
             {
                 elapsed += Time.unscaledDeltaTime;
-                _fader.Alpha = Mathf.Lerp(start, targetAlpha, elapsed / FadeDuration);
+                _fader.Alpha = Mathf.Lerp(start, targetAlpha, elapsed / _fadeDuration);
                 yield return null;
             }
 
