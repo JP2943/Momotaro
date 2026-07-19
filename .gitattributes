@@ -1,0 +1,97 @@
+# ==============================================================
+# momotaro_action_rpg / Unity 6.3 LTS .gitattributes
+# Phase 0 / P0-02
+# 改行正規化 + バイナリアセットの Git LFS 追跡
+# ==============================================================
+
+# --- 既定: 自動判定し、テキストは LF に正規化 ---
+* text=auto
+
+# --- Unity テキストアセット（マージ/差分を有効にする。LFSにしない） ---
+*.cs      text diff=csharp
+*.cginc   text
+*.shader  text
+*.hlsl    text
+*.uss     text
+*.uxml    text
+*.json    text
+*.md      text
+*.txt     text
+*.xml     text
+*.yml     text
+*.yaml    text
+
+# Unity シリアライズ資産（Force Text 前提。テキストとして扱う） ---
+*.meta          text
+*.unity         text
+*.asset         text
+*.prefab        text
+*.mat           text
+*.anim          text
+*.controller    text
+*.overrideController text
+*.physicMaterial text
+*.physicsMaterial2D text
+*.playable      text
+*.mask          text
+*.brush         text
+*.flare         text
+*.fontsettings  text
+*.guiskin       text
+*.giparams      text
+*.renderTexture text
+*.spriteatlas   text
+*.terrainlayer  text
+*.mixer         text
+*.shadervariants text
+*.preset        text
+*.asmdef        text
+*.asmref        text
+*.inputactions  text
+
+# ==============================================================
+# Git LFS 追跡: バイナリアセット
+# （利用には各自の環境で `git lfs install` が必要）
+# ==============================================================
+
+# 3D モデル
+*.fbx   filter=lfs diff=lfs merge=lfs -text
+*.FBX   filter=lfs diff=lfs merge=lfs -text
+*.obj   filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text
+
+# テクスチャ / 画像
+*.png   filter=lfs diff=lfs merge=lfs -text
+*.PNG   filter=lfs diff=lfs merge=lfs -text
+*.jpg   filter=lfs diff=lfs merge=lfs -text
+*.jpeg  filter=lfs diff=lfs merge=lfs -text
+*.tga   filter=lfs diff=lfs merge=lfs -text
+*.tif   filter=lfs diff=lfs merge=lfs -text
+*.tiff  filter=lfs diff=lfs merge=lfs -text
+*.psd   filter=lfs diff=lfs merge=lfs -text
+*.exr   filter=lfs diff=lfs merge=lfs -text
+*.hdr   filter=lfs diff=lfs merge=lfs -text
+*.gif   filter=lfs diff=lfs merge=lfs -text
+*.bmp   filter=lfs diff=lfs merge=lfs -text
+
+# オーディオ
+*.wav   filter=lfs diff=lfs merge=lfs -text
+*.mp3   filter=lfs diff=lfs merge=lfs -text
+*.ogg   filter=lfs diff=lfs merge=lfs -text
+*.aif   filter=lfs diff=lfs merge=lfs -text
+*.aiff  filter=lfs diff=lfs merge=lfs -text
+
+# 動画
+*.mp4   filter=lfs diff=lfs merge=lfs -text
+*.mov   filter=lfs diff=lfs merge=lfs -text
+*.webm  filter=lfs diff=lfs merge=lfs -text
+
+# フォント
+*.ttf   filter=lfs diff=lfs merge=lfs -text
+*.otf   filter=lfs diff=lfs merge=lfs -text
+
+# その他バイナリ
+*.a          filter=lfs diff=lfs merge=lfs -text
+*.dll        filter=lfs diff=lfs merge=lfs -text
+*.so         filter=lfs diff=lfs merge=lfs -text
+*.unitypackage filter=lfs diff=lfs merge=lfs -text

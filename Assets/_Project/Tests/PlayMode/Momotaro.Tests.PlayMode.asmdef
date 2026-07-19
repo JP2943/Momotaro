@@ -1,0 +1,26 @@
+{
+    "name": "Momotaro.Tests.PlayMode",
+    "rootNamespace": "Momotaro.Tests.PlayMode",
+    "references": [
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner",
+        "Momotaro.Core",
+        "Momotaro.Data",
+        "Momotaro.Gameplay",
+        "Momotaro.Presentation",
+        "Momotaro.Infrastructure"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

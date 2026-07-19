@@ -1,0 +1,16 @@
+{
+    "name": "Momotaro.Data",
+    "rootNamespace": "Momotaro.Data",
+    "references": [
+        "Momotaro.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

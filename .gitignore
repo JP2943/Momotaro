@@ -1,0 +1,66 @@
+# ==============================================================
+# momotaro_action_rpg / Unity 6.3 LTS .gitignore
+# Phase 0 / P0-02
+# ==============================================================
+
+# --- Unity 生成フォルダ（追跡しない） ---
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+
+# Asset Store Tools 等が生成するフォルダ
+/[Aa]ssets/AssetStoreTools*
+/[Aa]ssets/Plugins/Editor/JetBrains*
+
+# --- IDE / エディタ ---
+.vs/
+.vscode/
+/.idea/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+.consulo/
+
+# Rider
+/[Aa]ssets/Plugins/Editor/JetBrains*
+
+# --- ビルド成果物 / 一時ファイル ---
+*.apk
+*.aab
+*.unitypackage
+*.app
+ExportedObj/
+crashlytics-build.properties
+/[Aa]ssets/[Ss]treamingAssets/aa.meta
+/[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# --- OS 生成物 ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Gradle / Android ---
+sysinfo.txt
+
+# ==============================================================
+# 注記:
+# - .meta ファイルは追跡する（Visible Meta Files 前提のため無視しない）
+# - ProjectSettings/ と Packages/ は追跡する
+# ==============================================================

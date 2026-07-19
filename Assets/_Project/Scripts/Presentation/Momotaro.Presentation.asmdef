@@ -1,0 +1,18 @@
+{
+    "name": "Momotaro.Presentation",
+    "rootNamespace": "Momotaro.Presentation",
+    "references": [
+        "Momotaro.Core",
+        "Momotaro.Data",
+        "Momotaro.Gameplay"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

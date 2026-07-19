@@ -1,0 +1,19 @@
+{
+    "name": "Momotaro.Infrastructure",
+    "rootNamespace": "Momotaro.Infrastructure",
+    "references": [
+        "Momotaro.Core",
+        "Momotaro.Data",
+        "Momotaro.Gameplay",
+        "Unity.InputSystem"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
