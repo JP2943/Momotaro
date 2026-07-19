@@ -13,21 +13,18 @@ namespace Momotaro.Tests.EditMode
     {
         private const string PrefabPath = "Assets/_Project/Prefabs/Player/PF_Player_Momotaro.prefab";
 
-        private static GameObject LoadPrefabOrIgnore()
+        private static GameObject LoadRequiredPrefab()
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
-            if (prefab == null)
-            {
-                Assert.Ignore("PF_Player_Momotaro が未作成です。P1-01 の手順で作成後に再実行してください。");
-            }
-
+            Assert.IsNotNull(prefab,
+                "PF_Player_Momotaro が見つかりません（" + PrefabPath + "）。P1-01 の手順で作成してください。");
             return prefab;
         }
 
         [Test]
         public void Prefab_HasPlayerRoot_WithValidStructure()
         {
-            GameObject prefab = LoadPrefabOrIgnore();
+            GameObject prefab = LoadRequiredPrefab();
 
             var root = prefab.GetComponent<PlayerRoot>();
             Assert.IsNotNull(root, "ルートに PlayerRoot コンポーネントが必要です。");
@@ -39,7 +36,7 @@ namespace Momotaro.Tests.EditMode
         [Test]
         public void Prefab_RigidbodyRotation_IsFrozen()
         {
-            GameObject prefab = LoadPrefabOrIgnore();
+            GameObject prefab = LoadRequiredPrefab();
 
             var body = prefab.GetComponentInChildren<Rigidbody>();
             Assert.IsNotNull(body, "Rigidbody が必要です。");
@@ -52,7 +49,7 @@ namespace Momotaro.Tests.EditMode
         [Test]
         public void Prefab_ColliderAndVisual_AreSeparated()
         {
-            GameObject prefab = LoadPrefabOrIgnore();
+            GameObject prefab = LoadRequiredPrefab();
 
             var collider = prefab.GetComponentInChildren<CapsuleCollider>();
             var root = prefab.GetComponent<PlayerRoot>();
@@ -66,7 +63,7 @@ namespace Momotaro.Tests.EditMode
         [Test]
         public void Prefab_HasNoMissingScripts()
         {
-            GameObject prefab = LoadPrefabOrIgnore();
+            GameObject prefab = LoadRequiredPrefab();
 
             Component[] components = prefab.GetComponentsInChildren<Component>(true);
             foreach (Component c in components)
