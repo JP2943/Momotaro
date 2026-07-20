@@ -14,8 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Momotaro.Data::Momotaro.Data.Player.PlayerMovementData
   _id:
     _value: player_movement_default
-  _displayName: 
-  _description: 
+  _displayName: Player Movement
+  _description:
   _version: 1
   _debugNote: 
   _moveSpeed: 5
