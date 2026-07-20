@@ -18,7 +18,9 @@ namespace Momotaro.Tests.EditMode
             GameLog.SetSink(new TestLogSink());
 
             _asset = ScriptableObject.CreateInstance<InputActionAsset>();
-            _asset.AddActionMap("Gameplay").AddAction("Move", InputActionType.Value, "<Keyboard>/w");
+            var gameplay = _asset.AddActionMap("Gameplay");
+            gameplay.AddAction("Move", InputActionType.Value, "<Keyboard>/w");
+            gameplay.AddAction("Guard", InputActionType.Button, "<Keyboard>/k");
             _asset.AddActionMap("UI").AddAction("Submit", InputActionType.Button, "<Keyboard>/enter");
             _asset.AddActionMap("Dialogue").AddAction("Advance", InputActionType.Button, "<Keyboard>/enter");
         }
@@ -75,6 +77,19 @@ namespace Momotaro.Tests.EditMode
             string before = input.ActiveMapName;
             modes.ChangeMode(GameMode.Combat);
             Assert.AreEqual(before, input.ActiveMapName);
+        }
+
+        [Test]
+        public void Initialize_WithGameplayMoveAndGuard_ExposesPlayerInput()
+        {
+            var modes = new GameModeService(GameMode.Loading);
+            var boot = new InputBootService(_asset, modes);
+
+            boot.Initialize();
+
+            Assert.IsNotNull(boot.PlayerInput, "Gameplay/Move・Guard があれば PlayerInput を公開する");
+            Assert.AreEqual(Vector2.zero, boot.PlayerInput.Move);
+            boot.Dispose();
         }
 
         [Test]

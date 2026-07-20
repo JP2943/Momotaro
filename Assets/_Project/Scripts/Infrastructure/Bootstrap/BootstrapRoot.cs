@@ -1,5 +1,6 @@
 using System;
 using Momotaro.Core.Logging;
+using Momotaro.Gameplay.Player;
 using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.SceneFlow;
 using UnityEngine;
@@ -32,7 +33,11 @@ namespace Momotaro.Infrastructure.Bootstrap
 
         private readonly ServiceRegistry _registry = new ServiceRegistry();
         private ISceneFlow _sceneFlow;
-        private IDisposable _inputBootService;
+        private InputBootService _inputBootService;
+        private GameModeBootService _gameModeBootService;
+
+        /// <summary>Player 向け入力（P1-02）。未初期化・アセット未設定時は null。</summary>
+        public IPlayerInput PlayerInput => _inputBootService?.PlayerInput;
 
         /// <summary>初期化が完了し Launcher 遷移可能となったか（テスト・診断用）。</summary>
         public bool BootstrapSucceeded { get; private set; }
@@ -62,6 +67,10 @@ namespace Momotaro.Infrastructure.Bootstrap
             // Input のイベント購読（InputSystem.onEvent / GameMode リスナー）を確実に解除する。
             _inputBootService?.Dispose();
             _inputBootService = null;
+
+            // GameMode 提供点の注入を解除する。
+            _gameModeBootService?.Dispose();
+            _gameModeBootService = null;
 
             if (_instance == this)
             {
@@ -107,6 +116,7 @@ namespace Momotaro.Infrastructure.Bootstrap
         {
             // GameMode を先に用意し、以降のサービス・Scene Flow・Input が参照できるようにする。
             var gameMode = new GameModeBootService();
+            _gameModeBootService = gameMode;
             _registry.Register(gameMode);
 
             // Scene Flow は常駐ルートのコンポーネントとして生成し、DontDestroyOnLoad を共有する。
