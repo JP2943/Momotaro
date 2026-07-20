@@ -100,11 +100,21 @@ namespace Momotaro.Gameplay.Player
             bool isMoving = active && _input.Move.sqrMagnitude > _moveThreshold * _moveThreshold;
 
             // 攻撃中でなく、有効な先行入力があれば攻撃を実行要求する（消費は 1 押下 1 回）。
-            bool attackRequested = active && !_machine.IsAttacking && _attackBuffer.HasBuffered && _attackBuffer.TryConsume();
+            bool wasAttacking = _machine.IsAttacking;
+            bool attackRequested = active && !wasAttacking && _attackBuffer.HasBuffered && _attackBuffer.TryConsume();
 
             _machine.Tick(active, isMoving, guarding, attackRequested, Time.deltaTime, _attackStateSeconds);
 
-            ApplyStateEffects(guarding, _machine.Current == PlayerState.Attack);
+            bool attacking = _machine.Current == PlayerState.Attack;
+
+            // 攻撃開始のフレームで、その時点の Move 入力から向きを明示確定する。
+            // PlayerFacing.Update との実行順に依存させず、以降は攻撃終了まで固定する。
+            if (attacking && !wasAttacking && _facing != null)
+            {
+                _facing.ConfirmFromInput(active ? _input.Move : Vector2.zero);
+            }
+
+            ApplyStateEffects(guarding, attacking);
         }
 
         /// <summary>
