@@ -13,12 +13,17 @@ namespace Momotaro.Gameplay.Player
     public sealed class PlayerInputState : IPlayerInput
     {
         private bool _active = true;
+        private bool _attackHeldRaw;
+        private bool _attackLatched;
 
         /// <inheritdoc />
         public Vector2 Move { get; private set; }
 
         /// <inheritdoc />
         public bool GuardHeld { get; private set; }
+
+        /// <inheritdoc />
+        public bool Active => _active;
 
         /// <inheritdoc />
         public event Action GuardStarted;
@@ -53,7 +58,37 @@ namespace Momotaro.Gameplay.Player
         }
 
         /// <summary>
-        /// ゲートの開閉を設定する。閉じる（false）と Move をゼロにし、保持中の Guard を解除する。
+        /// 入力ソースから攻撃ボタンの生の押下状態を設定する。押下エッジ（false→true）でのみ
+        /// 内部ラッチを立て、<see cref="ConsumeAttackPressed"/> で取り出すまで保持する。
+        /// 保持（連続 true）では再ラッチしないため、Hold で連続実行されない。
+        /// ゲートが閉じている間はラッチしない（生状態の追跡だけ続け、再開時に押しっぱなしが誤発火しないようにする）。
+        /// </summary>
+        public void SetAttack(bool pressed)
+        {
+            bool rising = pressed && !_attackHeldRaw;
+            _attackHeldRaw = pressed;
+
+            if (_active && rising)
+            {
+                _attackLatched = true;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool ConsumeAttackPressed()
+        {
+            if (!_attackLatched)
+            {
+                return false;
+            }
+
+            _attackLatched = false;
+            return true;
+        }
+
+        /// <summary>
+        /// ゲートの開閉を設定する。閉じる（false）と Move をゼロにし、保持中の Guard を解除し、
+        /// 未消費の攻撃エッジを破棄する。生の押下状態は保持し、再開時の押しっぱなし誤発火を防ぐ。
         /// </summary>
         public void SetActive(bool active)
         {
@@ -69,6 +104,7 @@ namespace Momotaro.Gameplay.Player
             }
 
             Move = Vector2.zero;
+            _attackLatched = false;
             if (GuardHeld)
             {
                 GuardHeld = false;

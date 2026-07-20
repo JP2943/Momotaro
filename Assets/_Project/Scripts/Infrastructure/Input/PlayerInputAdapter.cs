@@ -17,10 +17,12 @@ namespace Momotaro.Infrastructure.Input
         private const string GameplayMap = "Gameplay";
         private const string MoveAction = "Move";
         private const string GuardAction = "Guard";
+        private const string AttackAction = "Attack";
 
         private readonly PlayerInputState _state = new PlayerInputState();
         private readonly InputAction _move;
         private readonly InputAction _guard;
+        private readonly InputAction _attack;
         private bool _disposed;
 
         /// <summary>Gameplay 層へ渡す入力。</summary>
@@ -44,10 +46,18 @@ namespace Momotaro.Infrastructure.Input
                 throw new ArgumentException("InputActionAsset must contain Gameplay/Move and Gameplay/Guard.");
             }
 
+            // Attack は任意接続（P2-02）。存在すれば押下エッジを供給し、無ければ攻撃入力なしで動作する。
+            _attack = map.FindAction(AttackAction, throwIfNotFound: false);
+
             _move.performed += OnMovePerformed;
             _move.canceled += OnMoveCanceled;
             _guard.started += OnGuardStarted;
             _guard.canceled += OnGuardCanceled;
+            if (_attack != null)
+            {
+                _attack.started += OnAttackStarted;
+                _attack.canceled += OnAttackCanceled;
+            }
         }
 
         /// <inheritdoc />
@@ -77,6 +87,16 @@ namespace Momotaro.Infrastructure.Input
             _state.SetGuard(false);
         }
 
+        private void OnAttackStarted(InputAction.CallbackContext context)
+        {
+            _state.SetAttack(true);
+        }
+
+        private void OnAttackCanceled(InputAction.CallbackContext context)
+        {
+            _state.SetAttack(false);
+        }
+
         /// <inheritdoc />
         public void Dispose()
         {
@@ -89,6 +109,12 @@ namespace Momotaro.Infrastructure.Input
             _move.canceled -= OnMoveCanceled;
             _guard.started -= OnGuardStarted;
             _guard.canceled -= OnGuardCanceled;
+            if (_attack != null)
+            {
+                _attack.started -= OnAttackStarted;
+                _attack.canceled -= OnAttackCanceled;
+            }
+
             _disposed = true;
         }
     }
