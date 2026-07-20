@@ -44,5 +44,17 @@ namespace Momotaro.Gameplay.Player
             Current = next;
             StateChanged?.Invoke(next);
         }
+
+        /// <summary>状態を Idle へ戻す（Disable 時のリセット用）。変化した場合のみ通知する。</summary>
+        public void Reset()
+        {
+            if (Current == PlayerState.Idle)
+            {
+                return;
+            }
+
+            Current = PlayerState.Idle;
+            StateChanged?.Invoke(Current);
+        }
     }
 }

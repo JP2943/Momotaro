@@ -123,7 +123,7 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_0
+      name: momotaro_idle_down_01
       rect:
         serializedVersion: 2
         x: 0
@@ -145,7 +145,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_1
+      name: momotaro_idle_down_02
       rect:
         serializedVersion: 2
         x: 128
@@ -167,7 +167,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_2
+      name: momotaro_idle_down_03
       rect:
         serializedVersion: 2
         x: 256
@@ -189,7 +189,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_3
+      name: momotaro_idle_down_04
       rect:
         serializedVersion: 2
         x: 384
@@ -211,7 +211,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_4
+      name: momotaro_idle_left_01
       rect:
         serializedVersion: 2
         x: 0
@@ -233,7 +233,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_5
+      name: momotaro_idle_left_02
       rect:
         serializedVersion: 2
         x: 128
@@ -255,7 +255,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_6
+      name: momotaro_idle_left_03
       rect:
         serializedVersion: 2
         x: 256
@@ -277,7 +277,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_7
+      name: momotaro_idle_left_04
       rect:
         serializedVersion: 2
         x: 384
@@ -299,7 +299,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_8
+      name: momotaro_idle_right_01
       rect:
         serializedVersion: 2
         x: 0
@@ -321,7 +321,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_9
+      name: momotaro_idle_right_02
       rect:
         serializedVersion: 2
         x: 128
@@ -343,7 +343,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_10
+      name: momotaro_idle_right_03
       rect:
         serializedVersion: 2
         x: 256
@@ -365,7 +365,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_11
+      name: momotaro_idle_right_04
       rect:
         serializedVersion: 2
         x: 384
@@ -387,7 +387,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_12
+      name: momotaro_idle_up_01
       rect:
         serializedVersion: 2
         x: 0
@@ -409,7 +409,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_13
+      name: momotaro_idle_up_02
       rect:
         serializedVersion: 2
         x: 128
@@ -431,7 +431,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_14
+      name: momotaro_idle_up_03
       rect:
         serializedVersion: 2
         x: 256
@@ -453,7 +453,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_idle_4dir_4frame_15
+      name: momotaro_idle_up_04
       rect:
         serializedVersion: 2
         x: 384
@@ -490,22 +490,22 @@ TextureImporter:
       - key: SpriteEditor.SliceSettings
         value: '{"sliceOnImport":false,"gridCellCount":{"x":1.0,"y":1.0},"gridSpriteSize":{"x":128.0,"y":128.0},"gridSpriteOffset":{"x":0.0,"y":0.0},"gridSpritePadding":{"x":0.0,"y":0.0},"pivot":{"x":0.5,"y":0.0},"pivotPixels":{"x":0.0,"y":0.0},"autoSlicingMethod":0,"spriteAlignment":7,"pivotUnitMode":0,"slicingType":1,"keepEmptyRects":false,"isAlternate":false}'
     nameFileIdTable:
-      momotaro_idle_4dir_4frame_0: -1826717575
-      momotaro_idle_4dir_4frame_1: -1711704269
-      momotaro_idle_4dir_4frame_10: 993192819
-      momotaro_idle_4dir_4frame_11: -94205515
-      momotaro_idle_4dir_4frame_12: -1386639331
-      momotaro_idle_4dir_4frame_13: 1083668986
-      momotaro_idle_4dir_4frame_14: 1697972038
-      momotaro_idle_4dir_4frame_15: -303970106
-      momotaro_idle_4dir_4frame_2: 909551283
-      momotaro_idle_4dir_4frame_3: -845760332
-      momotaro_idle_4dir_4frame_4: -1786055003
-      momotaro_idle_4dir_4frame_5: -1782239865
-      momotaro_idle_4dir_4frame_6: -2080194460
-      momotaro_idle_4dir_4frame_7: 1785333854
-      momotaro_idle_4dir_4frame_8: -2023261037
-      momotaro_idle_4dir_4frame_9: 759289607
+      momotaro_idle_down_01: -1826717575
+      momotaro_idle_down_02: -1711704269
+      momotaro_idle_right_03: 993192819
+      momotaro_idle_right_04: -94205515
+      momotaro_idle_up_01: -1386639331
+      momotaro_idle_up_02: 1083668986
+      momotaro_idle_up_03: 1697972038
+      momotaro_idle_up_04: -303970106
+      momotaro_idle_down_03: 909551283
+      momotaro_idle_down_04: -845760332
+      momotaro_idle_left_01: -1786055003
+      momotaro_idle_left_02: -1782239865
+      momotaro_idle_left_03: -2080194460
+      momotaro_idle_left_04: 1785333854
+      momotaro_idle_right_01: -2023261037
+      momotaro_idle_right_02: 759289607
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

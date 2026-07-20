@@ -26,6 +26,31 @@ namespace Momotaro.Gameplay.Player
         /// <summary>現在の Gameplay 状態（Visual が参照する）。</summary>
         public PlayerState Current => _machine.Current;
 
+        private void OnDisable()
+        {
+            ResetToNeutral();
+        }
+
+        /// <summary>
+        /// 状態・向きロック・速度倍率を中立へ戻す（Disable 時）。次回有効化時に入力を取り直す。
+        /// </summary>
+        public void ResetToNeutral()
+        {
+            _guarding = false;
+            _input = null;
+            _machine.Reset();
+
+            if (_facing != null)
+            {
+                _facing.IsLocked = false;
+            }
+
+            if (_motor != null)
+            {
+                _motor.SpeedMultiplier = 1f;
+            }
+        }
+
         private void Update()
         {
             if (_input == null)

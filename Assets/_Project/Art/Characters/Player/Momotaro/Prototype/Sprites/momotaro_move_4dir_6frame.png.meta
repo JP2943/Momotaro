@@ -123,7 +123,7 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_0
+      name: momotaro_move_down_01
       rect:
         serializedVersion: 2
         x: 0
@@ -145,7 +145,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_1
+      name: momotaro_move_down_02
       rect:
         serializedVersion: 2
         x: 128
@@ -167,7 +167,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_2
+      name: momotaro_move_down_03
       rect:
         serializedVersion: 2
         x: 256
@@ -189,7 +189,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_3
+      name: momotaro_move_down_04
       rect:
         serializedVersion: 2
         x: 384
@@ -211,7 +211,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_4
+      name: momotaro_move_down_05
       rect:
         serializedVersion: 2
         x: 512
@@ -233,7 +233,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_5
+      name: momotaro_move_down_06
       rect:
         serializedVersion: 2
         x: 640
@@ -255,7 +255,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_6
+      name: momotaro_move_left_01
       rect:
         serializedVersion: 2
         x: 0
@@ -277,7 +277,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_7
+      name: momotaro_move_left_02
       rect:
         serializedVersion: 2
         x: 128
@@ -299,7 +299,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_8
+      name: momotaro_move_left_03
       rect:
         serializedVersion: 2
         x: 256
@@ -321,7 +321,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_9
+      name: momotaro_move_left_04
       rect:
         serializedVersion: 2
         x: 384
@@ -343,7 +343,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_10
+      name: momotaro_move_left_05
       rect:
         serializedVersion: 2
         x: 512
@@ -365,7 +365,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_11
+      name: momotaro_move_left_06
       rect:
         serializedVersion: 2
         x: 640
@@ -387,7 +387,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_12
+      name: momotaro_move_right_01
       rect:
         serializedVersion: 2
         x: 0
@@ -409,7 +409,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_13
+      name: momotaro_move_right_02
       rect:
         serializedVersion: 2
         x: 128
@@ -431,7 +431,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_14
+      name: momotaro_move_right_03
       rect:
         serializedVersion: 2
         x: 256
@@ -453,7 +453,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_15
+      name: momotaro_move_right_04
       rect:
         serializedVersion: 2
         x: 384
@@ -475,7 +475,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_16
+      name: momotaro_move_right_05
       rect:
         serializedVersion: 2
         x: 512
@@ -497,7 +497,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_17
+      name: momotaro_move_right_06
       rect:
         serializedVersion: 2
         x: 640
@@ -519,7 +519,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_18
+      name: momotaro_move_up_01
       rect:
         serializedVersion: 2
         x: 0
@@ -541,7 +541,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_19
+      name: momotaro_move_up_02
       rect:
         serializedVersion: 2
         x: 128
@@ -563,7 +563,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_20
+      name: momotaro_move_up_03
       rect:
         serializedVersion: 2
         x: 256
@@ -585,7 +585,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_21
+      name: momotaro_move_up_04
       rect:
         serializedVersion: 2
         x: 384
@@ -607,7 +607,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_22
+      name: momotaro_move_up_05
       rect:
         serializedVersion: 2
         x: 512
@@ -629,7 +629,7 @@ TextureImporter:
       edges: []
       weights: []
     - serializedVersion: 2
-      name: momotaro_move_4dir_6frame_23
+      name: momotaro_move_up_06
       rect:
         serializedVersion: 2
         x: 640
@@ -666,30 +666,30 @@ TextureImporter:
       - key: SpriteEditor.SliceSettings
         value: '{"sliceOnImport":false,"gridCellCount":{"x":1.0,"y":1.0},"gridSpriteSize":{"x":128.0,"y":128.0},"gridSpriteOffset":{"x":0.0,"y":0.0},"gridSpritePadding":{"x":0.0,"y":0.0},"pivot":{"x":0.5,"y":0.0},"pivotPixels":{"x":0.0,"y":0.0},"autoSlicingMethod":0,"spriteAlignment":7,"pivotUnitMode":0,"slicingType":1,"keepEmptyRects":false,"isAlternate":false}'
     nameFileIdTable:
-      momotaro_move_4dir_6frame_0: 1271610685
-      momotaro_move_4dir_6frame_1: -607973227
-      momotaro_move_4dir_6frame_10: 1046327419
-      momotaro_move_4dir_6frame_11: -855649655
-      momotaro_move_4dir_6frame_12: 436126589
-      momotaro_move_4dir_6frame_13: 650912348
-      momotaro_move_4dir_6frame_14: -1583018145
-      momotaro_move_4dir_6frame_15: 2105048882
-      momotaro_move_4dir_6frame_16: -1801810341
-      momotaro_move_4dir_6frame_17: 1446891016
-      momotaro_move_4dir_6frame_18: 1607042125
-      momotaro_move_4dir_6frame_19: 1338660060
-      momotaro_move_4dir_6frame_2: -772375847
-      momotaro_move_4dir_6frame_20: 1233167236
-      momotaro_move_4dir_6frame_21: -1046627689
-      momotaro_move_4dir_6frame_22: -1706824502
-      momotaro_move_4dir_6frame_23: -1623931489
-      momotaro_move_4dir_6frame_3: 2005601756
-      momotaro_move_4dir_6frame_4: -892944382
-      momotaro_move_4dir_6frame_5: 2090214088
-      momotaro_move_4dir_6frame_6: -1182691403
-      momotaro_move_4dir_6frame_7: -1130433448
-      momotaro_move_4dir_6frame_8: -430653615
-      momotaro_move_4dir_6frame_9: 1757076459
+      momotaro_move_down_01: 1271610685
+      momotaro_move_down_02: -607973227
+      momotaro_move_left_05: 1046327419
+      momotaro_move_left_06: -855649655
+      momotaro_move_right_01: 436126589
+      momotaro_move_right_02: 650912348
+      momotaro_move_right_03: -1583018145
+      momotaro_move_right_04: 2105048882
+      momotaro_move_right_05: -1801810341
+      momotaro_move_right_06: 1446891016
+      momotaro_move_up_01: 1607042125
+      momotaro_move_up_02: 1338660060
+      momotaro_move_down_03: -772375847
+      momotaro_move_up_03: 1233167236
+      momotaro_move_up_04: -1046627689
+      momotaro_move_up_05: -1706824502
+      momotaro_move_up_06: -1623931489
+      momotaro_move_down_04: 2005601756
+      momotaro_move_down_05: -892944382
+      momotaro_move_down_06: 2090214088
+      momotaro_move_left_01: -1182691403
+      momotaro_move_left_02: -1130433448
+      momotaro_move_left_03: -430653615
+      momotaro_move_left_04: 1757076459
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
