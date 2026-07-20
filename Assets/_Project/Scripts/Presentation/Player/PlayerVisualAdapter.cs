@@ -27,7 +27,7 @@ namespace Momotaro.Presentation.Player
                 return;
             }
 
-            string clip = PlayerVisualNames.ClipName(_state.Current, _facing.Current);
+            string clip = PlayerVisualNames.ClipName(_state.Current, _facing.Current, _state.AttackStage);
             if (clip == _currentClip)
             {
                 return;

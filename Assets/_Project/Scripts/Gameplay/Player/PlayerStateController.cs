@@ -37,6 +37,12 @@ namespace Momotaro.Gameplay.Player
         /// <summary>現在の Gameplay 状態（Visual が参照する）。</summary>
         public PlayerState Current => _machine.Current;
 
+        /// <summary>
+        /// 現在の攻撃段（1..3）。Visual がクリップ選択に用いる拡張点（Phase2 P2-03A）。
+        /// P2-02/P2-03A では単段のため常に 1。3 段コンボの段送りは P2-03B で駆動する。
+        /// </summary>
+        public int AttackStage { get; private set; } = 1;
+
         private void Awake()
         {
             _attackBuffer = new AttackInputBuffer(_attackBufferSeconds);
@@ -109,9 +115,14 @@ namespace Momotaro.Gameplay.Player
 
             // 攻撃開始のフレームで、その時点の Move 入力から向きを明示確定する。
             // PlayerFacing.Update との実行順に依存させず、以降は攻撃終了まで固定する。
-            if (attacking && !wasAttacking && _facing != null)
+            if (attacking && !wasAttacking)
             {
-                _facing.ConfirmFromInput(active ? _input.Move : Vector2.zero);
+                // 段は P2-03A では 1 固定（段送りは P2-03B）。拡張点として開始時に確定する。
+                AttackStage = 1;
+                if (_facing != null)
+                {
+                    _facing.ConfirmFromInput(active ? _input.Move : Vector2.zero);
+                }
             }
 
             ApplyStateEffects(guarding, attacking);
