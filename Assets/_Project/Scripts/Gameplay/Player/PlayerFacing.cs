@@ -35,12 +35,12 @@ namespace Momotaro.Gameplay.Player
                 _input = PlayerInputProvider.Current;
             }
 
-            if (_input == null || IsLocked)
+            if (_input == null)
             {
                 return;
             }
 
-            Current = FacingResolver.Resolve(_input.Move, Current, _deadzone);
+            Current = FacingUpdate.Resolve(IsLocked, _input.Move, Current, _deadzone);
         }
     }
 }
