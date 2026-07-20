@@ -215,6 +215,7 @@ GameObject:
   - component: {fileID: 4008253560333073998}
   - component: {fileID: 1401547358242973184}
   - component: {fileID: 6643737507436464112}
+  - component: {fileID: 1122334455667788990}
   m_Layer: 0
   m_Name: PF_Player_Momotaro
   m_TagString: Untagged
@@ -343,6 +344,19 @@ MonoBehaviour:
   _state: {fileID: 1401547358242973184}
   _facing: {fileID: 4008253560333073998}
   _animator: {fileID: 9080975888549774741}
+--- !u!114 &1122334455667788990
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4981683825053767301}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 011f999270b7428eb5b1bb1cb258d268, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Player.PlayerVitalsHolder
+  _data: {fileID: 11400000, guid: a8caf733cd064bfaac186dd9c5e402b7, type: 2}
 --- !u!1 &7388878046659236343
 GameObject:
   m_ObjectHideFlags: 0

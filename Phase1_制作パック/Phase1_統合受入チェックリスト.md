@@ -8,7 +8,7 @@
 | # | 確認項目 | 手順 | 結果 |
 |---|---|---|---|
 | A1 | EditMode 全緑 | Test Runner → EditMode → Run All（約104件） | ☐ |
-| A2 | PlayMode 全緑 | Test Runner → PlayMode → Run All（約5件、VsFieldSmoke 含む） | ☐ |
+| A2 | PlayMode 全緑 | Test Runner → PlayMode → Run All（VsFieldSmoke・PlayerVitalsSmoke 含む） | ☐ |
 
 ## B. 起動経路
 
@@ -46,7 +46,7 @@
 | E2 | Console Error 0 | B・C の操作中に赤エラーが出ない | ☐ |
 | E3 | Missing なし | Player/Camera/Scene に Missing Script/Reference が無い | ☐ |
 | E4 | Stable ID 検証 | メニュー `Momotaro/Validation/Validate Project Data` → Error 0（重複/不正なし） | ☐ |
-| E5 | Vitals 健全 | （任意）PlayerVitalsHolder を載せた場合、最大値生成・Clamp が動作、SO 原本不変 | ☐ |
+| E5 | Vitals 健全（**必須**） | Player に PlayerVitalsHolder が載り `SO_Player_Momotaro`（player_momotaro / MaxHP=100 / MaxStamina=100）が割当済み。Play時に HP・Stamina が最大値から開始、SO 原本は不変。PlayMode `PlayerVitalsSmokeTests` が緑 | ☐ |
 
 ## F. Claude 側 静的監査（実施済み・参考）
 
@@ -55,7 +55,7 @@
 - 層依存（Core←Data←Gameplay、Presentation/Infrastructure→Gameplay、Runtime非UnityEditor、Gameplay非InputSystem）：**OK**
 - Scripts の `Find` 系不使用：**OK**
 - asmdef 8 本整合：**OK**
-- データ資産の Stable ID 重複：**なし**（`player_movement_default` 1件）
+- データ資産の Stable ID 重複：**なし**（`player_movement_default` / `player_momotaro` の2件）
 - Gameplay に攻撃/被弾/死亡等の先回り実装：**なし**（Phase 1 スコープ順守）
 
 ---
