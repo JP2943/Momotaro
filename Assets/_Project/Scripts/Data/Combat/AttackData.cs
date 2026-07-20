@@ -29,11 +29,35 @@ namespace Momotaro.Data.Combat
         /// <summary>HP技倍率。</summary>
         public float HpMultiplier => _hpMultiplier;
 
+        /// <summary>体幹ダメージ（固定系統。攻撃力・防御の影響を受けない。仕様書 3.11）。</summary>
+        public float PoiseDamage => _poiseDamage;
+
+        /// <summary>ひるませ値（仕様書 3.12。状況補正の対象外）。</summary>
+        public float FlinchPower => _flinchPower;
+
+        /// <summary>クールダウン（秒）。</summary>
+        public float CooldownSeconds => _cooldownSeconds;
+
+        /// <summary>使用距離。</summary>
+        public float UseRange => _useRange;
+
+        /// <summary>使用角度（度）。</summary>
+        public float UseAngle => _useAngle;
+
+        /// <summary>ガードで消費するスタミナ量（仕様書 3.2）。</summary>
+        public float GuardStaminaCost => _guardStaminaCost;
+
         /// <summary>予兆種別。</summary>
         public AttackTelegraph Telegraph => _telegraph;
 
         /// <summary>通常ガード可能か。</summary>
         public bool Guardable => _guardable;
+
+        /// <summary>ジャストガード可能か。</summary>
+        public bool JustGuardable => _justGuardable;
+
+        /// <summary>ステップ回避可能か（仕様書 3.4）。</summary>
+        public bool StepAvoidable => _stepAvoidable;
 
         /// <inheritdoc />
         public override void Validate(DataValidationReport report)
