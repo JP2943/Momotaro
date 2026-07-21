@@ -99,8 +99,38 @@ namespace Momotaro.Tests.EditMode
 
             Assert.AreEqual(1, recorder.Received.Count);
             Assert.AreEqual(HitResultKind.Damage, recorder.Received[0].Kind);
-            Assert.AreEqual(8f, recorder.Received[0].AppliedDamage.Hp, "適用 HP は 8。");
+            Assert.AreEqual(8f, recorder.Received[0].AppliedDamage.Hp, "適用 HP は実減少量 8。");
+            Assert.AreEqual(0f, recorder.Received[0].AppliedDamage.Poise, "P2-04 では体幹は未適用（0）。");
+            Assert.AreEqual(0f, recorder.Received[0].AppliedDamage.Flinch, "P2-04 ではひるみは未適用（0）。");
             Assert.AreSame(dummy, recorder.Received[0].Target);
+        }
+
+        [Test]
+        public void AppliedDamage_EqualsActualHpReduced_OnOverkill()
+        {
+            var dummy = MakeDummy(5, 0f); // HP5・防御0
+            var recorder = new Recorder();
+            dummy.Results.AddListener(recorder);
+
+            dummy.ReceiveHit(Hit(dummy, 8f)); // 防御0 → 最終8 だが残 HP は 5
+
+            Assert.AreEqual(0, dummy.CurrentHp, "HP は 0 で止まる。");
+            Assert.AreEqual(5f, recorder.Received[0].AppliedDamage.Hp, "実適用 = 残 HP の 5。");
+        }
+
+        [Test]
+        public void AppliedDamage_IsZero_WhenHittingDefeatedDummy()
+        {
+            var dummy = MakeDummy(5, 0f);
+            dummy.ReceiveHit(Hit(dummy, 100f)); // 0 へ
+            Assert.IsTrue(dummy.IsDefeated);
+
+            var recorder = new Recorder();
+            dummy.Results.AddListener(recorder);
+            dummy.ReceiveHit(Hit(dummy, 8f)); // HP0 への追撃
+
+            Assert.AreEqual(0f, recorder.Received[0].AppliedDamage.Hp, "HP0 への追撃の実適用は 0。");
+            Assert.AreEqual(HitResultKind.Damage, recorder.Received[0].Kind, "結果種別は Damage のまま。");
         }
 
         [Test]

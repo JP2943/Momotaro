@@ -333,7 +333,13 @@ namespace Momotaro.Gameplay.Player
                 }
 
                 var target = col.GetComponentInParent<IDamageable>();
-                if (target == null || ReferenceEquals(target, this))
+                if (target == null)
+                {
+                    continue;
+                }
+
+                // 自分自身（同一 Player 階層の PlayerVitalsHolder 等）は除外する。
+                if (target is Component targetComponent && targetComponent.transform.root == transform.root)
                 {
                     continue;
                 }

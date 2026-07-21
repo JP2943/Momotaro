@@ -104,8 +104,8 @@ namespace Momotaro.Tests.EditMode
             m.TryStart(); // stage1 elapsed 0
             for (int s = 1; s < stage; s++)
             {
-                // 判定終了まで進めてから次段へ。
-                m.Tick(0.30f);
+                // 判定終了（ActiveEnd 3.0）を越えてから次段へ。
+                m.Tick(4.0f);
                 m.TryAdvance();
             }
 
@@ -118,11 +118,14 @@ namespace Momotaro.Tests.EditMode
 
             // EditMode では Awake・入力バッファ・Time.deltaTime に依存しないよう、コンボ機と Buffer を直接注入して
             // stage1 を開始する（開始経路そのものは PlayerAttackGatingTests が検証済み）。
+            // EditMode の Time.deltaTime（最大 ~0.333s）が combo.Tick で判定経過を進めても窓を跨がないよう、
+            // 段タイミングを秒オーダーへスケールする（比率・キャンセル規則は同じ）。
+            // Stage1/2: ActiveEnd 3.0（cancel はそれ以降）。Stage3: ActiveEnd 3.0・cancel 窓 5.0。
             var timings = new[]
             {
-                new StageTiming(0.10f, 0.10f, 0.20f, 0f),
-                new StageTiming(0.12f, 0.10f, 0.23f, 0f),
-                new StageTiming(0.18f, 0.12f, 0.35f, 0.48f)
+                new StageTiming(1.0f, 2.0f, 2.0f, 0f),   // ActiveEnd 3.0, total 5.0
+                new StageTiming(1.0f, 2.0f, 2.0f, 0f),   // ActiveEnd 3.0, total 5.0
+                new StageTiming(1.0f, 2.0f, 4.0f, 5.0f)  // ActiveEnd 3.0, cancel@5.0, total 7.0
             };
             var combo = new AttackComboMachine(timings);
             SetPrivate(t.c, "_combo", combo);
@@ -138,7 +141,7 @@ namespace Momotaro.Tests.EditMode
         public void Stage1_DuringActive_NotCancelledByGuard()
         {
             var t = StartAttack();
-            DriveTo(t.c, 1, 0.12f); // 判定中（0.10..0.20）
+            DriveTo(t.c, 1, 2.0f); // 判定中（1.0..3.0）。窓 3.0 まで余裕 1.0s
             t.input.SetGuard(true);
             Tick(t.c);
             Assert.AreEqual(PlayerState.Attack, t.c.Current, "判定中は Guard でキャンセルされない。");
@@ -148,7 +151,7 @@ namespace Momotaro.Tests.EditMode
         public void Stage1_AfterActive_CancelledByGuard()
         {
             var t = StartAttack();
-            DriveTo(t.c, 1, 0.30f); // 判定終了後
+            DriveTo(t.c, 1, 4.0f); // 判定終了後（>3.0）
             t.input.SetGuard(true);
             Tick(t.c);
             Assert.AreEqual(PlayerState.GuardIdle, t.c.Current, "判定終了後は Guard でキャンセルされ Guard 状態へ。");
@@ -158,7 +161,7 @@ namespace Momotaro.Tests.EditMode
         public void Stage2_AfterActive_CancelledByGuard()
         {
             var t = StartAttack();
-            DriveTo(t.c, 2, 0.30f); // stage2 判定終了後(>=0.22)
+            DriveTo(t.c, 2, 4.0f); // stage2 判定終了後（>3.0）
             t.input.SetGuard(true);
             Tick(t.c);
             Assert.AreEqual(PlayerState.GuardIdle, t.c.Current);
@@ -168,20 +171,20 @@ namespace Momotaro.Tests.EditMode
         public void Stage3_Before048_NotCancelled()
         {
             var t = StartAttack();
-            DriveTo(t.c, 3, 0.30f); // stage3 判定終了後だが 0.48 未満
+            DriveTo(t.c, 3, 4.0f); // stage3 判定終了後(>3.0)だが cancel 窓 5.0 未満
             t.input.SetGuard(true);
             Tick(t.c);
-            Assert.AreEqual(PlayerState.Attack, t.c.Current, "3 段目は 0.48 秒未満ではキャンセルされない。");
+            Assert.AreEqual(PlayerState.Attack, t.c.Current, "3 段目は cancel 窓（5.0）未満ではキャンセルされない。");
         }
 
         [Test]
         public void Stage3_After048_Cancelled()
         {
             var t = StartAttack();
-            DriveTo(t.c, 3, 0.50f); // stage3 0.48 秒以降
+            DriveTo(t.c, 3, 6.0f); // stage3 cancel 窓（5.0）以降・total 7.0 未満
             t.input.SetGuard(true);
             Tick(t.c);
-            Assert.AreEqual(PlayerState.GuardIdle, t.c.Current, "3 段目は 0.48 秒以降にキャンセルされる。");
+            Assert.AreEqual(PlayerState.GuardIdle, t.c.Current, "3 段目は cancel 窓（5.0）以降にキャンセルされる。");
         }
 
         [Test]
@@ -190,11 +193,11 @@ namespace Momotaro.Tests.EditMode
             var t = StartAttack();
             t.input.SetGuard(true); // 窓より前から Guard 保持
 
-            DriveTo(t.c, 1, 0.12f); // 判定中
+            DriveTo(t.c, 1, 2.0f); // 判定中（窓 3.0 未満）
             Tick(t.c);
             Assert.AreEqual(PlayerState.Attack, t.c.Current, "窓前は保持していてもキャンセルされない。");
 
-            DriveTo(t.c, 1, 0.25f); // 判定終了後（窓到達）
+            DriveTo(t.c, 1, 4.0f); // 判定終了後（窓 3.0 到達）
             Tick(t.c);
             Assert.AreEqual(PlayerState.GuardIdle, t.c.Current, "窓到達時点でキャンセル成立。");
         }
@@ -203,7 +206,7 @@ namespace Momotaro.Tests.EditMode
         public void AfterCancel_AttackStateIsNeutralised()
         {
             var t = StartAttack();
-            DriveTo(t.c, 1, 0.30f);
+            DriveTo(t.c, 1, 4.0f); // 判定終了後（>3.0）
             t.input.SetGuard(true);
             Tick(t.c);
 

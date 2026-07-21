@@ -69,8 +69,8 @@ namespace Momotaro.Presentation.Diagnostics
         {
             if (result.Target is CombatDummy dummy)
             {
-                _lastHit[dummy.GetInstanceID()] =
-                    $"{result.Kind} -HP{result.AppliedDamage.Hp:0} (体幹{result.AppliedDamage.Poise:0}/ひるみ{result.AppliedDamage.Flinch:0})";
+                // AppliedDamage は実適用値。P2-04 では体幹・ひるみは未適用（0）なので表示しない。
+                _lastHit[dummy.GetInstanceID()] = $"{result.Kind} -HP{result.AppliedDamage.Hp:0}";
             }
         }
 

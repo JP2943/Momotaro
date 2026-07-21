@@ -96,11 +96,13 @@ namespace Momotaro.Gameplay.Combat
             EnsureHp();
 
             float defense = _data != null ? _data.Defense : 0f;
-            int finalHp = HpDamageCalculator.ResolveFinal(hit.Damage.Hp, defense);
 
-            _hp.Change(-finalHp);
+            // 防御適用 → HP 減算 → 実際に減った量を算出（Clamp 込み）。
+            int appliedHp = DamageApplication.ApplyHpDamage(_hp, hit.Damage.Hp, defense);
 
-            var applied = new HitDamage(finalHp, hit.Damage.Poise, hit.Damage.Flinch);
+            // AppliedDamage は「実際に適用された値」。体幹・ひるみは P2-04 では未適用のため 0。
+            // （P2-05 で実適用量を Poise/Flinch へ入れられるよう構造は維持）。
+            var applied = new HitDamage(appliedHp, 0f, 0f);
             Results.Publish(HitResult.Damage(hit.HitId, hit.Attacker, this, applied));
         }
     }
