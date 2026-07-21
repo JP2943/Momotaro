@@ -1,3 +1,4 @@
+using Momotaro.Data.Characters;
 using Momotaro.Data.Combat;
 using Momotaro.Data.Player;
 using Momotaro.Gameplay.Combat;
@@ -29,6 +30,9 @@ namespace Momotaro.Gameplay.Player
         [Tooltip("通常攻撃コンボ構成（段順 AttackData ＋ 先行入力秒）。未割当なら攻撃不可。")]
         [SerializeField] private PlayerAttackComboData _attackCombo;
 
+        [Tooltip("攻撃者の基礎データ（攻撃力＝HP ダメージ計算に使用。主人公=SO_Player_Momotaro）。P2-04。")]
+        [SerializeField] private CharacterData _attackerStats;
+
         [Tooltip("Hitbox 中心の Facing 方向オフセット（m）。")]
         [SerializeField] private float _hitboxForwardOffset = 0.8f;
 
@@ -40,6 +44,10 @@ namespace Momotaro.Gameplay.Player
 
         [Tooltip("命中対象の Layer。")]
         [SerializeField] private LayerMask _targetMask = ~0;
+
+        [Header("Debug")]
+        [Tooltip("攻撃 Hitbox を Scene ビューにギズモ表示する（判定中は赤、それ以外は黄）。検証用。")]
+        [SerializeField] private bool _debugDrawHitbox = true;
 
         private readonly PlayerStateMachine _machine = new PlayerStateMachine();
         private readonly HitInstanceAllocator _hitAllocator = new HitInstanceAllocator();
@@ -314,8 +322,7 @@ namespace Momotaro.Gameplay.Player
 
             AttackData d = _attackCombo.Stage(_combo.Stage - 1);
             AttackSnapshot snapshot = AttackSnapshot.FromData(d);
-            // 体幹・ひるませは固定系統でここで確定。HP は攻撃力算入後（P2-04）のため 0。
-            var damage = new HitDamage(0f, d.PoiseDamage, d.FlinchPower);
+            float attackPower = _attackerStats != null ? _attackerStats.AttackPower : 0f;
 
             for (int i = 0; i < count; i++)
             {
@@ -337,6 +344,20 @@ namespace Momotaro.Gameplay.Player
                     continue;
                 }
 
+                // 背後補正（対象の Forward を参照。対象が ICombatActor でなければ補正なし）。
+                float backMultiplier = 1f;
+                var targetActor = col.GetComponentInParent<ICombatActor>();
+                if (targetActor != null &&
+                    CombatGeometry.IsBackHit(targetActor.Forward, transform.position - targetActor.WorldPosition))
+                {
+                    backMultiplier = HpDamageCalculator.BackMultiplier;
+                }
+
+                // HP は攻撃側寄与（防御適用前）＝攻撃力 × 技倍率 × 0.1 × 背後。体幹・ひるませは固定系統。
+                // 対象側（IDamageable 実装）が防御補正・被ダメ増減・スタン倍率を適用して最終 HP を確定する。
+                float hpContribution = HpDamageCalculator.AttackContribution(attackPower, d.HpMultiplier, 1f, backMultiplier);
+                var damage = new HitDamage(hpContribution, d.PoiseDamage, d.FlinchPower);
+
                 HitInfo hit = HitBuilder.FromSnapshot(snapshot, this, target, Forward, center, damage, _currentSwing);
                 target.ReceiveHit(hit);
             }
@@ -352,6 +373,26 @@ namespace Momotaro.Gameplay.Player
             if (_motor != null && _movement != null)
             {
                 _motor.SpeedMultiplier = GuardMovement.SpeedMultiplier(guarding, _movement.GuardSpeedMultiplier);
+            }
+        }
+
+        private void OnDrawGizmos()
+        {
+            // 攻撃 Hitbox の位置・大きさ・有効タイミングを Scene ビューで確認するデバッグ表示。
+            if (!_debugDrawHitbox)
+            {
+                return;
+            }
+
+            Vector3 center = transform.position + Forward * _hitboxForwardOffset + Vector3.up * _hitboxHeight;
+            bool active = _combo != null && _combo.IsActive && _combo.HitboxActive;
+
+            Gizmos.color = active ? new Color(1f, 0.2f, 0.2f, 0.9f) : new Color(1f, 0.9f, 0.2f, 0.5f);
+            Gizmos.DrawWireCube(center, _hitboxHalfExtents * 2f);
+            if (active)
+            {
+                Gizmos.color = new Color(1f, 0.2f, 0.2f, 0.25f);
+                Gizmos.DrawCube(center, _hitboxHalfExtents * 2f);
             }
         }
 

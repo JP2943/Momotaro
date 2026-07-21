@@ -115,8 +115,21 @@ namespace Momotaro.Tests.EditMode
         private (PlayerStateController c, PlayerFacing facing, PlayerMotor motor, PlayerInputState input) StartAttack()
         {
             var t = MakeController();
-            t.input.SetAttack(true);
-            Tick(t.c); // 攻撃開始（stage1）
+
+            // EditMode では Awake・入力バッファ・Time.deltaTime に依存しないよう、コンボ機と Buffer を直接注入して
+            // stage1 を開始する（開始経路そのものは PlayerAttackGatingTests が検証済み）。
+            var timings = new[]
+            {
+                new StageTiming(0.10f, 0.10f, 0.20f, 0f),
+                new StageTiming(0.12f, 0.10f, 0.23f, 0f),
+                new StageTiming(0.18f, 0.12f, 0.35f, 0.48f)
+            };
+            var combo = new AttackComboMachine(timings);
+            SetPrivate(t.c, "_combo", combo);
+            SetPrivate(t.c, "_attackBuffer", new AttackInputBuffer(0.30f));
+            combo.TryStart(); // stage1
+
+            Tick(t.c); // 状態機械を同期（attacking=true → Attack、MovementSuppressed=true）
             Assert.AreEqual(PlayerState.Attack, t.c.Current, "前提：攻撃状態で開始。");
             return t;
         }

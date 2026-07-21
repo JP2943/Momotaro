@@ -20,4 +20,6 @@ MonoBehaviour:
   _debugNote:
   _maxHp: 100
   _moveSpeed: 5
+  _attackPower: 100
+  _defense: 20
   _maxStamina: 100

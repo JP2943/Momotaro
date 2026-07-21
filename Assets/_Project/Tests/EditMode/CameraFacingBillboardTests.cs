@@ -220,9 +220,17 @@ namespace Momotaro.Tests.EditMode
 
             Vector3 pos = visual.transform.position;
             Quaternion rot = visual.transform.rotation;
+
+            // 主目的：カメラ不在時に例外を出さないこと。
             Assert.DoesNotThrow(() => bb.AlignToCamera());
-            Assert.Less(Vector3.Distance(pos, visual.transform.position), PosEps);
-            Assert.Less(Quaternion.Angle(rot, visual.transform.rotation), AngleEps);
+
+            // 「何もしない」の検証は、解決できるカメラが本当に無い場合のみ（EditMode は開いているシーンの
+            // Main Camera を Camera.main が拾うことがあるため、その場合は移動が起きるのが正しい挙動）。
+            if (Camera.main == null)
+            {
+                Assert.Less(Vector3.Distance(pos, visual.transform.position), PosEps);
+                Assert.Less(Quaternion.Angle(rot, visual.transform.rotation), AngleEps);
+            }
         }
 
         [Test]
