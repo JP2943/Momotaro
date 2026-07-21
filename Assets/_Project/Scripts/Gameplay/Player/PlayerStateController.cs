@@ -154,7 +154,7 @@ namespace Momotaro.Gameplay.Player
             bool guarding = active && _input.GuardHeld;
             bool isMoving = active && _input.Move.sqrMagnitude > _moveThreshold * _moveThreshold;
 
-            DriveCombo(active);
+            DriveCombo(active, guarding);
 
             bool attacking = _combo != null && _combo.IsActive;
             _machine.Tick(active, isMoving, guarding, attacking);
@@ -179,7 +179,7 @@ namespace Momotaro.Gameplay.Player
             }
         }
 
-        private void DriveCombo(bool active)
+        private void DriveCombo(bool active, bool cancelRequested)
         {
             if (_combo == null)
             {
@@ -196,6 +196,14 @@ namespace Momotaro.Gameplay.Player
                     _hitTracker.Clear();
                 }
 
+                return;
+            }
+
+            // Guard/Step キャンセル：許可窓（AttackComboMachine.CanCancel）に到達していれば、
+            // 連鎖・継続より優先して攻撃を中断する。窓より前にキャンセル入力を保持していても、
+            // 窓到達時点で成立する（CanCancel が true になった最初の Tick で中断）。
+            if (TryCancelAttack(cancelRequested))
+            {
                 return;
             }
 
@@ -217,6 +225,45 @@ namespace Momotaro.Gameplay.Player
             {
                 _attackBuffer.Clear();
                 _hitTracker.Clear();
+            }
+        }
+
+        /// <summary>
+        /// 攻撃中に、キャンセル要求（Guard 保持／将来の Step）とキャンセル窓（<see cref="AttackComboMachine.CanCancel"/>）が
+        /// 揃えば攻撃を中断する。成立したら true。Guard 固有処理と分離しているため、後続の Step 実装から同じ判定・中断を
+        /// 再利用できる（Step 本体は先回り実装しない）。
+        /// </summary>
+        private bool TryCancelAttack(bool cancelRequested)
+        {
+            if (_combo == null || !_combo.IsActive || !cancelRequested || !_combo.CanCancel)
+            {
+                return false;
+            }
+
+            CancelAttack();
+            return true;
+        }
+
+        /// <summary>
+        /// 攻撃を中断し、攻撃由来の状態を中立化する：コンボ停止・Hitbox 無効化（判定は次フレームから走らない）・
+        /// 多重ヒット履歴クリア・踏み込み速度ゼロ・移動抑制解除・攻撃の向きロック解除・先行入力クリア。
+        /// これにより同フレームで <see cref="PlayerStateMachine"/> が GuardIdle/GuardMove へ遷移できる。
+        /// </summary>
+        private void CancelAttack()
+        {
+            _combo.Interrupt();
+            _hitTracker.Clear();
+            _attackBuffer.Clear();
+
+            if (_motor != null)
+            {
+                _motor.MovementSuppressed = false;
+                _motor.StepVelocity = Vector3.zero;
+            }
+
+            if (_facing != null)
+            {
+                _facing.IsLocked = false;
             }
         }
 
