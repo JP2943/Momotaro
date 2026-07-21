@@ -176,6 +176,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4355083005161958313}
+  - component: {fileID: 4641603982383516983}
   m_Layer: 0
   m_Name: VisualRoot
   m_TagString: Untagged
@@ -329,6 +330,7 @@ MonoBehaviour:
   _facing: {fileID: 4008253560333073998}
   _movement: {fileID: 11400000, guid: 3152bfd9b95a3b34baf7ef40703ad159, type: 2}
   _moveThreshold: 0.1
+  _attackCombo: {fileID: 11400000, guid: 4c9ef1dd430c4aa29c7e9df25c95ce44, type: 2}
 --- !u!114 &6643737507436464112
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -471,3 +473,17 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
+--- !u!114 &4641603982383516983
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4415947922148521082}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 30e91949073444f38a67da26b1dec6db, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Characters.CameraFacingBillboard
+  _camera: {fileID: 0}
+  _depthOffset: 0.5

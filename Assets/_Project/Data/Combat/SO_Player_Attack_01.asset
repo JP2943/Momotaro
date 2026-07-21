@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8d49b91a7e024f868875fa860fefddf2, type: 3}
+  m_Name: SO_Player_Attack_01
+  m_EditorClassIdentifier: Momotaro.Data::Momotaro.Data.Combat.AttackData
+  _id:
+    _value: player_attack_01
+  _displayName: Momotaro Attack 1
+  _description: 
+  _version: 1
+  _debugNote: 
+  _cooldownSeconds: 0
+  _useRange: 1.5
+  _useAngle: 60
+  _startupSeconds: 0.1
+  _activeSeconds: 0.1
+  _recoverySeconds: 0.2
+  _stepDistance: 0.3
+  _cancelWindowStartSeconds: 0
+  _hpMultiplier: 1.0
+  _poiseDamage: 8
+  _flinchPower: 20
+  _guardStaminaCost: 10
+  _guardable: 1
+  _justGuardable: 1
+  _stepAvoidable: 1
+  _telegraph: 0
