@@ -40,6 +40,7 @@ namespace Momotaro.Gameplay.Combat
                 hitPoint,
                 damage,
                 snapshot.GuardStaminaCost,
+                snapshot.JustGuardPoiseDamage,
                 snapshot.Guardable,
                 snapshot.JustGuardable,
                 hitId);

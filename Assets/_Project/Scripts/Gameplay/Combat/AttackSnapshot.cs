@@ -23,6 +23,9 @@ namespace Momotaro.Gameplay.Combat
         /// <summary>ガードで消費させるスタミナ量（Guard Stamina Damage）。</summary>
         public float GuardStaminaCost { get; }
 
+        /// <summary>ジャストガード成立時に攻撃者の体幹へ反射する固定ダメージ。</summary>
+        public float JustGuardPoiseDamage { get; }
+
         /// <summary>通常ガード可能か。</summary>
         public bool Guardable { get; }
 
@@ -41,6 +44,7 @@ namespace Momotaro.Gameplay.Combat
             float poiseDamage,
             float flinchPower,
             float guardStaminaCost,
+            float justGuardPoiseDamage,
             bool guardable,
             bool justGuardable,
             bool stepAvoidable,
@@ -50,6 +54,7 @@ namespace Momotaro.Gameplay.Combat
             PoiseDamage = poiseDamage;
             FlinchPower = flinchPower;
             GuardStaminaCost = guardStaminaCost;
+            JustGuardPoiseDamage = justGuardPoiseDamage;
             Guardable = guardable;
             JustGuardable = justGuardable;
             StepAvoidable = stepAvoidable;
@@ -73,6 +78,7 @@ namespace Momotaro.Gameplay.Combat
                 data.PoiseDamage,
                 data.FlinchPower,
                 data.GuardStaminaCost,
+                data.JustGuardPoiseDamage,
                 data.Guardable,
                 data.JustGuardable,
                 data.StepAvoidable,

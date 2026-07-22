@@ -112,6 +112,15 @@ namespace Momotaro.Presentation.Diagnostics
                     _sb.Append("  [GUARD]");
                 }
 
+                if (_player.JustGuardPhase != Momotaro.Gameplay.Combat.JustGuardPhase.Normal || _player.CanJustGuard)
+                {
+                    _sb.Append("  JG:").Append(_player.JustGuardPhase);
+                    if (_player.CanJustGuard)
+                    {
+                        _sb.Append('*');
+                    }
+                }
+
                 if (_playerVitals != null && _playerVitals.Vitals != null)
                 {
                     _sb.Append("  HP ").Append(_playerVitals.Vitals.Health.Current).Append('/').Append(_playerVitals.Vitals.Health.Max);

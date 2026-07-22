@@ -31,6 +31,8 @@ namespace Momotaro.Data.Combat
         [SerializeField] private float _poiseDamage = 10f;
         [SerializeField] private float _flinchPower;
         [SerializeField] private float _guardStaminaCost = 10f;
+        [Tooltip("ジャストガード成立時に攻撃者の体幹へ反射する固定ダメージ（大きめ。仕様書 3.3）。")]
+        [SerializeField] private float _justGuardPoiseDamage = 50f;
 
         [Header("Defense / Telegraph")]
         [SerializeField] private bool _guardable = true;
@@ -76,6 +78,9 @@ namespace Momotaro.Data.Combat
 
         /// <summary>ガードで消費するスタミナ量（仕様書 3.2）。</summary>
         public float GuardStaminaCost => _guardStaminaCost;
+
+        /// <summary>ジャストガード成立時に攻撃者の体幹へ反射する固定ダメージ（仕様書 3.3）。</summary>
+        public float JustGuardPoiseDamage => _justGuardPoiseDamage;
 
         /// <summary>予兆種別。</summary>
         public AttackTelegraph Telegraph => _telegraph;

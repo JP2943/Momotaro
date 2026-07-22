@@ -36,10 +36,13 @@ namespace Momotaro.Gameplay.Combat
         /// <summary>通常ガード成功時に対象へ与える固定スタミナダメージ（Guard Stamina Damage。Phase2 P2-06）。</summary>
         public float GuardStaminaDamage { get; }
 
+        /// <summary>ジャストガード成立時に攻撃者の体幹へ反射する固定ダメージ（Phase2 P2-08）。</summary>
+        public float JustGuardPoiseDamage { get; }
+
         /// <summary>命中の同一性（多重ヒット防止のキー）。</summary>
         public HitId HitId { get; }
 
-        /// <summary>ガードスタミナダメージ 0 で生成する（HP/体幹/ひるみのみの命中）。</summary>
+        /// <summary>ガードスタミナ／JG 反射 0 で生成する（HP/体幹/ひるみのみの命中）。</summary>
         public HitInfo(
             ICombatActor attacker,
             IDamageable target,
@@ -49,11 +52,11 @@ namespace Momotaro.Gameplay.Combat
             bool guardable,
             bool justGuardable,
             HitId hitId)
-            : this(attacker, target, attackDirection, hitPoint, damage, 0f, guardable, justGuardable, hitId)
+            : this(attacker, target, attackDirection, hitPoint, damage, 0f, 0f, guardable, justGuardable, hitId)
         {
         }
 
-        /// <summary>すべての要素（ガードスタミナダメージ含む）を指定して生成する。</summary>
+        /// <summary>ガードスタミナダメージを指定し、JG 反射 0 で生成する。</summary>
         public HitInfo(
             ICombatActor attacker,
             IDamageable target,
@@ -64,6 +67,22 @@ namespace Momotaro.Gameplay.Combat
             bool guardable,
             bool justGuardable,
             HitId hitId)
+            : this(attacker, target, attackDirection, hitPoint, damage, guardStaminaDamage, 0f, guardable, justGuardable, hitId)
+        {
+        }
+
+        /// <summary>すべての要素（ガードスタミナ・JG 反射含む）を指定して生成する。</summary>
+        public HitInfo(
+            ICombatActor attacker,
+            IDamageable target,
+            Vector3 attackDirection,
+            Vector3 hitPoint,
+            HitDamage damage,
+            float guardStaminaDamage,
+            float justGuardPoiseDamage,
+            bool guardable,
+            bool justGuardable,
+            HitId hitId)
         {
             Attacker = attacker;
             Target = target;
@@ -71,6 +90,7 @@ namespace Momotaro.Gameplay.Combat
             HitPoint = hitPoint;
             Damage = damage;
             GuardStaminaDamage = guardStaminaDamage;
+            JustGuardPoiseDamage = justGuardPoiseDamage;
             Guardable = guardable;
             JustGuardable = justGuardable;
             HitId = hitId;

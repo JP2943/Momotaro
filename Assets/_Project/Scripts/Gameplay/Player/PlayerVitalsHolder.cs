@@ -30,6 +30,8 @@ namespace Momotaro.Gameplay.Player
         private StaminaState _stamina;
         private IGuardState _guardState;
         private bool _guardStateResolved;
+        private IJustGuardState _justGuardState;
+        private bool _justGuardStateResolved;
 
         /// <summary>生成された Runtime Vitals。data 未設定時は null。</summary>
         public PlayerVitals Vitals
@@ -139,6 +141,35 @@ namespace Momotaro.Gameplay.Player
             return _guardState;
         }
 
+        private IJustGuardState ResolveJustGuardState()
+        {
+            if (!_justGuardStateResolved)
+            {
+                _justGuardState = GetComponentInParent<IJustGuardState>();
+                _justGuardStateResolved = true;
+            }
+
+            return _justGuardState;
+        }
+
+        /// <summary>
+        /// ジャストガード成立時に攻撃者の体幹へ固定ダメージを反射する（Phase2 P2-08）。攻撃者が <see cref="IDamageable"/> の場合のみ、
+        /// 体幹のみ（HP/ひるみ 0）・再ガード不可の逆方向 Hit を返す。攻撃者が存在しない/受け手でない場合は何もしない。
+        /// </summary>
+        private void ReflectJustGuardPoise(in HitInfo hit)
+        {
+            if (hit.JustGuardPoiseDamage <= 0f || !(hit.Attacker is IDamageable attackerDamageable))
+            {
+                return;
+            }
+
+            var reflect = new HitDamage(0f, hit.JustGuardPoiseDamage, 0f);
+            var reverse = new HitInfo(
+                null, attackerDamageable, -hit.AttackDirection, hit.HitPoint, reflect,
+                0f, 0f, guardable: false, justGuardable: false, hit.HitId);
+            attackerDamageable.ReceiveHit(reverse);
+        }
+
         /// <inheritdoc />
         public void ReceiveHit(in HitInfo hit)
         {
@@ -148,11 +179,23 @@ namespace Momotaro.Gameplay.Player
                 return;
             }
 
+            // 前方 180°判定はガード方向を用いる（通常ガード・JG 共通）。ブレイク中は行動不能でガード・JG 不可。
+            IGuardState guard = ResolveGuardState();
+            bool withinArc = guard != null && GuardGeometry.IsWithinGuardArc(guard.GuardForward, hit.AttackDirection);
+
+            // ジャストガードは Hit 解決で通常ガードより先に評価する（仕様書 §2）。成立でスタミナ非消費・HP0・体幹反射。
+            IJustGuardState jg = ResolveJustGuardState();
+            if (!IsGuardBroken && hit.JustGuardable && withinArc && jg != null && jg.CanJustGuard)
+            {
+                ReflectJustGuardPoise(hit);
+                jg.NotifyJustGuardSuccess();
+                Results.Publish(HitResult.JustGuard(hit.HitId, hit.Attacker, this, HitDamage.None));
+                return;
+            }
+
             // 通常ガード解決：ガード中かつ Guardable かつ前方 180°以内なら防御成功。
             // ブレイク中（行動不能）は同一フレームの後続 Hit でもガード不可（PlayerStateController 更新前でも安全側）。
-            IGuardState guard = ResolveGuardState();
             bool isGuarding = !IsGuardBroken && guard != null && guard.IsGuarding;
-            bool withinArc = guard != null && GuardGeometry.IsWithinGuardArc(guard.GuardForward, hit.AttackDirection);
 
             if (GuardResolver.Resolve(isGuarding, hit.Guardable, withinArc) == GuardOutcome.Guarded)
             {

@@ -95,7 +95,7 @@ namespace Momotaro.Tests.EditMode
         [Test]
         public void HitBuilder_FromSnapshot_UsesSnapshotFlags()
         {
-            var snap = new AttackSnapshot(1f, 0f, 0f, 0f, guardable: false, justGuardable: true, stepAvoidable: false, telegraph: AttackTelegraph.Normal);
+            var snap = new AttackSnapshot(1f, 0f, 0f, 0f, 0f, guardable: false, justGuardable: true, stepAvoidable: false, telegraph: AttackTelegraph.Normal);
             HitInfo hit = HitBuilder.FromSnapshot(snap, null, null, Vector3.forward, Vector3.zero, HitDamage.None, HitId.Single(1));
 
             Assert.IsFalse(hit.Guardable);

@@ -16,7 +16,7 @@ namespace Momotaro.Gameplay.Player
     /// 中断時 Hitbox 消去まで。HP/体幹/ひるみの実適用は対象外（対象側 <see cref="IDamageable"/> と後続 Task）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState
+    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState
     {
         [SerializeField] private PlayerMotor _motor;
         [SerializeField] private PlayerFacing _facing;
@@ -25,6 +25,9 @@ namespace Momotaro.Gameplay.Player
         [Range(0f, 1f)]
         [Tooltip("この大きさ未満の移動入力は静止扱い。")]
         [SerializeField] private float _moveThreshold = 0.1f;
+
+        [Tooltip("ガード／ジャストガードのパラメータ（JG 受付窓・解除窓・連打ペナルティ）。未割当なら既定値。P2-08。")]
+        [SerializeField] private GuardData _guardData;
 
         [Header("Attack (P2-03B)")]
         [Tooltip("通常攻撃コンボ構成（段順 AttackData ＋ 先行入力秒）。未割当なら攻撃不可。")]
@@ -56,6 +59,8 @@ namespace Momotaro.Gameplay.Player
 
         private AttackComboMachine _combo;
         private AttackInputBuffer _attackBuffer;
+        private JustGuardState _justGuard;
+        private bool _prevGuardHeld;
         private IPlayerInput _input;
         private HitId _currentSwing;
         private PlayerVitalsHolder _vitals;
@@ -90,6 +95,17 @@ namespace Momotaro.Gameplay.Player
         /// <remarks>ガード中は Facing がロックされるため、押下時に固定した前方をそのまま返す。</remarks>
         public Vector3 GuardForward => Forward;
 
+        // ---- IJustGuardState（JG 受付状態。命中解決が参照） ----
+
+        /// <inheritdoc />
+        public bool CanJustGuard => _justGuard != null && _justGuard.CanJustGuard;
+
+        /// <inheritdoc />
+        public void NotifyJustGuardSuccess() => _justGuard?.NotifySuccess();
+
+        /// <summary>JG 入力状態（HUD 等の検証表示用）。未初期化時は Normal。</summary>
+        public JustGuardPhase JustGuardPhase => _justGuard != null ? _justGuard.Phase : JustGuardPhase.Normal;
+
         /// <summary>ガードブレイク（行動不能）中か。Vitals（<see cref="PlayerVitalsHolder"/>）が無ければ常に false。</summary>
         private bool IsGuardBroken
         {
@@ -122,6 +138,8 @@ namespace Momotaro.Gameplay.Player
             _machine.Reset();
             _combo?.Interrupt();
             _attackBuffer?.Clear();
+            _justGuard?.Reset();
+            _prevGuardHeld = false;
             _hitTracker.Clear();
 
             if (_facing != null)
@@ -156,6 +174,13 @@ namespace Momotaro.Gameplay.Player
             {
                 float bufferSeconds = _attackCombo != null ? _attackCombo.BufferSeconds : 0.30f;
                 _attackBuffer = new AttackInputBuffer(bufferSeconds);
+            }
+
+            if (_justGuard == null)
+            {
+                _justGuard = _guardData != null
+                    ? new JustGuardState(_guardData.JustGuardWindowSeconds, _guardData.JustGuardReleaseWindowSeconds, _guardData.ReleasePenaltySeconds)
+                    : new JustGuardState();
             }
         }
 
@@ -197,6 +222,7 @@ namespace Momotaro.Gameplay.Player
             bool guarding = active && _input.GuardHeld;
             bool isMoving = active && _input.Move.sqrMagnitude > _moveThreshold * _moveThreshold;
 
+            DriveJustGuard(guarding);
             DriveCombo(active, guarding);
 
             bool attacking = _combo != null && _combo.IsActive;
@@ -220,6 +246,31 @@ namespace Momotaro.Gameplay.Player
             {
                 PollHitbox();
             }
+        }
+
+        /// <summary>
+        /// ガード押下／解除のエッジからジャストガード受付状態を駆動する（Phase2 P2-08）。時間を進めてから押下/解除を反映する。
+        /// ブレイク中や遮断中は <paramref name="guardHeld"/> が false になり、解除エッジとして扱われる。
+        /// </summary>
+        private void DriveJustGuard(bool guardHeld)
+        {
+            if (_justGuard == null)
+            {
+                return;
+            }
+
+            _justGuard.Tick(Time.deltaTime);
+
+            if (guardHeld && !_prevGuardHeld)
+            {
+                _justGuard.Press();
+            }
+            else if (!guardHeld && _prevGuardHeld)
+            {
+                _justGuard.Release();
+            }
+
+            _prevGuardHeld = guardHeld;
         }
 
         private void DriveCombo(bool active, bool cancelRequested)
