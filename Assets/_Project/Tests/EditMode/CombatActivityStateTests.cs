@@ -207,5 +207,76 @@ namespace Momotaro.Tests.EditMode
             // HP は防御で変わる（体幹と独立）ことも確認。
             Assert.AreNotEqual(lowDef.CurrentHp, highDef.CurrentHp, "HP は防御で変わる。");
         }
+
+        // === 状態競合：Stun/Flinch/Defeated 中は攻撃中補正を無効化 ===
+
+        [Test]
+        public void Active_ThenStun_IsNotVulnerable_AndPhaseResetsToNone()
+        {
+            var dummy = MakeDummy(100, 0f);
+            dummy.SetActionPhase(CombatActionPhase.Active);
+            Assert.IsTrue(dummy.IsPoiseVulnerableAction);
+
+            dummy.ReceiveHit(Hit(dummy, 1f, 100f, 0f)); // 体幹100 → スタン
+            Assert.IsTrue(dummy.IsStunned);
+            Assert.IsFalse(dummy.IsPoiseVulnerableAction, "スタン中は攻撃中補正の対象外。");
+            Assert.AreEqual(CombatActionPhase.None, dummy.ActionPhase, "スタン発生で ActionPhase は None へ。");
+        }
+
+        [Test]
+        public void Active_ThenFlinch_IsNotVulnerable_AndPhaseResetsToNone()
+        {
+            var dummy = MakeDummy(100, 0f);
+            dummy.SetActionPhase(CombatActionPhase.Active);
+
+            dummy.ReceiveHit(Hit(dummy, 1f, 0f, 60f)); // ひるみ60 → ひるみ
+            Assert.IsTrue(dummy.IsFlinching);
+            Assert.IsFalse(dummy.IsPoiseVulnerableAction, "ひるみ中は攻撃中補正の対象外。");
+            Assert.AreEqual(CombatActionPhase.None, dummy.ActionPhase, "ひるみ発生で ActionPhase は None へ。");
+        }
+
+        [Test]
+        public void Active_ThenHpZero_IsNotVulnerable()
+        {
+            var dummy = MakeDummy(5, 0f);
+            dummy.SetActionPhase(CombatActionPhase.Active);
+
+            dummy.ReceiveHit(Hit(dummy, 100000f, 0f, 0f)); // HP0（体幹・ひるみは動かさない）
+            Assert.IsTrue(dummy.IsDefeated);
+            Assert.IsFalse(dummy.IsPoiseVulnerableAction, "撃破後は攻撃中補正の対象外。");
+        }
+
+        [Test]
+        public void DebugActionDisplay_MatchesRealState_AfterStunOrFlinch()
+        {
+            var stunned = MakeDummy(100, 0f);
+            stunned.SetActionPhase(CombatActionPhase.Active);
+            stunned.ReceiveHit(Hit(stunned, 1f, 100f, 0f));
+            Assert.IsTrue(stunned.IsStunned);
+            Assert.AreEqual(CombatActionPhase.None, stunned.ActionPhase, "HUD 表示(ActionPhase)がスタン実状態と矛盾しない。");
+
+            var flinched = MakeDummy(100, 0f);
+            flinched.SetActionPhase(CombatActionPhase.Active);
+            flinched.ReceiveHit(Hit(flinched, 1f, 0f, 60f));
+            Assert.IsTrue(flinched.IsFlinching);
+            Assert.AreEqual(CombatActionPhase.None, flinched.ActionPhase, "HUD 表示(ActionPhase)がひるみ実状態と矛盾しない。");
+        }
+
+        [Test]
+        public void ResetState_ThenReassignStartupOrActive_BecomesVulnerableAgain()
+        {
+            var dummy = MakeDummy(100, 0f);
+            dummy.SetActionPhase(CombatActionPhase.Active);
+            dummy.ReceiveHit(Hit(dummy, 1f, 100f, 0f)); // スタン → None
+            dummy.ResetState();                          // HP/体幹/ひるみ/フェーズを初期化
+            Assert.IsFalse(dummy.IsStunned);
+            Assert.IsFalse(dummy.IsFlinching);
+            Assert.AreEqual(CombatActionPhase.None, dummy.ActionPhase);
+
+            dummy.SetActionPhase(CombatActionPhase.Startup);
+            Assert.IsTrue(dummy.IsPoiseVulnerableAction, "Reset 後は Startup を再設定でき補正対象になる。");
+            dummy.SetActionPhase(CombatActionPhase.Active);
+            Assert.IsTrue(dummy.IsPoiseVulnerableAction, "Reset 後は Active も再設定できる。");
+        }
     }
 }

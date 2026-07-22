@@ -105,7 +105,12 @@ namespace Momotaro.Gameplay.Combat
         }
 
         /// <inheritdoc />
-        public bool IsPoiseVulnerableAction => _debugActionPhase.IsPoiseVulnerable();
+        /// <remarks>
+        /// スタン・ひるみ・撃破中は攻撃が中断されるため、たとえ <see cref="_debugActionPhase"/> が Startup/Active でも
+        /// 攻撃中補正の対象にしない（状態競合の抑止）。通常状態の Startup/Active のみ true。
+        /// </remarks>
+        public bool IsPoiseVulnerableAction =>
+            !IsStunned && !IsFlinching && !IsDefeated && _debugActionPhase.IsPoiseVulnerable();
 
         private void Awake()
         {
@@ -173,6 +178,9 @@ namespace Momotaro.Gameplay.Combat
             float defense = _data != null ? _data.Defense : 0f;
             float targetPoiseMult = _data != null ? _data.PoiseDamageMultiplier : 1f;
 
+            bool wasStunned = _poise.IsStunned;
+            bool wasFlinching = _flinch.IsFlinching;
+
             // HP：スタン中は ×1.25（PoiseState.StunHpMultiplier）。防御適用 → 減算 → 実減少量。
             int appliedHp = DamageApplication.ApplyHpDamage(_hp, hit.Damage.Hp, defense, _poise.StunHpMultiplier);
 
@@ -182,6 +190,13 @@ namespace Momotaro.Gameplay.Combat
 
             // ひるみ：状況補正なしの値を蓄積。実際に蓄積へ加わった量。
             float appliedFlinch = _flinch.AddFlinch(hit.Damage.Flinch);
+
+            // スタン／ひるみが新規発生したら攻撃行動は中断される。検証表示と内部状態を合わせるため
+            // ActionPhase を None へ戻す（補正判定は上の IsPoiseVulnerableAction でも別途 false になる）。
+            if ((!wasStunned && _poise.IsStunned) || (!wasFlinching && _flinch.IsFlinching))
+            {
+                _debugActionPhase = CombatActionPhase.None;
+            }
 
             var applied = new HitDamage(appliedHp, appliedPoise, appliedFlinch);
             Results.Publish(HitResult.Damage(hit.HitId, hit.Attacker, this, applied));
