@@ -61,6 +61,9 @@ namespace Momotaro.Gameplay.Combat
         /// <summary>スタン終了後の体幹軽減期間中か。</summary>
         public bool InPostStunReduction => _postStunReductionRemaining > 0f;
 
+        /// <summary>回復開始までの残り待機秒（最後の体幹ダメージ後。JG は 4 秒、通常は 3 秒から減算）。</summary>
+        public float RecoveryDelayRemaining => _recoveryDelayRemaining;
+
         /// <summary>スタン中の被 HP ダメージ倍率（それ以外は 1.0）。</summary>
         public float StunHpMultiplier => IsStunned ? _stunHpMultiplier : 1f;
 

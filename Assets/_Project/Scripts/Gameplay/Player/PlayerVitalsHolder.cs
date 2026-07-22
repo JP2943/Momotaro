@@ -166,7 +166,7 @@ namespace Momotaro.Gameplay.Player
             var reflect = new HitDamage(0f, hit.JustGuardPoiseDamage, 0f);
             var reverse = new HitInfo(
                 null, attackerDamageable, -hit.AttackDirection, hit.HitPoint, reflect,
-                0f, 0f, guardable: false, justGuardable: false, hit.HitId);
+                0f, 0f, guardable: false, justGuardable: false, isJustGuardCounter: true, hit.HitId);
             attackerDamageable.ReceiveHit(reverse);
         }
 

@@ -39,6 +39,12 @@ namespace Momotaro.Gameplay.Combat
         /// <summary>ジャストガード成立時に攻撃者の体幹へ反射する固定ダメージ（Phase2 P2-08）。</summary>
         public float JustGuardPoiseDamage { get; }
 
+        /// <summary>
+        /// この命中が「ジャストガードによる反射（攻撃者の体幹への反撃）」か（Phase2 P2-08）。true の場合、受け手側は
+        /// 体幹回復待機を JG 用（通常 3 秒→4 秒）に延長する。通常の命中は false。
+        /// </summary>
+        public bool IsJustGuardCounter { get; }
+
         /// <summary>命中の同一性（多重ヒット防止のキー）。</summary>
         public HitId HitId { get; }
 
@@ -71,7 +77,7 @@ namespace Momotaro.Gameplay.Combat
         {
         }
 
-        /// <summary>すべての要素（ガードスタミナ・JG 反射含む）を指定して生成する。</summary>
+        /// <summary>ガードスタミナ・JG 反射値を指定し、JG 反射フラグ false で生成する。</summary>
         public HitInfo(
             ICombatActor attacker,
             IDamageable target,
@@ -83,6 +89,24 @@ namespace Momotaro.Gameplay.Combat
             bool guardable,
             bool justGuardable,
             HitId hitId)
+            : this(attacker, target, attackDirection, hitPoint, damage, guardStaminaDamage, justGuardPoiseDamage,
+                   guardable, justGuardable, false, hitId)
+        {
+        }
+
+        /// <summary>すべての要素（ガードスタミナ・JG 反射・JG 反射フラグ含む）を指定して生成する。</summary>
+        public HitInfo(
+            ICombatActor attacker,
+            IDamageable target,
+            Vector3 attackDirection,
+            Vector3 hitPoint,
+            HitDamage damage,
+            float guardStaminaDamage,
+            float justGuardPoiseDamage,
+            bool guardable,
+            bool justGuardable,
+            bool isJustGuardCounter,
+            HitId hitId)
         {
             Attacker = attacker;
             Target = target;
@@ -93,6 +117,7 @@ namespace Momotaro.Gameplay.Combat
             JustGuardPoiseDamage = justGuardPoiseDamage;
             Guardable = guardable;
             JustGuardable = justGuardable;
+            IsJustGuardCounter = isJustGuardCounter;
             HitId = hitId;
         }
     }

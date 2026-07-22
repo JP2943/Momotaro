@@ -222,10 +222,16 @@ namespace Momotaro.Gameplay.Player
             bool guarding = active && _input.GuardHeld;
             bool isMoving = active && _input.Move.sqrMagnitude > _moveThreshold * _moveThreshold;
 
-            DriveJustGuard(guarding);
             DriveCombo(active, guarding);
 
             bool attacking = _combo != null && _combo.IsActive;
+
+            // JG 受付は「ガードが実際に有効化できる」ときだけ開く（仕様書 §3.3 / 攻撃キャンセル規則）。
+            // すなわち GameMode 有効・非ブレイク（active に内包）・ガード押下中で、攻撃していない
+            // （非攻撃、またはキャンセル窓に到達して DriveCombo が攻撃を中断した直後）に限る。
+            bool guardEffective = guarding && !attacking;
+            DriveJustGuard(guardEffective);
+
             _machine.Tick(active, isMoving, guarding, attacking, broken);
 
             // 段開始フレーム：向き再確定・新 Swing Token・段番号更新（踏み込みは ApplyAttackMotion）。

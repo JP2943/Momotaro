@@ -185,8 +185,9 @@ namespace Momotaro.Gameplay.Combat
             int appliedHp = DamageApplication.ApplyHpDamage(_hp, hit.Damage.Hp, defense, _poise.StunHpMultiplier);
 
             // 体幹：命中の Poise（攻撃側で状況補正済み）× 対象の被体幹倍率。実減少量を求める。
+            // JG 反射（IsJustGuardCounter）は回復開始待機を延長（通常 3 秒→JG 4 秒。仕様書 §3.11）。
             float poiseDamage = hit.Damage.Poise * targetPoiseMult;
-            float appliedPoise = _poise.ApplyPoiseDamage(poiseDamage);
+            float appliedPoise = _poise.ApplyPoiseDamage(poiseDamage, isJustGuard: hit.IsJustGuardCounter);
 
             // ひるみ：状況補正なしの値を蓄積。実際に蓄積へ加わった量。
             float appliedFlinch = _flinch.AddFlinch(hit.Damage.Flinch);

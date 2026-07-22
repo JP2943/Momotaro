@@ -31,8 +31,8 @@ namespace Momotaro.Data.Combat
         [SerializeField] private float _poiseDamage = 10f;
         [SerializeField] private float _flinchPower;
         [SerializeField] private float _guardStaminaCost = 10f;
-        [Tooltip("ジャストガード成立時に攻撃者の体幹へ反射する固定ダメージ（大きめ。仕様書 3.3）。")]
-        [SerializeField] private float _justGuardPoiseDamage = 50f;
+        [Tooltip("ジャストガード成立時に攻撃者の体幹へ反射する固定ダメージ。仕様書 3.3（軽15/通常20/強30/ボス大技40）。")]
+        [SerializeField] private float _justGuardPoiseDamage = 20f;
 
         [Header("Defense / Telegraph")]
         [SerializeField] private bool _guardable = true;
