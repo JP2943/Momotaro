@@ -96,6 +96,12 @@ namespace Momotaro.Tests.EditMode
                 0f, true, true, HitId.Single(2));
         }
 
+        private static HitInfo FrontHit(IDamageable t, float preDefenseHp, float guardStamina, int id)
+        {
+            return new HitInfo(null, t, -Vector3.forward, Vector3.zero, new HitDamage(preDefenseHp, 0f, 0f),
+                guardStamina, true, true, HitId.Single(id));
+        }
+
         [Test]
         public void GuardConsumingToZero_TriggersGuardBreak()
         {
@@ -117,6 +123,23 @@ namespace Momotaro.Tests.EditMode
             holder.ReceiveHit(BackHit(holder, 10f)); // 貫通：通常8 → ×1.25 = 10
             Assert.AreEqual(HitResultKind.Damage, rec.Received[1].Kind);
             Assert.AreEqual(90, holder.Vitals.Health.Current, "ブレイク中は被HP×1.25（8→10）。");
+        }
+
+        [Test]
+        public void SameFrame_SecondHitAfterBreak_IsNotGuarded_AndPierces()
+        {
+            // 同一フレーム連続 Hit：1発目でブレイク（PlayerStateController 更新前）でも、2発目はガード不可で貫通する。
+            var (holder, _, rec) = MakePlayer(maxHp: 100, defense: 20f, maxStamina: 20);
+
+            holder.ReceiveHit(FrontHit(holder, 10f, 20f, 1)); // 前方ガード → 防御成功、スタミナ0、ブレイク
+            Assert.AreEqual(HitResultKind.Guard, rec.Received[0].Kind, "ブレイクを起こした一撃は防御成功。");
+            Assert.IsTrue(holder.IsGuardBroken);
+            Assert.AreEqual(0, holder.Vitals.Stamina.Current);
+
+            holder.ReceiveHit(FrontHit(holder, 10f, 20f, 2)); // 同一F・前方でもブレイク中は貫通
+            Assert.AreEqual(HitResultKind.Damage, rec.Received[1].Kind, "同一フレームの次 Hit はガード失敗。");
+            Assert.AreEqual(90, holder.Vitals.Health.Current, "貫通し、ブレイク中×1.25（8→10）で 90。");
+            Assert.AreEqual(0, holder.Vitals.Stamina.Current, "追加のスタミナ消費はない（ブレイク中は消費0）。");
         }
 
         [Test]

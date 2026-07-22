@@ -168,13 +168,15 @@ namespace Momotaro.Gameplay.Player
                 _input = PlayerInputProvider.Current;
             }
 
-            bool active = _input != null && _input.Active;
+            // 状態優先度：ガードブレイク（行動不能）中は入力を無効化し、ガード・攻撃・移動・Buffer を受け付けない。
+            // 状態機械へは guardBroken を最優先で渡し、独立状態 GuardBreak を表現する（仕様書 §3.2 / P2-07）。
+            bool broken = IsGuardBroken;
+            bool active = _input != null && _input.Active && !broken;
 
-            // 状態優先度：ガードブレイク（行動不能）中は入力を無効化し、ガード・攻撃・移動を受け付けない
-            // （仕様書 §3.2 / P2-07。復帰は StaminaState 側の時間経過で行う）。
-            if (IsGuardBroken)
+            // ブレイク中に発生した攻撃押下は破棄し、復帰後の Buffer へ残さない。
+            if (broken && _input != null)
             {
-                active = false;
+                _input.ConsumeAttackPressed();
             }
 
             // 先行入力の取り込みと時間経過。遮断中は預かった入力を破棄する。
@@ -198,7 +200,7 @@ namespace Momotaro.Gameplay.Player
             DriveCombo(active, guarding);
 
             bool attacking = _combo != null && _combo.IsActive;
-            _machine.Tick(active, isMoving, guarding, attacking);
+            _machine.Tick(active, isMoving, guarding, attacking, broken);
 
             // 段開始フレーム：向き再確定・新 Swing Token・段番号更新（踏み込みは ApplyAttackMotion）。
             if (_combo != null && _combo.StageJustStarted)

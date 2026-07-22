@@ -21,5 +21,11 @@ namespace Momotaro.Gameplay.Player
 
         /// <summary>攻撃中（開始時に向き固定。Phase2 P2-02）。</summary>
         Attack = 4,
+
+        /// <summary>
+        /// ガードブレイク（Phase2 P2-07）。スタミナ 0 による 1.5 秒の強制行動不能。攻撃・ガード・移動・入力 Buffer を無効化する
+        /// 独立状態で、優先度は Attack/Guard/Move/Idle より高い。完成 Animation の接続は対象外（状態のみ）。
+        /// </summary>
+        GuardBreak = 5,
     }
 }

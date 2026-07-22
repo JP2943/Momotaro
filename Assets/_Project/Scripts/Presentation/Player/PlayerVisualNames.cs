@@ -35,6 +35,10 @@ namespace Momotaro.Presentation.Player
                     int stage = attackStage < 1 ? 1 : (attackStage > 3 ? 3 : attackStage);
                     statePart = "Attack" + stage;
                     break;
+                case PlayerState.GuardBreak:
+                    // 仮対応（Phase2 P2-07）。完成 Animation の接続・再生制御は対象外。名前解決のみ用意する。
+                    statePart = "GuardBreak";
+                    break;
                 default:
                     statePart = "Idle";
                     break;

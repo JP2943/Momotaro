@@ -6,7 +6,8 @@ namespace Momotaro.Gameplay.Player
     /// Player の状態機械（Phase1 P1-06 / Phase2 P2-02・P2-03B）。入力の有無・移動量・ガード・攻撃中フラグから
     /// 状態を決定し、同一状態への再入は抑制する。純粋クラスでありテスト可能。
     /// 攻撃の時間・段・Hitbox は <see cref="Momotaro.Gameplay.Combat.AttackComboMachine"/>（駆動側）が担い、
-    /// ここへは「攻撃中か」を bool で受け取る（優先度: 攻撃 ＞ ガード ＞ 移動/Idle）。
+    /// ここへは「攻撃中か」を bool で受け取る。
+    /// 優先度: ガードブレイク ＞ 攻撃 ＞ ガード ＞ 移動/Idle（ガードブレイクは強制行動不能で最優先。Phase2 P2-07）。
     /// </summary>
     public sealed class PlayerStateMachine
     {
@@ -25,16 +26,30 @@ namespace Momotaro.Gameplay.Player
         }
 
         /// <summary>
-        /// 入力状況と攻撃中フラグから状態を更新する。攻撃はガード・移動より優先する。無効時は Idle に落とす。
+        /// 入力状況と攻撃中フラグから状態を更新する（ガードブレイクなしのオーバーロード）。
+        /// </summary>
+        public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking)
+        {
+            Tick(enabled, isMoving, guarding, attacking, guardBroken: false);
+        }
+
+        /// <summary>
+        /// 入力状況・攻撃中フラグ・ガードブレイクから状態を更新する。ガードブレイクは強制行動不能で最優先（攻撃・ガード・移動より上）。
+        /// 次点は攻撃、次いでガード、移動/Idle。無効時（Disable 等）はガードブレイクでなければ Idle に落とす。
         /// </summary>
         /// <param name="enabled">操作が有効か（非 Gameplay/Disable 時は false）。</param>
         /// <param name="isMoving">移動入力があるか。</param>
         /// <param name="guarding">ガード保持中か。</param>
         /// <param name="attacking">攻撃中か（コンボ状態機械が判定）。</param>
-        public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking)
+        /// <param name="guardBroken">ガードブレイク（強制行動不能）中か。</param>
+        public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken)
         {
             PlayerState next;
-            if (!enabled)
+            if (guardBroken)
+            {
+                next = PlayerState.GuardBreak;
+            }
+            else if (!enabled)
             {
                 next = PlayerState.Idle;
             }

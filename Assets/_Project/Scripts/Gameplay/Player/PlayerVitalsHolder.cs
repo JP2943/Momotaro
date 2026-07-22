@@ -109,6 +109,25 @@ namespace Momotaro.Gameplay.Player
             }
         }
 
+        /// <summary>
+        /// スタミナ消費の共通入口（Phase2 P2-07）。ガード・将来の Step 等がここを通すことで、必ず同じ正本
+        /// （<see cref="StaminaState"/>）を操作し、表示用 Vital も同期する。<see cref="PlayerVitals.Stamina"/> を
+        /// 直接 <c>Change</c> すると次の Tick で StaminaState 値に上書きされるため、消費は必ず本 API を用いる。
+        /// ブレイク中は 0（行動不能）。実際に減った量を返す。
+        /// </summary>
+        public int ConsumeStamina(float amount)
+        {
+            EnsureVitals();
+            if (_stamina == null)
+            {
+                return 0;
+            }
+
+            int consumed = (int)(_stamina.Consume(amount) + 0.5f);
+            SyncStaminaVital();
+            return consumed;
+        }
+
         private IGuardState ResolveGuardState()
         {
             if (!_guardStateResolved)
@@ -130,15 +149,15 @@ namespace Momotaro.Gameplay.Player
             }
 
             // 通常ガード解決：ガード中かつ Guardable かつ前方 180°以内なら防御成功。
+            // ブレイク中（行動不能）は同一フレームの後続 Hit でもガード不可（PlayerStateController 更新前でも安全側）。
             IGuardState guard = ResolveGuardState();
-            bool isGuarding = guard != null && guard.IsGuarding;
+            bool isGuarding = !IsGuardBroken && guard != null && guard.IsGuarding;
             bool withinArc = guard != null && GuardGeometry.IsWithinGuardArc(guard.GuardForward, hit.AttackDirection);
 
             if (GuardResolver.Resolve(isGuarding, hit.Guardable, withinArc) == GuardOutcome.Guarded)
             {
                 // 防御成功：HP ダメージ 0。固定スタミナダメージのみ消費（残量超過でも 0 で止まり、0 到達でブレイク）。
-                _stamina.Consume(hit.GuardStaminaDamage);
-                SyncStaminaVital();
+                ConsumeStamina(hit.GuardStaminaDamage);
                 Results.Publish(HitResult.Guard(hit.HitId, hit.Attacker, this, HitDamage.None));
                 return;
             }
