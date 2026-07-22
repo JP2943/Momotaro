@@ -23,3 +23,9 @@ MonoBehaviour:
   _attackPower: 100
   _defense: 20
   _maxStamina: 100
+  _staminaRegenPerSecond: 25
+  _staminaRegenDelaySeconds: 1
+  _staminaZeroRegenDelaySeconds: 1.5
+  _guardBreakSeconds: 1.5
+  _guardBreakRestoreRatio: 0.25
+  _guardBreakHpMultiplier: 1.25

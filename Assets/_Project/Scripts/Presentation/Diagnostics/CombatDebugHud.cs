@@ -116,6 +116,10 @@ namespace Momotaro.Presentation.Diagnostics
                 {
                     _sb.Append("  HP ").Append(_playerVitals.Vitals.Health.Current).Append('/').Append(_playerVitals.Vitals.Health.Max);
                     _sb.Append("  Stamina ").Append(_playerVitals.Vitals.Stamina.Current).Append('/').Append(_playerVitals.Vitals.Stamina.Max);
+                    if (_playerVitals.IsGuardBroken)
+                    {
+                        _sb.Append("  [BREAK]");
+                    }
                 }
 
                 if (!string.IsNullOrEmpty(_lastPlayerResult))

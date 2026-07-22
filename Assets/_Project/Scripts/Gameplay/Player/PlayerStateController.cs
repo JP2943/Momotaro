@@ -58,6 +58,8 @@ namespace Momotaro.Gameplay.Player
         private AttackInputBuffer _attackBuffer;
         private IPlayerInput _input;
         private HitId _currentSwing;
+        private PlayerVitalsHolder _vitals;
+        private bool _vitalsResolved;
 
         /// <summary>現在の Gameplay 状態（Visual が参照する）。</summary>
         public PlayerState Current => _machine.Current;
@@ -87,6 +89,21 @@ namespace Momotaro.Gameplay.Player
         /// <inheritdoc />
         /// <remarks>ガード中は Facing がロックされるため、押下時に固定した前方をそのまま返す。</remarks>
         public Vector3 GuardForward => Forward;
+
+        /// <summary>ガードブレイク（行動不能）中か。Vitals（<see cref="PlayerVitalsHolder"/>）が無ければ常に false。</summary>
+        private bool IsGuardBroken
+        {
+            get
+            {
+                if (!_vitalsResolved)
+                {
+                    _vitals = GetComponentInParent<PlayerVitalsHolder>();
+                    _vitalsResolved = true;
+                }
+
+                return _vitals != null && _vitals.IsGuardBroken;
+            }
+        }
 
         private void Awake()
         {
@@ -152,6 +169,13 @@ namespace Momotaro.Gameplay.Player
             }
 
             bool active = _input != null && _input.Active;
+
+            // 状態優先度：ガードブレイク（行動不能）中は入力を無効化し、ガード・攻撃・移動を受け付けない
+            // （仕様書 §3.2 / P2-07。復帰は StaminaState 側の時間経過で行う）。
+            if (IsGuardBroken)
+            {
+                active = false;
+            }
 
             // 先行入力の取り込みと時間経過。遮断中は預かった入力を破棄する。
             if (active)
