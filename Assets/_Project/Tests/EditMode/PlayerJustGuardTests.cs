@@ -267,22 +267,20 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void JustGuard_AtZeroStamina_Succeeds_NoConsume_NoBreak_ReflectsNormally()
+        public void JustGuard_WithLowStamina_NoConsume_NoBreak_ReflectsNormally()
         {
-            var (holder, _, rec) = MakePlayer(maxStamina: 100, canJustGuard: true);
+            // 残りスタミナ 1（通常 Guard の固定消費 10 を下回る現実的なケース）。通常ガードなら 0 到達でブレイクするが、
+            // JG は消費しないためスタミナ 1 のまま・ブレイクせず・HP0・体幹反射は通常どおり。公開経路のみで検証する。
+            var (holder, _, rec) = MakePlayer(maxStamina: 1, canJustGuard: true);
             var attacker = MakeAttacker(poiseMax: 100);
 
-            // スタミナを実際に 0 へ（ブレイクを伴わない形で。JG がスタミナ非依存であることの検証）。
-            var stamina = (StaminaState)GetField(holder, "_stamina");
-            SetField(stamina, "_current", 0f);
-            Assert.IsFalse(holder.IsGuardBroken, "前提：0 だがブレイクしていない状態。");
+            holder.ReceiveHit(JgHit(attacker, holder, -Vector3.forward)); // guardStamina 10 / jgPoise 20
 
-            holder.ReceiveHit(JgHit(attacker, holder, -Vector3.forward));
-
-            Assert.AreEqual(HitResultKind.JustGuard, rec.Received[0].Kind, "スタミナ 0 でも JG 成立。");
-            Assert.AreEqual(0, holder.Vitals.Stamina.Current, "消費 0（0 のまま）。");
+            Assert.AreEqual(HitResultKind.JustGuard, rec.Received[0].Kind, "残量不足でも JG は成立。");
+            Assert.AreEqual(1, holder.Vitals.Stamina.Current, "JG はスタミナを消費しない（1 のまま）。");
             Assert.IsFalse(holder.IsGuardBroken, "JG はブレイクへ移行しない。");
-            Assert.AreEqual(80f, attacker.CurrentPoise, 1e-3f, "反射は通常どおり発生（100→80）。");
+            Assert.AreEqual(0f, rec.Received[0].AppliedDamage.Hp, "HP ダメージ 0。");
+            Assert.AreEqual(80f, attacker.CurrentPoise, 1e-3f, "攻撃者へ体幹 20 反射（100→80）。");
         }
     }
 }
