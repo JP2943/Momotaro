@@ -363,8 +363,16 @@ namespace Momotaro.Gameplay.Player
                 float hpBackMultiplier = isBackHit ? HpDamageCalculator.BackMultiplier : 1f;
                 float hpContribution = HpDamageCalculator.AttackContribution(attackPower, d.HpMultiplier, 1f, hpBackMultiplier);
 
-                // 体幹は固定系統。状況補正（背後×1.5。攻撃中×1.5 は敵AI実装後。乗算せず高い方）を攻撃側で適用。
-                float poiseSituational = PoiseDamageCalculator.SituationalMultiplier(isBackHit, targetActing: false);
+                // 対象が「攻撃の予備/判定中」か（体幹の攻撃中補正対象）を共通契約から取得。未実装ならフォールバック false。
+                bool targetActing = false;
+                var activity = col.GetComponentInParent<ICombatActivityState>();
+                if (activity != null)
+                {
+                    targetActing = activity.IsPoiseVulnerableAction;
+                }
+
+                // 体幹は固定系統。状況補正（背後×1.5・攻撃中×1.5。乗算せず高い方だけ）を攻撃側で適用。
+                float poiseSituational = PoiseDamageCalculator.SituationalMultiplier(isBackHit, targetActing);
                 float poiseContribution = PoiseDamageCalculator.Compute(d.PoiseDamage, poiseSituational, 1f, 1f);
 
                 // ひるませ値は状況補正なし（背後・攻撃中の補正対象外）。

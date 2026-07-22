@@ -63,31 +63,47 @@ namespace Momotaro.Gameplay.Combat
             return amount;
         }
 
-        /// <summary>時間を進める。ひるみ・免疫・蓄積保持を更新する。</summary>
+        /// <summary>
+        /// 時間を進める。ひるみ・免疫・蓄積保持を更新する。ひるみ終了を跨いだ余剰は免疫へ、免疫終了を跨いだ余剰は
+        /// 後続処理へ流し、大きな deltaTime でも小分け Tick と概ね同じ結果になるようにする（P2-05 受入修正）。
+        /// </summary>
         public void Tick(float deltaTime)
         {
-            if (IsFlinching)
+            if (deltaTime <= 0f)
             {
-                _flinchRemaining -= deltaTime;
-                if (_flinchRemaining <= 0f)
-                {
-                    _flinchRemaining = 0f;
-                    _immunityRemaining = _immunitySeconds;
-                }
-
                 return;
             }
 
+            // ひるみ：終了を跨いだ余剰は免疫の消化へ回す。
+            if (IsFlinching)
+            {
+                if (deltaTime < _flinchRemaining)
+                {
+                    _flinchRemaining -= deltaTime;
+                    return;
+                }
+
+                deltaTime -= _flinchRemaining; // 余剰
+                _flinchRemaining = 0f;
+                _immunityRemaining = _immunitySeconds;
+            }
+
+            // 免疫：終了を跨いだ余剰は後続（保持）処理へ回す。
             if (_immunityRemaining > 0f)
             {
-                _immunityRemaining -= deltaTime;
-                if (_immunityRemaining < 0f)
+                if (deltaTime < _immunityRemaining)
                 {
+                    _immunityRemaining -= deltaTime;
+                    deltaTime = 0f;
+                }
+                else
+                {
+                    deltaTime -= _immunityRemaining;
                     _immunityRemaining = 0f;
                 }
             }
 
-            if (_holdRemaining > 0f)
+            if (deltaTime > 0f && _holdRemaining > 0f)
             {
                 _holdRemaining -= deltaTime;
                 if (_holdRemaining <= 0f)

@@ -13,10 +13,13 @@ namespace Momotaro.Gameplay.Combat
     /// で通知（AppliedDamage は実際に適用された HP／体幹／ひるみ量）。死亡処理・敵 AI・攻撃は対象外。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class CombatDummy : MonoBehaviour, ICombatActor, IDamageable
+    public sealed class CombatDummy : MonoBehaviour, ICombatActor, IDamageable, ICombatActivityState
     {
         [Tooltip("HP・防御・体幹・ひるみ耐性などの基礎データ（EnemyData）。標準ダミーは HP100/防御20/体幹100/耐性60。")]
         [SerializeField] private EnemyData _data;
+
+        [Tooltip("検証用の攻撃行動フェーズ。Startup/Active のとき体幹の攻撃中補正(×1.5)の対象になる。既定 None。")]
+        [SerializeField] private CombatActionPhase _debugActionPhase = CombatActionPhase.None;
 
         private Vital _hp;
         private PoiseState _poise;
@@ -88,6 +91,22 @@ namespace Momotaro.Gameplay.Combat
         /// <inheritdoc />
         public Vector3 Forward => transform.forward;
 
+        /// <summary>検証用の攻撃行動フェーズ（切替可能）。</summary>
+        public CombatActionPhase ActionPhase
+        {
+            get => _debugActionPhase;
+            set => _debugActionPhase = value;
+        }
+
+        /// <summary>検証用の攻撃行動フェーズを設定する。</summary>
+        public void SetActionPhase(CombatActionPhase phase)
+        {
+            _debugActionPhase = phase;
+        }
+
+        /// <inheritdoc />
+        public bool IsPoiseVulnerableAction => _debugActionPhase.IsPoiseVulnerable();
+
         private void Awake()
         {
             EnsureRuntime();
@@ -136,6 +155,7 @@ namespace Momotaro.Gameplay.Combat
             _hp.SetCurrent(_hp.Max);
             _poise.Reset();
             _flinch.Reset();
+            _debugActionPhase = CombatActionPhase.None;
         }
 
         private void Update()

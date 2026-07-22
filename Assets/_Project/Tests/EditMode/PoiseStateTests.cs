@@ -59,26 +59,28 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void Recovery_StartsAfterDelay_At8PercentPerSecond()
+        public void Recovery_ExcessAfterDelay_RecoversInSameTick()
         {
             var p = Make();
             p.ApplyPoiseDamage(20f); // 80
-            p.Tick(3.5f); // 遅延超過（この Tick では回復しない）
-            p.Tick(1.0f); // 回復開始：8%/s × 100 × 1s = 8
-            Assert.AreEqual(88f, p.Current, 0.5f, "遅延後 毎秒 8 回復。");
+            // 遅延3秒を消化した残り0.5秒が回復へ：8%/s × 100 × 0.5s = 4 → 84（受入修正の例）。
+            p.Tick(3.5f);
+            Assert.AreEqual(84f, p.Current, 0.1f, "遅延超過分が同じ Tick で回復へ使われる。");
         }
 
         [Test]
         public void JustGuard_DelaysRecoveryLonger()
         {
-            var p = Make();
-            p.ApplyPoiseDamage(20f, isJustGuard: true); // 80、回復開始 4s
-            p.Tick(3.5f);
-            p.Tick(1.0f); // 累計 4.5 だが JG 遅延で未回復
-            Assert.AreEqual(80f, p.Current, 1e-4f, "JG 後は回復開始が遅い。");
+            var jg = Make();
+            jg.ApplyPoiseDamage(20f, isJustGuard: true); // 80、JG 回復開始 4s
+            jg.Tick(3.5f);
+            Assert.AreEqual(80f, jg.Current, 1e-4f, "JG 遅延(4s)未満では回復しない。");
 
-            p.Tick(1.0f); // ここで回復開始
-            Assert.Greater(p.Current, 80f);
+            // 通常遅延(3s)なら同じ 3.5s で余剰0.5s回復して 84。JG は回復が遅い。
+            var normal = Make();
+            normal.ApplyPoiseDamage(20f);
+            normal.Tick(3.5f);
+            Assert.Greater(normal.Current, jg.Current, "JG は通常より回復開始が遅い。");
         }
     }
 }

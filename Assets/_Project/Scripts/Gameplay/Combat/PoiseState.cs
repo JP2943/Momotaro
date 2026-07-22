@@ -95,20 +95,31 @@ namespace Momotaro.Gameplay.Combat
             return before - _current;
         }
 
-        /// <summary>時間を進める。スタン・回復・軽減期間を更新する。</summary>
+        /// <summary>
+        /// 時間を進める。スタン・回復・軽減期間を更新する。状態境界を跨いだ余剰 deltaTime は同じ Tick 内で後続へ流し、
+        /// 大きな deltaTime でも小分け Tick と概ね同じ結果になるようにする（P2-05 受入修正）。
+        /// </summary>
         public void Tick(float deltaTime)
         {
+            if (deltaTime <= 0f)
+            {
+                return;
+            }
+
+            // スタン：終了を跨いだ余剰は軽減期間の消化へ回す。
             if (IsStunned)
             {
-                _stunRemaining -= deltaTime;
-                if (_stunRemaining <= 0f)
+                if (deltaTime < _stunRemaining)
                 {
-                    _stunRemaining = 0f;
-                    _current = _max; // スタン終了時に全回復
-                    _postStunReductionRemaining = _postStunReductionSeconds;
+                    _stunRemaining -= deltaTime;
+                    return; // スタン中は回復しない
                 }
 
-                return; // スタン中は回復しない
+                deltaTime -= _stunRemaining; // 余剰
+                _stunRemaining = 0f;
+                _current = _max; // スタン終了時に全回復
+                _postStunReductionRemaining = _postStunReductionSeconds;
+                // 満タンなのでこの後の回復処理は発生しない。余剰は軽減期間の消化に使う。
             }
 
             if (_postStunReductionRemaining > 0f)
@@ -120,15 +131,18 @@ namespace Momotaro.Gameplay.Combat
                 }
             }
 
+            // 回復：遅延を跨いだ余剰分だけ同じ Tick で回復する。
             if (_current < _max)
             {
-                if (_recoveryDelayRemaining > 0f)
+                if (deltaTime < _recoveryDelayRemaining)
                 {
                     _recoveryDelayRemaining -= deltaTime;
                 }
                 else
                 {
-                    _current += _recoveryRatioPerSecond * _max * deltaTime;
+                    float recoverSeconds = deltaTime - _recoveryDelayRemaining; // 遅延超過分
+                    _recoveryDelayRemaining = 0f;
+                    _current += _recoveryRatioPerSecond * _max * recoverSeconds;
                     if (_current > _max)
                     {
                         _current = _max;

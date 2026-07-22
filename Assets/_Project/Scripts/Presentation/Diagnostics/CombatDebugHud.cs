@@ -104,6 +104,7 @@ namespace Momotaro.Presentation.Diagnostics
 
                 _sb.Append(d.name).Append(": HP ").Append(d.CurrentHp).Append('/').Append(d.MaxHp);
                 _sb.Append("  Poise ").Append(d.CurrentPoise.ToString("0")).Append('/').Append(d.MaxPoise.ToString("0"));
+                _sb.Append("  Action: ").Append(d.ActionPhase);
                 if (d.IsStunned)
                 {
                     _sb.Append("  [STUN]");
