@@ -13,7 +13,9 @@ namespace Momotaro.Gameplay.Player
     /// （<see cref="HitResultKind.Damage"/>）として通知する。攻撃者としての同定（ICombatActor）は
     /// <see cref="PlayerStateController"/> が持ち、ここでは重複保持しない。
     ///
-    /// P2-04 では HP のみ。死亡処理・体幹・ひるみ・Stun・Guard/JG/Evade は実装しない。
+    /// P2-06：通常ガードの解決を追加する。被弾側のガード状態は共通契約 <see cref="IGuardState"/> から取得し、
+    /// ガード中かつ Guardable かつ前方 180°以内なら防御成功（HP ダメージ 0・固定スタミナ消費）、背後・ガード不能・
+    /// 非ガード中は貫通して従来どおり HP へ適用する。JG・ガードブレイク（行動不能化）は本 Task の対象外。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class PlayerVitalsHolder : MonoBehaviour, IDamageable
@@ -21,6 +23,8 @@ namespace Momotaro.Gameplay.Player
         [SerializeField] private PlayerData _data;
 
         private PlayerVitals _vitals;
+        private IGuardState _guardState;
+        private bool _guardStateResolved;
 
         /// <summary>生成された Runtime Vitals。data 未設定時は null。</summary>
         public PlayerVitals Vitals
@@ -51,6 +55,17 @@ namespace Momotaro.Gameplay.Player
             }
         }
 
+        private IGuardState ResolveGuardState()
+        {
+            if (!_guardStateResolved)
+            {
+                _guardState = GetComponentInParent<IGuardState>();
+                _guardStateResolved = true;
+            }
+
+            return _guardState;
+        }
+
         /// <inheritdoc />
         public void ReceiveHit(in HitInfo hit)
         {
@@ -60,12 +75,25 @@ namespace Momotaro.Gameplay.Player
                 return;
             }
 
+            // 通常ガード解決：ガード中かつ Guardable かつ前方 180°以内なら防御成功。
+            IGuardState guard = ResolveGuardState();
+            bool isGuarding = guard != null && guard.IsGuarding;
+            bool withinArc = guard != null && GuardGeometry.IsWithinGuardArc(guard.GuardForward, hit.AttackDirection);
+
+            if (GuardResolver.Resolve(isGuarding, hit.Guardable, withinArc) == GuardOutcome.Guarded)
+            {
+                // 防御成功：HP ダメージ 0。固定スタミナダメージのみ消費（残量超過でも 0 で止まる）。
+                GuardResolver.ApplyGuardStaminaDamage(_vitals.Stamina, hit.GuardStaminaDamage);
+                Results.Publish(HitResult.Guard(hit.HitId, hit.Attacker, this, HitDamage.None));
+                return;
+            }
+
             float defense = _data != null ? _data.Defense : 0f;
 
-            // 防御適用 → HP 減算 → 実減少量（Clamp 込み）。SO 原本は変更しない。
+            // 貫通：防御適用 → HP 減算 → 実減少量（Clamp 込み）。SO 原本は変更しない。
             int appliedHp = DamageApplication.ApplyHpDamage(_vitals.Health, hit.Damage.Hp, defense);
 
-            // 実際に適用された HP のみ。体幹・ひるみは P2-04 では未適用のため 0。
+            // 実際に適用された HP のみ。体幹・ひるみは本 Task では未適用のため 0。
             var applied = new HitDamage(appliedHp, 0f, 0f);
             Results.Publish(HitResult.Damage(hit.HitId, hit.Attacker, this, applied));
         }

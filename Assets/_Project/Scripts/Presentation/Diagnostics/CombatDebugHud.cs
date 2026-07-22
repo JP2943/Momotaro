@@ -18,6 +18,9 @@ namespace Momotaro.Presentation.Diagnostics
         [Tooltip("状態を表示する主人公（未指定ならシーンから自動取得）。")]
         [SerializeField] private PlayerStateController _player;
 
+        [Tooltip("主人公の Vitals（HP/スタミナ。未指定ならシーンから自動取得）。")]
+        [SerializeField] private PlayerVitalsHolder _playerVitals;
+
         [Tooltip("ダミー一覧を再取得する間隔（秒）。")]
         [SerializeField] private float _refreshInterval = 1f;
 
@@ -26,6 +29,7 @@ namespace Momotaro.Presentation.Diagnostics
         private readonly StringBuilder _sb = new StringBuilder();
         private GUIStyle _style;
         private float _nextRefresh;
+        private string _lastPlayerResult;
 
         private void OnEnable()
         {
@@ -46,6 +50,12 @@ namespace Momotaro.Presentation.Diagnostics
             if (_player == null)
             {
                 _player = FindFirstObjectByType<PlayerStateController>();
+            }
+
+            if (_playerVitals == null)
+            {
+                _playerVitals = FindFirstObjectByType<PlayerVitalsHolder>();
+                _playerVitals?.Results.AddListener(this);
             }
 
             foreach (CombatDummy d in _dummies)
@@ -73,6 +83,11 @@ namespace Momotaro.Presentation.Diagnostics
                 _lastHit[dummy.GetInstanceID()] =
                     $"{result.Kind} -HP{result.AppliedDamage.Hp:0} -体幹{result.AppliedDamage.Poise:0} +ひるみ{result.AppliedDamage.Flinch:0}";
             }
+            else if (result.Target is PlayerVitalsHolder)
+            {
+                // P2-06：主人公の被弾/通常ガード結果（Guard は HP0）。
+                _lastPlayerResult = $"{result.Kind} -HP{result.AppliedDamage.Hp:0}";
+            }
         }
 
         private void OnGUI()
@@ -90,6 +105,22 @@ namespace Momotaro.Presentation.Diagnostics
                 if (_player.Current == PlayerState.Attack)
                 {
                     _sb.Append("  (stage ").Append(_player.AttackStage).Append(')');
+                }
+
+                if (_player.IsGuarding)
+                {
+                    _sb.Append("  [GUARD]");
+                }
+
+                if (_playerVitals != null && _playerVitals.Vitals != null)
+                {
+                    _sb.Append("  HP ").Append(_playerVitals.Vitals.Health.Current).Append('/').Append(_playerVitals.Vitals.Health.Max);
+                    _sb.Append("  Stamina ").Append(_playerVitals.Vitals.Stamina.Current).Append('/').Append(_playerVitals.Vitals.Stamina.Max);
+                }
+
+                if (!string.IsNullOrEmpty(_lastPlayerResult))
+                {
+                    _sb.Append("  last: ").Append(_lastPlayerResult);
                 }
 
                 _sb.Append('\n');
@@ -141,6 +172,8 @@ namespace Momotaro.Presentation.Diagnostics
                     d.Results.RemoveListener(this);
                 }
             }
+
+            _playerVitals?.Results.RemoveListener(this);
         }
     }
 }

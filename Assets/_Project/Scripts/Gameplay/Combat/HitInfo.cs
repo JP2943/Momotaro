@@ -33,10 +33,13 @@ namespace Momotaro.Gameplay.Combat
         /// <summary>ジャストガード可能か（不能攻撃は false）。</summary>
         public bool JustGuardable { get; }
 
+        /// <summary>通常ガード成功時に対象へ与える固定スタミナダメージ（Guard Stamina Damage。Phase2 P2-06）。</summary>
+        public float GuardStaminaDamage { get; }
+
         /// <summary>命中の同一性（多重ヒット防止のキー）。</summary>
         public HitId HitId { get; }
 
-        /// <summary>すべての要素を指定して生成する。</summary>
+        /// <summary>ガードスタミナダメージ 0 で生成する（HP/体幹/ひるみのみの命中）。</summary>
         public HitInfo(
             ICombatActor attacker,
             IDamageable target,
@@ -46,12 +49,28 @@ namespace Momotaro.Gameplay.Combat
             bool guardable,
             bool justGuardable,
             HitId hitId)
+            : this(attacker, target, attackDirection, hitPoint, damage, 0f, guardable, justGuardable, hitId)
+        {
+        }
+
+        /// <summary>すべての要素（ガードスタミナダメージ含む）を指定して生成する。</summary>
+        public HitInfo(
+            ICombatActor attacker,
+            IDamageable target,
+            Vector3 attackDirection,
+            Vector3 hitPoint,
+            HitDamage damage,
+            float guardStaminaDamage,
+            bool guardable,
+            bool justGuardable,
+            HitId hitId)
         {
             Attacker = attacker;
             Target = target;
             AttackDirection = attackDirection;
             HitPoint = hitPoint;
             Damage = damage;
+            GuardStaminaDamage = guardStaminaDamage;
             Guardable = guardable;
             JustGuardable = justGuardable;
             HitId = hitId;

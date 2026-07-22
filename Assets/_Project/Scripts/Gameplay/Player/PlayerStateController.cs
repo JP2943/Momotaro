@@ -16,7 +16,7 @@ namespace Momotaro.Gameplay.Player
     /// 中断時 Hitbox 消去まで。HP/体幹/ひるみの実適用は対象外（対象側 <see cref="IDamageable"/> と後続 Task）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerStateController : MonoBehaviour, ICombatActor
+    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState
     {
         [SerializeField] private PlayerMotor _motor;
         [SerializeField] private PlayerFacing _facing;
@@ -78,6 +78,15 @@ namespace Momotaro.Gameplay.Player
 
         /// <inheritdoc />
         public Vector3 Forward => FacingToVector(_facing != null ? _facing.Current : FacingDirection.Down);
+
+        // ---- IGuardState（被弾側のガード状態。命中解決が参照） ----
+
+        /// <inheritdoc />
+        public bool IsGuarding => _machine.Current == PlayerState.GuardIdle || _machine.Current == PlayerState.GuardMove;
+
+        /// <inheritdoc />
+        /// <remarks>ガード中は Facing がロックされるため、押下時に固定した前方をそのまま返す。</remarks>
+        public Vector3 GuardForward => Forward;
 
         private void Awake()
         {
