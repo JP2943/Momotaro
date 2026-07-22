@@ -69,8 +69,9 @@ namespace Momotaro.Presentation.Diagnostics
         {
             if (result.Target is CombatDummy dummy)
             {
-                // AppliedDamage は実適用値。P2-04 では体幹・ひるみは未適用（0）なので表示しない。
-                _lastHit[dummy.GetInstanceID()] = $"{result.Kind} -HP{result.AppliedDamage.Hp:0}";
+                // AppliedDamage は実適用値（P2-05 で体幹・ひるみも実適用量が入る）。
+                _lastHit[dummy.GetInstanceID()] =
+                    $"{result.Kind} -HP{result.AppliedDamage.Hp:0} -体幹{result.AppliedDamage.Poise:0} +ひるみ{result.AppliedDamage.Flinch:0}";
             }
         }
 
@@ -102,6 +103,17 @@ namespace Momotaro.Presentation.Diagnostics
                 }
 
                 _sb.Append(d.name).Append(": HP ").Append(d.CurrentHp).Append('/').Append(d.MaxHp);
+                _sb.Append("  Poise ").Append(d.CurrentPoise.ToString("0")).Append('/').Append(d.MaxPoise.ToString("0"));
+                if (d.IsStunned)
+                {
+                    _sb.Append("  [STUN]");
+                }
+
+                if (d.IsFlinching)
+                {
+                    _sb.Append("  [FLINCH]");
+                }
+
                 if (d.IsDefeated)
                 {
                     _sb.Append("  [DEFEATED]");

@@ -5,53 +5,72 @@ using UnityEngine;
 namespace Momotaro.Gameplay.Combat
 {
     /// <summary>
-    /// 検証用の被弾ダミー（Phase2 P2-04。仕様書 §13）。AI を持たず、共通の受け手契約 <see cref="IDamageable"/> /
+    /// 検証用の被弾ダミー（Phase2 P2-04/P2-05。仕様書 §13）。AI を持たず、共通の受け手契約 <see cref="IDamageable"/> /
     /// <see cref="ICombatActor"/> を実装する（Dummy 専用の Combat 経路は作らず、Phase 3 の敵 AI へそのまま発展できる）。
     ///
-    /// P2-04 では HP のみを扱う：命中の攻撃側寄与（<see cref="HitInfo.HitDamage"/> の Hp＝防御適用前）へ自身の防御を
-    /// <see cref="HpDamageCalculator.ResolveFinal"/> で適用し、<see cref="Vital"/>（PlayerVitals と同じ HP システム）へ
-    /// 減算する。結果は型付き <see cref="HitResult"/> として通知する。体幹・ひるみ・スタンは P2-05、死亡処理は対象外
-    /// （HP0 は撃破フラグのみ、<see cref="ResetHp"/> で復帰可能）。
+    /// P2-04：命中の攻撃側寄与（HP）へ自身の防御を適用し HP を減算。P2-05：体幹（<see cref="PoiseState"/>）・ひるみ
+    /// （<see cref="FlinchState"/>）・スタンを追加。スタン中は被 HP ダメージ ×1.25。結果は型付き <see cref="HitResult"/>
+    /// で通知（AppliedDamage は実際に適用された HP／体幹／ひるみ量）。死亡処理・敵 AI・攻撃は対象外。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class CombatDummy : MonoBehaviour, ICombatActor, IDamageable
     {
-        [Tooltip("HP・防御などの基礎データ（EnemyData）。標準ダミーは HP100 / 防御20。")]
+        [Tooltip("HP・防御・体幹・ひるみ耐性などの基礎データ（EnemyData）。標準ダミーは HP100/防御20/体幹100/耐性60。")]
         [SerializeField] private EnemyData _data;
 
         private Vital _hp;
+        private PoiseState _poise;
+        private FlinchState _flinch;
 
-        /// <summary>被弾結果の通知チャネル（HUD 等が P2-11 で購読）。</summary>
+        /// <summary>被弾結果の通知チャネル（HUD 等が購読）。</summary>
         public HitResultChannel Results { get; } = new HitResultChannel();
 
         /// <summary>現在 HP。</summary>
         public int CurrentHp
         {
-            get
-            {
-                EnsureHp();
-                return _hp.Current;
-            }
+            get { EnsureRuntime(); return _hp.Current; }
         }
 
         /// <summary>最大 HP。</summary>
         public int MaxHp
         {
-            get
-            {
-                EnsureHp();
-                return _hp.Max;
-            }
+            get { EnsureRuntime(); return _hp.Max; }
         }
 
         /// <summary>撃破済みか（HP0。死亡処理そのものは対象外）。</summary>
         public bool IsDefeated
         {
-            get
-            {
-                EnsureHp();
-                return _hp.Current <= 0;
-            }
+            get { EnsureRuntime(); return _hp.Current <= 0; }
+        }
+
+        /// <summary>現在体幹。</summary>
+        public float CurrentPoise
+        {
+            get { EnsureRuntime(); return _poise.Current; }
+        }
+
+        /// <summary>最大体幹。</summary>
+        public float MaxPoise
+        {
+            get { EnsureRuntime(); return _poise.Max; }
+        }
+
+        /// <summary>スタン中か。</summary>
+        public bool IsStunned
+        {
+            get { EnsureRuntime(); return _poise.IsStunned; }
+        }
+
+        /// <summary>ひるみ中か。</summary>
+        public bool IsFlinching
+        {
+            get { EnsureRuntime(); return _flinch.IsFlinching; }
+        }
+
+        /// <summary>現在のひるみ蓄積量。</summary>
+        public float FlinchAccumulation
+        {
+            get { EnsureRuntime(); return _flinch.Accumulation; }
         }
 
         /// <inheritdoc />
@@ -71,38 +90,80 @@ namespace Momotaro.Gameplay.Combat
 
         private void Awake()
         {
-            EnsureHp();
+            EnsureRuntime();
         }
 
-        private void EnsureHp()
+        private void EnsureRuntime()
         {
             if (_hp == null)
             {
-                int max = _data != null ? _data.MaxHp : 1;
-                _hp = new Vital(max);
+                int maxHp = _data != null ? _data.MaxHp : 1;
+                _hp = new Vital(maxHp);
+            }
+
+            if (_poise == null)
+            {
+                float poiseMax = _data != null ? _data.PoiseMax : 1f;
+                if (_data != null)
+                {
+                    _poise = new PoiseState(poiseMax, _data.PoiseRecoveryDelaySeconds, _data.PoiseRecoveryRatioPerSecond,
+                        stunSeconds: _data.StunSeconds);
+                }
+                else
+                {
+                    _poise = new PoiseState(poiseMax);
+                }
+            }
+
+            if (_flinch == null)
+            {
+                float resistance = _data != null ? _data.FlinchResistance : 1f;
+                _flinch = new FlinchState(resistance);
             }
         }
 
         /// <summary>HP を最大まで戻す（検証の再試行用）。</summary>
         public void ResetHp()
         {
-            EnsureHp();
+            EnsureRuntime();
             _hp.SetCurrent(_hp.Max);
+        }
+
+        /// <summary>HP・体幹・ひるみを最大/初期へ戻す（検証の再試行用）。</summary>
+        public void ResetState()
+        {
+            EnsureRuntime();
+            _hp.SetCurrent(_hp.Max);
+            _poise.Reset();
+            _flinch.Reset();
+        }
+
+        private void Update()
+        {
+            EnsureRuntime();
+            _poise.Tick(Time.deltaTime);
+            _flinch.Tick(Time.deltaTime);
         }
 
         /// <inheritdoc />
         public void ReceiveHit(in HitInfo hit)
         {
-            EnsureHp();
+            EnsureRuntime();
 
             float defense = _data != null ? _data.Defense : 0f;
+            float targetPoiseMult = _data != null ? _data.PoiseDamageMultiplier : 1f;
 
-            // 防御適用 → HP 減算 → 実際に減った量を算出（Clamp 込み）。
-            int appliedHp = DamageApplication.ApplyHpDamage(_hp, hit.Damage.Hp, defense);
+            // HP：スタン中は ×1.25（PoiseState.StunHpMultiplier）。防御適用 → 減算 → 実減少量。
+            int appliedHp = DamageApplication.ApplyHpDamage(_hp, hit.Damage.Hp, defense, _poise.StunHpMultiplier);
 
-            // AppliedDamage は「実際に適用された値」。体幹・ひるみは P2-04 では未適用のため 0。
-            // （P2-05 で実適用量を Poise/Flinch へ入れられるよう構造は維持）。
-            var applied = new HitDamage(appliedHp, 0f, 0f);
+            // 体幹：命中の Poise（攻撃側で状況補正済み）× 対象の被体幹倍率。実減少量を求める。
+            float poiseDamage = hit.Damage.Poise * targetPoiseMult;
+            float appliedPoise = _poise.ApplyPoiseDamage(poiseDamage);
+
+            // ひるみ：状況補正なしの値を蓄積。実際に蓄積へ加わった量。
+            float appliedFlinch = _flinch.AddFlinch(hit.Damage.Flinch);
+
+            var applied = new HitDamage(appliedHp, appliedPoise, appliedFlinch);
             Results.Publish(HitResult.Damage(hit.HitId, hit.Attacker, this, applied));
         }
     }

@@ -100,8 +100,9 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, recorder.Received.Count);
             Assert.AreEqual(HitResultKind.Damage, recorder.Received[0].Kind);
             Assert.AreEqual(8f, recorder.Received[0].AppliedDamage.Hp, "適用 HP は実減少量 8。");
-            Assert.AreEqual(0f, recorder.Received[0].AppliedDamage.Poise, "P2-04 では体幹は未適用（0）。");
-            Assert.AreEqual(0f, recorder.Received[0].AppliedDamage.Flinch, "P2-04 ではひるみは未適用（0）。");
+            // P2-05：体幹・ひるみも実適用量が入る（Hit の poise=8 / flinch=20、標準ダミー poise100/耐性60）。
+            Assert.AreEqual(8f, recorder.Received[0].AppliedDamage.Poise, "適用体幹 8。");
+            Assert.AreEqual(20f, recorder.Received[0].AppliedDamage.Flinch, "適用ひるみ 20。");
             Assert.AreSame(dummy, recorder.Received[0].Target);
         }
 

@@ -16,11 +16,12 @@ namespace Momotaro.Gameplay.Combat
         /// <param name="health">対象の HP。</param>
         /// <param name="preDefenseHp">攻撃側寄与（防御適用前の HP、<see cref="HitInfo"/> の Damage.Hp）。</param>
         /// <param name="defense">対象の防御力。</param>
+        /// <param name="stunMultiplier">対象がスタン中なら 1.25 等（Phase2 P2-05）。既定 1.0。</param>
         /// <returns>実際に減少した HP 量（Clamp 後の差分）。</returns>
-        public static int ApplyHpDamage(Vital health, float preDefenseHp, float defense)
+        public static int ApplyHpDamage(Vital health, float preDefenseHp, float defense, float stunMultiplier = 1f)
         {
             int before = health.Current;
-            int finalHp = HpDamageCalculator.ResolveFinal(preDefenseHp, defense);
+            int finalHp = HpDamageCalculator.ResolveFinal(preDefenseHp, defense, stunMultiplier: stunMultiplier);
             health.Change(-finalHp);
             return before - health.Current;
         }

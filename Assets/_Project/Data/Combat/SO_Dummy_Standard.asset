@@ -24,3 +24,8 @@ MonoBehaviour:
   _defense: 20
   _poiseMax: 100
   _isBoss: 0
+  _poiseRecoveryDelaySeconds: 3
+  _poiseRecoveryRatioPerSecond: 0.08
+  _poiseDamageMultiplier: 1
+  _stunSeconds: 3
+  _flinchResistance: 60

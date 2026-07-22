@@ -350,19 +350,27 @@ namespace Momotaro.Gameplay.Player
                     continue;
                 }
 
-                // 背後補正（対象の Forward を参照。対象が ICombatActor でなければ補正なし）。
-                float backMultiplier = 1f;
+                // 背後判定（対象の Forward を参照。対象が ICombatActor でなければ補正なし）。
+                bool isBackHit = false;
                 var targetActor = col.GetComponentInParent<ICombatActor>();
                 if (targetActor != null &&
                     CombatGeometry.IsBackHit(targetActor.Forward, transform.position - targetActor.WorldPosition))
                 {
-                    backMultiplier = HpDamageCalculator.BackMultiplier;
+                    isBackHit = true;
                 }
 
-                // HP は攻撃側寄与（防御適用前）＝攻撃力 × 技倍率 × 0.1 × 背後。体幹・ひるませは固定系統。
-                // 対象側（IDamageable 実装）が防御補正・被ダメ増減・スタン倍率を適用して最終 HP を確定する。
-                float hpContribution = HpDamageCalculator.AttackContribution(attackPower, d.HpMultiplier, 1f, backMultiplier);
-                var damage = new HitDamage(hpContribution, d.PoiseDamage, d.FlinchPower);
+                // HP は攻撃側寄与（防御適用前）＝攻撃力 × 技倍率 × 0.1 × 背後(×1.1)。防御・スタン倍率は対象側で適用。
+                float hpBackMultiplier = isBackHit ? HpDamageCalculator.BackMultiplier : 1f;
+                float hpContribution = HpDamageCalculator.AttackContribution(attackPower, d.HpMultiplier, 1f, hpBackMultiplier);
+
+                // 体幹は固定系統。状況補正（背後×1.5。攻撃中×1.5 は敵AI実装後。乗算せず高い方）を攻撃側で適用。
+                float poiseSituational = PoiseDamageCalculator.SituationalMultiplier(isBackHit, targetActing: false);
+                float poiseContribution = PoiseDamageCalculator.Compute(d.PoiseDamage, poiseSituational, 1f, 1f);
+
+                // ひるませ値は状況補正なし（背後・攻撃中の補正対象外）。
+                float flinchValue = FlinchValueCalculator.Compute(d.FlinchPower, 1f, 1f);
+
+                var damage = new HitDamage(hpContribution, poiseContribution, flinchValue);
 
                 HitInfo hit = HitBuilder.FromSnapshot(snapshot, this, target, Forward, center, damage, _currentSwing);
                 target.ReceiveHit(hit);
