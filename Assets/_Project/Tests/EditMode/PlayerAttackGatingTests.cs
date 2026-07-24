@@ -52,12 +52,15 @@ namespace Momotaro.Tests.EditMode
             var stages = new AttackData[1];
             var a = ScriptableObject.CreateInstance<AttackData>();
             _spawned.Add(a);
-            SetPrivate(a, "_startupSeconds", 0.05f);
-            SetPrivate(a, "_activeSeconds", 0.10f);
-            SetPrivate(a, "_recoverySeconds", 0.10f);
+            // EditMode の Time.deltaTime は最大 ~0.333s まで大きくなり得るため、秒オーダーへスケールする。
+            // 先行入力 Buffer が同一 Tick 内（Buffer 直後の buffer.Tick(deltaTime)）で期限切れして攻撃開始が
+            // 落ちないよう、Buffer 窓と各段時間を dt より十分大きくして決定的にする（比率・規則は同じ）。
+            SetPrivate(a, "_startupSeconds", 1.0f);
+            SetPrivate(a, "_activeSeconds", 2.0f);
+            SetPrivate(a, "_recoverySeconds", 2.0f);
             stages[0] = a;
             SetPrivate(combo, "_stages", stages);
-            SetPrivate(combo, "_bufferSeconds", 0.30f);
+            SetPrivate(combo, "_bufferSeconds", 5.0f);
             return combo;
         }
 
