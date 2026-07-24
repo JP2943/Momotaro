@@ -72,6 +72,7 @@ namespace Momotaro.Gameplay.Player
         private float _specialAttackRemaining;
         private float _specialActiveRemaining;
         private HitId _specialSwing;
+        private bool _specialRequiresRelease;
         private bool _prevGuardHeld;
         private IPlayerInput _input;
         private HitId _currentSwing;
@@ -143,10 +144,11 @@ namespace Momotaro.Gameplay.Player
         /// <inheritdoc />
         public void CancelSpecialChargeOnHit()
         {
-            // 被弾（実ダメージ）で必殺技チャージを中断する（発動・後隙中は中断しない）。
+            // 被弾（実ダメージ）で必殺技チャージを中断する（発動・後隙中は中断しない）。必殺技ボタンを離すまで再チャージ禁止。
             if (_special != null && _special.IsActive)
             {
                 _special.Cancel();
+                _specialRequiresRelease = true;
             }
         }
 
@@ -197,6 +199,7 @@ namespace Momotaro.Gameplay.Player
             _special?.Reset();
             _specialAttackRemaining = 0f;
             _specialActiveRemaining = 0f;
+            _specialRequiresRelease = false;
             _prevGuardHeld = false;
             _hitTracker.Clear();
 
@@ -429,8 +432,12 @@ namespace Momotaro.Gameplay.Player
                 _hitTracker.Clear();
             }
 
-            // ステップ入力で必殺技チャージを完全キャンセル（経過 0 へ）。ステップ終了後に再開しない（仕様書 §3.6）。
-            _special?.Cancel();
+            // ステップ入力で必殺技チャージを完全キャンセル（経過 0 へ）。必殺技ボタンを一度離すまで再チャージ禁止（再開しない）。
+            if (_special != null && _special.IsActive)
+            {
+                _special.Cancel();
+                _specialRequiresRelease = true;
+            }
 
             _justGuard?.Reset();
             _prevGuardHeld = false;
@@ -501,6 +508,14 @@ namespace Momotaro.Gameplay.Player
                 return false; // 必殺技未設定（SpecialAttackData 未割当）
             }
 
+            bool held = _input != null && _input.SpecialAttackHeld;
+
+            // キャンセル後の再チャージ禁止：必殺技ボタンが一度解除されるまで新規チャージを開始しない。
+            if (!held)
+            {
+                _specialRequiresRelease = false;
+            }
+
             // 発動・後隙の実行フェーズ（この間はキャンセル不可）。
             if (_specialAttackRemaining > 0f)
             {
@@ -527,18 +542,17 @@ namespace Momotaro.Gameplay.Player
                 return true;
             }
 
-            // 遮断・行動不能・ガード入力ではチャージを中断（後隙なし）。
+            // 遮断・行動不能・ガード入力ではチャージを中断（後隙なし）。ガードキャンセルは再チャージ禁止を立てる。
             if (!active || broken || guarding)
             {
                 if (_special.IsActive)
                 {
                     _special.Cancel();
+                    _specialRequiresRelease = true;
                 }
 
                 return false;
             }
-
-            bool held = _input != null && _input.SpecialAttackHeld;
 
             if (_special.IsActive)
             {
@@ -564,7 +578,8 @@ namespace Momotaro.Gameplay.Player
                 return true; // チャージ継続
             }
 
-            if (held)
+            // 新規チャージ開始：保持中かつ「要解除」ロックが立っていないときのみ。
+            if (held && !_specialRequiresRelease)
             {
                 _special.Begin();
                 return true;

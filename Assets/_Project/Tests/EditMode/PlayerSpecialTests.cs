@@ -160,20 +160,36 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void StepDuringCharge_FullyCancelsCharge_NoResume()
+        public void StepDuringCharge_NoResumeWhileHeld_ThenReleaseRepressStartsFresh()
         {
             var (c, _, _, input) = MakeController();
             input.SetSpecialAttack(true);
             Tick(c); // charging
             Assert.IsTrue(c.IsSpecialCharging);
 
+            // 必殺技ボタンを押したままステップ開始 → チャージ完全キャンセル。
             input.SetStep(true);
-            Tick(c); // ステップ開始 → チャージ完全キャンセル（経過0）
-
+            Tick(c);
             Assert.IsFalse(c.IsSpecialCharging, "ステップでチャージは即時キャンセル。");
-            var special = GetPrivate(c, "_special");
-            var isActive = (bool)special.GetType().GetProperty("IsActive").GetValue(special);
-            Assert.IsFalse(isActive, "SpecialChargeState は非アクティブ（経過0へ）。ステップ後も再開しない。");
+            input.SetStep(false); // ステップは連続させない（保持は継続）
+
+            // ステップ終了を越えるまで更新（必殺技ボタンは押しっぱなし）。
+            for (int i = 0; i < 40; i++)
+            {
+                Tick(c);
+            }
+
+            Assert.IsFalse(c.IsSpecialCharging, "押しっぱなしでもステップ後に再チャージしない（要解除）。");
+            Assert.IsFalse(c.IsStepping, "ステップは終了している。");
+
+            // 一度解除して再度押すと、0 秒から新規チャージできる。
+            input.SetSpecialAttack(false);
+            Tick(c);
+            input.SetSpecialAttack(true);
+            Tick(c);
+
+            Assert.IsTrue(c.IsSpecialCharging, "解除後の再押下で新規チャージ開始。");
+            Assert.Less(c.SpecialChargeElapsed, 0.5f, "経過は 0 付近（前回のチャージ時間を保持していない）。");
         }
 
         [Test]
@@ -195,7 +211,7 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void HitDuringCharge_CancelsCharge()
+        public void HitDuringCharge_CancelsCharge_NoResumeWhileHeld()
         {
             var (c, _, holder, input) = MakeController(withVitals: true);
             input.SetSpecialAttack(true);
@@ -205,8 +221,35 @@ namespace Momotaro.Tests.EditMode
             // 通常被弾（実ダメージ）→ 必殺技チャージ中断。
             holder.ReceiveHit(new HitInfo(null, holder, -Vector3.forward, Vector3.zero, new HitDamage(10f, 0f, 0f),
                 true, true, HitId.Single(1)));
-
             Assert.IsFalse(c.IsSpecialCharging, "被弾でチャージ中断。");
+
+            for (int i = 0; i < 5; i++)
+            {
+                Tick(c);
+            }
+
+            Assert.IsFalse(c.IsSpecialCharging, "被弾キャンセル後、押しっぱなしでは再チャージしない（要解除）。");
+        }
+
+        [Test]
+        public void GuardCancel_NoResumeWhileHeld()
+        {
+            var (c, _, _, input) = MakeController();
+            input.SetSpecialAttack(true);
+            Tick(c);
+            Assert.IsTrue(c.IsSpecialCharging);
+
+            input.SetGuard(true);
+            Tick(c); // ガードでチャージ中断（要解除ロック）
+            Assert.IsFalse(c.IsSpecialCharging);
+
+            input.SetGuard(false);
+            for (int i = 0; i < 5; i++)
+            {
+                Tick(c); // 必殺技は押しっぱなし
+            }
+
+            Assert.IsFalse(c.IsSpecialCharging, "ガードキャンセル後、押しっぱなしでは再チャージしない（要解除）。");
         }
     }
 }
