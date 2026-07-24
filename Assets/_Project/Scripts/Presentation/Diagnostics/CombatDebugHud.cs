@@ -24,12 +24,25 @@ namespace Momotaro.Presentation.Diagnostics
         [Tooltip("ダミー一覧を再取得する間隔（秒）。")]
         [SerializeField] private float _refreshInterval = 1f;
 
+        [Tooltip("HUD を表示するか（Debug 切替）。ToggleVisible()/SetVisible() で切り替える（キー割当は外部の Debug 入力から接続）。")]
+        [SerializeField] private bool _visible = true;
+
         private readonly List<CombatDummy> _dummies = new List<CombatDummy>();
         private readonly Dictionary<int, string> _lastHit = new Dictionary<int, string>();
         private readonly StringBuilder _sb = new StringBuilder();
         private GUIStyle _style;
         private float _nextRefresh;
         private string _lastPlayerResult;
+        private string _lastFeedback;
+
+        /// <summary>HUD 表示の ON/OFF を切り替える（Debug 切替。テスト・外部からも呼べる）。</summary>
+        public void ToggleVisible() => _visible = !_visible;
+
+        /// <summary>HUD 表示を設定する。</summary>
+        public void SetVisible(bool visible) => _visible = visible;
+
+        /// <summary>現在 HUD を表示中か。</summary>
+        public bool IsVisible => _visible;
 
         private void OnEnable()
         {
@@ -88,10 +101,19 @@ namespace Momotaro.Presentation.Diagnostics
                 // P2-06：主人公の被弾/通常ガード結果（Guard は HP0）。
                 _lastPlayerResult = $"{result.Kind} -HP{result.AppliedDamage.Hp:0}";
             }
+
+            // 仮フィードバック（VFX/SE ID・HitStop 要求）を結果種別から解決して表示（P2-11。実演出は Dispatcher が配信）。
+            CombatFeedbackCue cue = CombatFeedbackMap.Resolve(result.Kind);
+            _lastFeedback = $"{result.Kind}  VFX:{(string.IsNullOrEmpty(cue.VfxId) ? "-" : cue.VfxId)}  SE:{(string.IsNullOrEmpty(cue.SeId) ? "-" : cue.SeId)}  HitStop:{cue.HitStopSeconds:0.00}s";
         }
 
         private void OnGUI()
         {
+            if (!_visible)
+            {
+                return;
+            }
+
             if (_style == null)
             {
                 _style = new GUIStyle(GUI.skin.label) { fontSize = 16, richText = false };
@@ -128,8 +150,11 @@ namespace Momotaro.Presentation.Diagnostics
 
                 if (_playerVitals != null && _playerVitals.Vitals != null)
                 {
-                    _sb.Append("  HP ").Append(_playerVitals.Vitals.Health.Current).Append('/').Append(_playerVitals.Vitals.Health.Max);
-                    _sb.Append("  Stamina ").Append(_playerVitals.Vitals.Stamina.Current).Append('/').Append(_playerVitals.Vitals.Stamina.Max);
+                    // 表示は 0..Max へ Clamp（内部が一時的に範囲外でも UI が負値・超過を出さない）。
+                    int hpMax = _playerVitals.Vitals.Health.Max;
+                    int stMax = _playerVitals.Vitals.Stamina.Max;
+                    _sb.Append("  HP ").Append(HudDisplay.Clamp(_playerVitals.Vitals.Health.Current, hpMax)).Append('/').Append(hpMax);
+                    _sb.Append("  Stamina ").Append(HudDisplay.Clamp(_playerVitals.Vitals.Stamina.Current, stMax)).Append('/').Append(stMax);
                     if (_playerVitals.IsGuardBroken)
                     {
                         _sb.Append("  [BREAK]");
@@ -144,6 +169,12 @@ namespace Momotaro.Presentation.Diagnostics
                 _sb.Append('\n');
             }
 
+            // 直近の命中結果に対する仮フィードバック（VFX/SE ID・HitStop 要求）。
+            if (!string.IsNullOrEmpty(_lastFeedback))
+            {
+                _sb.Append("FB: ").Append(_lastFeedback).Append('\n');
+            }
+
             foreach (CombatDummy d in _dummies)
             {
                 if (d == null)
@@ -151,7 +182,7 @@ namespace Momotaro.Presentation.Diagnostics
                     continue;
                 }
 
-                _sb.Append(d.name).Append(": HP ").Append(d.CurrentHp).Append('/').Append(d.MaxHp);
+                _sb.Append(d.name).Append(": HP ").Append(HudDisplay.Clamp(d.CurrentHp, d.MaxHp)).Append('/').Append(d.MaxHp);
                 _sb.Append("  Poise ").Append(d.CurrentPoise.ToString("0")).Append('/').Append(d.MaxPoise.ToString("0"));
                 _sb.Append("  Action: ").Append(d.ActionPhase);
                 if (d.IsStunned)
