@@ -143,6 +143,8 @@ namespace Momotaro.Gameplay.Player
         private void Awake()
         {
             EnsureRuntime();
+            // 主人公を Player レイヤーへ（配下 Collider 含む）。Player↔Enemy のみ衝突無効（敵すり抜け）、壁(Default)は停止（P2-09）。
+            CombatLayers.ConfigurePlayer(transform.root.gameObject);
         }
 
         private void OnDisable()

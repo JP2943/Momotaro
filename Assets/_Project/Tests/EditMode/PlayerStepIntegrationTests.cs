@@ -209,23 +209,44 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void EnemyLayer_Configured_PlayerPassesEnemy_ButCollidesWall()
+        public void Layers_Player_Enemy_Wall_CollisionPolicy_AndChildColliders()
         {
-            int enemy = Momotaro.Gameplay.Combat.CombatLayers.EnemyLayer;
             int player = Momotaro.Gameplay.Combat.CombatLayers.PlayerLayer;
+            int enemy = Momotaro.Gameplay.Combat.CombatLayers.EnemyLayer;
+            int wall = Momotaro.Gameplay.Combat.CombatLayers.WallLayer; // Default
+            Assert.GreaterOrEqual(player, 0, "Player レイヤーが TagManager に定義されている。");
             Assert.GreaterOrEqual(enemy, 0, "Enemy レイヤーが TagManager に定義されている。");
-            Assert.GreaterOrEqual(player, 0, "Player（Default）レイヤーが定義されている。");
+            Assert.GreaterOrEqual(wall, 0, "壁(Default)レイヤーが定義されている。");
 
-            bool prev = Physics.GetIgnoreLayerCollision(enemy, player);
-            var go = new GameObject("EnemyBody");
-            _spawned.Add(go);
-            Momotaro.Gameplay.Combat.CombatLayers.ConfigureEnemy(go);
+            bool prev = Physics.GetIgnoreLayerCollision(player, enemy);
 
-            Assert.AreEqual(enemy, go.layer, "敵は Enemy レイヤーへ配置。");
-            Assert.IsTrue(Physics.GetIgnoreLayerCollision(enemy, player), "Player↔Enemy は衝突無効（敵すり抜け）。");
-            Assert.IsFalse(Physics.GetIgnoreLayerCollision(player, player), "Player↔壁(Default)は衝突維持（壁停止）。");
+            // 敵：ルート＋子 Collider が Enemy レイヤーへ。
+            var enemyRoot = new GameObject("EnemyRoot");
+            _spawned.Add(enemyRoot);
+            var child = new GameObject("EnemyCollider");
+            _spawned.Add(child);
+            child.transform.SetParent(enemyRoot.transform);
+            child.AddComponent<BoxCollider>();
+            Momotaro.Gameplay.Combat.CombatLayers.ConfigureEnemy(enemyRoot);
+            Assert.AreEqual(enemy, enemyRoot.layer, "敵ルートは Enemy レイヤー。");
+            Assert.AreEqual(enemy, child.layer, "Collider を持つ子階層も Enemy レイヤー。");
 
-            Physics.IgnoreLayerCollision(enemy, player, prev); // グローバル状態を復元
+            // 主人公：ルート＋子 Collider が Player レイヤーへ。
+            var playerRoot = new GameObject("PlayerRoot");
+            _spawned.Add(playerRoot);
+            var pchild = new GameObject("PlayerCollider");
+            _spawned.Add(pchild);
+            pchild.transform.SetParent(playerRoot.transform);
+            pchild.AddComponent<CapsuleCollider>();
+            Momotaro.Gameplay.Combat.CombatLayers.ConfigurePlayer(playerRoot);
+            Assert.AreEqual(player, pchild.layer, "主人公の子 Collider も Player レイヤー。");
+
+            // 衝突方針：Player↔Enemy のみ無効。Player↔壁・Enemy↔壁は維持。
+            Assert.IsTrue(Physics.GetIgnoreLayerCollision(player, enemy), "Player↔Enemy は無効（敵すり抜け）。");
+            Assert.IsFalse(Physics.GetIgnoreLayerCollision(player, wall), "Player↔Default(壁)は有効（壁停止）。");
+            Assert.IsFalse(Physics.GetIgnoreLayerCollision(enemy, wall), "Enemy↔Default(壁)は有効（敵も壁で停止）。");
+
+            Physics.IgnoreLayerCollision(player, enemy, prev); // グローバル状態を復元
         }
     }
 }
