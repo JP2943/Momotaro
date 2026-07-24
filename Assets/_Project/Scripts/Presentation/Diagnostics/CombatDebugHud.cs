@@ -112,6 +112,11 @@ namespace Momotaro.Presentation.Diagnostics
                     _sb.Append("  [GUARD]");
                 }
 
+                if (_player.IsStepping)
+                {
+                    _sb.Append(_player.IsInvincible ? "  [STEP:I-FRAME]" : "  [STEP]");
+                }
+
                 if (_player.JustGuardPhase != Momotaro.Gameplay.Combat.JustGuardPhase.Normal || _player.CanJustGuard)
                 {
                     _sb.Append("  JG:").Append(_player.JustGuardPhase);

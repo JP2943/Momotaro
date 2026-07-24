@@ -26,28 +26,41 @@ namespace Momotaro.Gameplay.Player
         }
 
         /// <summary>
-        /// 入力状況と攻撃中フラグから状態を更新する（ガードブレイクなしのオーバーロード）。
+        /// 入力状況と攻撃中フラグから状態を更新する（ガードブレイク・ステップなしのオーバーロード）。
         /// </summary>
         public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking)
         {
-            Tick(enabled, isMoving, guarding, attacking, guardBroken: false);
+            Tick(enabled, isMoving, guarding, attacking, guardBroken: false, stepping: false);
         }
 
         /// <summary>
-        /// 入力状況・攻撃中フラグ・ガードブレイクから状態を更新する。ガードブレイクは強制行動不能で最優先（攻撃・ガード・移動より上）。
-        /// 次点は攻撃、次いでガード、移動/Idle。無効時（Disable 等）はガードブレイクでなければ Idle に落とす。
+        /// 入力状況・攻撃中・ガードブレイクから状態を更新する（ステップなしのオーバーロード）。
+        /// </summary>
+        public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken)
+        {
+            Tick(enabled, isMoving, guarding, attacking, guardBroken, stepping: false);
+        }
+
+        /// <summary>
+        /// 入力状況・攻撃中・ガードブレイク・ステップから状態を更新する。優先度は
+        /// ガードブレイク ＞ ステップ ＞ 攻撃 ＞ ガード ＞ 移動/Idle（仕様書 §3）。無効時（Disable 等）は行動不能・ステップでなければ Idle。
         /// </summary>
         /// <param name="enabled">操作が有効か（非 Gameplay/Disable 時は false）。</param>
         /// <param name="isMoving">移動入力があるか。</param>
         /// <param name="guarding">ガード保持中か。</param>
         /// <param name="attacking">攻撃中か（コンボ状態機械が判定）。</param>
         /// <param name="guardBroken">ガードブレイク（強制行動不能）中か。</param>
-        public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken)
+        /// <param name="stepping">ステップ回避中か（I-frame 移動）。</param>
+        public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken, bool stepping)
         {
             PlayerState next;
             if (guardBroken)
             {
                 next = PlayerState.GuardBreak;
+            }
+            else if (stepping)
+            {
+                next = PlayerState.Step;
             }
             else if (!enabled)
             {

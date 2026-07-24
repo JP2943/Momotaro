@@ -39,6 +39,9 @@ namespace Momotaro.Presentation.Player
                     // 仮対応（Phase2 P2-07）。完成 Animation の接続・再生制御は対象外。名前解決のみ用意する。
                     statePart = "GuardBreak";
                     break;
+                case PlayerState.Step:
+                    statePart = "Step";
+                    break;
                 default:
                     statePart = "Idle";
                     break;

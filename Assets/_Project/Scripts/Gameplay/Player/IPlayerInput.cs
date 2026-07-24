@@ -35,5 +35,12 @@ namespace Momotaro.Gameplay.Player
         /// </summary>
         /// <returns>未消費の押下エッジがあれば true。</returns>
         bool ConsumeAttackPressed();
+
+        /// <summary>
+        /// ステップボタンの押下エッジを 1 回だけ取り出す（Phase2 P2-09）。攻撃と同様に押下の瞬間だけ true を返し、
+        /// 取り出すとクリアされる。非 Gameplay 中の押下は蓄積しない。
+        /// </summary>
+        /// <returns>未消費の押下エッジがあれば true。</returns>
+        bool ConsumeStepPressed();
     }
 }

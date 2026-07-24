@@ -27,5 +27,10 @@ namespace Momotaro.Gameplay.Player
         /// 独立状態で、優先度は Attack/Guard/Move/Idle より高い。完成 Animation の接続は対象外（状態のみ）。
         /// </summary>
         GuardBreak = 5,
+
+        /// <summary>
+        /// ステップ回避中（Phase2 P2-09）。短距離高速移動＋I-frame。優先度はガードブレイク未満・攻撃/ガード/移動より上。
+        /// </summary>
+        Step = 6,
     }
 }

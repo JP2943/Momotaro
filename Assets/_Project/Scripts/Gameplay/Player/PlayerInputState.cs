@@ -15,6 +15,8 @@ namespace Momotaro.Gameplay.Player
         private bool _active = true;
         private bool _attackHeldRaw;
         private bool _attackLatched;
+        private bool _stepHeldRaw;
+        private bool _stepLatched;
 
         /// <inheritdoc />
         public Vector2 Move { get; private set; }
@@ -87,6 +89,33 @@ namespace Momotaro.Gameplay.Player
         }
 
         /// <summary>
+        /// 入力ソースからステップボタンの生の押下状態を設定する。押下エッジ（false→true）でのみラッチする（攻撃と同様）。
+        /// ゲートが閉じている間はラッチしない。
+        /// </summary>
+        public void SetStep(bool pressed)
+        {
+            bool rising = pressed && !_stepHeldRaw;
+            _stepHeldRaw = pressed;
+
+            if (_active && rising)
+            {
+                _stepLatched = true;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool ConsumeStepPressed()
+        {
+            if (!_stepLatched)
+            {
+                return false;
+            }
+
+            _stepLatched = false;
+            return true;
+        }
+
+        /// <summary>
         /// ゲートの開閉を設定する。閉じる（false）と Move をゼロにし、保持中の Guard を解除し、
         /// 未消費の攻撃エッジを破棄する。生の押下状態は保持し、再開時の押しっぱなし誤発火を防ぐ。
         /// </summary>
@@ -105,6 +134,7 @@ namespace Momotaro.Gameplay.Player
 
             Move = Vector2.zero;
             _attackLatched = false;
+            _stepLatched = false;
             if (GuardHeld)
             {
                 GuardHeld = false;

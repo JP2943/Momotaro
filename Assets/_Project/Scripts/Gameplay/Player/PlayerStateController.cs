@@ -16,7 +16,7 @@ namespace Momotaro.Gameplay.Player
     /// 中断時 Hitbox 消去まで。HP/体幹/ひるみの実適用は対象外（対象側 <see cref="IDamageable"/> と後続 Task）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState
+    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState
     {
         [SerializeField] private PlayerMotor _motor;
         [SerializeField] private PlayerFacing _facing;
@@ -28,6 +28,9 @@ namespace Momotaro.Gameplay.Player
 
         [Tooltip("ガード／ジャストガードのパラメータ（JG 受付窓・解除窓・連打ペナルティ）。未割当なら既定値。P2-08。")]
         [SerializeField] private GuardData _guardData;
+
+        [Tooltip("ステップ回避のパラメータ（距離・移動/後硬直秒・無敵区間・消費・連続窓）。未割当なら既定値。P2-09。")]
+        [SerializeField] private StepData _stepData;
 
         [Header("Attack (P2-03B)")]
         [Tooltip("通常攻撃コンボ構成（段順 AttackData ＋ 先行入力秒）。未割当なら攻撃不可。")]
@@ -60,6 +63,8 @@ namespace Momotaro.Gameplay.Player
         private AttackComboMachine _combo;
         private AttackInputBuffer _attackBuffer;
         private JustGuardState _justGuard;
+        private StepState _step;
+        private bool _stepChainBuffered;
         private bool _prevGuardHeld;
         private IPlayerInput _input;
         private HitId _currentSwing;
@@ -106,18 +111,32 @@ namespace Momotaro.Gameplay.Player
         /// <summary>JG 入力状態（HUD 等の検証表示用）。未初期化時は Normal。</summary>
         public JustGuardPhase JustGuardPhase => _justGuard != null ? _justGuard.Phase : JustGuardPhase.Normal;
 
+        // ---- IEvadeState（ステップ無敵。命中解決が参照） ----
+
+        /// <inheritdoc />
+        public bool IsInvincible => _step != null && _step.IsInvincible;
+
+        /// <summary>ステップ回避中か（検証表示用）。</summary>
+        public bool IsStepping => _step != null && _step.IsActive;
+
+        private PlayerVitalsHolder ResolveVitals()
+        {
+            if (!_vitalsResolved)
+            {
+                _vitals = GetComponentInParent<PlayerVitalsHolder>();
+                _vitalsResolved = true;
+            }
+
+            return _vitals;
+        }
+
         /// <summary>ガードブレイク（行動不能）中か。Vitals（<see cref="PlayerVitalsHolder"/>）が無ければ常に false。</summary>
         private bool IsGuardBroken
         {
             get
             {
-                if (!_vitalsResolved)
-                {
-                    _vitals = GetComponentInParent<PlayerVitalsHolder>();
-                    _vitalsResolved = true;
-                }
-
-                return _vitals != null && _vitals.IsGuardBroken;
+                PlayerVitalsHolder v = ResolveVitals();
+                return v != null && v.IsGuardBroken;
             }
         }
 
@@ -139,6 +158,8 @@ namespace Momotaro.Gameplay.Player
             _combo?.Interrupt();
             _attackBuffer?.Clear();
             _justGuard?.Reset();
+            _step?.Reset();
+            _stepChainBuffered = false;
             _prevGuardHeld = false;
             _hitTracker.Clear();
 
@@ -182,6 +203,14 @@ namespace Momotaro.Gameplay.Player
                     ? new JustGuardState(_guardData.JustGuardWindowSeconds, _guardData.JustGuardReleaseWindowSeconds, _guardData.ReleasePenaltySeconds)
                     : new JustGuardState();
             }
+
+            if (_step == null)
+            {
+                _step = _stepData != null
+                    ? new StepState(_stepData.Distance, _stepData.MoveSeconds, _stepData.RecoverySeconds,
+                        _stepData.InvincibleStartSeconds, _stepData.InvincibleEndSeconds, _stepData.ChainBufferSeconds)
+                    : new StepState(3f);
+            }
         }
 
         private void Update()
@@ -222,20 +251,25 @@ namespace Momotaro.Gameplay.Player
             bool guarding = active && _input.GuardHeld;
             bool isMoving = active && _input.Move.sqrMagnitude > _moveThreshold * _moveThreshold;
 
-            DriveCombo(active, guarding);
+            // ステップ回避（ガードブレイク未満・攻撃/ガード/移動より優先。§3/§10）。開始・時間経過・連続予約を処理する。
+            bool stepping = DriveStep(active, broken, isMoving);
 
-            bool attacking = _combo != null && _combo.IsActive;
+            if (!stepping)
+            {
+                DriveCombo(active, guarding);
+            }
+
+            bool attacking = !stepping && _combo != null && _combo.IsActive;
 
             // JG 受付は「ガードが実際に有効化できる」ときだけ開く（仕様書 §3.3 / 攻撃キャンセル規則）。
-            // すなわち GameMode 有効・非ブレイク（active に内包）・ガード押下中で、攻撃していない
-            // （非攻撃、またはキャンセル窓に到達して DriveCombo が攻撃を中断した直後）に限る。
-            bool guardEffective = guarding && !attacking;
+            // ステップ中はガード・JG 不可。非攻撃、またはキャンセル窓到達で攻撃を中断できたときに限る。
+            bool guardEffective = !stepping && guarding && !attacking;
             DriveJustGuard(guardEffective);
 
-            _machine.Tick(active, isMoving, guarding, attacking, broken);
+            _machine.Tick(active, isMoving, guarding, attacking, broken, stepping);
 
             // 段開始フレーム：向き再確定・新 Swing Token・段番号更新（踏み込みは ApplyAttackMotion）。
-            if (_combo != null && _combo.StageJustStarted)
+            if (!stepping && _combo != null && _combo.StageJustStarted)
             {
                 AttackStage = _combo.Stage;
                 _currentSwing = _hitAllocator.NextSingle();
@@ -245,13 +279,137 @@ namespace Momotaro.Gameplay.Player
                 }
             }
 
-            ApplyAttackMotion(attacking);
-            ApplyStateEffects(guarding, attacking);
+            ApplyMotion(stepping, attacking);
+            ApplyStateEffects(guarding, attacking, stepping);
 
             if (attacking && _combo.HitboxActive)
             {
                 PollHitbox();
             }
+        }
+
+        /// <summary>
+        /// ステップ回避を駆動する（Phase2 P2-09）。時間を進め、終了直前の先行入力で連続ステップを予約し、押下で新規開始する。
+        /// ステップ中は true を返す。攻撃中でも優先して開始でき、開始時に攻撃を中断する。
+        /// </summary>
+        private bool DriveStep(bool active, bool broken, bool isMoving)
+        {
+            if (_step == null)
+            {
+                return false;
+            }
+
+            bool wasStepping = _step.IsActive;
+            _step.Tick(Time.deltaTime);
+
+            bool stepPressed = active && _input != null && _input.ConsumeStepPressed();
+
+            if (_step.IsActive)
+            {
+                // 終了直前の先行入力で連続ステップを予約（残スタミナが必要）。
+                if (stepPressed && _step.CanChain && CanAffordStep())
+                {
+                    _stepChainBuffered = true;
+                }
+
+                return true;
+            }
+
+            // 非ステップ。直前がステップなら終了フレーム：予約があれば連続ステップ。
+            if (wasStepping && _stepChainBuffered)
+            {
+                _stepChainBuffered = false;
+                if (!broken && TryStartStep(isMoving))
+                {
+                    return true;
+                }
+            }
+
+            // 新規開始（非ブレイク・GameMode 有効・押下）。
+            if (!broken && stepPressed && TryStartStep(isMoving))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>ステップ開始を試みる。方向確定・スタミナ消費に成功したら攻撃を中断して開始する。</summary>
+        private bool TryStartStep(bool isMoving)
+        {
+            Vector3 dir = ComputeStepDirection(isMoving);
+            if (dir.sqrMagnitude < 1e-6f)
+            {
+                return false;
+            }
+
+            if (!TryConsumeStepStamina())
+            {
+                return false; // スタミナ不足はステップ不発（消費なし・ブレイクなし）。
+            }
+
+            if (_combo != null && _combo.IsActive)
+            {
+                _combo.Interrupt();
+                _hitTracker.Clear();
+            }
+
+            _justGuard?.Reset();
+            _prevGuardHeld = false;
+            _step.Begin(dir);
+            return true;
+        }
+
+        /// <summary>ステップ方向。移動入力があればその方向、無入力なら現在向きの後方（仕様書 3.4）。</summary>
+        private Vector3 ComputeStepDirection(bool isMoving)
+        {
+            if (isMoving && _input != null)
+            {
+                Vector3 d = PlayerMovementCalculator.ToPlanarVelocity(_input.Move, 1f);
+                if (d.sqrMagnitude > 1e-6f)
+                {
+                    return d.normalized;
+                }
+            }
+
+            return -Forward;
+        }
+
+        private float StepStaminaCost => _stepData != null ? _stepData.StaminaCost : 25f;
+
+        private bool CanAffordStep()
+        {
+            PlayerVitalsHolder v = ResolveVitals();
+            return v == null || v.CurrentStamina >= StepStaminaCost;
+        }
+
+        private bool TryConsumeStepStamina()
+        {
+            float cost = StepStaminaCost;
+            if (cost <= 0f)
+            {
+                return true;
+            }
+
+            PlayerVitalsHolder v = ResolveVitals();
+            return v == null || v.TryConsumeStamina(cost);
+        }
+
+        /// <summary>ステップ中は移動抑制＋ステップ速度、そうでなければ攻撃踏み込みを適用する。</summary>
+        private void ApplyMotion(bool stepping, bool attacking)
+        {
+            if (stepping)
+            {
+                if (_motor != null)
+                {
+                    _motor.MovementSuppressed = true;
+                    _motor.StepVelocity = _step.CurrentVelocity; // 壁は物理が停止、敵は Layer ですり抜け
+                }
+
+                return;
+            }
+
+            ApplyAttackMotion(attacking);
         }
 
         /// <summary>
@@ -477,11 +635,12 @@ namespace Momotaro.Gameplay.Player
             }
         }
 
-        private void ApplyStateEffects(bool guarding, bool attacking)
+        private void ApplyStateEffects(bool guarding, bool attacking, bool stepping)
         {
             if (_facing != null)
             {
-                _facing.IsLocked = guarding || attacking;
+                // ステップ中も向きを固定（回避方向へ滑るが向きは回さない）。
+                _facing.IsLocked = guarding || attacking || stepping;
             }
 
             if (_motor != null && _movement != null)

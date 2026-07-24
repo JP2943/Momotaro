@@ -97,5 +97,28 @@ namespace Momotaro.Tests.EditMode
             sm.Tick(true, false, true, false, guardBroken: false);
             Assert.AreEqual(PlayerState.GuardIdle, sm.Current, "ガード入力があれば GuardIdle へ。");
         }
+
+        // ---- P2-09：ステップの状態と優先度 ----
+
+        [Test]
+        public void Step_HasPriorityOverAttackGuardMove_ButUnderGuardBreak()
+        {
+            var sm = new PlayerStateMachine();
+            // 攻撃・ガード・移動を要求してもステップ中は Step。
+            sm.Tick(enabled: true, isMoving: true, guarding: true, attacking: true, guardBroken: false, stepping: true);
+            Assert.AreEqual(PlayerState.Step, sm.Current, "ステップは攻撃/ガード/移動より優先。");
+
+            // ガードブレイクはステップより上。
+            sm.Tick(true, true, true, true, guardBroken: true, stepping: true);
+            Assert.AreEqual(PlayerState.GuardBreak, sm.Current, "ガードブレイクはステップより優先。");
+        }
+
+        [Test]
+        public void Step_OverridesDisabled()
+        {
+            var sm = new PlayerStateMachine();
+            sm.Tick(enabled: false, isMoving: false, guarding: false, attacking: false, guardBroken: false, stepping: true);
+            Assert.AreEqual(PlayerState.Step, sm.Current, "無効でもステップ中は Step。");
+        }
     }
 }

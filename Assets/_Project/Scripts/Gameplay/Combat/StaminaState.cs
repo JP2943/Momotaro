@@ -60,10 +60,11 @@ namespace Momotaro.Gameplay.Combat
         public float BreakHpMultiplier => IsBroken ? _breakHpMultiplier : 1f;
 
         /// <summary>
-        /// ガードで固定スタミナを消費する。ブレイク中は消費しない（行動不能でガードできない）。実際に減った量を返す。
-        /// 残量を超える消費でも 0 で止まり、0 到達でガードブレイクへ移行する（その一撃自体の防御成否は呼び出し側で判定済み）。
+        /// スタミナを消費する。ブレイク中は消費しない（行動不能）。実際に減った量を返す。残量を超える消費でも 0 で止まる。
+        /// <paramref name="canTriggerBreak"/> が true（ガード）なら 0 到達でガードブレイクへ移行する。ステップ等の消費は false を渡し、
+        /// 0 到達でもブレイクさせない（ブレイクはガード専用の崩し）。
         /// </summary>
-        public float Consume(float amount)
+        public float Consume(float amount, bool canTriggerBreak = true)
         {
             if (amount <= 0f || IsBroken)
             {
@@ -80,7 +81,7 @@ namespace Momotaro.Gameplay.Combat
             // 0 到達なら待機延長。その後ブレイクへ（ブレイク中は回復停止なので待機値は復帰後に上書きされる）。
             _regenDelayRemaining = _current <= 0f ? _zeroRegenDelay : _regenDelay;
 
-            if (_current <= 0f)
+            if (_current <= 0f && canTriggerBreak)
             {
                 _breakRemaining = _breakSeconds;
             }

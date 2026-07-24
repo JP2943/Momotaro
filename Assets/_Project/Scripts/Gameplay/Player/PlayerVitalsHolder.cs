@@ -32,6 +32,8 @@ namespace Momotaro.Gameplay.Player
         private bool _guardStateResolved;
         private IJustGuardState _justGuardState;
         private bool _justGuardStateResolved;
+        private IEvadeState _evadeState;
+        private bool _evadeStateResolved;
 
         /// <summary>生成された Runtime Vitals。data 未設定時は null。</summary>
         public PlayerVitals Vitals
@@ -130,6 +132,29 @@ namespace Momotaro.Gameplay.Player
             return consumed;
         }
 
+        /// <summary>現在スタミナ（表示・照会用 Vital と同期済み）。</summary>
+        public int CurrentStamina
+        {
+            get { EnsureVitals(); return _vitals != null ? _vitals.Stamina.Current : 0; }
+        }
+
+        /// <summary>
+        /// 条件付きスタミナ消費（Phase2 P2-09。ステップ等）。残量が <paramref name="amount"/> 以上でブレイク中でないときだけ消費し
+        /// true を返す。不足時は消費せず false（ステップ不発）。ステップ消費はガードブレイクを誘発しない（<c>canTriggerBreak:false</c>）。
+        /// </summary>
+        public bool TryConsumeStamina(float amount)
+        {
+            EnsureVitals();
+            if (_stamina == null || _stamina.IsBroken || _stamina.Current < amount)
+            {
+                return false;
+            }
+
+            _stamina.Consume(amount, canTriggerBreak: false);
+            SyncStaminaVital();
+            return true;
+        }
+
         private IGuardState ResolveGuardState()
         {
             if (!_guardStateResolved)
@@ -150,6 +175,17 @@ namespace Momotaro.Gameplay.Player
             }
 
             return _justGuardState;
+        }
+
+        private IEvadeState ResolveEvadeState()
+        {
+            if (!_evadeStateResolved)
+            {
+                _evadeState = GetComponentInParent<IEvadeState>();
+                _evadeStateResolved = true;
+            }
+
+            return _evadeState;
         }
 
         /// <summary>
@@ -176,6 +212,14 @@ namespace Momotaro.Gameplay.Player
             EnsureVitals();
             if (_vitals == null)
             {
+                return;
+            }
+
+            // 無敵（ステップ I-frame 等）は最優先で命中を回避する（仕様書 §2/§10。無敵＞ガード＞JG＞被弾）。
+            IEvadeState evade = ResolveEvadeState();
+            if (evade != null && evade.IsInvincible)
+            {
+                Results.Publish(HitResult.Evade(hit.HitId, hit.Attacker, this));
                 return;
             }
 
