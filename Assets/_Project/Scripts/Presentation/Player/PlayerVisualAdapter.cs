@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Momotaro.Gameplay.Player;
 using UnityEngine;
 
@@ -18,7 +19,12 @@ namespace Momotaro.Presentation.Player
         [SerializeField] private PlayerFacing _facing;
         [SerializeField] private Animator _animator;
 
+        [Tooltip("再生対象の Animator Layer 名（既定 Base Layer）とその index。")]
+        [SerializeField] private string _layerName = "Base Layer";
+        [SerializeField] private int _layerIndex = 0;
+
         private string _currentClip;
+        private readonly HashSet<string> _warnedMissingStates = new HashSet<string>();
 
         private void LateUpdate()
         {
@@ -34,7 +40,21 @@ namespace Momotaro.Presentation.Player
             }
 
             _currentClip = clip;
-            _animator.Play(clip);
+
+            // Layer index を明示し、完全 State パスのハッシュで存在確認してから再生する。State 名だけの
+            // Play(string) は未定義 State のとき "Invalid Layer Index '-1'" / "State could not be found" を毎フレーム出す。
+            int stateHash = Animator.StringToHash(_layerName + "." + clip);
+            if (_animator.HasState(_layerIndex, stateHash))
+            {
+                _animator.Play(stateHash, _layerIndex, 0f);
+            }
+            else if (_warnedMissingStates.Add(clip))
+            {
+                // 設定不備を黙って Idle へ落とさず、State 不足を 1 度だけ明示する。
+                Debug.LogWarning(
+                    $"[PlayerVisualAdapter] Animator の Layer '{_layerName}'(index {_layerIndex}) に State '{clip}' が無いため再生をスキップしました。" +
+                    "Animator Controller に該当 State を追加してください。", this);
+            }
         }
     }
 }
