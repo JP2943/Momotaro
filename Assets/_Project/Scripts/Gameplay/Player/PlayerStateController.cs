@@ -592,6 +592,9 @@ namespace Momotaro.Gameplay.Player
         private void FireSpecial()
         {
             _special.Cancel();
+            // 1 回の長押しにつき 1 回発動：発動後は必殺技ボタンを一度離すまで次のチャージを禁止する
+            // （自動発動・手動リリース発動の双方に同じ再入力規則を適用。§3.6）。
+            _specialRequiresRelease = true;
             if (_combo != null && _combo.IsActive)
             {
                 _combo.Interrupt();

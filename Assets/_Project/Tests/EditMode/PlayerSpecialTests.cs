@@ -144,6 +144,35 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
+        public void AutoFire_NoRepeatWhileHeld_ThenReleaseRepressStartsFresh()
+        {
+            // 極小チャージ/保持で自動発動させ、押しっぱなしのまま発動＋後隙を越えても再発動しないことを確認する。
+            var (c, _, _, input) = MakeController(charge: 0.001f, hold: 0.001f);
+            input.SetSpecialAttack(true);
+            Tick(c); // Begin
+            Tick(c); // 自動発動
+            Assert.IsTrue(c.IsSpecialAttacking);
+
+            // 発動＋後隙（既定 0.15+0.9=1.05 秒）を越えるまで、必殺技ボタンを押したまま更新。
+            for (int i = 0; i < 80; i++)
+            {
+                Tick(c);
+            }
+
+            Assert.IsFalse(c.IsSpecialAttacking, "発動・後隙は終了している。");
+            Assert.IsFalse(c.IsSpecialCharging, "押しっぱなしでは再チャージ・再発動しない（1 長押し 1 発動）。");
+
+            // 一度解除して再度押すと 0 秒から新規チャージできる。
+            input.SetSpecialAttack(false);
+            Tick(c);
+            input.SetSpecialAttack(true);
+            Tick(c);
+
+            Assert.IsTrue(c.IsSpecialCharging, "解除後の再押下で新規チャージ開始。");
+            Assert.Less(c.SpecialChargeElapsed, 0.5f, "経過は 0 付近。");
+        }
+
+        [Test]
         public void GuardDuringCharge_CancelsCharge_AndOpensJustGuard()
         {
             var (c, _, _, input) = MakeController();
