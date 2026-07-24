@@ -429,6 +429,9 @@ namespace Momotaro.Gameplay.Player
                 _hitTracker.Clear();
             }
 
+            // ステップ入力で必殺技チャージを完全キャンセル（経過 0 へ）。ステップ終了後に再開しない（仕様書 §3.6）。
+            _special?.Cancel();
+
             _justGuard?.Reset();
             _prevGuardHeld = false;
             _step.Begin(dir);
@@ -634,6 +637,9 @@ namespace Momotaro.Gameplay.Player
                     0f, 0f, guardable: false, justGuardable: false, isJustGuardCounter: false,
                     _specialData.DefenseIgnoreRatio, _specialData.StunHpMultiplier, _specialSwing);
                 target.ReceiveHit(hit);
+
+                // 小型敵ノックバック（拡張点。ボスは受け手側で無効化）。
+                col.GetComponentInParent<IKnockbackReceiver>()?.ReceiveKnockback(Forward, _specialData.Knockback);
             }
         }
 

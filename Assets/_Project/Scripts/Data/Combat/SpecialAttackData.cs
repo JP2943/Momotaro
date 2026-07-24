@@ -24,6 +24,8 @@ namespace Momotaro.Data.Combat
         [SerializeField] private float _poiseDamage = 30f;
         [Tooltip("ひるませ値（非常に高い）。P2-10（100）。")]
         [SerializeField] private float _flinchPower = 100f;
+        [Tooltip("小型敵ノックバック力（拡張点）。ボスは無効。仕様書 3.6。")]
+        [SerializeField] private float _knockback = 6f;
 
         [Header("Timing")]
         [Tooltip("判定（Active）秒。")]
@@ -51,6 +53,9 @@ namespace Momotaro.Data.Combat
 
         /// <summary>ひるませ値（100）。</summary>
         public float FlinchPower => _flinchPower;
+
+        /// <summary>小型敵ノックバック力（拡張点。ボスは無効）。</summary>
+        public float Knockback => _knockback;
 
         /// <summary>判定（Active）秒。</summary>
         public float ActiveSeconds => _activeSeconds;

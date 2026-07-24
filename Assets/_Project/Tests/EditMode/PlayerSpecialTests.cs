@@ -48,6 +48,19 @@ namespace Momotaro.Tests.EditMode
             fi.SetValue(t, v);
         }
 
+        private static object GetPrivate(object t, string f)
+        {
+            System.Type ty = t.GetType();
+            FieldInfo fi = null;
+            while (ty != null && fi == null)
+            {
+                fi = ty.GetField(f, BindingFlags.NonPublic | BindingFlags.Instance);
+                ty = ty.BaseType;
+            }
+
+            return fi.GetValue(t);
+        }
+
         private static void Tick(PlayerStateController c) => UpdateMethod.Invoke(c, null);
 
         private SpecialAttackData MakeSpecialData(float charge = 2.0f, float hold = 0.75f)
@@ -144,6 +157,41 @@ namespace Momotaro.Tests.EditMode
             Assert.IsFalse(c.IsSpecialCharging, "ガードでチャージ中断。");
             Assert.AreEqual(PlayerState.GuardIdle, c.Current);
             Assert.IsTrue(c.CanJustGuard, "ガード押下から JG 受付が開く。");
+        }
+
+        [Test]
+        public void StepDuringCharge_FullyCancelsCharge_NoResume()
+        {
+            var (c, _, _, input) = MakeController();
+            input.SetSpecialAttack(true);
+            Tick(c); // charging
+            Assert.IsTrue(c.IsSpecialCharging);
+
+            input.SetStep(true);
+            Tick(c); // ステップ開始 → チャージ完全キャンセル（経過0）
+
+            Assert.IsFalse(c.IsSpecialCharging, "ステップでチャージは即時キャンセル。");
+            var special = GetPrivate(c, "_special");
+            var isActive = (bool)special.GetType().GetProperty("IsActive").GetValue(special);
+            Assert.IsFalse(isActive, "SpecialChargeState は非アクティブ（経過0へ）。ステップ後も再開しない。");
+        }
+
+        [Test]
+        public void FiringSpecial_DoesNotMutateSpecialAttackDataSO()
+        {
+            var (c, _, _, input) = MakeController(charge: 0.001f, hold: 0.001f);
+            var data = (SpecialAttackData)GetPrivate(c, "_specialData");
+            float hp = data.HpMultiplier, ignore = data.DefenseIgnoreRatio, stun = data.StunHpMultiplier, flinch = data.FlinchPower;
+
+            input.SetSpecialAttack(true);
+            Tick(c);
+            Tick(c); // 自動発動
+            Assert.IsTrue(c.IsSpecialAttacking);
+
+            Assert.AreEqual(hp, data.HpMultiplier, 1e-6f, "SO の技倍率は不変。");
+            Assert.AreEqual(ignore, data.DefenseIgnoreRatio, 1e-6f);
+            Assert.AreEqual(stun, data.StunHpMultiplier, 1e-6f);
+            Assert.AreEqual(flinch, data.FlinchPower, 1e-6f);
         }
 
         [Test]

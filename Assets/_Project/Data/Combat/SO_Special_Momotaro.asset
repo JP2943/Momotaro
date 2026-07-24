@@ -25,5 +25,6 @@ MonoBehaviour:
   _stunHpMultiplier: 1.5
   _poiseDamage: 30
   _flinchPower: 100
+  _knockback: 6
   _activeSeconds: 0.15
   _recoverySeconds: 0.9

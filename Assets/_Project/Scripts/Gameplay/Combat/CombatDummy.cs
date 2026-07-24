@@ -13,7 +13,7 @@ namespace Momotaro.Gameplay.Combat
     /// で通知（AppliedDamage は実際に適用された HP／体幹／ひるみ量）。死亡処理・敵 AI・攻撃は対象外。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class CombatDummy : MonoBehaviour, ICombatActor, IDamageable, ICombatActivityState
+    public sealed class CombatDummy : MonoBehaviour, ICombatActor, IDamageable, ICombatActivityState, IKnockbackReceiver
     {
         [Tooltip("HP・防御・体幹・ひるみ耐性などの基礎データ（EnemyData）。標準ダミーは HP100/防御20/体幹100/耐性60。")]
         [SerializeField] private EnemyData _data;
@@ -112,6 +112,19 @@ namespace Momotaro.Gameplay.Combat
         public bool IsPoiseVulnerableAction =>
             !IsStunned && !IsFlinching && !IsDefeated && _debugActionPhase.IsPoiseVulnerable();
 
+        /// <summary>ボス（大型敵）か（EnemyData 由来）。ボスはノックバック無効。</summary>
+        public bool IsBoss => _data != null && _data.IsBoss;
+
+        /// <summary>直近に受けたノックバック力（検証用。ボスは常に 0）。</summary>
+        public float LastKnockback { get; private set; }
+
+        /// <inheritdoc />
+        /// <remarks>Phase 2 の仮反応：物理は動かさず、受けた力を記録するだけ。ボス（<see cref="IsBoss"/>）は無効（0）。</remarks>
+        public void ReceiveKnockback(Vector3 direction, float force)
+        {
+            LastKnockback = IsBoss ? 0f : force;
+        }
+
         private void Awake()
         {
             EnsureRuntime();
@@ -183,9 +196,12 @@ namespace Momotaro.Gameplay.Combat
             bool wasStunned = _poise.IsStunned;
             bool wasFlinching = _flinch.IsFlinching;
 
-            // HP：必殺技は防御一部無視（実効防御）＋固有スタン倍率の上書き（1.25 と乗算しない。Phase2 P2-10）。
+            // HP：必殺技は防御一部無視（実効防御）。スタン倍率は「スタン中のみ」適用する（非スタンは 1.0）。
+            // スタン中は上書き（必殺技 1.5）があればそれを、無ければ対象既定（1.25）を用いる。上書きは 1.25 と乗算しない（置き換え）。
             float effectiveDefense = defense * (1f - Mathf.Clamp01(hit.DefenseIgnoreRatio));
-            float stunHpMultiplier = hit.StunHpMultiplierOverride > 0f ? hit.StunHpMultiplierOverride : _poise.StunHpMultiplier;
+            float stunHpMultiplier = _poise.IsStunned
+                ? (hit.StunHpMultiplierOverride > 0f ? hit.StunHpMultiplierOverride : _poise.StunHpMultiplier)
+                : 1f;
             int appliedHp = DamageApplication.ApplyHpDamage(_hp, hit.Damage.Hp, effectiveDefense, stunHpMultiplier);
 
             // 体幹：命中の Poise（攻撃側で状況補正済み）× 対象の被体幹倍率。実減少量を求める。
