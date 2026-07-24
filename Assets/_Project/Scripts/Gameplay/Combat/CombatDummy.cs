@@ -115,6 +115,8 @@ namespace Momotaro.Gameplay.Combat
         private void Awake()
         {
             EnsureRuntime();
+            // 敵は Enemy レイヤーへ。Player は敵をすり抜け、壁（Default）では停止する（仕様書 §3.4 / P2-09）。
+            CombatLayers.ConfigureEnemy(gameObject);
         }
 
         private void EnsureRuntime()

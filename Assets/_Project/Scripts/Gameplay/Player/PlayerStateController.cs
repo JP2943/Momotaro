@@ -227,10 +227,11 @@ namespace Momotaro.Gameplay.Player
             bool broken = IsGuardBroken;
             bool active = _input != null && _input.Active && !broken;
 
-            // ブレイク中に発生した攻撃押下は破棄し、復帰後の Buffer へ残さない。
+            // ブレイク中に発生した攻撃・ステップ押下は破棄し、復帰後へ残さない（P2-07/P2-09）。
             if (broken && _input != null)
             {
                 _input.ConsumeAttackPressed();
+                _input.ConsumeStepPressed();
             }
 
             // 先行入力の取り込みと時間経過。遮断中は預かった入力を破棄する。
@@ -296,6 +297,20 @@ namespace Momotaro.Gameplay.Player
         {
             if (_step == null)
             {
+                return false;
+            }
+
+            // GameMode 遮断／行動不能（active=false）では、実行中ステップ・無敵・連続予約・入力を即時解除する（P2-09）。
+            // これにより PlayerState.Step・無敵・StepVelocity・MovementSuppressed が次段の処理で解除される。
+            if (!active)
+            {
+                if (_step.IsActive)
+                {
+                    _step.Reset();
+                }
+
+                _stepChainBuffered = false;
+                _input?.ConsumeStepPressed();
                 return false;
             }
 

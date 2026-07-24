@@ -160,12 +160,72 @@ namespace Momotaro.Tests.EditMode
             Tick(c);
             Assert.IsTrue(c.IsStepping);
 
-            c.ResetToNeutral(); // Mode 遮断／Disable 相当
+            c.ResetToNeutral(); // Disable 相当
 
             Assert.IsFalse(c.IsStepping, "解除でステップが残らない。");
             Assert.IsFalse(c.IsInvincible, "無敵も残らない。");
             Assert.IsFalse(motor.MovementSuppressed, "移動抑制が解除。");
             Assert.AreEqual(Vector3.zero, motor.StepVelocity, "ステップ速度ゼロ。");
+        }
+
+        [Test]
+        public void GameModeGateClose_ImmediatelyCancelsInProgressStep()
+        {
+            // 実際の GameMode 遮断経路（input.SetActive(false) → Update）で、実行中ステップ・無敵・速度・抑制が即時解除される。
+            var (c, motor, _, input) = MakeController();
+            input.SetStep(true);
+            Tick(c);
+            Assert.IsTrue(c.IsStepping);
+            Assert.IsTrue(motor.MovementSuppressed, "ステップ中は移動抑制。");
+
+            input.SetActive(false); // 会話・Pause・UI 等でゲートが閉じる
+            Tick(c);
+
+            Assert.IsFalse(c.IsStepping, "遮断で実行中ステップを即時解除。");
+            Assert.AreNotEqual(PlayerState.Step, c.Current);
+            Assert.IsFalse(c.IsInvincible, "無敵も即時解除。");
+            Assert.IsFalse(motor.MovementSuppressed, "移動抑制が解除。");
+            Assert.AreEqual(Vector3.zero, motor.StepVelocity, "ステップ速度ゼロ。");
+        }
+
+        [Test]
+        public void StepPressDuringGuardBreak_IsDropped_NoStepAfterRecovery()
+        {
+            var (c, _, holder, input) = MakeController(maxStamina: 100);
+            holder.ConsumeStamina(100f); // スタミナ 0 → ガードブレイク
+            Assert.IsTrue(holder.IsGuardBroken);
+
+            input.SetStep(true);
+            Tick(c); // ブレイク中：ステップ押下は破棄される
+            Assert.AreEqual(PlayerState.GuardBreak, c.Current);
+            Assert.IsFalse(c.IsStepping);
+
+            holder.Tick(1.5f); // ブレイク終了（最大の25%＝25 回復）
+            Assert.IsFalse(holder.IsGuardBroken);
+
+            Tick(c); // 破棄済みなので、押しっぱなしでもステップは発動しない
+            Assert.IsFalse(c.IsStepping, "ブレイク中の押下は復帰後へ残らない。");
+            Assert.AreNotEqual(PlayerState.Step, c.Current);
+        }
+
+        [Test]
+        public void EnemyLayer_Configured_PlayerPassesEnemy_ButCollidesWall()
+        {
+            int enemy = Momotaro.Gameplay.Combat.CombatLayers.EnemyLayer;
+            int player = Momotaro.Gameplay.Combat.CombatLayers.PlayerLayer;
+            Assert.GreaterOrEqual(enemy, 0, "Enemy レイヤーが TagManager に定義されている。");
+            Assert.GreaterOrEqual(player, 0, "Player（Default）レイヤーが定義されている。");
+
+            bool prev = Physics.GetIgnoreLayerCollision(enemy, player);
+            var go = new GameObject("EnemyBody");
+            _spawned.Add(go);
+            Momotaro.Gameplay.Combat.CombatLayers.ConfigureEnemy(go);
+
+            Assert.AreEqual(enemy, go.layer, "敵は Enemy レイヤーへ配置。");
+            Assert.IsTrue(Physics.GetIgnoreLayerCollision(enemy, player), "Player↔Enemy は衝突無効（敵すり抜け）。");
+            Assert.IsFalse(Physics.GetIgnoreLayerCollision(player, player), "Player↔壁(Default)は衝突維持（壁停止）。");
+
+            Physics.IgnoreLayerCollision(enemy, player, prev); // グローバル状態を復元
         }
     }
 }
