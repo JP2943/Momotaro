@@ -42,5 +42,11 @@ namespace Momotaro.Gameplay.Player
         /// </summary>
         /// <returns>未消費の押下エッジがあれば true。</returns>
         bool ConsumeStepPressed();
+
+        /// <summary>
+        /// 必殺技ボタンを保持中か（Phase2 P2-10）。長押しでチャージするため、押下エッジではなく保持状態で供給する。
+        /// 非 Gameplay 時は解除される。
+        /// </summary>
+        bool SpecialAttackHeld { get; }
     }
 }

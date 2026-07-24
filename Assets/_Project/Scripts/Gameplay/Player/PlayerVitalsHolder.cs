@@ -34,6 +34,8 @@ namespace Momotaro.Gameplay.Player
         private bool _justGuardStateResolved;
         private IEvadeState _evadeState;
         private bool _evadeStateResolved;
+        private ISpecialChargeCancel _specialCancel;
+        private bool _specialCancelResolved;
 
         /// <summary>生成された Runtime Vitals。data 未設定時は null。</summary>
         public PlayerVitals Vitals
@@ -188,6 +190,17 @@ namespace Momotaro.Gameplay.Player
             return _evadeState;
         }
 
+        private ISpecialChargeCancel ResolveSpecialCancel()
+        {
+            if (!_specialCancelResolved)
+            {
+                _specialCancel = GetComponentInParent<ISpecialChargeCancel>();
+                _specialCancelResolved = true;
+            }
+
+            return _specialCancel;
+        }
+
         /// <summary>
         /// ジャストガード成立時に攻撃者の体幹へ固定ダメージを反射する（Phase2 P2-08）。攻撃者が <see cref="IDamageable"/> の場合のみ、
         /// 体幹のみ（HP/ひるみ 0）・再ガード不可の逆方向 Hit を返す。攻撃者が存在しない/受け手でない場合は何もしない。
@@ -254,6 +267,9 @@ namespace Momotaro.Gameplay.Player
             // 貫通：ブレイク中は被 HP ダメージ倍率（×1.25 等）を掛ける。防御適用 → HP 減算 → 実減少量（Clamp 込み）。
             float breakMultiplier = _stamina != null ? _stamina.BreakHpMultiplier : 1f;
             int appliedHp = DamageApplication.ApplyHpDamage(_vitals.Health, hit.Damage.Hp, defense, breakMultiplier);
+
+            // 通常被弾（実ダメージ）で必殺技チャージを中断する（Phase2 P2-10。仕様書 §3.6）。
+            ResolveSpecialCancel()?.CancelSpecialChargeOnHit();
 
             // 実際に適用された HP のみ。体幹・ひるみは本 Task では未適用のため 0。
             var applied = new HitDamage(appliedHp, 0f, 0f);

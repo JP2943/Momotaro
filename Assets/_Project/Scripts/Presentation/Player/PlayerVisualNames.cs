@@ -42,6 +42,12 @@ namespace Momotaro.Presentation.Player
                 case PlayerState.Step:
                     statePart = "Step";
                     break;
+                case PlayerState.SpecialCharge:
+                    statePart = "SpecialCharge";
+                    break;
+                case PlayerState.Special:
+                    statePart = "SpecialAttack";
+                    break;
                 default:
                     statePart = "Idle";
                     break;

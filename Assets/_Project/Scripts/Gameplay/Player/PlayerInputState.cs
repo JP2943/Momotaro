@@ -17,6 +17,7 @@ namespace Momotaro.Gameplay.Player
         private bool _attackLatched;
         private bool _stepHeldRaw;
         private bool _stepLatched;
+        private bool _specialHeld;
 
         /// <inheritdoc />
         public Vector2 Move { get; private set; }
@@ -115,6 +116,15 @@ namespace Momotaro.Gameplay.Player
             return true;
         }
 
+        /// <inheritdoc />
+        public bool SpecialAttackHeld => _specialHeld;
+
+        /// <summary>必殺技ボタンの保持状態を設定する。ゲートが閉じている間は解除する。</summary>
+        public void SetSpecialAttack(bool held)
+        {
+            _specialHeld = _active && held;
+        }
+
         /// <summary>
         /// ゲートの開閉を設定する。閉じる（false）と Move をゼロにし、保持中の Guard を解除し、
         /// 未消費の攻撃エッジを破棄する。生の押下状態は保持し、再開時の押しっぱなし誤発火を防ぐ。
@@ -135,6 +145,7 @@ namespace Momotaro.Gameplay.Player
             Move = Vector2.zero;
             _attackLatched = false;
             _stepLatched = false;
+            _specialHeld = false;
             if (GuardHeld)
             {
                 GuardHeld = false;

@@ -120,5 +120,39 @@ namespace Momotaro.Tests.EditMode
             sm.Tick(enabled: false, isMoving: false, guarding: false, attacking: false, guardBroken: false, stepping: true);
             Assert.AreEqual(PlayerState.Step, sm.Current, "無効でもステップ中は Step。");
         }
+
+        // ---- P2-10：必殺技の状態と優先度 ----
+
+        [Test]
+        public void SpecialCharge_And_Special_States()
+        {
+            var sm = new PlayerStateMachine();
+            sm.Tick(true, false, false, false, false, false, charging: true, specialAttacking: false);
+            Assert.AreEqual(PlayerState.SpecialCharge, sm.Current);
+
+            sm.Tick(true, false, false, false, false, false, charging: false, specialAttacking: true);
+            Assert.AreEqual(PlayerState.Special, sm.Current);
+        }
+
+        [Test]
+        public void Special_Priority_OverAttackGuard_UnderStepAndBreak()
+        {
+            var sm = new PlayerStateMachine();
+            // 発動は攻撃/ガード/移動より上。
+            sm.Tick(true, true, true, true, false, false, charging: false, specialAttacking: true);
+            Assert.AreEqual(PlayerState.Special, sm.Current);
+
+            // ステップは必殺技より上。
+            sm.Tick(true, false, false, false, false, true, charging: false, specialAttacking: true);
+            Assert.AreEqual(PlayerState.Step, sm.Current);
+
+            // ガードブレイクは最上位。
+            sm.Tick(true, false, false, false, true, false, charging: true, specialAttacking: false);
+            Assert.AreEqual(PlayerState.GuardBreak, sm.Current);
+
+            // チャージは攻撃より上。
+            sm.Tick(true, false, false, true, false, false, charging: true, specialAttacking: false);
+            Assert.AreEqual(PlayerState.SpecialCharge, sm.Current);
+        }
     }
 }

@@ -183,8 +183,10 @@ namespace Momotaro.Gameplay.Combat
             bool wasStunned = _poise.IsStunned;
             bool wasFlinching = _flinch.IsFlinching;
 
-            // HP：スタン中は ×1.25（PoiseState.StunHpMultiplier）。防御適用 → 減算 → 実減少量。
-            int appliedHp = DamageApplication.ApplyHpDamage(_hp, hit.Damage.Hp, defense, _poise.StunHpMultiplier);
+            // HP：必殺技は防御一部無視（実効防御）＋固有スタン倍率の上書き（1.25 と乗算しない。Phase2 P2-10）。
+            float effectiveDefense = defense * (1f - Mathf.Clamp01(hit.DefenseIgnoreRatio));
+            float stunHpMultiplier = hit.StunHpMultiplierOverride > 0f ? hit.StunHpMultiplierOverride : _poise.StunHpMultiplier;
+            int appliedHp = DamageApplication.ApplyHpDamage(_hp, hit.Damage.Hp, effectiveDefense, stunHpMultiplier);
 
             // 体幹：命中の Poise（攻撃側で状況補正済み）× 対象の被体幹倍率。実減少量を求める。
             // JG 反射（IsJustGuardCounter）は回復開始待機を延長（通常 3 秒→JG 4 秒。仕様書 §3.11）。

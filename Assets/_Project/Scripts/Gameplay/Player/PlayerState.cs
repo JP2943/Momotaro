@@ -32,5 +32,11 @@ namespace Momotaro.Gameplay.Player
         /// ステップ回避中（Phase2 P2-09）。短距離高速移動＋I-frame。優先度はガードブレイク未満・攻撃/ガード/移動より上。
         /// </summary>
         Step = 6,
+
+        /// <summary>必殺技チャージ中（Phase2 P2-10）。移動不可・方向転換のみ。ガード/ステップ/交代/被弾でキャンセル。</summary>
+        SpecialCharge = 7,
+
+        /// <summary>必殺技発動中（Phase2 P2-10）。チャージ解放後の攻撃・後隙。</summary>
+        Special = 8,
     }
 }

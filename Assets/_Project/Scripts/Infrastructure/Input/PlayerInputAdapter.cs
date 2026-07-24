@@ -19,12 +19,14 @@ namespace Momotaro.Infrastructure.Input
         private const string GuardAction = "Guard";
         private const string AttackAction = "Attack";
         private const string StepAction = "Step";
+        private const string SpecialAttackAction = "SpecialAttack";
 
         private readonly PlayerInputState _state = new PlayerInputState();
         private readonly InputAction _move;
         private readonly InputAction _guard;
         private readonly InputAction _attack;
         private readonly InputAction _step;
+        private readonly InputAction _special;
         private bool _disposed;
 
         /// <summary>Gameplay 層へ渡す入力。</summary>
@@ -66,6 +68,14 @@ namespace Momotaro.Infrastructure.Input
             {
                 _step.started += OnStepStarted;
                 _step.canceled += OnStepCanceled;
+            }
+
+            // SpecialAttack は任意接続（P2-10）。保持状態を供給する。
+            _special = map.FindAction(SpecialAttackAction, throwIfNotFound: false);
+            if (_special != null)
+            {
+                _special.started += OnSpecialStarted;
+                _special.canceled += OnSpecialCanceled;
             }
         }
 
@@ -116,6 +126,16 @@ namespace Momotaro.Infrastructure.Input
             _state.SetStep(false);
         }
 
+        private void OnSpecialStarted(InputAction.CallbackContext context)
+        {
+            _state.SetSpecialAttack(true);
+        }
+
+        private void OnSpecialCanceled(InputAction.CallbackContext context)
+        {
+            _state.SetSpecialAttack(false);
+        }
+
         /// <inheritdoc />
         public void Dispose()
         {
@@ -132,6 +152,18 @@ namespace Momotaro.Infrastructure.Input
             {
                 _attack.started -= OnAttackStarted;
                 _attack.canceled -= OnAttackCanceled;
+            }
+
+            if (_step != null)
+            {
+                _step.started -= OnStepStarted;
+                _step.canceled -= OnStepCanceled;
+            }
+
+            if (_special != null)
+            {
+                _special.started -= OnSpecialStarted;
+                _special.canceled -= OnSpecialCanceled;
             }
 
             _disposed = true;

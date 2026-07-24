@@ -16,7 +16,7 @@ namespace Momotaro.Gameplay.Player
     /// 中断時 Hitbox 消去まで。HP/体幹/ひるみの実適用は対象外（対象側 <see cref="IDamageable"/> と後続 Task）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState
+    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, ISpecialChargeCancel
     {
         [SerializeField] private PlayerMotor _motor;
         [SerializeField] private PlayerFacing _facing;
@@ -31,6 +31,9 @@ namespace Momotaro.Gameplay.Player
 
         [Tooltip("ステップ回避のパラメータ（距離・移動/後硬直秒・無敵区間・消費・連続窓）。未割当なら既定値。P2-09。")]
         [SerializeField] private StepData _stepData;
+
+        [Tooltip("必殺技のパラメータ（チャージ2.0/保持0.75/7.0倍/防御無視/スタン1.5/ひるませ100/後隙）。未割当なら必殺技不可。P2-10。")]
+        [SerializeField] private SpecialAttackData _specialData;
 
         [Header("Attack (P2-03B)")]
         [Tooltip("通常攻撃コンボ構成（段順 AttackData ＋ 先行入力秒）。未割当なら攻撃不可。")]
@@ -65,6 +68,10 @@ namespace Momotaro.Gameplay.Player
         private JustGuardState _justGuard;
         private StepState _step;
         private bool _stepChainBuffered;
+        private SpecialChargeState _special;
+        private float _specialAttackRemaining;
+        private float _specialActiveRemaining;
+        private HitId _specialSwing;
         private bool _prevGuardHeld;
         private IPlayerInput _input;
         private HitId _currentSwing;
@@ -119,6 +126,30 @@ namespace Momotaro.Gameplay.Player
         /// <summary>ステップ回避中か（検証表示用）。</summary>
         public bool IsStepping => _step != null && _step.IsActive;
 
+        // ---- 必殺技（Phase2 P2-10） ----
+
+        /// <summary>必殺技チャージ中か。</summary>
+        public bool IsSpecialCharging => _special != null && _special.IsActive;
+
+        /// <summary>必殺技（発動・後隙）実行中か。</summary>
+        public bool IsSpecialAttacking => _specialAttackRemaining > 0f;
+
+        /// <summary>チャージ経過秒（HUD/検証用）。</summary>
+        public float SpecialChargeElapsed => _special != null ? _special.Elapsed : 0f;
+
+        /// <summary>チャージが最大到達済みか（HUD/検証用）。</summary>
+        public bool IsSpecialCharged => _special != null && _special.IsCharged;
+
+        /// <inheritdoc />
+        public void CancelSpecialChargeOnHit()
+        {
+            // 被弾（実ダメージ）で必殺技チャージを中断する（発動・後隙中は中断しない）。
+            if (_special != null && _special.IsActive)
+            {
+                _special.Cancel();
+            }
+        }
+
         private PlayerVitalsHolder ResolveVitals()
         {
             if (!_vitalsResolved)
@@ -163,6 +194,9 @@ namespace Momotaro.Gameplay.Player
             _justGuard?.Reset();
             _step?.Reset();
             _stepChainBuffered = false;
+            _special?.Reset();
+            _specialAttackRemaining = 0f;
+            _specialActiveRemaining = 0f;
             _prevGuardHeld = false;
             _hitTracker.Clear();
 
@@ -214,6 +248,11 @@ namespace Momotaro.Gameplay.Player
                         _stepData.InvincibleStartSeconds, _stepData.InvincibleEndSeconds, _stepData.ChainBufferSeconds)
                     : new StepState(3f);
             }
+
+            if (_special == null && _specialData != null)
+            {
+                _special = new SpecialChargeState(_specialData.ChargeSeconds, _specialData.MaxHoldSeconds);
+            }
         }
 
         private void Update()
@@ -258,22 +297,33 @@ namespace Momotaro.Gameplay.Player
             // ステップ回避（ガードブレイク未満・攻撃/ガード/移動より優先。§3/§10）。開始・時間経過・連続予約を処理する。
             bool stepping = DriveStep(active, broken, isMoving);
 
-            if (!stepping)
+            // 必殺技（チャージ・発動）。ステップ未満・攻撃/ガードより優先。ガード押下でキャンセル→JG受付、被弾で中断（§3.6）。
+            bool special = !stepping && DriveSpecial(active, broken, guarding, isMoving);
+            bool charging = !stepping && _special != null && _special.IsActive;
+            bool specialAttacking = _specialAttackRemaining > 0f;
+
+            bool blockOther = stepping || charging || specialAttacking;
+            if (!blockOther)
             {
                 DriveCombo(active, guarding);
             }
+            else if (_combo != null && _combo.IsActive)
+            {
+                _combo.Interrupt();
+                _hitTracker.Clear();
+            }
 
-            bool attacking = !stepping && _combo != null && _combo.IsActive;
+            bool attacking = !blockOther && _combo != null && _combo.IsActive;
 
             // JG 受付は「ガードが実際に有効化できる」ときだけ開く（仕様書 §3.3 / 攻撃キャンセル規則）。
-            // ステップ中はガード・JG 不可。非攻撃、またはキャンセル窓到達で攻撃を中断できたときに限る。
-            bool guardEffective = !stepping && guarding && !attacking;
+            // ステップ/必殺技中はガード・JG 不可。非攻撃、またはキャンセル窓到達で攻撃を中断できたときに限る。
+            bool guardEffective = !blockOther && guarding && !attacking;
             DriveJustGuard(guardEffective);
 
-            _machine.Tick(active, isMoving, guarding, attacking, broken, stepping);
+            _machine.Tick(active, isMoving, guarding, attacking, broken, stepping, charging, specialAttacking);
 
             // 段開始フレーム：向き再確定・新 Swing Token・段番号更新（踏み込みは ApplyAttackMotion）。
-            if (!stepping && _combo != null && _combo.StageJustStarted)
+            if (!blockOther && _combo != null && _combo.StageJustStarted)
             {
                 AttackStage = _combo.Stage;
                 _currentSwing = _hitAllocator.NextSingle();
@@ -283,8 +333,15 @@ namespace Momotaro.Gameplay.Player
                 }
             }
 
-            ApplyMotion(stepping, attacking);
-            ApplyStateEffects(guarding, attacking, stepping);
+            // チャージ中は移動不可・方向転換のみ（入力方向へ Facing を確定）。
+            if (charging && !specialAttacking && _facing != null && isMoving)
+            {
+                _facing.ConfirmFromInput(_input.Move);
+            }
+
+            // 移動抑制はチャージ中も含める（移動不可）。ただし Facing はチャージ中も回せる（方向転換のみ）ためロックには含めない。
+            ApplyMotion(stepping || charging || specialAttacking, attacking);
+            ApplyStateEffects(guarding, attacking, stepping || specialAttacking);
 
             if (attacking && _combo.HitboxActive)
             {
@@ -428,6 +485,156 @@ namespace Momotaro.Gameplay.Player
             }
 
             ApplyAttackMotion(attacking);
+        }
+
+        /// <summary>
+        /// 必殺技のチャージ・発動を駆動する（Phase2 P2-10）。長押しで開始、最大未満 Release は不発、最大後 0.75 秒で自動発動。
+        /// 遮断・行動不能・ガード入力・被弾で中断（ガードは呼び出し側で JG 受付が開く）。チャージ/発動中は true を返す。
+        /// </summary>
+        private bool DriveSpecial(bool active, bool broken, bool guarding, bool isMoving)
+        {
+            if (_special == null)
+            {
+                return false; // 必殺技未設定（SpecialAttackData 未割当）
+            }
+
+            // 発動・後隙の実行フェーズ（この間はキャンセル不可）。
+            if (_specialAttackRemaining > 0f)
+            {
+                float dt = Time.deltaTime;
+                bool inActiveWindow = _specialActiveRemaining > 0f;
+                _specialAttackRemaining -= dt;
+                if (_specialActiveRemaining > 0f)
+                {
+                    _specialActiveRemaining -= dt;
+                }
+
+                if (inActiveWindow)
+                {
+                    PollSpecialHitbox();
+                }
+
+                if (_specialAttackRemaining <= 0f)
+                {
+                    _specialAttackRemaining = 0f;
+                    _specialActiveRemaining = 0f;
+                    _hitTracker.Clear();
+                }
+
+                return true;
+            }
+
+            // 遮断・行動不能・ガード入力ではチャージを中断（後隙なし）。
+            if (!active || broken || guarding)
+            {
+                if (_special.IsActive)
+                {
+                    _special.Cancel();
+                }
+
+                return false;
+            }
+
+            bool held = _input != null && _input.SpecialAttackHeld;
+
+            if (_special.IsActive)
+            {
+                _special.Tick(Time.deltaTime);
+
+                if (_special.ShouldAutoFire)
+                {
+                    FireSpecial();
+                    return true;
+                }
+
+                if (!held)
+                {
+                    if (_special.Release() == SpecialReleaseResult.Fire)
+                    {
+                        FireSpecial();
+                        return true;
+                    }
+
+                    return false; // 最大未満で離した：不発
+                }
+
+                return true; // チャージ継続
+            }
+
+            if (held)
+            {
+                _special.Begin();
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>必殺技を発動する（チャージ終了→発動＋後隙へ）。攻撃中なら中断して開始する。</summary>
+        private void FireSpecial()
+        {
+            _special.Cancel();
+            if (_combo != null && _combo.IsActive)
+            {
+                _combo.Interrupt();
+            }
+
+            float activeSeconds = _specialData != null ? _specialData.ActiveSeconds : 0.15f;
+            float recoverySeconds = _specialData != null ? _specialData.RecoverySeconds : 0.9f;
+            _specialActiveRemaining = activeSeconds;
+            _specialAttackRemaining = activeSeconds + recoverySeconds;
+            _specialSwing = _hitAllocator.NextSingle();
+            _hitTracker.Clear();
+        }
+
+        /// <summary>必殺技の判定（Active 中）。7.0 倍・防御一部無視・スタン固有 1.5・ひるませ 100。ガード/JG 不能（貫通）。</summary>
+        private void PollSpecialHitbox()
+        {
+            if (_specialData == null)
+            {
+                return;
+            }
+
+            Vector3 center = transform.position + Forward * _hitboxForwardOffset + Vector3.up * _hitboxHeight;
+            int count = Physics.OverlapBoxNonAlloc(center, _hitboxHalfExtents, _overlapBuffer, Quaternion.identity, _targetMask, QueryTriggerInteraction.Collide);
+            if (count == 0)
+            {
+                return;
+            }
+
+            float attackPower = _attackerStats != null ? _attackerStats.AttackPower : 0f;
+            float hpContribution = HpDamageCalculator.AttackContribution(attackPower, _specialData.HpMultiplier);
+
+            for (int i = 0; i < count; i++)
+            {
+                Collider col = _overlapBuffer[i];
+                if (col == null)
+                {
+                    continue;
+                }
+
+                var target = col.GetComponentInParent<IDamageable>();
+                if (target == null)
+                {
+                    continue;
+                }
+
+                if (target is Component tc && tc.transform.root == transform.root)
+                {
+                    continue;
+                }
+
+                if (!_hitTracker.TryRegisterHit(_specialSwing, target))
+                {
+                    continue;
+                }
+
+                var damage = new HitDamage(hpContribution, _specialData.PoiseDamage, _specialData.FlinchPower);
+                var hit = new HitInfo(this, target, Forward, center, damage,
+                    0f, 0f, guardable: false, justGuardable: false, isJustGuardCounter: false,
+                    _specialData.DefenseIgnoreRatio, _specialData.StunHpMultiplier, _specialSwing);
+                target.ReceiveHit(hit);
+            }
         }
 
         /// <summary>

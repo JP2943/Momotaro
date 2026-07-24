@@ -90,6 +90,36 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
+        public void Controller_HasSpecialStates_ChargeLoopOn_AttackLoopOff()
+        {
+            var ac = LoadController();
+            ChildAnimatorState[] states = BaseLayerStates(ac);
+
+            foreach (var (_, cap) in Dirs)
+            {
+                foreach (var (prefix, loop) in new[] { ("SpecialCharge", true), ("SpecialAttack", false) })
+                {
+                    string name = $"AN_Player_{prefix}_{cap}";
+                    AnimatorState st = states.FirstOrDefault(s => s.state != null && s.state.name == name).state;
+                    Assert.IsNotNull(st, "必殺技 State が存在: " + name);
+                    var clip = st.motion as AnimationClip;
+                    Assert.IsNotNull(clip, "Motion は AnimationClip: " + name);
+                    Assert.AreEqual(loop, clip.isLooping, "Loop 設定: " + name);
+                }
+            }
+        }
+
+        [Test]
+        public void VisualNames_Special_ResolveExpectedStateNames()
+        {
+            foreach (var (facing, cap) in Dirs)
+            {
+                Assert.AreEqual($"AN_Player_SpecialCharge_{cap}", PlayerVisualNames.ClipName(PlayerState.SpecialCharge, facing));
+                Assert.AreEqual($"AN_Player_SpecialAttack_{cap}", PlayerVisualNames.ClipName(PlayerState.Special, facing));
+            }
+        }
+
+        [Test]
         public void Prefab_Animator_ReferencesTheController()
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);

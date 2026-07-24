@@ -53,6 +53,15 @@ namespace Momotaro.Gameplay.Player
         /// <param name="stepping">ステップ回避中か（I-frame 移動）。</param>
         public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken, bool stepping)
         {
+            Tick(enabled, isMoving, guarding, attacking, guardBroken, stepping, charging: false, specialAttacking: false);
+        }
+
+        /// <summary>
+        /// 必殺技（チャージ・発動）を含めて状態を更新する。優先度は
+        /// ガードブレイク ＞ ステップ ＞ 必殺技発動 ＞ 必殺技チャージ ＞ 攻撃 ＞ ガード ＞ 移動/Idle（仕様書 §3 / §3.6）。
+        /// </summary>
+        public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken, bool stepping, bool charging, bool specialAttacking)
+        {
             PlayerState next;
             if (guardBroken)
             {
@@ -61,6 +70,14 @@ namespace Momotaro.Gameplay.Player
             else if (stepping)
             {
                 next = PlayerState.Step;
+            }
+            else if (specialAttacking)
+            {
+                next = PlayerState.Special;
+            }
+            else if (charging)
+            {
+                next = PlayerState.SpecialCharge;
             }
             else if (!enabled)
             {

@@ -45,6 +45,15 @@ namespace Momotaro.Gameplay.Combat
         /// </summary>
         public bool IsJustGuardCounter { get; }
 
+        /// <summary>防御を一部無視する割合（0..1。必殺技用。Phase2 P2-10）。実効防御 = 防御×(1-率)。通常は 0。</summary>
+        public float DefenseIgnoreRatio { get; }
+
+        /// <summary>
+        /// スタン中の対象への HP 倍率の上書き（Phase2 P2-10）。0 以下なら対象既定（通常 1.25）を用いる。必殺技は 1.5 を指定し、
+        /// 1.25 と乗算せず置き換える。
+        /// </summary>
+        public float StunHpMultiplierOverride { get; }
+
         /// <summary>命中の同一性（多重ヒット防止のキー）。</summary>
         public HitId HitId { get; }
 
@@ -94,7 +103,7 @@ namespace Momotaro.Gameplay.Combat
         {
         }
 
-        /// <summary>すべての要素（ガードスタミナ・JG 反射・JG 反射フラグ含む）を指定して生成する。</summary>
+        /// <summary>ガードスタミナ・JG 反射・JG 反射フラグを指定し、防御無視 0・スタン上書きなしで生成する。</summary>
         public HitInfo(
             ICombatActor attacker,
             IDamageable target,
@@ -107,6 +116,26 @@ namespace Momotaro.Gameplay.Combat
             bool justGuardable,
             bool isJustGuardCounter,
             HitId hitId)
+            : this(attacker, target, attackDirection, hitPoint, damage, guardStaminaDamage, justGuardPoiseDamage,
+                   guardable, justGuardable, isJustGuardCounter, 0f, 0f, hitId)
+        {
+        }
+
+        /// <summary>すべての要素（必殺技用の防御一部無視・スタン倍率上書き含む）を指定して生成する。</summary>
+        public HitInfo(
+            ICombatActor attacker,
+            IDamageable target,
+            Vector3 attackDirection,
+            Vector3 hitPoint,
+            HitDamage damage,
+            float guardStaminaDamage,
+            float justGuardPoiseDamage,
+            bool guardable,
+            bool justGuardable,
+            bool isJustGuardCounter,
+            float defenseIgnoreRatio,
+            float stunHpMultiplierOverride,
+            HitId hitId)
         {
             Attacker = attacker;
             Target = target;
@@ -118,6 +147,8 @@ namespace Momotaro.Gameplay.Combat
             Guardable = guardable;
             JustGuardable = justGuardable;
             IsJustGuardCounter = isJustGuardCounter;
+            DefenseIgnoreRatio = defenseIgnoreRatio;
+            StunHpMultiplierOverride = stunHpMultiplierOverride;
             HitId = hitId;
         }
     }
