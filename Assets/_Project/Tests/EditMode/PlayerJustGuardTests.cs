@@ -282,5 +282,21 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(0f, rec.Received[0].AppliedDamage.Hp, "HP ダメージ 0。");
             Assert.AreEqual(80f, attacker.CurrentPoise, 1e-3f, "攻撃者へ体幹 20 反射（100→80）。");
         }
+
+        [Test]
+        public void NormalGuard_WithLowStamina_ConsumesToZero_AndBreaks()
+        {
+            // 対照ケース：同じ残量 1 でも JG 受付なしの通常ガードなら、固定消費 10 でスタミナ 1→0 に達しブレイクする。
+            var (holder, _, rec) = MakePlayer(maxStamina: 1, guarding: true, canJustGuard: false);
+            var attacker = MakeAttacker(poiseMax: 100);
+
+            holder.ReceiveHit(JgHit(attacker, holder, -Vector3.forward)); // 前方・固定消費 10・JG 窓なし
+
+            Assert.AreEqual(HitResultKind.Guard, rec.Received[0].Kind, "この一撃は通常ガードで防御。");
+            Assert.AreEqual(0f, rec.Received[0].AppliedDamage.Hp, "防御成功時 HP ダメージ 0。");
+            Assert.AreEqual(0, holder.Vitals.Stamina.Current, "固定消費 10 で残量 1→0（0 で止まる）。");
+            Assert.IsTrue(holder.IsGuardBroken, "0 到達でその直後にガードブレイクへ移行。");
+            Assert.AreEqual(100f, attacker.CurrentPoise, 1e-3f, "通常ガードは攻撃者へ体幹反射しない。");
+        }
     }
 }
