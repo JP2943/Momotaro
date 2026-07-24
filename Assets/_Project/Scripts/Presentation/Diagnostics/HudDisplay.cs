@@ -17,5 +17,17 @@ namespace Momotaro.Presentation.Diagnostics
 
             return value > upper ? upper : value;
         }
+
+        /// <summary>浮動小数値を 0..max へ Clamp する（体幹など。max &lt; 0 は 0 とみなす）。</summary>
+        public static float Clamp(float value, float max)
+        {
+            float upper = max < 0f ? 0f : max;
+            if (value < 0f)
+            {
+                return 0f;
+            }
+
+            return value > upper ? upper : value;
+        }
     }
 }

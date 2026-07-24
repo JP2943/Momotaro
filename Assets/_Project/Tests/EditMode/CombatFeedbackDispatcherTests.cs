@@ -2,8 +2,10 @@ using System.Collections.Generic;
 using System.Reflection;
 using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
+using Momotaro.Gameplay.Player;
 using Momotaro.Presentation.Diagnostics;
 using NUnit.Framework;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 
 namespace Momotaro.Tests.EditMode
@@ -50,8 +52,9 @@ namespace Momotaro.Tests.EditMode
         private sealed class FakeFeedback : ICombatFeedbackListener
         {
             public bool Got;
+            public int Count;
             public CombatFeedbackEvent Last;
-            public void OnCombatFeedback(in CombatFeedbackEvent feedback) { Got = true; Last = feedback; }
+            public void OnCombatFeedback(in CombatFeedbackEvent feedback) { Got = true; Count++; Last = feedback; }
         }
 
         private CombatDummy MakeDummy(int hp = 100)
@@ -77,6 +80,22 @@ namespace Momotaro.Tests.EditMode
             var go = new GameObject("Dispatcher");
             _spawned.Add(go);
             return go.AddComponent<CombatFeedbackDispatcher>();
+        }
+
+        private PlayerVitalsHolder MakePlayer(bool active = true)
+        {
+            // 結果チャネル（Results）のみ使用するため PlayerData は不要（Vitals 未使用）。
+            var go = new GameObject("Player");
+            _spawned.Add(go);
+            go.SetActive(false);
+            var p = go.AddComponent<PlayerVitalsHolder>();
+            go.SetActive(active);
+            return p;
+        }
+
+        private static HitResult DamageOn(IDamageable target, int id)
+        {
+            return HitResult.Damage(HitId.Single(id), null, target, new HitDamage(6f, 0f, 0f));
         }
 
         [Test]
@@ -161,6 +180,76 @@ namespace Momotaro.Tests.EditMode
             disp.OnHitResult(HitResult.Damage(HitId.Single(2), null, dummy, new HitDamage(8f, 0f, 0f)));
 
             Assert.AreEqual(hpBefore, dummy.CurrentHp, "フィードバック配信は Gameplay を変更しない。");
+        }
+
+        [Test]
+        public void PlayerReplaced_Rescan_ResubscribesToNewPlayerOnce_UnsubscribesOld_NoDuplicate()
+        {
+            // 旧 Player（active）と新 Player（inactive）を用意。FindFirstObjectByType は active のみ検出する。
+            var oldPlayer = MakePlayer(active: true);
+            var newPlayer = MakePlayer(active: false);
+            var disp = MakeDispatcher();
+
+            disp.Rescan();
+            Assert.AreEqual(1, oldPlayer.Results.ListenerCount, "初回は旧 Player を購読する。");
+
+            // Player の入れ替え（再生成相当）：旧を非アクティブ、新をアクティブにして再取得。
+            oldPlayer.gameObject.SetActive(false);
+            newPlayer.gameObject.SetActive(true);
+            disp.Rescan();
+
+            Assert.AreEqual(0, oldPlayer.Results.ListenerCount, "旧 Player は購読解除される。");
+            Assert.AreEqual(1, newPlayer.Results.ListenerCount, "新 Player を購読する。");
+
+            var fake = new FakeFeedback();
+            disp.Feedback.AddListener(fake);
+
+            // 旧 Player の結果は受信しない。
+            oldPlayer.Results.Publish(DamageOn(oldPlayer, 1));
+            Assert.IsFalse(fake.Got, "旧 Player の結果は受信しない。");
+
+            // 新 Player の結果は 1 回だけ受信する。
+            newPlayer.Results.Publish(DamageOn(newPlayer, 2));
+            Assert.AreEqual(1, fake.Count, "新 Player の結果を 1 回だけ受信する。");
+
+            // 複数回 Rescan しても重複購読しない（同一対象は再購読しない）。
+            disp.Rescan();
+            disp.Rescan();
+            Assert.AreEqual(1, newPlayer.Results.ListenerCount, "複数回 Rescan でも重複購読しない。");
+
+            fake.Count = 0;
+            newPlayer.Results.Publish(DamageOn(newPlayer, 3));
+            Assert.AreEqual(1, fake.Count, "重複通知されない（1 回のみ）。");
+        }
+
+        [Test]
+        public void PlayerRemoved_Rescan_ClearsSubscriptionState()
+        {
+            var player = MakePlayer(active: true);
+            var disp = MakeDispatcher();
+            disp.Rescan();
+            Assert.AreEqual(1, player.Results.ListenerCount);
+
+            // Player 破棄後の再取得で購読状態がクリアされ、以後の Rescan でも例外なく安定する。
+            Object.DestroyImmediate(player.gameObject);
+            Assert.DoesNotThrow(() => { disp.Rescan(); disp.Rescan(); }, "Player 不在でも Rescan は安定する。");
+        }
+
+        [Test]
+        public void VsFieldScene_ContainsFeedbackDispatcher()
+        {
+            // 検証 Scene に Dispatcher が実配置され、実行時に購読・配信が働くことを担保する（スクリプト追加のみでないこと）。
+            const string path = "Assets/_Project/Scenes/SCN_VS_Field.unity";
+            var scene = EditorSceneManager.OpenScene(path, OpenSceneMode.Additive);
+            try
+            {
+                var found = Object.FindObjectsByType<CombatFeedbackDispatcher>(FindObjectsSortMode.None);
+                Assert.GreaterOrEqual(found.Length, 1, "検証 Scene に CombatFeedbackDispatcher が配置されている。");
+            }
+            finally
+            {
+                EditorSceneManager.CloseScene(scene, true);
+            }
         }
     }
 }

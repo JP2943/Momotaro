@@ -52,5 +52,15 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(42, HudDisplay.Clamp(42, 100), "範囲内はそのまま。");
             Assert.AreEqual(0, HudDisplay.Clamp(10, -1), "Max 負なら 0。");
         }
+
+        [Test]
+        public void HudDisplay_ClampFloat_ToRange()
+        {
+            // 体幹（float）表示用 Clamp：負値・上限超過・範囲内・Max 負。
+            Assert.AreEqual(0f, HudDisplay.Clamp(-3.5f, 100f), 1e-4f, "負値は 0。");
+            Assert.AreEqual(100f, HudDisplay.Clamp(150.7f, 100f), 1e-4f, "上限超過は Max。");
+            Assert.AreEqual(42.5f, HudDisplay.Clamp(42.5f, 100f), 1e-4f, "範囲内はそのまま。");
+            Assert.AreEqual(0f, HudDisplay.Clamp(10f, -1f), 1e-4f, "Max 負なら 0。");
+        }
     }
 }

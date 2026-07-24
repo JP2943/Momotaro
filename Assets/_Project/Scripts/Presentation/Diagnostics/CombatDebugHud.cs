@@ -183,7 +183,7 @@ namespace Momotaro.Presentation.Diagnostics
                 }
 
                 _sb.Append(d.name).Append(": HP ").Append(HudDisplay.Clamp(d.CurrentHp, d.MaxHp)).Append('/').Append(d.MaxHp);
-                _sb.Append("  Poise ").Append(d.CurrentPoise.ToString("0")).Append('/').Append(d.MaxPoise.ToString("0"));
+                _sb.Append("  Poise ").Append(HudDisplay.Clamp(d.CurrentPoise, d.MaxPoise).ToString("0")).Append('/').Append(d.MaxPoise.ToString("0"));
                 _sb.Append("  Action: ").Append(d.ActionPhase);
                 if (d.IsStunned)
                 {

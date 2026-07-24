@@ -19,7 +19,6 @@ namespace Momotaro.Presentation.Diagnostics
 
         private readonly List<CombatDummy> _dummies = new List<CombatDummy>();
         private PlayerVitalsHolder _playerVitals;
-        private bool _playerSubscribed;
         private float _nextRefresh;
 
         /// <summary>フィードバック配信チャネル（VFX/SE/HitStop の Presentation が購読）。</summary>
@@ -42,15 +41,21 @@ namespace Momotaro.Presentation.Diagnostics
         /// <summary>購読対象（主人公・ダミー）を取得し直す。既存購読は一旦解除して重複を避ける。</summary>
         public void Rescan()
         {
-            if (_playerVitals == null)
+            // 主人公の再生成・シーン再読込に追従：購読中と検出結果が変わったら旧購読を解除し、新しい対象へ購読し直す。
+            // 参照比較（ReferenceEquals）で判定し、Unity の破棄済み(=fake null)でも取りこぼさず、同一対象への重複購読はしない。
+            PlayerVitalsHolder found = FindFirstObjectByType<PlayerVitalsHolder>();
+            if (!ReferenceEquals(found, _playerVitals))
             {
-                _playerVitals = FindFirstObjectByType<PlayerVitalsHolder>();
-            }
+                if (_playerVitals != null)
+                {
+                    _playerVitals.Results.RemoveListener(this);
+                }
 
-            if (_playerVitals != null && !_playerSubscribed)
-            {
-                _playerVitals.Results.AddListener(this);
-                _playerSubscribed = true;
+                _playerVitals = found;
+                if (_playerVitals != null)
+                {
+                    _playerVitals.Results.AddListener(this);
+                }
             }
 
             foreach (CombatDummy d in _dummies)
@@ -94,7 +99,7 @@ namespace Momotaro.Presentation.Diagnostics
                 _playerVitals.Results.RemoveListener(this);
             }
 
-            _playerSubscribed = false;
+            _playerVitals = null;
         }
     }
 }

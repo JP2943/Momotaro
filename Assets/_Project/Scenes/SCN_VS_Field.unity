@@ -803,6 +803,7 @@ GameObject:
   - component: {fileID: 1108180790}
   - component: {fileID: 1108180789}
   - component: {fileID: 1108180788}
+  - component: {fileID: 1108180999}
   m_Layer: 0
   m_Name: Cube
   m_TagString: Untagged
@@ -1281,3 +1282,16 @@ SceneRoots:
   - {fileID: 361175475}
   - {fileID: 174054025}
   - {fileID: 1108180793}
+--- !u!114 &1108180999
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1108180787}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4d5e6f708192a3b4c5d6e7f8091a2b3c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Diagnostics.CombatFeedbackDispatcher
+  _refreshInterval: 1
