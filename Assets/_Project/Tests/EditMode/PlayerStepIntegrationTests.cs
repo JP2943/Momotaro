@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using System.Reflection;
 using Momotaro.Data.Characters;
+using Momotaro.Data.Combat;
 using Momotaro.Gameplay.Player;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 
 namespace Momotaro.Tests.EditMode
@@ -247,6 +249,61 @@ namespace Momotaro.Tests.EditMode
             Assert.IsFalse(Physics.GetIgnoreLayerCollision(enemy, wall), "Enemy↔Default(壁)は有効（敵も壁で停止）。");
 
             Physics.IgnoreLayerCollision(player, enemy, prev); // グローバル状態を復元
+        }
+
+        [Test]
+        public void StepData_Values_FlowIntoRuntimeStepState()
+        {
+            // Data 層を正本として、割り当てた StepData の値が Runtime の StepState に反映される（フォールバック定数ではない）。
+            var data = ScriptableObject.CreateInstance<StepData>();
+            _spawned.Add(data);
+            SetPrivate(data, "_distance", 5f);
+            SetPrivate(data, "_moveSeconds", 0.30f);
+            SetPrivate(data, "_recoverySeconds", 0.15f);
+            SetPrivate(data, "_invincibleStartSeconds", 0.06f);
+            SetPrivate(data, "_invincibleEndSeconds", 0.22f);
+            SetPrivate(data, "_staminaCost", 30f);
+            SetPrivate(data, "_chainBufferSeconds", 0.09f);
+
+            var go = new GameObject("StepDataFlow");
+            _spawned.Add(go);
+            go.SetActive(false); // 非アクティブで Awake を走らせず、_stepData を先に割り当ててから構築する
+            var c = go.AddComponent<PlayerStateController>();
+            SetPrivate(c, "_stepData", data);
+
+            // EnsureRuntime を明示的に実行し、StepData から StepState を構築させる（EditMode は Awake が走らないため）。
+            typeof(PlayerStateController)
+                .GetMethod("EnsureRuntime", BindingFlags.NonPublic | BindingFlags.Instance)
+                .Invoke(c, null);
+
+            var step = (StepState)GetPrivate(c, "_step");
+            Assert.IsNotNull(step, "StepState が構築されている。");
+            Assert.AreEqual(5f, (float)GetPrivate(step, "_distance"), 1e-4f, "距離が Data から反映。");
+            Assert.AreEqual(0.30f, (float)GetPrivate(step, "_moveSeconds"), 1e-4f);
+            Assert.AreEqual(0.15f, (float)GetPrivate(step, "_recoverySeconds"), 1e-4f);
+            Assert.AreEqual(0.06f, (float)GetPrivate(step, "_invincibleStartSeconds"), 1e-4f);
+            Assert.AreEqual(0.22f, (float)GetPrivate(step, "_invincibleEndSeconds"), 1e-4f);
+            Assert.AreEqual(0.09f, (float)GetPrivate(step, "_chainBufferSeconds"), 1e-4f);
+        }
+
+        [Test]
+        public void PlayerPrefab_HasStepDataAssigned_WithPrototypeValues()
+        {
+            const string path = "Assets/_Project/Prefabs/Player/PF_Player_Momotaro.prefab";
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            Assert.IsNotNull(prefab, "Player Prefab が見つからない: " + path);
+
+            var psc = prefab.GetComponentInChildren<PlayerStateController>(true);
+            Assert.IsNotNull(psc, "PlayerStateController が Prefab に存在。");
+
+            var data = (StepData)GetPrivate(psc, "_stepData");
+            Assert.IsNotNull(data, "Prefab の _stepData に StepData が割り当てられている。");
+            Assert.AreEqual(25f, data.StaminaCost, 1e-4f, "消費 25（確定試作値）。");
+            Assert.AreEqual(3f, data.Distance, 1e-4f, "距離 3。");
+            Assert.AreEqual(0.20f, data.MoveSeconds, 1e-4f);
+            Assert.AreEqual(0.10f, data.RecoverySeconds, 1e-4f);
+            Assert.AreEqual(0.05f, data.InvincibleStartSeconds, 1e-4f);
+            Assert.AreEqual(0.20f, data.InvincibleEndSeconds, 1e-4f);
         }
     }
 }

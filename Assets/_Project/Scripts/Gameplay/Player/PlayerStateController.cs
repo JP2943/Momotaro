@@ -144,7 +144,8 @@ namespace Momotaro.Gameplay.Player
         {
             EnsureRuntime();
             // 主人公を Player レイヤーへ（配下 Collider 含む）。Player↔Enemy のみ衝突無効（敵すり抜け）、壁(Default)は停止（P2-09）。
-            CombatLayers.ConfigurePlayer(transform.root.gameObject);
+            // 本コンポーネントはプレイヤー Prefab のルートに付くため、自身の GameObject を基点にする（Scene 親の他 Collider を巻き込まない）。
+            CombatLayers.ConfigurePlayer(gameObject);
         }
 
         private void OnDisable()

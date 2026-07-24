@@ -330,6 +330,7 @@ MonoBehaviour:
   _facing: {fileID: 4008253560333073998}
   _movement: {fileID: 11400000, guid: 3152bfd9b95a3b34baf7ef40703ad159, type: 2}
   _moveThreshold: 0.1
+  _stepData: {fileID: 11400000, guid: 4290e2b701764f33d8c8ee9b3a124b77, type: 2}
   _attackCombo: {fileID: 11400000, guid: 4c9ef1dd430c4aa29c7e9df25c95ce44, type: 2}
   _attackerStats: {fileID: 11400000, guid: a8caf733cd064bfaac186dd9c5e402b7, type: 2}
 --- !u!114 &6643737507436464112
