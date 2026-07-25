@@ -3,7 +3,7 @@ namespace Momotaro.Gameplay.Player
     /// <summary>
     /// Player の Gameplay 状態（Phase1 P1-06/P1-07）。Animator の State ではなくこちらを正本とする。
     /// Phase 1 では Idle/Move を実動作させ、Guard 系はガード移動（P1-07）で用いる。
-    /// 攻撃・被弾・死亡は Phase 1 では追加しない。
+    /// Phase2 P2-02 で <see cref="Attack"/> を追加する（入力・状態のみ。Hitbox・ダメージ・3 段コンボは後続 Task）。
     /// </summary>
     public enum PlayerState
     {
@@ -18,5 +18,25 @@ namespace Momotaro.Gameplay.Player
 
         /// <summary>ガード中の移動。</summary>
         GuardMove = 3,
+
+        /// <summary>攻撃中（開始時に向き固定。Phase2 P2-02）。</summary>
+        Attack = 4,
+
+        /// <summary>
+        /// ガードブレイク（Phase2 P2-07）。スタミナ 0 による 1.5 秒の強制行動不能。攻撃・ガード・移動・入力 Buffer を無効化する
+        /// 独立状態で、優先度は Attack/Guard/Move/Idle より高い。完成 Animation の接続は対象外（状態のみ）。
+        /// </summary>
+        GuardBreak = 5,
+
+        /// <summary>
+        /// ステップ回避中（Phase2 P2-09）。短距離高速移動＋I-frame。優先度はガードブレイク未満・攻撃/ガード/移動より上。
+        /// </summary>
+        Step = 6,
+
+        /// <summary>必殺技チャージ中（Phase2 P2-10）。移動不可・方向転換のみ。ガード/ステップ/交代/被弾でキャンセル。</summary>
+        SpecialCharge = 7,
+
+        /// <summary>必殺技発動中（Phase2 P2-10）。チャージ解放後の攻撃・後隙。</summary>
+        Special = 8,
     }
 }

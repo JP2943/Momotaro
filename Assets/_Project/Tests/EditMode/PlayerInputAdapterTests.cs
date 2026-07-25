@@ -22,6 +22,44 @@ namespace Momotaro.Tests.EditMode
             return asset;
         }
 
+        private static InputActionAsset MakeAssetWithAttack()
+        {
+            var asset = ScriptableObject.CreateInstance<InputActionAsset>();
+            InputActionMap gp = asset.AddActionMap("Gameplay");
+            gp.AddAction("Move", InputActionType.Value, "<Gamepad>/leftStick");
+            gp.AddAction("Guard", InputActionType.Button, "<Keyboard>/k");
+            gp.AddAction("Attack", InputActionType.Button, "<Keyboard>/j");
+            return asset;
+        }
+
+        [Test]
+        public void Constructor_WithAttackAction_ExposesNoPendingAttackEdge()
+        {
+            InputActionAsset asset = MakeAssetWithAttack();
+            var adapter = new PlayerInputAdapter(asset);
+
+            Assert.IsNotNull(adapter.Input);
+            Assert.IsTrue(adapter.Input.Active, "既定でゲートは開いている。");
+            Assert.IsFalse(adapter.Input.ConsumeAttackPressed(), "初期状態では攻撃エッジは無い。");
+
+            adapter.Dispose();
+            UnityEngine.Object.DestroyImmediate(asset);
+        }
+
+        [Test]
+        public void Constructor_WithoutAttackAction_StillConstructs()
+        {
+            // Attack は任意接続。無くても Move/Guard があれば構築できる（P2-02）。
+            InputActionAsset asset = MakeAsset(includeGuard: true);
+            var adapter = new PlayerInputAdapter(asset);
+
+            Assert.IsNotNull(adapter.Input);
+            Assert.IsFalse(adapter.Input.ConsumeAttackPressed());
+
+            adapter.Dispose();
+            UnityEngine.Object.DestroyImmediate(asset);
+        }
+
         [Test]
         public void Constructor_WithValidAsset_ExposesInputWithZeroMove()
         {
