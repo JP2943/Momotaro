@@ -1,15 +1,15 @@
 using Momotaro.Data.Characters;
-using Momotaro.Gameplay.Vitals;
+using Momotaro.Gameplay.Enemy;
 using UnityEngine;
 
 namespace Momotaro.Gameplay.Combat
 {
     /// <summary>
     /// 検証用の被弾ダミー（Phase2 P2-04/P2-05。仕様書 §13）。AI を持たず、共通の受け手契約 <see cref="IDamageable"/> /
-    /// <see cref="ICombatActor"/> を実装する（Dummy 専用の Combat 経路は作らず、Phase 3 の敵 AI へそのまま発展できる）。
+    /// <see cref="ICombatActor"/> を実装する（Dummy 専用の Combat 経路は作らない）。
     ///
-    /// P2-04：命中の攻撃側寄与（HP）へ自身の防御を適用し HP を減算。P2-05：体幹（<see cref="PoiseState"/>）・ひるみ
-    /// （<see cref="FlinchState"/>）・スタンを追加。スタン中は被 HP ダメージ ×1.25。結果は型付き <see cref="HitResult"/>
+    /// Phase3 P3-01：被弾数値（HP・体幹・ひるみ・スタン）は共通 Runtime <see cref="EnemyVitals"/> へ抽出し、本ダミーと
+    /// <see cref="EnemyActor"/> が同一ロジックを共有する（重複排除）。挙動は従来と同一で、結果は型付き <see cref="HitResult"/>
     /// で通知（AppliedDamage は実際に適用された HP／体幹／ひるみ量）。死亡処理・敵 AI・攻撃は対象外。
     /// </summary>
     [DisallowMultipleComponent]
@@ -21,9 +21,7 @@ namespace Momotaro.Gameplay.Combat
         [Tooltip("検証用の攻撃行動フェーズ。Startup/Active のとき体幹の攻撃中補正(×1.5)の対象になる。既定 None。")]
         [SerializeField] private CombatActionPhase _debugActionPhase = CombatActionPhase.None;
 
-        private Vital _hp;
-        private PoiseState _poise;
-        private FlinchState _flinch;
+        private EnemyVitals _vitals;
 
         /// <summary>被弾結果の通知チャネル（HUD 等が購読）。</summary>
         public HitResultChannel Results { get; } = new HitResultChannel();
@@ -31,49 +29,49 @@ namespace Momotaro.Gameplay.Combat
         /// <summary>現在 HP。</summary>
         public int CurrentHp
         {
-            get { EnsureRuntime(); return _hp.Current; }
+            get { EnsureRuntime(); return _vitals.CurrentHp; }
         }
 
         /// <summary>最大 HP。</summary>
         public int MaxHp
         {
-            get { EnsureRuntime(); return _hp.Max; }
+            get { EnsureRuntime(); return _vitals.MaxHp; }
         }
 
         /// <summary>撃破済みか（HP0。死亡処理そのものは対象外）。</summary>
         public bool IsDefeated
         {
-            get { EnsureRuntime(); return _hp.Current <= 0; }
+            get { EnsureRuntime(); return _vitals.IsDefeated; }
         }
 
         /// <summary>現在体幹。</summary>
         public float CurrentPoise
         {
-            get { EnsureRuntime(); return _poise.Current; }
+            get { EnsureRuntime(); return _vitals.CurrentPoise; }
         }
 
         /// <summary>最大体幹。</summary>
         public float MaxPoise
         {
-            get { EnsureRuntime(); return _poise.Max; }
+            get { EnsureRuntime(); return _vitals.MaxPoise; }
         }
 
         /// <summary>スタン中か。</summary>
         public bool IsStunned
         {
-            get { EnsureRuntime(); return _poise.IsStunned; }
+            get { EnsureRuntime(); return _vitals.IsStunned; }
         }
 
         /// <summary>ひるみ中か。</summary>
         public bool IsFlinching
         {
-            get { EnsureRuntime(); return _flinch.IsFlinching; }
+            get { EnsureRuntime(); return _vitals.IsFlinching; }
         }
 
         /// <summary>現在のひるみ蓄積量。</summary>
         public float FlinchAccumulation
         {
-            get { EnsureRuntime(); return _flinch.Accumulation; }
+            get { EnsureRuntime(); return _vitals.FlinchAccumulation; }
         }
 
         /// <inheritdoc />
@@ -134,30 +132,10 @@ namespace Momotaro.Gameplay.Combat
 
         private void EnsureRuntime()
         {
-            if (_hp == null)
+            if (_vitals == null)
             {
-                int maxHp = _data != null ? _data.MaxHp : 1;
-                _hp = new Vital(maxHp);
-            }
-
-            if (_poise == null)
-            {
-                float poiseMax = _data != null ? _data.PoiseMax : 1f;
-                if (_data != null)
-                {
-                    _poise = new PoiseState(poiseMax, _data.PoiseRecoveryDelaySeconds, _data.PoiseRecoveryRatioPerSecond,
-                        stunSeconds: _data.StunSeconds);
-                }
-                else
-                {
-                    _poise = new PoiseState(poiseMax);
-                }
-            }
-
-            if (_flinch == null)
-            {
-                float resistance = _data != null ? _data.FlinchResistance : 1f;
-                _flinch = new FlinchState(resistance);
+                // 数値の出所は EnemyData（IEnemyVitalsConfig）。null 時は最小既定（従来同様）。
+                _vitals = new EnemyVitals(_data);
             }
         }
 
@@ -165,24 +143,21 @@ namespace Momotaro.Gameplay.Combat
         public void ResetHp()
         {
             EnsureRuntime();
-            _hp.SetCurrent(_hp.Max);
+            _vitals.ResetHp();
         }
 
         /// <summary>HP・体幹・ひるみを最大/初期へ戻す（検証の再試行用）。</summary>
         public void ResetState()
         {
             EnsureRuntime();
-            _hp.SetCurrent(_hp.Max);
-            _poise.Reset();
-            _flinch.Reset();
+            _vitals.ResetState();
             _debugActionPhase = CombatActionPhase.None;
         }
 
         private void Update()
         {
             EnsureRuntime();
-            _poise.Tick(Time.deltaTime);
-            _flinch.Tick(Time.deltaTime);
+            _vitals.Tick(Time.deltaTime);
         }
 
         /// <inheritdoc />
@@ -190,37 +165,17 @@ namespace Momotaro.Gameplay.Combat
         {
             EnsureRuntime();
 
-            float defense = _data != null ? _data.Defense : 0f;
-            float targetPoiseMult = _data != null ? _data.PoiseDamageMultiplier : 1f;
+            // 被弾数値の適用は共通 Runtime（EnemyVitals）へ委譲。必殺技の防御一部無視・スタン中 HP 倍率（置き換え）・
+            // 対象被体幹倍率・JG 反射の回復延長は同ロジック内で処理される（挙動は従来と同一）。
+            EnemyVitals.HitApplication app = _vitals.Apply(hit);
 
-            bool wasStunned = _poise.IsStunned;
-            bool wasFlinching = _flinch.IsFlinching;
-
-            // HP：必殺技は防御一部無視（実効防御）。スタン倍率は「スタン中のみ」適用する（非スタンは 1.0）。
-            // スタン中は上書き（必殺技 1.5）があればそれを、無ければ対象既定（1.25）を用いる。上書きは 1.25 と乗算しない（置き換え）。
-            float effectiveDefense = defense * (1f - Mathf.Clamp01(hit.DefenseIgnoreRatio));
-            float stunHpMultiplier = _poise.IsStunned
-                ? (hit.StunHpMultiplierOverride > 0f ? hit.StunHpMultiplierOverride : _poise.StunHpMultiplier)
-                : 1f;
-            int appliedHp = DamageApplication.ApplyHpDamage(_hp, hit.Damage.Hp, effectiveDefense, stunHpMultiplier);
-
-            // 体幹：命中の Poise（攻撃側で状況補正済み）× 対象の被体幹倍率。実減少量を求める。
-            // JG 反射（IsJustGuardCounter）は回復開始待機を延長（通常 3 秒→JG 4 秒。仕様書 §3.11）。
-            float poiseDamage = hit.Damage.Poise * targetPoiseMult;
-            float appliedPoise = _poise.ApplyPoiseDamage(poiseDamage, isJustGuard: hit.IsJustGuardCounter);
-
-            // ひるみ：状況補正なしの値を蓄積。実際に蓄積へ加わった量。
-            float appliedFlinch = _flinch.AddFlinch(hit.Damage.Flinch);
-
-            // スタン／ひるみが新規発生したら攻撃行動は中断される。検証表示と内部状態を合わせるため
-            // ActionPhase を None へ戻す（補正判定は上の IsPoiseVulnerableAction でも別途 false になる）。
-            if ((!wasStunned && _poise.IsStunned) || (!wasFlinching && _flinch.IsFlinching))
+            // スタン／ひるみが新規発生したら攻撃行動は中断される。検証表示と内部状態を合わせるため ActionPhase を None へ戻す。
+            if (app.NewlyStunned || app.NewlyFlinching)
             {
                 _debugActionPhase = CombatActionPhase.None;
             }
 
-            var applied = new HitDamage(appliedHp, appliedPoise, appliedFlinch);
-            Results.Publish(HitResult.Damage(hit.HitId, hit.Attacker, this, applied));
+            Results.Publish(HitResult.Damage(hit.HitId, hit.Attacker, this, app.Applied));
         }
     }
 }
