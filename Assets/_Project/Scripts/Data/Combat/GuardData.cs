@@ -8,6 +8,7 @@ namespace Momotaro.Data.Combat
     {
         [Header("Guard")]
         [SerializeField] private float _guardAngle = 120f;
+        [Tooltip("ガード解除後などのスタミナ毎秒回復量（雛形。将来のガード実データで参照）。仕様書 3.2。")]
         [SerializeField] private float _staminaRegenPerSecond = 15f;
 
         [Header("Just Guard")]
@@ -16,6 +17,12 @@ namespace Momotaro.Data.Combat
         [SerializeField] private float _justGuardReleaseWindowSeconds = 0.075f;
         [Tooltip("ガード解除時の連打ペナルティ時間（秒。試作 0.20）。")]
         [SerializeField] private float _releasePenaltySeconds = 0.20f;
+
+        /// <summary>ガードの前方有効角（度、全角）。</summary>
+        public float GuardAngle => _guardAngle;
+
+        /// <summary>スタミナの毎秒回復量（雛形。将来のガード実データで参照）。</summary>
+        public float StaminaRegenPerSecond => _staminaRegenPerSecond;
 
         /// <summary>ジャストガード受付時間（押下窓。秒）。</summary>
         public float JustGuardWindowSeconds => _justGuardWindowSeconds;
