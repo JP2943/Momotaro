@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 7654321000000004}
   - component: {fileID: 7654321000000005}
   - component: {fileID: 7654321000000006}
+  - component: {fileID: 7654321000000007}
   m_Layer: 0
   m_Name: PF_Enemy_Melee_Prototype
   m_TagString: Untagged
@@ -126,3 +127,17 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Enemy.EnemyActor
   _archetype: {fileID: 11400000, guid: 7158b576da5551a625a97be3241eefc1, type: 2}
+--- !u!114 &7654321000000007
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7654321000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 100d67d0b704906349ad96b332e96fbe, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Enemy.Perception.EnemyPerception
+  _evaluateInterval: 0.15
+  _eyeHeight: 1

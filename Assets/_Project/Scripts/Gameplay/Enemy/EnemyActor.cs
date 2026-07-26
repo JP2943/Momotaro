@@ -65,6 +65,9 @@ namespace Momotaro.Gameplay.Enemy
         /// <summary>ひるみ蓄積量。</summary>
         public float FlinchAccumulation { get { EnsureRuntime(); return _vitals.FlinchAccumulation; } }
 
+        /// <summary>アーキタイプ Data（読み取り専用。認識・移動・攻撃の各サービスが設定値を参照する）。</summary>
+        public EnemyArchetypeData Archetype => _archetype;
+
         /// <summary>ボス（大型敵）か（役割由来）。ボスはノックバック無効。</summary>
         public bool IsBoss => _archetype != null && _archetype.Role == EnemyRole.Boss;
 
@@ -174,6 +177,16 @@ namespace Momotaro.Gameplay.Enemy
             }
 
             Results.Publish(HitResult.Damage(hit.HitId, hit.Attacker, this, app.Applied));
+        }
+
+        /// <summary>
+        /// AI サービス（認識・移動・攻撃）からの状態遷移要求（Phase3）。優先度・不正判定は状態機に従う（被弾由来の
+        /// Down/Stunned/Stagger 中の呼び出しは不正として記録され適用されない）。適用できたら true。
+        /// </summary>
+        public bool RequestState(EnemyState state, EnemyStateChangeReason reason)
+        {
+            EnsureRuntime();
+            return _machine.TryTransition(state, reason);
         }
 
         /// <summary>HP・体幹・ひるみと状態を初期へ戻す（検証の再試行用）。</summary>
