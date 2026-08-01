@@ -107,8 +107,7 @@ namespace Momotaro.Tests.EditMode
 
             enemy.EvaluateOnce(0.3f); // 0.3 >= 完全認識 0.25 → Alert
 
-            Assert.AreEqual(PerceptionPhase.Alert, enemy.Phase);
-            Assert.AreEqual(EnemyState.Alert, ActorOf(enemy).State, "認識結果が Actor 状態へ反映される。");
+            Assert.AreEqual(PerceptionPhase.Alert, enemy.Phase, "直接視認でセンサが Alert 化する（状態駆動は Brain の責務）。");
             Assert.AreEqual(1, voices.AlertVoices, "直接 Alert 化で警戒声を 1 回発行。");
             Assert.AreEqual(6f, voices.Last.Radius, 1e-4f, "警戒声の半径は 6.0。");
         }
@@ -122,8 +121,7 @@ namespace Momotaro.Tests.EditMode
             // 視線・音なしでも被弾で即 Alert（背後からの攻撃相当）。
             enemy.OnHitResult(HitResult.Damage(HitId.Single(1), null, actor, new HitDamage(5f, 0f, 0f)));
 
-            Assert.AreEqual(PerceptionPhase.Alert, enemy.Phase);
-            Assert.AreEqual(EnemyState.Alert, actor.State);
+            Assert.AreEqual(PerceptionPhase.Alert, enemy.Phase, "被弾で視線に関係なくセンサが即 Alert。");
         }
 
         [Test]
@@ -145,7 +143,6 @@ namespace Momotaro.Tests.EditMode
             b.OnNoise(shared);
 
             Assert.AreEqual(PerceptionPhase.Suspicious, b.Phase, "共有受信は Suspicious 止まり（直接視認まで）。");
-            Assert.AreEqual(EnemyState.Suspicious, ActorOf(b).State);
             Assert.AreEqual(1, voices.AlertVoices, "共有を受けた敵は再共有しない（連鎖は最大 1 回）。");
         }
     }

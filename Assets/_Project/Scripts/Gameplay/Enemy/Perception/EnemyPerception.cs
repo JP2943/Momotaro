@@ -7,9 +7,10 @@ namespace Momotaro.Gameplay.Enemy.Perception
 {
     /// <summary>
     /// 敵の認識統合（Phase3 P3-02。§4）。視覚（角度・距離・LOS）で <see cref="PerceptionState"/> を進め、被弾は即時 Alert、
-    /// 音・警戒共有で Suspicious 化して最終確認位置を調査する。認識結果は <see cref="EnemyActor.RequestState"/> 経由で
-    /// Idle／Suspicious／Alert に反映する（追跡移動・攻撃は P3-03/04 対象外）。LOS は毎フレーム一斉実行せず更新間隔をずらし、
-    /// Pause／会話中は評価しない。物理 LOS は <see cref="ILineOfSightProbe"/> 越しでテスト時は Fake を注入できる。
+    /// 音・警戒共有で Suspicious 化して最終確認位置を調査する。本コンポーネントは純粋なセンサで、公開状態（EnemyState）の
+    /// 遷移は所有しない（Phase3 P3-03 で EnemyBrain が <see cref="Phase"/>／<see cref="LastKnownPosition"/> を読んで状態・移動を
+    /// 駆動する）。帰還中は <see cref="SensingPaused"/> を true にして再認識を止める（§5）。LOS は毎フレーム一斉実行せず更新間隔を
+    /// ずらし、Pause／会話中は評価しない。物理 LOS は <see cref="ILineOfSightProbe"/> 越しでテスト時は Fake を注入できる。
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(EnemyActor))]
@@ -38,6 +39,14 @@ namespace Momotaro.Gameplay.Enemy.Perception
 
         /// <summary>最終確認位置（調査先）。</summary>
         public Vector3 LastKnownPosition => _state != null ? _state.LastKnownPosition : transform.position;
+
+        /// <summary>Alert 中か（センサ出力。Brain が参照する）。</summary>
+        public bool IsAlert => _state != null && _state.IsAlert;
+
+        /// <summary>
+        /// 認識を一時停止するか（帰還中に true。§5「Return 中は再認識しない」）。true の間は視覚・音・被弾での認識更新を止める。
+        /// </summary>
+        public bool SensingPaused { get; set; }
 
         private void Awake()
         {
@@ -102,9 +111,9 @@ namespace Momotaro.Gameplay.Enemy.Perception
 
         private void Update()
         {
-            if (!IsGameplayActive())
+            if (!IsGameplayActive() || SensingPaused)
             {
-                return; // Pause／会話／ローディング中は認識タイマーを進めない。
+                return; // Pause／会話／ローディング中、および帰還中（SensingPaused）は認識を進めない。
             }
 
             EnsureReady();
@@ -131,7 +140,7 @@ namespace Momotaro.Gameplay.Enemy.Perception
         public void EvaluateOnce(float deltaTime)
         {
             EnsureReady();
-            if (!_ready)
+            if (!_ready || SensingPaused)
             {
                 return;
             }
@@ -151,15 +160,13 @@ namespace Momotaro.Gameplay.Enemy.Perception
             {
                 _state.ObserveSight(false, selfPos, deltaTime);
             }
-
-            ReflectAiState();
         }
 
         /// <inheritdoc />
         public void OnNoise(in NoiseStimulus stimulus)
         {
             EnsureReady();
-            if (!_ready)
+            if (!_ready || SensingPaused)
             {
                 return;
             }
@@ -193,17 +200,15 @@ namespace Momotaro.Gameplay.Enemy.Perception
             {
                 _state.NotifyNoiseHeard(stimulus.Position);
             }
-
-            ReflectAiState();
         }
 
         /// <inheritdoc />
         public void OnHitResult(in HitResult result)
         {
             EnsureReady();
-            if (!_ready || !ReferenceEquals(result.Target, _actor))
+            if (!_ready || SensingPaused || !ReferenceEquals(result.Target, _actor))
             {
-                return; // 自分の被弾のみ。
+                return; // 自分の被弾のみ（帰還中は再認識しない）。
             }
 
             bool hasAttacker = result.Attacker != null;
@@ -212,8 +217,6 @@ namespace Momotaro.Gameplay.Enemy.Perception
             {
                 EmitAlertVoice();
             }
-
-            ReflectAiState();
         }
 
         private void EmitAlertVoice()
@@ -224,38 +227,6 @@ namespace Momotaro.Gameplay.Enemy.Perception
             channel.Publish(new NoiseStimulus(
                 channel.NextStimulusId(), _actor.DamageableId, pos, NoiseCatalog.AlertShareRadius, Time.time,
                 NoiseKind.EnemyAlertVoice, shareGeneration: 0));
-        }
-
-        private void ReflectAiState()
-        {
-            EnemyState current = _actor.State;
-            if (EnemyStatePriority.IsForcedByHit(current))
-            {
-                return; // 被弾由来（Down/Stunned/Stagger）は認識で上書きしない。
-            }
-
-            EnemyState want;
-            EnemyStateChangeReason reason;
-            switch (_state.Phase)
-            {
-                case PerceptionPhase.Alert:
-                    want = EnemyState.Alert;
-                    reason = EnemyStateChangeReason.PerceivedTarget;
-                    break;
-                case PerceptionPhase.Suspicious:
-                    want = EnemyState.Suspicious;
-                    reason = EnemyStateChangeReason.SuspiciousStimulus;
-                    break;
-                default:
-                    want = EnemyState.Idle;
-                    reason = EnemyStateChangeReason.LostTarget;
-                    break;
-            }
-
-            if (current != want)
-            {
-                _actor.RequestState(want, reason);
-            }
         }
 
         /// <summary>認識と音履歴を初期化する（戦闘終了・検証の再試行用）。</summary>

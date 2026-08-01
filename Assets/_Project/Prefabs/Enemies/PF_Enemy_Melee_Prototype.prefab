@@ -14,6 +14,10 @@ GameObject:
   - component: {fileID: 7654321000000005}
   - component: {fileID: 7654321000000006}
   - component: {fileID: 7654321000000007}
+  - component: {fileID: 7654321000000008}
+  - component: {fileID: 7654321000000009}
+  - component: {fileID: 7654321000000010}
+  - component: {fileID: 7654321000000011}
   m_Layer: 0
   m_Name: PF_Enemy_Melee_Prototype
   m_TagString: Untagged
@@ -141,3 +145,72 @@ MonoBehaviour:
   m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Enemy.Perception.EnemyPerception
   _evaluateInterval: 0.15
   _eyeHeight: 1
+--- !u!54 &7654321000000008
+Rigidbody:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7654321000000001}
+  serializedVersion: 5
+  m_Mass: 1
+  m_LinearDamping: 0
+  m_AngularDamping: 0.05
+  m_CenterOfMass: {x: 0, y: 0, z: 0}
+  m_InertiaTensor: {x: 1, y: 1, z: 1}
+  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ImplicitCom: 1
+  m_ImplicitTensor: 1
+  m_UseGravity: 0
+  m_IsKinematic: 0
+  m_Interpolate: 1
+  m_Constraints: 80
+  m_CollisionDetection: 1
+--- !u!114 &7654321000000009
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7654321000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: be7973025a2864a30a24b1e0143ddfb0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Enemy.Locomotion.EnemyMotor
+--- !u!114 &7654321000000010
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7654321000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b5f4bb63582cb36502b76482967b38f2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Enemy.Locomotion.EnemyBrain
+  _tooCloseRatio: 0.6
+  _arriveEpsilon: 0.35
+--- !u!114 &7654321000000011
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7654321000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: af19f1d7a01befff1eac0947fd01769e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Enemy.Combat.EnemyAttackController
+  _seed: 0
+  _targetMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
