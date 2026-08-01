@@ -53,6 +53,9 @@ namespace Momotaro.Gameplay.Enemy.Combat
         /// <summary>現在段階（Debug/テスト用）。</summary>
         public EnemyAttackMachine.Phase Phase => _machine.Current;
 
+        /// <summary>現在の狙い方向（XZ 正規化。Debug/テスト用）。</summary>
+        public Vector3 AimDirection => _aimDir;
+
         private void Awake()
         {
             _actor = GetComponent<EnemyActor>();
@@ -171,11 +174,13 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
             EnemyAttackSnapshot snap = _machine.Snapshot;
 
-            // Prepare 中の追尾：追尾停止まで対象方向へ狙いを更新する。
-            if (_machine.IsTrackingActive
+            // 照準の分離（§6.1）：Tracking のみ Prepare 中に角速度制限で漸進旋回し、追尾停止で固定する。
+            // CurrentPosition／PredictedPosition は開始時（TryStartAttack）に確定した方向を更新しない。
+            if (snap.AimingMode == EnemyAimingMode.Tracking && _machine.IsTrackingActive
                 && PerceptionTargetRegistry.TryGetNearestHostile(_actor.WorldPosition, _actor.Faction, out IPerceptionTarget t))
             {
-                _aimDir = EnemyAimingResolver.Resolve(snap.AimingMode, _actor.WorldPosition, t.Position, Vector3.zero, snap.PredictSeconds);
+                Vector3 desired = EnemyAimingResolver.Resolve(EnemyAimingMode.CurrentPosition, _actor.WorldPosition, t.Position, Vector3.zero, 0f);
+                _aimDir = EnemyAimingResolver.RotateToward(_aimDir, desired, snap.TrackingAngularSpeed * deltaTime);
                 _motor?.SetFacing(_aimDir);
             }
 

@@ -18,6 +18,7 @@ GameObject:
   - component: {fileID: 7654321000000009}
   - component: {fileID: 7654321000000010}
   - component: {fileID: 7654321000000011}
+  - component: {fileID: 7654321000000012}
   m_Layer: 0
   m_Name: PF_Enemy_Melee_Prototype
   m_TagString: Untagged
@@ -214,3 +215,18 @@ MonoBehaviour:
   _targetMask:
     serializedVersion: 2
     m_Bits: 4294967295
+--- !u!114 &7654321000000012
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7654321000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f969a6412f88f2f881c591654d63e3ec, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Diagnostics.EnemyTelegraphView
+  _controller: {fileID: 7654321000000011}
+  _displayRadius: 2
+  _fanHalfAngle: 45

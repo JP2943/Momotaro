@@ -38,6 +38,10 @@ namespace Momotaro.Gameplay.Enemy.Combat
                 snapshot.JustGuardPoiseReturn,
                 snapshot.Guardable,
                 snapshot.JustGuardable,
+                isJustGuardCounter: false,
+                defenseIgnoreRatio: 0f,
+                stunHpMultiplierOverride: 0f,
+                steppable: snapshot.Steppable,
                 hitId);
         }
     }

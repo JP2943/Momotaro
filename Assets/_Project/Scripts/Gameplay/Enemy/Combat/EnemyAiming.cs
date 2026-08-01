@@ -29,5 +29,31 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
             return dir.normalized;
         }
+
+        /// <summary>
+        /// 追尾型の漸進旋回（Phase3 §6.1）。現在の狙い <paramref name="currentDir"/> を目標 <paramref name="desiredDir"/> へ、
+        /// 1 ステップ最大 <paramref name="maxDegrees"/> だけ回頭した XZ 正規化方向を返す（瞬時に 180° 転換しない）。
+        /// </summary>
+        public static Vector3 RotateToward(Vector3 currentDir, Vector3 desiredDir, float maxDegrees)
+        {
+            currentDir.y = 0f;
+            desiredDir.y = 0f;
+
+            if (currentDir.sqrMagnitude < 1e-6f)
+            {
+                return desiredDir.sqrMagnitude < 1e-6f ? Vector3.forward : desiredDir.normalized;
+            }
+
+            if (desiredDir.sqrMagnitude < 1e-6f)
+            {
+                return currentDir.normalized;
+            }
+
+            float maxRad = Mathf.Max(0f, maxDegrees) * Mathf.Deg2Rad;
+            Vector3 rotated = Vector3.RotateTowards(currentDir.normalized, desiredDir.normalized, maxRad, 0f);
+            rotated.y = 0f;
+            return rotated.sqrMagnitude < 1e-6f ? currentDir.normalized : rotated.normalized;
+        }
     }
 }
+
