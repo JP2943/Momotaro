@@ -224,6 +224,8 @@ namespace Momotaro.Gameplay.Enemy.Combat
             Vector3 fwd = _aimDir;
             Vector3 center = _actor.WorldPosition + fwd * snap.HitboxForwardOffset + Vector3.up * snap.HitboxHeight;
             Quaternion rot = Quaternion.LookRotation(new Vector3(fwd.x, 0f, fwd.z), Vector3.up);
+            // Physics.autoSyncTransforms=0 のため、移動中の対象を確実に判定するよう問い合わせ前に同期する。
+            Physics.SyncTransforms();
             int count = Physics.OverlapBoxNonAlloc(center, snap.HitboxHalfExtents, _overlapBuffer, rot, _targetMask,
                 QueryTriggerInteraction.Collide);
             for (int i = 0; i < count; i++)

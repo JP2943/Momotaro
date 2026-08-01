@@ -617,6 +617,9 @@ namespace Momotaro.Gameplay.Player
             }
 
             Vector3 center = transform.position + Forward * _hitboxForwardOffset + Vector3.up * _hitboxHeight;
+            // Physics.autoSyncTransforms=0 のため、Update 中の問い合わせ前に明示同期する。これが無いと移動中の
+            // 敵（動的 Rigidbody）が最後の物理ステップの古い位置で判定され、Hitbox が命中を取りこぼす。
+            Physics.SyncTransforms();
             int count = Physics.OverlapBoxNonAlloc(center, _hitboxHalfExtents, _overlapBuffer, Quaternion.identity, _targetMask, QueryTriggerInteraction.Collide);
             if (count == 0)
             {
@@ -812,6 +815,9 @@ namespace Momotaro.Gameplay.Player
             }
 
             Vector3 center = transform.position + Forward * _hitboxForwardOffset + Vector3.up * _hitboxHeight;
+            // Physics.autoSyncTransforms=0 のため、Update 中の問い合わせ前に明示同期する。これが無いと移動中の
+            // 敵（動的 Rigidbody）が最後の物理ステップの古い位置で判定され、Hitbox が命中を取りこぼす。
+            Physics.SyncTransforms();
             int count = Physics.OverlapBoxNonAlloc(center, _hitboxHalfExtents, _overlapBuffer, Quaternion.identity, _targetMask, QueryTriggerInteraction.Collide);
 
             if (count == 0)

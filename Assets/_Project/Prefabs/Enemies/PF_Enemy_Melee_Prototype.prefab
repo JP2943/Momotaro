@@ -20,6 +20,7 @@ GameObject:
   - component: {fileID: 7654321000000011}
   - component: {fileID: 7654321000000012}
   - component: {fileID: 7654321000000040}
+  - component: {fileID: 7654321000000050}
   m_Layer: 0
   m_Name: PF_Enemy_Melee_Prototype
   m_TagString: Untagged
@@ -408,3 +409,17 @@ MonoBehaviour:
   _animator: {fileID: 7654321000000033}
   _layerName: Base Layer
   _layerIndex: 0
+--- !u!114 &7654321000000050
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7654321000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ddfb2ac5dc1ae96bbf6a629ff53a13c6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Diagnostics.EnemyCombatDebugLogger
+  _logEnabled: 0
+  _actor: {fileID: 7654321000000006}

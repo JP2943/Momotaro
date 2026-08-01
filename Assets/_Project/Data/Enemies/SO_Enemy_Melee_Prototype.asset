@@ -18,17 +18,17 @@ MonoBehaviour:
   _description: 
   _version: 1
   _debugNote: 
-  _maxHp: 60
+  _maxHp: 40
   _moveSpeed: 3.5
   _attackPower: 40
   _defense: 10
   _role: 0
-  _poiseMax: 60
+  _poiseMax: 40
   _poiseRecoveryDelaySeconds: 3
   _poiseRecoveryRatioPerSecond: 0.08
   _poiseDamageMultiplier: 1
   _stunSeconds: 3
-  _flinchResistance: 60
+  _flinchResistance: 40
   _turnSpeedDegrees: 360
   _stopDistance: 1.6
   _pushWeight: 1
