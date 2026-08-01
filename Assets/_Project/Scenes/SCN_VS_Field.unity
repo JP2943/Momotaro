@@ -824,6 +824,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Combat.CombatDummy
   _data: {fileID: 11400000, guid: 17a9a4a7e35b49148d6a04908e9246c9, type: 2}
+  _debugActionPhase: 0
 --- !u!114 &1108180789
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -837,7 +838,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Diagnostics.CombatDebugHud
   _player: {fileID: 983275866}
+  _playerVitals: {fileID: 0}
   _refreshInterval: 1
+  _visible: 1
 --- !u!65 &1108180790
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -931,6 +934,84 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1108180999
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1108180787}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4d5e6f708192a3b4c5d6e7f8091a2b3c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Diagnostics.CombatFeedbackDispatcher
+  _refreshInterval: 1
+--- !u!1001 &1261829680
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 7654321000000001, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_Name
+      value: PF_Enemy_Melee_Prototype
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654321000000002, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0.624
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654321000000002, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 1.73
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654321000000002, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0.28218937
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654321000000002, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654321000000002, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654321000000002, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654321000000002, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654321000000002, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654321000000002, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654321000000002, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654321000000031, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0.392
+      objectReference: {fileID: 0}
+    - target: {fileID: 7654321000000031, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -2.647
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 7f9bddb6ec23bbb57c1262aad131b418, type: 3}
 --- !u!1 &1699177758
 GameObject:
   m_ObjectHideFlags: 0
@@ -1282,16 +1363,4 @@ SceneRoots:
   - {fileID: 361175475}
   - {fileID: 174054025}
   - {fileID: 1108180793}
---- !u!114 &1108180999
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1108180787}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4d5e6f708192a3b4c5d6e7f8091a2b3c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Diagnostics.CombatFeedbackDispatcher
-  _refreshInterval: 1
+  - {fileID: 1261829680}
