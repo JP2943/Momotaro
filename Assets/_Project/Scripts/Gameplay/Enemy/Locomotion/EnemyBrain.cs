@@ -34,6 +34,15 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
         private float _returnWait;
         private bool _prevSuppress;
         private bool _loggedBlocked;
+        private bool _wasAttacking;
+        private readonly EnemyPostAttackWait _postAttack = new EnemyPostAttackWait();
+        private readonly System.Random _waitRng = new System.Random();
+
+        /// <summary>攻撃後待機の残り秒（Debug/テスト用。§9.1）。</summary>
+        public float PostAttackWaitRemaining => _postAttack.Remaining;
+
+        /// <summary>攻撃後待機中か。</summary>
+        public bool IsPostAttackWaiting => _postAttack.IsWaiting;
 
         /// <summary>現在の交戦モード（Debug・テスト用）。</summary>
         public EnemyEngagementMode Mode => _mode;
@@ -114,10 +123,20 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             // 攻撃中は移動・状態を攻撃制御へ委譲する（EnemyAttackController が Prepare/Active/Recovery を駆動）。
             if (_combat != null && _combat.IsAttacking)
             {
+                _wasAttacking = true;
                 return;
             }
 
             EnemyArchetypeReadout r = ReadArchetype();
+
+            // 攻撃終了フレーム：攻撃後待機を開始する（連打防止。§9.1「攻撃後待機 0.7〜1.2 秒」）。
+            if (_wasAttacking)
+            {
+                _wasAttacking = false;
+                _postAttack.Begin(EnemyPostAttackWait.PickDuration(r.PostAttackWaitMin, r.PostAttackWaitMax, (float)_waitRng.NextDouble()));
+            }
+
+            _postAttack.Tick(deltaTime);
             PerceptionPhase phase = _perception != null ? _perception.Phase : PerceptionPhase.Unaware;
             bool hasTarget = _perception != null && _perception.HasLastKnownPosition;
             Vector3 targetPos = _perception != null ? _perception.LastKnownPosition : transform.position;
@@ -166,8 +185,9 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
                 UpdateBlockedLog(output.RepositionReason);
             }
 
-            // 停止帯（Hold）で攻撃を試みる。開始したら次フレームから攻撃制御へ委譲する（攻撃・Slot は P3-04/07）。
-            if (output.Mode == EnemyEngagementMode.Hold && hasTarget && _combat != null && !_combat.IsAttacking)
+            // 停止帯（Hold）で攻撃を試みる。攻撃後待機中は撃たない（連打防止）。開始したら次フレームから攻撃制御へ委譲する。
+            if (output.Mode == EnemyEngagementMode.Hold && hasTarget && _combat != null && !_combat.IsAttacking
+                && !_postAttack.IsWaiting)
             {
                 _combat.TryStartAttack(targetPos, Vector3.zero);
             }
@@ -197,12 +217,17 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             public float ActivityRadius { get; }
             public float StopDistance { get; }
             public float ReturnWaitSeconds { get; }
+            public float PostAttackWaitMin { get; }
+            public float PostAttackWaitMax { get; }
 
-            public EnemyArchetypeReadout(float activityRadius, float stopDistance, float returnWaitSeconds)
+            public EnemyArchetypeReadout(float activityRadius, float stopDistance, float returnWaitSeconds,
+                float postAttackWaitMin, float postAttackWaitMax)
             {
                 ActivityRadius = activityRadius;
                 StopDistance = stopDistance;
                 ReturnWaitSeconds = returnWaitSeconds;
+                PostAttackWaitMin = postAttackWaitMin;
+                PostAttackWaitMax = postAttackWaitMax;
             }
         }
 
@@ -211,10 +236,11 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             var a = _actor.Archetype;
             if (a == null)
             {
-                return new EnemyArchetypeReadout(12f, 1.6f, 1f);
+                return new EnemyArchetypeReadout(12f, 1.6f, 1f, 0.7f, 1.2f);
             }
 
-            return new EnemyArchetypeReadout(a.ActivityRadius, a.StopDistance, a.ReturnWaitSeconds);
+            return new EnemyArchetypeReadout(a.ActivityRadius, a.StopDistance, a.ReturnWaitSeconds,
+                a.PostAttackWaitMin, a.PostAttackWaitMax);
         }
 
         private static EnemyStateChangeReason MapReason(EnemyState state)
