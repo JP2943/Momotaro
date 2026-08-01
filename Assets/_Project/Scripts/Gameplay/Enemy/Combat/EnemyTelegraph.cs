@@ -13,11 +13,14 @@ namespace Momotaro.Gameplay.Enemy.Combat
         /// <summary>発射／判定発生（Active 入り）。</summary>
         Fire = 1,
 
-        /// <summary>終了（Recovery 明け）。</summary>
+        /// <summary>攻撃完了（Recovery 明け）。表示は既に消灯している想定（後隙全体の終了マーカー）。</summary>
         End = 2,
 
         /// <summary>中断（Stagger／Stunned／Down／Disable）。</summary>
         Cancel = 3,
+
+        /// <summary>判定終了・後隙入り（Active→Recovery）。この時点で判定は停止し、表示も消灯する（End とは意味を分ける）。</summary>
+        Recovery = 4,
     }
 
     /// <summary>

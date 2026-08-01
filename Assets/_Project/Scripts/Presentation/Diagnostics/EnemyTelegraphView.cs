@@ -37,6 +37,28 @@ namespace Momotaro.Presentation.Diagnostics
         /// <summary>現在表示中の攻撃種別。</summary>
         public AttackTelegraph CurrentKind => _kind;
 
+        /// <summary>
+        /// 表示に用いる方向。攻撃制御があればその現在の狙い（<see cref="EnemyAttackController.AimDirection"/>）へ追従する。
+        /// Tracking は Prepare 中に方向が動くため予兆扇形が実照準に一致し、CurrentPosition／PredictedPosition は制御側で
+        /// 方向が固定されるため表示も固定される。制御が無ければイベント受信時の方向を用いる（Gameplay の正本にはしない）。
+        /// </summary>
+        public Vector3 DisplayDirection
+        {
+            get
+            {
+                if (_controller != null)
+                {
+                    Vector3 a = _controller.AimDirection;
+                    if (a.sqrMagnitude > 1e-6f)
+                    {
+                        return new Vector3(a.x, 0f, a.z).normalized;
+                    }
+                }
+
+                return _aim.sqrMagnitude > 1e-6f ? new Vector3(_aim.x, 0f, _aim.z).normalized : transform.forward;
+            }
+        }
+
         private void Awake()
         {
             if (_controller == null)
@@ -68,7 +90,7 @@ namespace Momotaro.Presentation.Diagnostics
             _kind = telegraph.Kind;
             _position = telegraph.Position;
             _aim = telegraph.AimDirection;
-            // Prepare（Begin）・Active（Fire）は表示、End／Cancel で消灯（後隙明け・中断で予兆消去）。
+            // Prepare（Begin）・Active（Fire）のみ表示。Recovery（判定停止）・End・Cancel で消灯し、後隙で「まだ判定中」に見せない。
             _showing = telegraph.Phase == EnemyTelegraphPhase.Begin || telegraph.Phase == EnemyTelegraphPhase.Fire;
         }
 
@@ -93,7 +115,7 @@ namespace Momotaro.Presentation.Diagnostics
             }
 
             Vector3 origin = _position + Vector3.up * 0.5f;
-            Vector3 fwd = _aim.sqrMagnitude > 1e-6f ? new Vector3(_aim.x, 0f, _aim.z).normalized : transform.forward;
+            Vector3 fwd = DisplayDirection; // Tracking は制御側の現在照準へ追従、固定型は据え置き。
             Gizmos.color = KindColor(_kind);
 
             if (_phase == EnemyTelegraphPhase.Begin)

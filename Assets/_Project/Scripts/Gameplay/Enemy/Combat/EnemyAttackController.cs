@@ -201,6 +201,8 @@ namespace Momotaro.Gameplay.Enemy.Combat
             {
                 _actor.RequestState(EnemyState.AttackRecovery, EnemyStateChangeReason.AttackAdvanced);
                 _motor?.Stop();
+                // 判定停止＝予兆表示も消灯（後隙で「まだ判定中」に見せない）。攻撃全体の終了 End とは分ける。
+                PublishTelegraph(EnemyTelegraphPhase.Recovery, snap);
             }
 
             if (r.Finished)
