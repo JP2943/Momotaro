@@ -34,7 +34,24 @@ namespace Momotaro.Gameplay.Enemy
         /// <inheritdoc />
         public Vector3 WorldPosition => transform.position;
         /// <inheritdoc />
-        public Vector3 Forward => transform.forward;
+        /// <remarks>
+        /// 論理的な前方（XZ 平面）。物理ルートは接地・Collider の安定のため回転させない（Rigidbody で全回転を固定）ため、
+        /// 向きは transform.forward ではなくこの論理値で保持する。移動・追跡・照準に応じて <see cref="SetFacing"/> で更新し、
+        /// 認識コーン・攻撃照準・表示（4 方向スプライト）が参照する。既定は +Z。
+        /// </remarks>
+        public Vector3 Forward => _facing.sqrMagnitude > 1e-6f ? _facing : Vector3.forward;
+
+        private Vector3 _facing = Vector3.forward;
+
+        /// <summary>論理的な前方（XZ）を設定する。ルート Transform は回さず、向きだけを更新する。</summary>
+        public void SetFacing(Vector3 direction)
+        {
+            direction.y = 0f;
+            if (direction.sqrMagnitude > 1e-6f)
+            {
+                _facing = direction.normalized;
+            }
+        }
 
         // ---- IDamageable ----
         /// <inheritdoc />

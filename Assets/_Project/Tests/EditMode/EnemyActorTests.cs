@@ -151,5 +151,45 @@ namespace Momotaro.Tests.EditMode
             boss.ReceiveKnockback(Vector3.forward, 5f);
             Assert.AreEqual(0f, boss.LastKnockback, 1e-4f, "ボスはノックバック無効。");
         }
+
+        // ---- 論理 Facing（P3-05 受入修正：向きはルート Transform を回さず論理値で保持する）----
+
+        [Test]
+        public void Forward_DefaultsToPlusZ()
+        {
+            var actor = MakeActor();
+            Assert.AreEqual(Vector3.forward, actor.Forward, "既定の前方は +Z。");
+        }
+
+        [Test]
+        public void SetFacing_UpdatesForward_Normalized_OnXZPlane()
+        {
+            var actor = MakeActor();
+            actor.SetFacing(new Vector3(5f, 3f, 0f)); // Y 成分は無視され XZ 平面へ射影される。
+            Assert.AreEqual(1f, actor.Forward.magnitude, 1e-4f, "前方は正規化される。");
+            Assert.AreEqual(0f, actor.Forward.y, 1e-6f, "前方は XZ 平面（Y=0）。");
+            Assert.AreEqual(1f, actor.Forward.x, 1e-4f, "X 方向へ向く。");
+        }
+
+        [Test]
+        public void SetFacing_DoesNotRotateRootTransform()
+        {
+            var actor = MakeActor();
+            Quaternion before = actor.transform.rotation;
+            actor.SetFacing(new Vector3(-1f, 0f, 1f));
+            Assert.AreEqual(before, actor.transform.rotation,
+                "ルート Transform は回さない（Collider を持つ接地基準の姿勢を保つ）。");
+        }
+
+        [Test]
+        public void SetFacing_IgnoresZeroAndVerticalOnlyDirection()
+        {
+            var actor = MakeActor();
+            actor.SetFacing(new Vector3(1f, 0f, 0f));
+            Vector3 kept = actor.Forward;
+            actor.SetFacing(Vector3.zero);          // 無効入力は無視。
+            actor.SetFacing(new Vector3(0f, 9f, 0f)); // XZ 成分ゼロも無視。
+            Assert.AreEqual(kept, actor.Forward, "無効な向き入力では前方を変えない。");
+        }
     }
 }

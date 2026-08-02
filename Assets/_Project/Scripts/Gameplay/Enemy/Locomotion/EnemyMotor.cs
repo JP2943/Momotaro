@@ -3,18 +3,25 @@ using UnityEngine;
 namespace Momotaro.Gameplay.Enemy.Locomotion
 {
     /// <summary>
-    /// 敵の移動実行（Phase3 §5/§2.2）。XZ 平面を Rigidbody の linearVelocity で動かし、Y 軸回頭で向きを変える（認識コーンが
-    /// 向きに追従）。壁は Phase 1 の衝突規則（Enemy↔Default 維持）で物理が停止・接線滑りを解決し、Player↔Enemy はすり抜ける。
-    /// 経路不能（指示に対し実移動が乏しい）を検出して <see cref="IsBlocked"/> で通知する（Brain が停止・Debug 理由を出す）。
-    /// 回転は X/Z を固定（転倒防止）し Y のみ許可する。通常移動に Transform 直接書換えは行わない。
+    /// 敵の移動実行（Phase3 §5/§2.2）。XZ 平面を Rigidbody の linearVelocity で動かす。壁は Phase 1 の衝突規則
+    /// （Enemy↔Default 維持）で物理が停止・接線滑りを解決し、Player↔Enemy はすり抜ける。経路不能（指示に対し実移動が
+    /// 乏しい）を検出して <see cref="IsBlocked"/> で通知する（Brain が停止・Debug 理由を出す）。
+    /// 向きはルート Transform を回さず、論理値として <see cref="EnemyActor.SetFacing"/> に渡す（認識コーン・攻撃照準・4 方向
+    /// スプライトが参照）。ルートは接地・Collider 安定のため回転を全固定（転倒・押し出しによる姿勢崩れ防止）し、さらに Y 位置を
+    /// 固定して押し出し由来の浮き上がり（Collider が地面から離れ、主人公攻撃が空振りする不具合）を防ぐ。通常移動に Transform
+    /// 直接書換えは行わない。
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(Rigidbody))]
     public sealed class EnemyMotor : MonoBehaviour
     {
+        // 全回転固定＋Y 位置固定（FreezeRotationX|Y|Z=112 + FreezePositionY=4 = 116）。
+        private const RigidbodyConstraints GroundedConstraints =
+            RigidbodyConstraints.FreezeRotation | RigidbodyConstraints.FreezePositionY;
+
         private Rigidbody _body;
+        private EnemyActor _actor;
         private float _moveSpeed = 3.5f;
-        private float _turnSpeedDeg = 360f;
         private float _stopRadius = 0.05f;
 
         private Vector3 _moveTarget;
@@ -31,6 +38,7 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
         private void Awake()
         {
             _body = GetComponent<Rigidbody>();
+            _actor = GetComponent<EnemyActor>();
             ConfigureBody();
             _lastPos = _body != null ? _body.position : transform.position;
         }
@@ -43,16 +51,19 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             }
 
             _body.useGravity = false;
-            // 転倒防止：X/Z 回転を固定し、Y（回頭）だけ許可する。
-            _body.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+            // ルートは接地基準：全回転を固定し、Y 位置も固定する（押し出しによる浮き上がりを防ぎ Collider を地面に保つ）。
+            _body.constraints = GroundedConstraints;
             _body.interpolation = RigidbodyInterpolation.Interpolate;
         }
 
-        /// <summary>移動・回頭・停止半径のパラメータを設定する（アーキタイプ由来）。</summary>
+        /// <summary>
+        /// 移動・停止半径のパラメータを設定する（アーキタイプ由来）。<paramref name="turnSpeedDeg"/> はルートを回さなく
+        /// なったため未使用だが、呼び出し側（Brain）の契約維持のため引数は残す（向きは論理値で即時反映する）。
+        /// </summary>
         public void Configure(float moveSpeed, float turnSpeedDeg, float stopRadius)
         {
             _moveSpeed = moveSpeed;
-            _turnSpeedDeg = turnSpeedDeg;
+            _ = turnSpeedDeg;
             _stopRadius = Mathf.Max(0.01f, stopRadius);
         }
 
@@ -69,7 +80,7 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             _hasMoveTarget = false;
         }
 
-        /// <summary>向けたいワールド方向（XZ）。停止中も対象へ向き続けるために使う。</summary>
+        /// <summary>向けたいワールド方向（XZ）。停止中も対象へ向き続けるために使う。ルートは回さず論理向きへ反映する。</summary>
         public void SetFacing(Vector3 worldDirection)
         {
             worldDirection.y = 0f;
@@ -77,7 +88,18 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             {
                 _facing = worldDirection.normalized;
                 _hasFacing = true;
+                ApplyFacing(_facing); // 即時に論理向きへ反映（表示・照準の追従を遅らせない）。
             }
+        }
+
+        private void ApplyFacing(Vector3 dir)
+        {
+            if (_actor == null)
+            {
+                _actor = GetComponent<EnemyActor>();
+            }
+
+            _actor?.SetFacing(dir);
         }
 
         private void FixedUpdate()
@@ -92,15 +114,14 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
                 ? ApproachCalculator.DesiredVelocity(pos, _moveTarget, _moveSpeed, _stopRadius)
                 : Vector3.zero;
 
-            _body.linearVelocity = new Vector3(velocity.x, _body.linearVelocity.y, velocity.z);
+            // XZ のみ駆動し Y 速度は 0（Y 位置は Rigidbody 制約でも固定。押し出しによる浮き上がりを二重に防ぐ）。
+            _body.linearVelocity = new Vector3(velocity.x, 0f, velocity.z);
 
-            // 回頭：移動中は進行方向、停止中は指定 Facing へ。Y のみ回頭する。
+            // 向き：移動中は進行方向、停止中は指定 Facing。ルート Transform は回さず論理向きだけを更新する。
             Vector3 faceDir = velocity.sqrMagnitude > 1e-6f ? velocity : (_hasFacing ? _facing : Vector3.zero);
             if (faceDir.sqrMagnitude > 1e-6f)
             {
-                Quaternion target = Quaternion.LookRotation(new Vector3(faceDir.x, 0f, faceDir.z), Vector3.up);
-                Quaternion next = Quaternion.RotateTowards(_body.rotation, target, _turnSpeedDeg * Time.fixedDeltaTime);
-                _body.MoveRotation(next);
+                ApplyFacing(new Vector3(faceDir.x, 0f, faceDir.z));
             }
 
             UpdateBlocked(pos, velocity);

@@ -72,11 +72,12 @@ namespace Momotaro.Tests.PlayMode
 
             var rb = go.AddComponent<Rigidbody>();
             rb.useGravity = false;
-            rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+            // 接地基準：全回転＋Y 位置固定（EnemyMotor.Awake が上書き設定するのと同じ 116）。
+            rb.constraints = RigidbodyConstraints.FreezeRotation | RigidbodyConstraints.FreezePositionY;
 
             var col = go.AddComponent<BoxCollider>();
             col.size = Vector3.one;
-            col.center = Vector3.zero;
+            col.center = new Vector3(0f, 0.5f, 0f); // 原点直上 0..1（接地）。
 
             var actor = go.AddComponent<EnemyActor>();
             SetField(actor, "_archetype", MakeArchetype());
