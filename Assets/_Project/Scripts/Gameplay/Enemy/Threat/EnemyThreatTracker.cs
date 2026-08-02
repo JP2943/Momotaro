@@ -16,7 +16,7 @@ namespace Momotaro.Gameplay.Enemy.Threat
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(EnemyActor))]
-    public sealed class EnemyThreatTracker : MonoBehaviour, IHitResultListener, IEnemyStateListener
+    public sealed class EnemyThreatTracker : MonoBehaviour, IHitResultListener, IEnemyStateListener, IPerceptionFocusSource
     {
         [Tooltip("ヘイト評価の調整値（§7.1／§7.2）。既定は仕様書の試作値。")]
         [SerializeField] private ThreatSettings _settings = ThreatSettings.Default;
@@ -75,6 +75,14 @@ namespace Momotaro.Gameplay.Enemy.Threat
 
         /// <summary>内部テーブル（テスト・Debug のための読み取りアクセス）。</summary>
         public EnemyThreatTable Table => _table;
+
+        /// <inheritdoc />
+        /// <remarks>認識（<see cref="EnemyPerception"/>）が追う対象を Threat 最大対象へ接続する（req1）。未選択時は false。</remarks>
+        public bool TryGetFocusTarget(out IPerceptionTarget target)
+        {
+            target = CurrentTarget;
+            return target != null;
+        }
 
         private void Awake()
         {

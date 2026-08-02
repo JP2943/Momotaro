@@ -121,34 +121,35 @@ namespace Momotaro.Gameplay.Enemy.Perception
         }
 
         /// <summary>
-        /// 攻撃者（<see cref="ICombatActor"/>）に対応する登録済み脅威対象を解決する（Phase3 P3-06）。被弾由来のヘイト加算を、
-        /// 攻撃者と同陣営で最も近い <see cref="IThreatTarget"/> へ帰属させる（脅威対象は戦闘 Actor と同一 GameObject に同居する想定）。
+        /// 攻撃者（<see cref="ICombatActor"/>）に対応する登録済み脅威対象を <b>確実に本人へ</b>解決する（Phase3 P3-06 受入修正 req6）。
+        /// 位置的な近さではなく、攻撃者と脅威対象が同一 Transform ルート（＝同一エンティティ）であることで対応付ける。これにより
+        /// 主人公と仲間が近接していても、実際に攻撃した本人へヘイトが加算され、Phase 4 の犬・猿・雉でも誤帰属しない。攻撃者が
+        /// Component でない（＝ Transform を持たない Fake 等）場合は解決しない。脅威対象は戦闘 Actor と同一ルートに同居する想定。
         /// </summary>
         public static bool TryResolveThreatTarget(ICombatActor attacker, out IThreatTarget resolved)
         {
             resolved = null;
-            if (attacker == null)
+            if (!(attacker is Component attackerComponent))
             {
-                return false;
+                return false; // Transform を持たない攻撃者は本人対応付け不可。
             }
 
-            float best = float.MaxValue;
+            Transform attackerRoot = attackerComponent.transform.root;
             for (int i = 0; i < _targets.Count; i++)
             {
-                if (!(_targets[i] is IThreatTarget t) || t.Faction != attacker.Faction)
+                if (!(_targets[i] is IThreatTarget t) || !(t is Component targetComponent))
                 {
                     continue;
                 }
 
-                float d = VisionCheck.PlanarDistance(attacker.WorldPosition, t.Position);
-                if (d < best)
+                if (targetComponent.transform.root == attackerRoot)
                 {
-                    best = d;
-                    resolved = t;
+                    resolved = t; // 同一ルート＝攻撃者本人のエンティティ。
+                    return true;
                 }
             }
 
-            return resolved != null;
+            return false;
         }
     }
 }

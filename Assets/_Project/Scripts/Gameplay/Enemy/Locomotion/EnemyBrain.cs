@@ -1,6 +1,7 @@
 using Momotaro.Gameplay.Enemy.Combat;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Slots;
+using Momotaro.Gameplay.Enemy.Threat;
 using Momotaro.Gameplay.Modes;
 using UnityEngine;
 
@@ -35,6 +36,7 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
         private EnemyPerception _perception;
         private EnemyAttackController _combat;
         private EnemyEncounter _encounter;
+        private EnemyThreatTracker _threat;
         private bool _encounterResolved;
         private Vector3 _home;
         private bool _homeSet;
@@ -88,6 +90,7 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             }
 
             _encounter = GetComponentInParent<EnemyEncounter>(); // 1 回だけ解決（毎フレーム探索しない）。
+            _threat = GetComponent<EnemyThreatTracker>();        // Threat 選択対象を攻撃開始対象へ渡す（req1）。
             _encounterResolved = true;
         }
 
@@ -97,6 +100,7 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             if (_motor == null) _motor = GetComponent<EnemyMotor>();
             if (_perception == null) _perception = GetComponent<EnemyPerception>();
             if (_combat == null) _combat = GetComponent<EnemyAttackController>();
+            ResolveEncounter(); // Awake/OnEnable 未実行（動的生成）でも Threat/Encounter を解決する。
         }
 
         private void CaptureHome()
@@ -203,7 +207,9 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             // 停止帯（Hold）で攻撃を試みる。攻撃後待機中は撃たない（連打防止）。開始したら次フレームから攻撃制御へ委譲する。
             bool canTryAttack = output.Mode == EnemyEngagementMode.Hold && hasTarget && _combat != null
                 && !_combat.IsAttacking && !_postAttack.IsWaiting;
-            bool started = canTryAttack && _combat.TryStartAttack(targetPos, Vector3.zero);
+            // Threat 選択対象を照準対象として渡し、攻撃終了まで固定させる（req1/2）。位置は最終確認位置をフォールバックに使う。
+            IPerceptionTarget attackTarget = _threat != null ? _threat.CurrentTarget : null;
+            bool started = canTryAttack && _combat.TryStartAttack(attackTarget, targetPos, Vector3.zero);
 
             if (started || _motor == null)
             {

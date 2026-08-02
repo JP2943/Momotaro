@@ -42,12 +42,14 @@ namespace Momotaro.Gameplay.Enemy.Combat
         private bool _built;
 
         private EnemyEncounter _encounter;
+        private bool _encounterResolved;
         private bool _holdsSlot;
 
         private int _selectedIndex = -1;
         private int _lastUsedIndex = -1;
         private Vector3 _aimDir = Vector3.forward;
         private HitId _currentSwing;
+        private IPerceptionTarget _attackTarget; // 攻撃開始時に確定した照準対象（req2/3）。Tracking はこれを追い、最寄り再取得しない。
 
         /// <summary>攻撃予兆の配信チャネル（表示側が購読）。</summary>
         public EnemyTelegraphChannel Telegraph { get; } = new EnemyTelegraphChannel();
@@ -60,6 +62,9 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
         /// <summary>現在の狙い方向（XZ 正規化。Debug/テスト用）。</summary>
         public Vector3 AimDirection => _aimDir;
+
+        /// <summary>攻撃中に固定された照準対象の ActorId（無ければ 0。req8 検証用）。攻撃終了まで変わらない。</summary>
+        public int AttackTargetId => _attackTarget != null ? _attackTarget.ActorId : 0;
 
         /// <inheritdoc />
         public int SlotOwnerId => _actor != null ? _actor.DamageableId : 0;
@@ -74,8 +79,20 @@ namespace Momotaro.Gameplay.Enemy.Combat
         {
             _actor = GetComponent<EnemyActor>();
             _motor = GetComponent<EnemyMotor>();
-            _encounter = GetComponentInParent<EnemyEncounter>(); // Encounter 親があれば Slot を共有（無ければ制限なし）。
+            EnsureEncounter();
             Build();
+        }
+
+        /// <summary>Encounter 親を 1 回だけ解決する（親があれば Slot を共有、無ければ制限なし）。ライフサイクルに依存せず遅延解決する。</summary>
+        private void EnsureEncounter()
+        {
+            if (_encounterResolved)
+            {
+                return;
+            }
+
+            _encounter = GetComponentInParent<EnemyEncounter>();
+            _encounterResolved = true;
         }
 
         private void OnDisable()
@@ -120,16 +137,29 @@ namespace Momotaro.Gameplay.Enemy.Combat
         }
 
         /// <summary>
-        /// 攻撃開始を試みる（Brain が停止帯で呼ぶ）。選択に成功したら Prepare へ入り true。攻撃中・候補なしは false。
+        /// 位置指定で攻撃開始を試みる（照準対象を確定しない簡易版。単発テスト・非追尾攻撃向け）。Tracking は追尾対象を持たないため
+        /// 開始時方向で保持される。通常は <see cref="TryStartAttack(IPerceptionTarget, Vector3, Vector3)"/> を用いて対象を固定する。
         /// </summary>
         public bool TryStartAttack(Vector3 targetPos, Vector3 targetVelocity)
         {
+            return TryStartAttack(null, targetPos, targetVelocity);
+        }
+
+        /// <summary>
+        /// 攻撃開始を試みる（Brain が停止帯で呼ぶ）。<paramref name="target"/> に Threat 選択対象を渡すと、その対象を攻撃終了まで
+        /// 照準対象として固定し（req2/3/4）、Tracking はこの対象の位置を追う（最寄り再取得しない）。<paramref name="target"/> が null／
+        /// 無効なら <paramref name="fallbackTargetPos"/> を用いる。選択に成功したら Prepare へ入り true。攻撃中・候補なし・画面外・Slot 不足は false。
+        /// </summary>
+        public bool TryStartAttack(IPerceptionTarget target, Vector3 fallbackTargetPos, Vector3 targetVelocity)
+        {
             Build();
+            EnsureEncounter(); // Awake 未実行（動的生成）でも Slot 調停を有効化する。
             if (!_built || _machine.IsAttacking || _snaps.Length == 0)
             {
                 return false;
             }
 
+            Vector3 targetPos = target != null && target.IsActive ? target.Position : fallbackTargetPos;
             Vector3 selfPos = _actor.WorldPosition;
             float distance = VisionCheck.PlanarDistance(selfPos, targetPos);
             float angle = AngleToTarget(selfPos, _actor.Forward, targetPos);
@@ -162,6 +192,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
             _holdsSlot = coordinator != null && snap.SlotKind != AttackSlotKind.None;
 
             _selectedIndex = index;
+            _attackTarget = target; // 照準対象を固定（攻撃終了まで別対象へ切替えない。req2/3/4）。
             _aimDir = EnemyAimingResolver.Resolve(snap.AimingMode, selfPos, targetPos, targetVelocity, snap.PredictSeconds);
             _currentSwing = _allocator.NextSingle();
             _hitTracker.Clear();
@@ -209,12 +240,15 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
             EnemyAttackSnapshot snap = _machine.Snapshot;
 
-            // 照準の分離（§6.1）：Tracking のみ Prepare 中に角速度制限で漸進旋回し、追尾停止で固定する。
-            // CurrentPosition／PredictedPosition は開始時（TryStartAttack）に確定した方向を更新しない。
+            // 照準の分離（§6.1／req2/3）：Tracking のみ Prepare 中に角速度制限で漸進旋回し、追尾停止で固定する。追尾先は開始時に
+            // 確定した照準対象（_attackTarget）で、最寄り再取得（TryGetNearestHostile）はしない。対象が Down／Disable／離脱で無効化した
+            // 場合は追尾を止め、その時点の方向を保持する（安全側。攻撃自体は被弾状態で中断されるか通常どおり終了する。req4）。
+            // CurrentPosition／PredictedPosition は開始時に確定した方向を更新しない。
             if (snap.AimingMode == EnemyAimingMode.Tracking && _machine.IsTrackingActive
-                && PerceptionTargetRegistry.TryGetNearestHostile(_actor.WorldPosition, _actor.Faction, out IPerceptionTarget t))
+                && _attackTarget != null && _attackTarget.IsActive)
             {
-                Vector3 desired = EnemyAimingResolver.Resolve(EnemyAimingMode.CurrentPosition, _actor.WorldPosition, t.Position, Vector3.zero, 0f);
+                Vector3 desired = EnemyAimingResolver.Resolve(EnemyAimingMode.CurrentPosition, _actor.WorldPosition,
+                    _attackTarget.Position, Vector3.zero, 0f);
                 _aimDir = EnemyAimingResolver.RotateToward(_aimDir, desired, snap.TrackingAngularSpeed * deltaTime);
                 _motor?.SetFacing(_aimDir);
             }
@@ -249,6 +283,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
                 _lastUsedIndex = _selectedIndex;
                 _hitTracker.Clear();
+                _attackTarget = null; // 攻撃終了で照準対象の固定を解除（次回再評価。req4）。
                 ReleaseSlot(); // 攻撃終了で Slot を解放（§8.1）。
                 PublishTelegraph(EnemyTelegraphPhase.End, snap);
                 _actor.RequestState(EnemyState.Alert, EnemyStateChangeReason.AttackFinished);
@@ -326,6 +361,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
             EnemyAttackSnapshot snap = _machine.Snapshot;
             _machine.Cancel();
             _hitTracker.Clear();
+            _attackTarget = null; // 中断で照準対象の固定を解除。
             ReleaseSlot(); // 中断（Stagger/Stunned/Down/Disable/Scene 離脱）で Slot を解放（§8.1）。
             PublishTelegraph(EnemyTelegraphPhase.Cancel, snap);
         }

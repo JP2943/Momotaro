@@ -175,7 +175,7 @@ namespace Momotaro.Tests.EditMode
             PerceptionTargetRegistry.Register(target);
 
             var (c, v) = MakeControllerAndView(EnemyAimingMode.Tracking);
-            c.TryStartAttack(target.Position, Vector3.zero);
+            c.TryStartAttack(target, target.Position, Vector3.zero); // 追尾先は開始時に確定した対象（req2/3）。
             Vector3 startDisplay = v.DisplayDirection;
 
             target.Position = new Vector3(1.5f, 0, 0); // 真横へ移動

@@ -26,6 +26,7 @@ namespace Momotaro.Gameplay.Enemy.Perception
         private PerceptionState _state;
         private PerceptionSettings _settings;
         private ILineOfSightProbe _probe;
+        private IPerceptionFocusSource _focus; // 注視対象の供給（Threat 最大対象）。無ければ最寄りへフォールバック（req1/5）。
         private readonly HashSet<int> _processedNoise = new HashSet<int>();
         private float _nextEvalTime;
         private float _lastEvalTime;
@@ -146,7 +147,23 @@ namespace Momotaro.Gameplay.Enemy.Perception
             }
 
             Vector3 selfPos = _actor.WorldPosition;
-            if (PerceptionTargetRegistry.TryGetNearestHostile(selfPos, _actor.Faction, out IPerceptionTarget target))
+
+            // 注視源（同一 GameObject の Threat 選択）を遅延解決する（コンポーネント追加順に依存しない）。無ければ最寄りへ委ねる。
+            if (_focus == null)
+            {
+                _focus = GetComponent<IPerceptionFocusSource>();
+            }
+
+            // 注視対象：Threat 選択（最大脅威）を優先し、無ければ最寄り敵対へフォールバック（req1/5）。刺激調査・最終確認位置・
+            // Return などの既存経路は本分岐に依存せず維持される（OnNoise／OnHitResult／PerceptionState 側）。
+            IPerceptionTarget target = null;
+            bool hasFocus = _focus != null && _focus.TryGetFocusTarget(out target);
+            if (!hasFocus)
+            {
+                hasFocus = PerceptionTargetRegistry.TryGetNearestHostile(selfPos, _actor.Faction, out target);
+            }
+
+            if (hasFocus)
             {
                 Vector3 targetPos = target.Position;
                 bool hasLos = _probe == null || _probe.HasLineOfSight(selfPos, targetPos);

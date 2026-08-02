@@ -126,7 +126,8 @@ namespace Momotaro.Tests.EditMode
             PerceptionTargetRegistry.Register(target);
             var c = MakeController(EnemyAimingMode.Tracking);
 
-            Assert.IsTrue(c.TryStartAttack(target.Position, Vector3.zero));
+            // 追尾先は開始時に確定した照準対象（req2/3）。最寄り再取得はしないため対象を明示的に渡す。
+            Assert.IsTrue(c.TryStartAttack(target, target.Position, Vector3.zero));
             Vector3 aimAtStart = c.AimDirection; // ほぼ +Z
 
             target.Position = new Vector3(1.5f, 0, 0); // 真横（90°）へ移動
