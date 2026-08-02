@@ -21,6 +21,8 @@ GameObject:
   - component: {fileID: 7654321000000012}
   - component: {fileID: 7654321000000040}
   - component: {fileID: 7654321000000050}
+  - component: {fileID: 7654321000000060}
+  - component: {fileID: 7654321000000061}
   m_Layer: 0
   m_Name: PF_Enemy_Melee_Prototype
   m_TagString: Untagged
@@ -423,3 +425,42 @@ MonoBehaviour:
   m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Diagnostics.EnemyCombatDebugLogger
   _logEnabled: 0
   _actor: {fileID: 7654321000000006}
+--- !u!114 &7654321000000060
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7654321000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cb07e36923ed18aa32e40dfad7e3cbc8, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Enemy.Threat.EnemyThreatTracker
+  _settings:
+    _hpDamageWeight: 1
+    _poiseDamageWeight: 0.5
+    _flinchThreat: 20
+    _justGuardThreat: 30
+    _dogTauntThreat: 100
+    _supportSkillThreat: 20
+    _debuffSkillThreat: 40
+    _reevaluateInterval: 1
+    _switchThresholdRatio: 1.25
+    _decayDelaySeconds: 3
+    _decayRatePerSecond: 0.2
+  _maxTargetRange: 0
+--- !u!114 &7654321000000061
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7654321000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8d3ef50b0d2e6c99d1bd517a96d9c45a, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Diagnostics.EnemyThreatDebugView
+  _display: 0
+  _tracker: {fileID: 7654321000000060}

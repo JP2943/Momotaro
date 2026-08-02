@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Momotaro.Gameplay.Combat;
+using Momotaro.Gameplay.Enemy.Threat;
 using UnityEngine;
 
 namespace Momotaro.Gameplay.Enemy.Perception
@@ -86,6 +87,68 @@ namespace Momotaro.Gameplay.Enemy.Perception
             }
 
             return nearest != null;
+        }
+
+        /// <summary>
+        /// 観測者に対する在圏の敵対・有効な脅威対象（<see cref="IThreatTarget"/>）を <paramref name="buffer"/> へ収集する（Phase3 P3-06）。
+        /// <paramref name="maxRange"/> 以内（XZ 平面）のみ。<paramref name="maxRange"/> ≤ 0 は距離無制限。範囲外・離脱は含めないことで
+        /// 脅威テーブルの「即時無効化」の入力になる。毎フレーム確保を避けるため <paramref name="buffer"/> を再利用し、先頭で Clear する。
+        /// </summary>
+        public static void CollectHostileThreatTargets(
+            Vector3 observerPos, CombatFaction observerFaction, float maxRange, List<IThreatTarget> buffer)
+        {
+            if (buffer == null)
+            {
+                return;
+            }
+
+            buffer.Clear();
+            bool limited = maxRange > 0f;
+            for (int i = 0; i < _targets.Count; i++)
+            {
+                if (!(_targets[i] is IThreatTarget t) || !t.IsActive || !IsHostile(observerFaction, t.Faction))
+                {
+                    continue;
+                }
+
+                if (limited && VisionCheck.PlanarDistance(observerPos, t.Position) > maxRange)
+                {
+                    continue; // 範囲外は候補から除外（脅威テーブルで即時切替に至る）。
+                }
+
+                buffer.Add(t);
+            }
+        }
+
+        /// <summary>
+        /// 攻撃者（<see cref="ICombatActor"/>）に対応する登録済み脅威対象を解決する（Phase3 P3-06）。被弾由来のヘイト加算を、
+        /// 攻撃者と同陣営で最も近い <see cref="IThreatTarget"/> へ帰属させる（脅威対象は戦闘 Actor と同一 GameObject に同居する想定）。
+        /// </summary>
+        public static bool TryResolveThreatTarget(ICombatActor attacker, out IThreatTarget resolved)
+        {
+            resolved = null;
+            if (attacker == null)
+            {
+                return false;
+            }
+
+            float best = float.MaxValue;
+            for (int i = 0; i < _targets.Count; i++)
+            {
+                if (!(_targets[i] is IThreatTarget t) || t.Faction != attacker.Faction)
+                {
+                    continue;
+                }
+
+                float d = VisionCheck.PlanarDistance(attacker.WorldPosition, t.Position);
+                if (d < best)
+                {
+                    best = d;
+                    resolved = t;
+                }
+            }
+
+            return resolved != null;
         }
     }
 }
