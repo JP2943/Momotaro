@@ -1,5 +1,6 @@
 using Momotaro.Gameplay.Enemy.Combat;
 using Momotaro.Gameplay.Enemy.Perception;
+using Momotaro.Gameplay.Enemy.Slots;
 using Momotaro.Gameplay.Modes;
 using UnityEngine;
 
@@ -23,10 +24,18 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
         [Tooltip("到達判定の許容距離（m。初期位置到達・調査到達）。")]
         [SerializeField] private float _arriveEpsilon = 0.35f;
 
+        [Tooltip("Slot 待ち・画面外で攻撃できない時に対象周りを周回する 1 フレームの角度（度。棒立ち回避＝包囲・威嚇）。単体敵の予備動作。")]
+        [SerializeField] private float _slotWaitStepDegrees = 25f;
+
+        [Tooltip("複数敵の包囲リング半径＝停止距離×この比率（攻撃帯の内側で到達後そのまま攻撃を試みられる値。§8.1）。")]
+        [SerializeField] private float _surroundRadiusRatio = 0.9f;
+
         private EnemyActor _actor;
         private EnemyMotor _motor;
         private EnemyPerception _perception;
         private EnemyAttackController _combat;
+        private EnemyEncounter _encounter;
+        private bool _encounterResolved;
         private Vector3 _home;
         private bool _homeSet;
         private bool _configured;
@@ -60,6 +69,26 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             EnsureRefs();
             CaptureHome();
             ConfigureMotor();
+            ResolveEncounter();
+        }
+
+        private void OnDisable()
+        {
+            if (_encounter != null && _actor != null)
+            {
+                _encounter.Surround.Unregister(_actor.DamageableId); // 無効化で包囲参加を外す。
+            }
+        }
+
+        private void ResolveEncounter()
+        {
+            if (_encounterResolved)
+            {
+                return;
+            }
+
+            _encounter = GetComponentInParent<EnemyEncounter>(); // 1 回だけ解決（毎フレーム探索しない）。
+            _encounterResolved = true;
         }
 
         private void EnsureRefs()
@@ -166,30 +195,80 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
 
             _actor.RequestState(output.State, MapReason(output.State));
 
-            if (_motor != null)
-            {
-                if (output.HasMoveTarget)
-                {
-                    _motor.SetMoveTarget(output.MoveTarget);
-                    _motor.SetFacing(output.MoveTarget - selfPos);
-                }
-                else
-                {
-                    _motor.Stop();
-                    if (hasTarget)
-                    {
-                        _motor.SetFacing(targetPos - selfPos); // 停止中も対象へ向き続ける（認識継続）。
-                    }
-                }
-
-                UpdateBlockedLog(output.RepositionReason);
-            }
+            // 包囲参加の登録／解除（交戦中のみ）。複数敵は対象周囲へ均等配置して単縦列を防ぐ（§8.1）。
+            bool engaged = output.Mode == EnemyEngagementMode.Chase || output.Mode == EnemyEngagementMode.Hold
+                || output.Mode == EnemyEngagementMode.Reposition;
+            UpdateSurroundMembership(engaged);
 
             // 停止帯（Hold）で攻撃を試みる。攻撃後待機中は撃たない（連打防止）。開始したら次フレームから攻撃制御へ委譲する。
-            if (output.Mode == EnemyEngagementMode.Hold && hasTarget && _combat != null && !_combat.IsAttacking
-                && !_postAttack.IsWaiting)
+            bool canTryAttack = output.Mode == EnemyEngagementMode.Hold && hasTarget && _combat != null
+                && !_combat.IsAttacking && !_postAttack.IsWaiting;
+            bool started = canTryAttack && _combat.TryStartAttack(targetPos, Vector3.zero);
+
+            if (started || _motor == null)
             {
-                _combat.TryStartAttack(targetPos, Vector3.zero);
+                return; // 攻撃開始（motor は攻撃制御が Stop／Facing 済み）／motor 無しは以降の移動指示なし。
+            }
+
+            // 複数敵の包囲：交戦中の非攻撃敵は割り当てられたリング位置へ向かい対象を取り囲む（列にならない）。到達後は攻撃帯内で待機し、
+            // Slot が空けば次フレームの Hold 判定から攻撃を試みる。敵同士は物理衝突するが目標点が分散するため停滞しにくい。
+            if (engaged && hasTarget && _encounter != null && _encounter.Surround.Count >= 2
+                && _encounter.Surround.TryGetIndex(_actor.DamageableId, out int ringIndex))
+            {
+                Vector3 ring = SurroundRing.RingPosition(targetPos, r.StopDistance * _surroundRadiusRatio,
+                    ringIndex, _encounter.Surround.Count);
+                _motor.SetMoveTarget(ring);
+                _motor.SetFacing(targetPos - selfPos); // 囲みつつ対象へ向き続ける。
+                float dPlayer = VisionCheck.PlanarDistance(selfPos, targetPos);
+                _actor.RequestState(dPlayer <= r.StopDistance ? EnemyState.Reposition : EnemyState.Chase,
+                    EnemyStateChangeReason.PerceivedTarget);
+                UpdateBlockedLog(RepositionReason.SlotWait);
+                return;
+            }
+
+            // 単体敵で攻撃できない停止帯（Slot 待ち・画面外）は棒立ちにせず対象周りを周回して威嚇する（§8.1）。
+            if (canTryAttack)
+            {
+                float sign = SlotWaitReposition.DirectionSign(_actor.DamageableId);
+                Vector3 orbit = SlotWaitReposition.OrbitTarget(selfPos, targetPos, r.StopDistance, sign, _slotWaitStepDegrees);
+                _motor.SetMoveTarget(orbit);
+                _motor.SetFacing(targetPos - selfPos); // 周回しても対象へ向き続ける。
+                _actor.RequestState(EnemyState.Reposition, EnemyStateChangeReason.PerceivedTarget);
+                UpdateBlockedLog(RepositionReason.SlotWait);
+                return;
+            }
+
+            if (output.HasMoveTarget)
+            {
+                _motor.SetMoveTarget(output.MoveTarget);
+                _motor.SetFacing(output.MoveTarget - selfPos);
+            }
+            else
+            {
+                _motor.Stop();
+                if (hasTarget)
+                {
+                    _motor.SetFacing(targetPos - selfPos); // 停止中も対象へ向き続ける（認識継続）。
+                }
+            }
+
+            UpdateBlockedLog(output.RepositionReason);
+        }
+
+        private void UpdateSurroundMembership(bool engaged)
+        {
+            if (_encounter == null || _actor == null)
+            {
+                return;
+            }
+
+            if (engaged)
+            {
+                _encounter.Surround.Register(_actor.DamageableId);
+            }
+            else
+            {
+                _encounter.Surround.Unregister(_actor.DamageableId);
             }
         }
 

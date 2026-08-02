@@ -3,6 +3,8 @@ using Momotaro.Data.Combat;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Enemy.Locomotion;
 using Momotaro.Gameplay.Enemy.Perception;
+using Momotaro.Gameplay.Enemy.Screen;
+using Momotaro.Gameplay.Enemy.Slots;
 using Momotaro.Gameplay.Modes;
 using UnityEngine;
 
@@ -17,7 +19,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(EnemyActor))]
-    public sealed class EnemyAttackController : MonoBehaviour
+    public sealed class EnemyAttackController : MonoBehaviour, ISlotOwner
     {
         [Tooltip("同点時の tie-break 乱数シード（0 で TickCount。EditMode 再現用に固定可）。")]
         [SerializeField] private int _seed;
@@ -39,6 +41,9 @@ namespace Momotaro.Gameplay.Enemy.Combat
         private System.Random _rng;
         private bool _built;
 
+        private EnemyEncounter _encounter;
+        private bool _holdsSlot;
+
         private int _selectedIndex = -1;
         private int _lastUsedIndex = -1;
         private Vector3 _aimDir = Vector3.forward;
@@ -56,16 +61,27 @@ namespace Momotaro.Gameplay.Enemy.Combat
         /// <summary>現在の狙い方向（XZ 正規化。Debug/テスト用）。</summary>
         public Vector3 AimDirection => _aimDir;
 
+        /// <inheritdoc />
+        public int SlotOwnerId => _actor != null ? _actor.DamageableId : 0;
+
+        /// <inheritdoc />
+        public bool IsSlotOwnerActive => isActiveAndEnabled && _actor != null && !_actor.IsDown;
+
+        /// <summary>攻撃 Slot を保持中か（Debug/テスト用）。</summary>
+        public bool HoldsAttackSlot => _holdsSlot;
+
         private void Awake()
         {
             _actor = GetComponent<EnemyActor>();
             _motor = GetComponent<EnemyMotor>();
+            _encounter = GetComponentInParent<EnemyEncounter>(); // Encounter 親があれば Slot を共有（無ければ制限なし）。
             Build();
         }
 
         private void OnDisable()
         {
             CancelAttack(); // Disable でも判定・予兆を解除（Cleanup）。
+            ReleaseSlot();  // Scene 離脱・Disable で Slot を必ず解放（§8.1）。
         }
 
         private void Build()
@@ -125,8 +141,27 @@ namespace Momotaro.Gameplay.Enemy.Combat
                 return false;
             }
 
-            _selectedIndex = index;
             EnemyAttackSnapshot snap = _snaps[index];
+
+            // 画面内制御（§8.2）：分類別に開始可否を判定（開始済みは継続。ここは開始時のみ評価）。
+            // 遠距離の画面端警告は P3-08。本 Task では offscreenWarningAvailable=false（画面外の遠距離は開始不可）。
+            bool onScreen = ScreenBoundsProvider.IsOnScreen(selfPos);
+            if (!OffscreenAttackPolicy.CanStart(snap.AttackClass, snap.RequiresOffscreenWarning, onScreen,
+                    offscreenWarningAvailable: false))
+            {
+                return false;
+            }
+
+            // 攻撃 Slot（§8.1）：AttackPrepare 直前に取得。取得できなければ開始しない（Brain が Reposition する）。
+            AttackSlotCoordinator coordinator = _encounter != null ? _encounter.Coordinator : null;
+            if (coordinator != null && !coordinator.TryAcquire(this, snap.SlotKind))
+            {
+                return false;
+            }
+
+            _holdsSlot = coordinator != null && snap.SlotKind != AttackSlotKind.None;
+
+            _selectedIndex = index;
             _aimDir = EnemyAimingResolver.Resolve(snap.AimingMode, selfPos, targetPos, targetVelocity, snap.PredictSeconds);
             _currentSwing = _allocator.NextSingle();
             _hitTracker.Clear();
@@ -214,6 +249,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
                 _lastUsedIndex = _selectedIndex;
                 _hitTracker.Clear();
+                ReleaseSlot(); // 攻撃終了で Slot を解放（§8.1）。
                 PublishTelegraph(EnemyTelegraphPhase.End, snap);
                 _actor.RequestState(EnemyState.Alert, EnemyStateChangeReason.AttackFinished);
             }
@@ -290,7 +326,21 @@ namespace Momotaro.Gameplay.Enemy.Combat
             EnemyAttackSnapshot snap = _machine.Snapshot;
             _machine.Cancel();
             _hitTracker.Clear();
+            ReleaseSlot(); // 中断（Stagger/Stunned/Down/Disable/Scene 離脱）で Slot を解放（§8.1）。
             PublishTelegraph(EnemyTelegraphPhase.Cancel, snap);
+        }
+
+        /// <summary>保持中の攻撃 Slot を解放する（冪等。二重解放でも数が壊れない）。</summary>
+        private void ReleaseSlot()
+        {
+            if (!_holdsSlot)
+            {
+                return;
+            }
+
+            _holdsSlot = false;
+            AttackSlotCoordinator coordinator = _encounter != null ? _encounter.Coordinator : null;
+            coordinator?.Release(SlotOwnerId);
         }
 
         private void TickCooldowns(float dt)
