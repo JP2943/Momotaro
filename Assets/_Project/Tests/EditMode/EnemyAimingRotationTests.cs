@@ -89,6 +89,7 @@ namespace Momotaro.Tests.EditMode
             SetField(d, "_activeSeconds", 0.10f);
             SetField(d, "_recoverySeconds", 0.20f);
             SetField(d, "_trackingStopSeconds", 0.50f);
+            SetField(d, "_cooldownSeconds", 0f); // 連続攻撃検証のため Cooldown なし。
             SetField(d, "_aimingMode", mode);
             SetField(d, "_trackingAngularSpeed", 180f);
 
@@ -136,6 +137,57 @@ namespace Momotaro.Tests.EditMode
             float moved = Vector3.Angle(aimAtStart, c.AimDirection);
             Assert.Greater(moved, 0.1f, "追尾は対象方向へ旋回する。");
             Assert.Less(moved, 20f, "角速度制限で瞬時に90°転換しない。");
+        }
+
+        private sealed class FakeThreatTarget : Momotaro.Gameplay.Enemy.Threat.IThreatTarget
+        {
+            public int ActorId { get; set; } = 1;
+            public CombatFaction Faction => CombatFaction.Player;
+            public Vector3 Position { get; set; }
+            public bool IsActive { get; set; } = true;
+            public bool IsDown { get; set; }
+            public float BaseThreat { get; set; } = 50f;
+            public float AcquiredThreatMultiplier { get; set; } = 1f;
+        }
+
+        [Test]
+        public void Tracking_DoesNotFollow_DownLockedTarget()
+        {
+            // 固定対象が Down（IsActive は true のまま）になったら、その位置を追尾せず現在方向を保持する（別対象へ急旋回しない。req1/4）。
+            var target = new FakeThreatTarget { ActorId = 7, Position = new Vector3(0, 0, 1.5f) };
+            var c = MakeController(EnemyAimingMode.Tracking);
+            Assert.IsTrue(c.TryStartAttack(target, target.Position, Vector3.zero));
+            Vector3 aimAtStart = c.AimDirection; // ほぼ +Z
+
+            target.IsDown = true;                     // Down（EnemyThreatTable では即時無効化される）。
+            target.Position = new Vector3(1.5f, 0, 0); // 真横へ移動
+            c.TickAttack(0.05f);                       // 追尾停止前だが、Down 対象は追尾しない。
+
+            Assert.Less(Vector3.Angle(aimAtStart, c.AimDirection), 1e-3f, "Down 対象の位置は Tracking しない（現在方向を保持）。");
+            Assert.AreEqual(target.ActorId, c.AttackTargetId, "照準対象の固定は攻撃終了まで維持（AttackTargetId 不変。req2）。");
+        }
+
+        [Test]
+        public void NextAttack_SelectsNewThreatTarget_AfterFinish()
+        {
+            // 攻撃終了で照準対象の固定が解け、次の攻撃は（Brain が渡す）新しい Threat 対象を狙う（req5）。
+            var first = new FakeThreatTarget { ActorId = 11, Position = new Vector3(0, 0, 1.5f) };
+            var next = new FakeThreatTarget { ActorId = 22, Position = new Vector3(0, 0, 1.5f) };
+            var c = MakeController(EnemyAimingMode.Tracking);
+
+            Assert.IsTrue(c.TryStartAttack(first, first.Position, Vector3.zero));
+            Assert.AreEqual(first.ActorId, c.AttackTargetId);
+
+            for (int i = 0; i < 60 && c.IsAttacking; i++)
+            {
+                c.TickAttack(0.05f); // 攻撃を最後まで進める。
+            }
+
+            Assert.IsFalse(c.IsAttacking);
+            Assert.AreEqual(0, c.AttackTargetId, "終了で固定が解ける。");
+
+            Assert.IsTrue(c.TryStartAttack(next, next.Position, Vector3.zero));
+            Assert.AreEqual(next.ActorId, c.AttackTargetId, "次回攻撃は新しい Threat 対象を狙う。");
         }
     }
 }

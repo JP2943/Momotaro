@@ -5,6 +5,7 @@ using Momotaro.Gameplay.Enemy.Locomotion;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Screen;
 using Momotaro.Gameplay.Enemy.Slots;
+using Momotaro.Gameplay.Enemy.Threat;
 using Momotaro.Gameplay.Modes;
 using UnityEngine;
 
@@ -242,10 +243,9 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
             // 照準の分離（§6.1／req2/3）：Tracking のみ Prepare 中に角速度制限で漸進旋回し、追尾停止で固定する。追尾先は開始時に
             // 確定した照準対象（_attackTarget）で、最寄り再取得（TryGetNearestHostile）はしない。対象が Down／Disable／離脱で無効化した
-            // 場合は追尾を止め、その時点の方向を保持する（安全側。攻撃自体は被弾状態で中断されるか通常どおり終了する。req4）。
-            // CurrentPosition／PredictedPosition は開始時に確定した方向を更新しない。
-            if (snap.AimingMode == EnemyAimingMode.Tracking && _machine.IsTrackingActive
-                && _attackTarget != null && _attackTarget.IsActive)
+            // 場合は追尾を止め、その時点の方向を保持する（別対象へ急旋回せず空振りさせる。攻撃自体は被弾状態で中断されるか通常どおり
+            // 終了する。req1/3/4）。CurrentPosition／PredictedPosition は開始時に確定した方向を更新しない。
+            if (snap.AimingMode == EnemyAimingMode.Tracking && _machine.IsTrackingActive && IsAttackTargetTrackable())
             {
                 Vector3 desired = EnemyAimingResolver.Resolve(EnemyAimingMode.CurrentPosition, _actor.WorldPosition,
                     _attackTarget.Position, Vector3.zero, 0f);
@@ -364,6 +364,21 @@ namespace Momotaro.Gameplay.Enemy.Combat
             _attackTarget = null; // 中断で照準対象の固定を解除。
             ReleaseSlot(); // 中断（Stagger/Stunned/Down/Disable/Scene 離脱）で Slot を解放（§8.1）。
             PublishTelegraph(EnemyTelegraphPhase.Cancel, snap);
+        }
+
+        /// <summary>
+        /// 固定した照準対象を今も追尾してよいか（req1/3）。有効（<see cref="IPerceptionTarget.IsActive"/>）かつ、
+        /// <see cref="IThreatTarget"/> であれば Down でないこと。Down／Disable／離脱で無効化した対象は追尾を止め、Tracking は
+        /// 現在方向を保持する（別対象へ急旋回しない）。EnemyThreatTable が Down を即時無効化する挙動と照準を整合させる。
+        /// </summary>
+        private bool IsAttackTargetTrackable()
+        {
+            if (_attackTarget == null || !_attackTarget.IsActive)
+            {
+                return false;
+            }
+
+            return !(_attackTarget is IThreatTarget threat) || !threat.IsDown;
         }
 
         /// <summary>保持中の攻撃 Slot を解放する（冪等。二重解放でも数が壊れない）。</summary>
