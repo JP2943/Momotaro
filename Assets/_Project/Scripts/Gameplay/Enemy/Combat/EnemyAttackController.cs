@@ -1,6 +1,7 @@
 using System;
 using Momotaro.Data.Combat;
 using Momotaro.Gameplay.Combat;
+using Momotaro.Gameplay.Enemy.Combat.Projectile;
 using Momotaro.Gameplay.Enemy.Locomotion;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Screen;
@@ -45,6 +46,9 @@ namespace Momotaro.Gameplay.Enemy.Combat
         private EnemyEncounter _encounter;
         private bool _encounterResolved;
         private bool _holdsSlot;
+        private IEnemyProjectileLauncher _launcher;
+        private bool _launcherResolved;
+        private IEnemyFireLineProbe _fireLineProbe;
 
         private int _selectedIndex = -1;
         private int _lastUsedIndex = -1;
@@ -75,6 +79,39 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
         /// <summary>攻撃 Slot を保持中か（Debug/テスト用）。</summary>
         public bool HoldsAttackSlot => _holdsSlot;
+
+        /// <summary>射線プローブを差し替える（テストで Fake を注入する。§9.2）。</summary>
+        public void SetFireLineProbe(IEnemyFireLineProbe probe) => _fireLineProbe = probe;
+
+        /// <summary>Projectile 生成器を差し替える（テストで Fake を注入する。§9.2）。</summary>
+        public void SetProjectileLauncher(IEnemyProjectileLauncher launcher)
+        {
+            _launcher = launcher;
+            _launcherResolved = true;
+        }
+
+        private void EnsureLauncher()
+        {
+            if (_launcherResolved)
+            {
+                return;
+            }
+
+            _launcher = GetComponent<IEnemyProjectileLauncher>();
+            _launcherResolved = true;
+        }
+
+        private void LaunchProjectile(in EnemyAttackSnapshot snap)
+        {
+            EnsureLauncher();
+            if (_launcher == null)
+            {
+                return; // Launcher 未装備なら発射しない（Gameplay は継続。Presentation 欠如に準ずる）。
+            }
+
+            float attackPower = _actor.Archetype != null ? _actor.Archetype.AttackPower : 0f;
+            _launcher.TryLaunch(snap, _actor.WorldPosition, _aimDir, _actor, attackPower, _currentSwing);
+        }
 
         private void Awake()
         {
@@ -174,13 +211,32 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
             EnemyAttackSnapshot snap = _snaps[index];
 
-            // 画面内制御（§8.2）：分類別に開始可否を判定（開始済みは継続。ここは開始時のみ評価）。
-            // 遠距離の画面端警告は P3-08。本 Task では offscreenWarningAvailable=false（画面外の遠距離は開始不可）。
+            // 画面内制御（§8.2／§9.2）：分類別に開始可否を判定（開始済みは継続。ここは開始時のみ評価）。画面外の遠距離は、
+            // 画面端警告を表示できたときだけ開始可能。表示できなければ射撃候補から除外する（P3-08 仮警告）。
             bool onScreen = ScreenBoundsProvider.IsOnScreen(selfPos);
-            if (!OffscreenAttackPolicy.CanStart(snap.AttackClass, snap.RequiresOffscreenWarning, onScreen,
-                    offscreenWarningAvailable: false))
+            bool warningAvailable = false;
+            if (!onScreen && snap.RequiresOffscreenWarning)
+            {
+                warningAvailable = OffscreenWarningProvider.TryShowWarning(selfPos, targetPos);
+            }
+
+            if (!OffscreenAttackPolicy.CanStart(snap.AttackClass, snap.RequiresOffscreenWarning, onScreen, warningAvailable))
             {
                 return false;
+            }
+
+            // 射線確認（§9.2）：Projectile は射線に別の敵がいると発射せず、位置調整（Reposition）に回す。
+            if (snap.AttackClass == EnemyAttackClass.Projectile)
+            {
+                if (_fireLineProbe == null)
+                {
+                    _fireLineProbe = new PhysicsEnemyFireLineProbe();
+                }
+
+                if (_fireLineProbe.AllyBlocksLine(selfPos, targetPos, _actor.DamageableId))
+                {
+                    return false;
+                }
             }
 
             // 攻撃 Slot（§8.1）：AttackPrepare 直前に取得。取得できなければ開始しない（Brain が Reposition する）。
@@ -259,9 +315,14 @@ namespace Momotaro.Gameplay.Enemy.Combat
             {
                 _actor.RequestState(EnemyState.AttackActive, EnemyStateChangeReason.AttackAdvanced);
                 PublishTelegraph(EnemyTelegraphPhase.Fire, snap);
+                if (snap.AttackClass == EnemyAttackClass.Projectile)
+                {
+                    LaunchProjectile(snap); // Projectile は Active 突入で 1 発生成（1 発 1Hit）。
+                }
             }
 
-            if (_machine.IsHitboxActive)
+            // 近接系のみ Active 中に OverlapBox で判定する。Projectile は生成した弾が独立に判定するため Hitbox を出さない。
+            if (_machine.IsHitboxActive && snap.AttackClass != EnemyAttackClass.Projectile)
             {
                 PollHitbox(snap);
             }
