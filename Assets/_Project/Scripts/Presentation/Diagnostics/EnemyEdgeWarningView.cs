@@ -24,6 +24,7 @@ namespace Momotaro.Presentation.Diagnostics
         [SerializeField] private Camera _camera;
 
         private Vector3 _sourceWorld;
+        private Vector3 _targetWorld;
         private float _hideAtTime;
 
         private void OnEnable() => OffscreenWarningProvider.Current = this;
@@ -47,6 +48,7 @@ namespace Momotaro.Presentation.Diagnostics
             }
 
             _sourceWorld = sourceWorldPos;
+            _targetWorld = targetWorldPos;
             _hideAtTime = Time.time + _displaySeconds;
             return true;
         }
@@ -65,10 +67,16 @@ namespace Momotaro.Presentation.Diagnostics
                 return;
             }
 
-            Vector3 sp = cam.WorldToScreenPoint(_sourceWorld);
-            float x = Mathf.Clamp(sp.x, _edgeMargin, Screen.width - _edgeMargin);
-            float y = Mathf.Clamp(Screen.height - sp.y, _edgeMargin, Screen.height - _edgeMargin);
-            GUI.Label(new Rect(x - 40f, y - 10f, 90f, 20f), "▲ 射撃警告");
+            // 発射者方向を画面端内側へクランプし、対象（主人公）からのおおよその距離を併記する（背面でも安定）。純粋計算は EdgeWarningMath。
+            float w = Screen.width;
+            float h = Screen.height;
+            Vector3 vp = cam.WorldToViewportPoint(_sourceWorld);
+            Vector2 sp = EdgeWarningMath.ScreenPointFromViewport(vp, w, h);
+            Vector2 clamped = EdgeWarningMath.ClampInside(sp, w, h, _edgeMargin);
+            float dist = EdgeWarningMath.ApproxDistance(_sourceWorld, _targetWorld);
+            // GUI は左上原点。ScreenPoint は左下原点のため Y を反転する。
+            float guiY = h - clamped.y;
+            GUI.Label(new Rect(clamped.x - 50f, guiY - 10f, 120f, 20f), "▲ 射撃 " + dist.ToString("0") + "m");
         }
 #endif
     }

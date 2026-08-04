@@ -37,7 +37,8 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
             dir = dir.sqrMagnitude > 1e-6f ? dir.normalized : Vector3.forward;
             Vector3 spawn = origin + Vector3.up * _muzzleHeight + dir * _muzzleForward;
 
-            EnemyProjectile shot = Instantiate(_projectilePrefab, spawn, Quaternion.LookRotation(dir, Vector3.up));
+            // Gameplay Root は回転させない（方向表現は VisualRoot の Billboard＋4 方向スプライトが担う。受入修正）。
+            EnemyProjectile shot = Instantiate(_projectilePrefab, spawn, Quaternion.identity);
             shot.Initialize(snapshot, spawn, dir, owner, attackPower, hitId);
             return true;
         }

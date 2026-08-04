@@ -175,6 +175,45 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsFalse(alive, "寿命で破棄される。");
         }
 
+        private EnemyProjectile MakeFastProjectile(ICombatActor owner)
+        {
+            var data = MakeShot();
+            SetField(data, "_projectileSpeed", 100f); // 高速：1 ステップで薄い壁/対象を飛び越えうる。
+            SetField(data, "_projectileMaxDistance", 50f);
+            SetField(data, "_projectileLifetimeSeconds", 5f);
+            var go = new GameObject("FastArrow");
+            _spawned.Add(go);
+            var proj = go.AddComponent<EnemyProjectile>();
+            proj.enabled = false;
+            proj.Initialize(EnemyAttackSnapshot.From(data), new Vector3(0, 1, 0), Vector3.forward, owner, 30f, HitId.Single(2));
+            return proj;
+        }
+
+        [Test]
+        public void FastProjectile_DoesNotTunnelThinWall()
+        {
+            GameObject wall = MakeCollider("ThinWall", new Vector3(0, 1, 5f), 0);
+            wall.GetComponent<BoxCollider>().size = new Vector3(2f, 2f, 0.1f); // 薄い壁
+            var proj = MakeFastProjectile(null);
+            bool alive = proj.Step(0.1f); // 1 ステップで 10m 進むが、区間 SphereCast で壁を検出する。
+            Assert.IsFalse(alive, "高速でも薄い壁をすり抜けない。");
+        }
+
+        [Test]
+        public void FastProjectile_PassesEnemy_HitsPlayerBehind()
+        {
+            GameObject ally = MakeCollider("Ally", new Vector3(0, 1, 3f), 0);
+            ally.AddComponent<HitTarget>().Faction = CombatFaction.Enemy;
+            GameObject playerGo = MakeCollider("Player", new Vector3(0, 1, 5f), 0);
+            var player = playerGo.AddComponent<HitTarget>();
+
+            var proj = MakeFastProjectile(null);
+            bool alive = proj.Step(0.1f); // 敵を通過して奥の主人公へ命中。
+            Assert.IsFalse(alive, "主人公に命中して消滅。");
+            Assert.AreEqual(0, ally.GetComponent<HitTarget>().Received, "手前の敵 Faction は通過。");
+            Assert.AreEqual(1, player.Received, "奥の主人公へ 1Hit。");
+        }
+
         private sealed class FakeMode : IGameModeService
         {
             public GameMode Current { get; set; }

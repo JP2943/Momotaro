@@ -1,3 +1,4 @@
+using System;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Modes;
@@ -6,26 +7,29 @@ using UnityEngine;
 namespace Momotaro.Gameplay.Enemy.Combat.Projectile
 {
     /// <summary>
-    /// 敵の直線 Projectile（Phase3 P3-08。§9.2）。<see cref="EnemyProjectileState"/> で直進し、毎物理ステップの Overlap で
-    /// 壁消滅・Faction フィルタ（敵には当てず主人公へ命中）・1 発 1Hit・寿命／最大飛距離での破棄を行う。命中は Phase 2 と同じ
-    /// <see cref="IDamageable.ReceiveHit"/> 経路（<see cref="EnemyHitFactory"/> 生成の <see cref="HitInfo"/>）で解決し、無敵＞JG＞Guard＞Damage は
-    /// 被弾側が担保する。JG 成立時の発射者体幹返却も HitInfo の JG 反射値で成立する。発射者が Down／消失していても攻撃者を null に落として
-    /// 例外を出さない。Pause／会話中は進まない。追尾・放物線・範囲弾は対象外。
+    /// 敵の直線 Projectile（Phase3 P3-08。§9.2）。<see cref="EnemyProjectileState"/> で直進し、前回位置→今回位置の区間を
+    /// SphereCast で連続判定して、薄い壁・高速移動の対象をすり抜けない。最も手前の有効衝突を優先し、発射者・敵 Faction は通過、
+    /// 壁で消滅、敵対（主人公・仲間）へは 1 発 1Hit で命中する。命中は Phase 2 と同じ <see cref="IDamageable.ReceiveHit"/> 経路
+    /// （<see cref="EnemyHitFactory"/> 生成の <see cref="HitInfo"/>）で解決し、無敵＞JG＞Guard＞Damage は被弾側が担保する。JG 成立時の発射者
+    /// 体幹返却も HitInfo の JG 反射値で成立する。発射者が Down／消失していても攻撃者を null に落として例外を出さない。Pause 中は進まない。
+    /// Gameplay Root は回転させず（表示は VisualRoot の Billboard／4 方向 Sprite が担う）、追尾・放物線・範囲弾は対象外。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class EnemyProjectile : MonoBehaviour
     {
-        [Tooltip("命中判定 Overlap の半径（m）。")]
+        [Tooltip("命中判定の半径（m）。SphereCast／終端 Overlap 共通。")]
         [SerializeField] private float _radius = 0.25f;
 
-        private readonly Collider[] _buffer = new Collider[16];
+        private readonly RaycastHit[] _hits = new RaycastHit[16];
+        private readonly Collider[] _overlap = new Collider[8];
         private EnemyProjectileState _state;
         private EnemyAttackSnapshot _snapshot;
         private ICombatActor _owner;
-        private Object _ownerObject; // 破棄検出用（Unity のダングリング null を判定）。
+        private UnityEngine.Object _ownerObject; // 破棄検出用（Unity のダングリング null を判定）。
         private CombatFaction _ownerFaction = CombatFaction.Enemy;
         private float _attackPower;
         private HitId _hitId;
+        private Vector3 _prevPos;
         private bool _live;
 
         /// <summary>飛翔中か（テスト／Debug）。</summary>
@@ -33,6 +37,9 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
 
         /// <summary>これまでの飛距離（テスト／Debug）。</summary>
         public float Traveled => _state != null ? _state.Traveled : 0f;
+
+        /// <summary>進行方向（XZ 正規化。表示の 4 方向決定に用いる）。</summary>
+        public Vector3 Direction => _state != null ? _state.Direction : Vector3.forward;
 
         /// <summary>
         /// 発射初期化（Launcher から）。原本 Data ではなく不変 <see cref="EnemyAttackSnapshot"/> と発射時の攻撃力を写し取る。
@@ -42,12 +49,13 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
         {
             _snapshot = snapshot;
             _owner = owner;
-            _ownerObject = owner as Object;
+            _ownerObject = owner as UnityEngine.Object;
             _ownerFaction = owner?.Faction ?? CombatFaction.Enemy;
             _attackPower = attackPower;
             _hitId = hitId;
             _state = new EnemyProjectileState(origin, direction, snapshot.ProjectileSpeed,
                 snapshot.ProjectileMaxDistance, snapshot.ProjectileLifetimeSeconds);
+            _prevPos = origin;
             transform.position = origin;
             _live = true;
         }
@@ -70,25 +78,53 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
                 return false;
             }
 
-            Vector3 pos = _state.Advance(deltaTime);
-            transform.position = pos;
+            Vector3 from = _prevPos;
+            Vector3 to = _state.Advance(deltaTime);
+            Vector3 seg = to - from;
+            float dist = seg.magnitude;
 
-            // 移動中の対象を取りこぼさないよう問い合わせ前に同期する（autoSync=0 対策。melee 経路と同様）。
+            // 前回位置→今回位置を連続判定（薄い壁・高速対象をすり抜けない。§9.2）。最も手前の有効衝突を優先する。
             Physics.SyncTransforms();
-            int count = Physics.OverlapSphereNonAlloc(pos, _radius, _buffer, ~0, QueryTriggerInteraction.Collide);
-            for (int i = 0; i < count; i++)
+            if (dist > 1e-5f)
             {
-                Collider col = _buffer[i];
-                if (col == null)
+                Vector3 dir = seg / dist;
+                int count = Physics.SphereCastNonAlloc(from, _radius, dir, _hits, dist, ~0, QueryTriggerInteraction.Collide);
+                SortByDistance(count);
+                for (int i = 0; i < count; i++)
                 {
-                    continue;
-                }
+                    Collider col = _hits[i].collider;
+                    if (col == null)
+                    {
+                        continue;
+                    }
 
-                if (Resolve(col, pos))
-                {
-                    return false; // 命中または壁で消滅。
+                    // SphereCast の start 重なりは distance=0・point 不定になるため、命中点は現在位置寄りで代用する。
+                    Vector3 point = _hits[i].distance > 1e-4f ? _hits[i].point : col.ClosestPoint(from);
+                    if (Resolve(col, point, out bool destroyed))
+                    {
+                        if (destroyed)
+                        {
+                            return false; // 手前の有効衝突で消滅（貫通しない）。
+                        }
+                        // Pass（発射者・味方陣営）：奥の衝突を続けて確認する。
+                    }
                 }
             }
+            else
+            {
+                // ほぼ静止ステップ：終端 Overlap で取りこぼしを補う。
+                int c = Physics.OverlapSphereNonAlloc(to, _radius, _overlap, ~0, QueryTriggerInteraction.Collide);
+                for (int i = 0; i < c; i++)
+                {
+                    if (_overlap[i] != null && Resolve(_overlap[i], to, out bool destroyed) && destroyed)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            transform.position = to;
+            _prevPos = to;
 
             if (_state.ShouldExpire)
             {
@@ -99,9 +135,10 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
             return true;
         }
 
-        /// <summary>1 Collider を解決する。命中／壁で消滅したら true（破棄する）。</summary>
-        private bool Resolve(Collider col, Vector3 hitPoint)
+        /// <summary>1 Collider を判定する。何らかの当たり（命中/壁/通過）なら true、そのうち消滅したら <paramref name="destroyed"/>=true。</summary>
+        private bool Resolve(Collider col, Vector3 hitPoint, out bool destroyed)
         {
+            destroyed = false;
             Transform root = col.transform.root;
             bool selfOrOwner = root == transform.root
                 || (_ownerObject != null && _owner is Component oc && oc.transform.root == root);
@@ -117,15 +154,32 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
             {
                 case ProjectileImpact.HitTarget:
                     ApplyHit(damageable, hitPoint);
-                    Destroy(gameObject);
-                    _live = false;
+                    DestroySelf();
+                    destroyed = true;
                     return true;
                 case ProjectileImpact.DestroyOnWall:
-                    Destroy(gameObject);
-                    _live = false;
+                    DestroySelf();
+                    destroyed = true;
                     return true;
                 default:
-                    return false;
+                    return true; // 通過（自分・発射者・味方陣営）だが「当たりは処理した」＝奥へ続行。
+            }
+        }
+
+        private void SortByDistance(int count)
+        {
+            // 手前優先（挿入ソート。count は小さい）。
+            for (int i = 1; i < count; i++)
+            {
+                RaycastHit h = _hits[i];
+                int j = i - 1;
+                while (j >= 0 && _hits[j].distance > h.distance)
+                {
+                    _hits[j + 1] = _hits[j];
+                    j--;
+                }
+
+                _hits[j + 1] = h;
             }
         }
 
@@ -137,7 +191,9 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
             target.ReceiveHit(hit);
         }
 
-        private void Expire()
+        private void Expire() => DestroySelf();
+
+        private void DestroySelf()
         {
             _live = false;
             Destroy(gameObject);
