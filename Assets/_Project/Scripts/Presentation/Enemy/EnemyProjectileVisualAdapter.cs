@@ -10,7 +10,7 @@ namespace Momotaro.Presentation.Enemy
     /// （方向は方向別スプライトで表現）。読み取りのみで Gameplay へ干渉しない。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class EnemyProjectileVisualAdapter : MonoBehaviour
+    public sealed class EnemyProjectileVisualAdapter : MonoBehaviour, IProjectileVisual
     {
         [Tooltip("方向を読む Projectile（未指定なら親から取得）。")]
         [SerializeField] private EnemyProjectile _projectile;
@@ -37,6 +37,13 @@ namespace Momotaro.Presentation.Enemy
             }
         }
 
+        /// <inheritdoc />
+        /// <remarks>発射時に確定方向を受け取り即時反映する（生成フレームの初期化順・既定値に依存しない権威的経路）。</remarks>
+        public void OnProjectileLaunched(Vector3 direction)
+        {
+            Apply(EnemyFacingResolver.FromForward(direction));
+        }
+
         private void LateUpdate()
         {
             if (_projectile == null || _renderer == null)
@@ -44,8 +51,13 @@ namespace Momotaro.Presentation.Enemy
                 return; // Presentation 欠落でも Gameplay は進行する。
             }
 
-            EnemyVisualFacing facing = EnemyFacingResolver.FromForward(_projectile.Direction);
-            if (facing == _current)
+            // 直線弾は方向不変のため通常は無処理。念のため現在方向へ追従する（発射通知の取りこぼし対策）。
+            Apply(EnemyFacingResolver.FromForward(_projectile.Direction));
+        }
+
+        private void Apply(EnemyVisualFacing facing)
+        {
+            if (_renderer == null || facing == _current)
             {
                 return; // 変化時のみ差し替え。
             }

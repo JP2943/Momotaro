@@ -58,6 +58,10 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
             _prevPos = origin;
             transform.position = origin;
             _live = true;
+
+            // 発射方向を表示側へ即時通知（生成フレームの初期化順・既定値に依存せず 4 方向表示を確定させる）。
+            var visual = GetComponentInChildren<IProjectileVisual>(true);
+            visual?.OnProjectileLaunched(_state.Direction);
         }
 
         private void FixedUpdate()
