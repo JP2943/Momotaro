@@ -144,5 +144,52 @@ namespace Momotaro.Tests.EditMode
                 EditorSceneManager.CloseScene(s, true);
             }
         }
+
+        [Test]
+        public void Scene_ContainsRangedEnemyInstance_FromPrefab_Grounded_NoMissing_NoNegScale()
+        {
+            Scene s = EditorSceneManager.OpenScene(Scene, OpenSceneMode.Additive);
+            try
+            {
+                EnemyProjectileLauncher launcher = null; // 遠距離敵にのみ付く＝遠距離インスタンスの目印。
+                foreach (GameObject root in s.GetRootGameObjects())
+                {
+                    launcher = root.GetComponentInChildren<EnemyProjectileLauncher>(true);
+                    if (launcher != null)
+                    {
+                        break;
+                    }
+                }
+
+                Assert.IsNotNull(launcher, "SCN_VS_Field に遠距離敵（EnemyProjectileLauncher 保持）が配置されている。");
+                GameObject inst = launcher.gameObject;
+
+                // 名前一致ではなく Prefab 参照元を確認する。
+                Object source = PrefabUtility.GetCorrespondingObjectFromSource(inst);
+                Assert.IsNotNull(source, "遠距離敵は Prefab インスタンスである。");
+                string srcPath = AssetDatabase.GetAssetPath(source);
+                StringAssert.Contains("PF_Enemy_Ranged_Prototype", srcPath, "参照元は PF_Enemy_Ranged_Prototype。");
+
+                // Missing Script 無し（インスタンス配下）。
+                foreach (Transform t in inst.GetComponentsInChildren<Transform>(true))
+                {
+                    Assert.AreEqual(0, GameObjectUtility.GetMonoBehavioursWithMissingScriptCount(t.gameObject),
+                        "遠距離敵に Missing Script: " + t.name);
+                    Vector3 sc = t.localScale;
+                    Assert.IsTrue(sc.x >= 0f && sc.y >= 0f && sc.z >= 0f, "負スケール不使用: " + t.name);
+                }
+
+                // Launcher→投射物 Prefab 参照が有効。
+                var proj = GetField(launcher, "_projectilePrefab") as EnemyProjectile;
+                Assert.IsNotNull(proj, "Launcher の投射物 Prefab 参照が有効。");
+
+                // 接地規約：ルート world Y = 0。
+                Assert.AreEqual(0f, inst.transform.position.y, 1e-3f, "遠距離敵の接地 Y=0。");
+            }
+            finally
+            {
+                EditorSceneManager.CloseScene(s, true);
+            }
+        }
     }
 }

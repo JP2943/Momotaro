@@ -47,5 +47,70 @@ namespace Momotaro.Gameplay.Enemy.Screen
         {
             return Vector3.Distance(sourceWorld, targetWorld);
         }
+
+        /// <summary>画面端警告の 8 方向（＋中心一致の None）。Screen 座標系（+Y が上）で量子化する。</summary>
+        public enum EdgeDirection8
+        {
+            None = 0,
+            N = 1,
+            NE = 2,
+            E = 3,
+            SE = 4,
+            S = 5,
+            SW = 6,
+            W = 7,
+            NW = 8,
+        }
+
+        /// <summary>
+        /// 方向ベクトル（Screen 座標系、+Y 上）を 8 方向へ量子化する（Phase3 P3-08 受入修正）。ほぼ中心（長さ ~0）は
+        /// <see cref="EdgeDirection8.None"/>。45 度セクタで判定し、境界は最近傍へ丸める。純粋・決定的。
+        /// </summary>
+        public static EdgeDirection8 Quantize8(Vector2 dir)
+        {
+            if (dir.sqrMagnitude < 1e-6f)
+            {
+                return EdgeDirection8.None;
+            }
+
+            float ang = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg; // E=0, N=90, W=±180, S=-90
+            if (ang < 0f)
+            {
+                ang += 360f; // 0..360
+            }
+
+            int sector = Mathf.RoundToInt(ang / 45f) % 8; // 0=E,1=NE,2=N,3=NW,4=W,5=SW,6=S,7=SE
+            switch (sector)
+            {
+                case 0: return EdgeDirection8.E;
+                case 1: return EdgeDirection8.NE;
+                case 2: return EdgeDirection8.N;
+                case 3: return EdgeDirection8.NW;
+                case 4: return EdgeDirection8.W;
+                case 5: return EdgeDirection8.SW;
+                case 6: return EdgeDirection8.S;
+                default: return EdgeDirection8.SE;
+            }
+        }
+
+        /// <summary>8 方向を矢印グリフへ写す。None は中心マーカー。</summary>
+        public static string Glyph(EdgeDirection8 d)
+        {
+            switch (d)
+            {
+                case EdgeDirection8.N: return "↑";
+                case EdgeDirection8.NE: return "↗";
+                case EdgeDirection8.E: return "→";
+                case EdgeDirection8.SE: return "↘";
+                case EdgeDirection8.S: return "↓";
+                case EdgeDirection8.SW: return "↙";
+                case EdgeDirection8.W: return "←";
+                case EdgeDirection8.NW: return "↖";
+                default: return "●";
+            }
+        }
+
+        /// <summary>方向ベクトルから直接、警告グリフを得る（<see cref="Quantize8"/>＋<see cref="Glyph"/>）。</summary>
+        public static string ArrowGlyph(Vector2 dir) => Glyph(Quantize8(dir));
     }
 }

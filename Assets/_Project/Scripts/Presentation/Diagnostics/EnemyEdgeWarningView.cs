@@ -74,9 +74,11 @@ namespace Momotaro.Presentation.Diagnostics
             Vector2 sp = EdgeWarningMath.ScreenPointFromViewport(vp, w, h);
             Vector2 clamped = EdgeWarningMath.ClampInside(sp, w, h, _edgeMargin);
             float dist = EdgeWarningMath.ApproxDistance(_sourceWorld, _targetWorld);
+            // 発射者のいる向きを 8 方向グリフで示す（中心からの方向。背面補正済み）。
+            string arrow = EdgeWarningMath.ArrowGlyph(EdgeWarningMath.DirectionFromCenter(sp, w, h));
             // GUI は左上原点。ScreenPoint は左下原点のため Y を反転する。
             float guiY = h - clamped.y;
-            GUI.Label(new Rect(clamped.x - 50f, guiY - 10f, 120f, 20f), "▲ 射撃 " + dist.ToString("0") + "m");
+            GUI.Label(new Rect(clamped.x - 50f, guiY - 10f, 120f, 20f), arrow + " 射撃 " + dist.ToString("0") + "m");
         }
 #endif
     }
