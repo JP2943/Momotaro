@@ -13,11 +13,18 @@ namespace Momotaro.Gameplay.Enemy.Combat
         public float UseAngle { get; }
         public float BaseScore { get; }
 
-        public AttackOption(float useRange, float useAngle, float baseScore)
+        /// <summary>
+        /// 頻度スケール（Phase3 P3-09。§9.3「ガード不能は全選択の 20% 以下」）。Score へ乗じる 0..1 の重み。1.0 が既定で、
+        /// ガード不能など出現を抑えたい攻撃に &lt;1 を与えると相対的に選ばれにくくなる。
+        /// </summary>
+        public float FrequencyScale { get; }
+
+        public AttackOption(float useRange, float useAngle, float baseScore, float frequencyScale = 1f)
         {
             UseRange = useRange;
             UseAngle = useAngle;
             BaseScore = baseScore;
+            FrequencyScale = frequencyScale <= 0f ? 0f : frequencyScale;
         }
     }
 
@@ -52,7 +59,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
                 bool usable = cool && distance <= o.UseRange && angleToTarget <= o.UseAngle;
                 if (usable)
                 {
-                    scores[i] = o.BaseScore;
+                    scores[i] = o.BaseScore * o.FrequencyScale; // 頻度スケール（ガード不能抑制。§9.3）。
                     usableCount++;
                 }
                 else

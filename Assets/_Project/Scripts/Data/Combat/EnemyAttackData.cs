@@ -57,6 +57,10 @@ namespace Momotaro.Data.Combat
         [Tooltip("弾の寿命（秒）。Projectile のみ有効。")]
         [SerializeField] private float _projectileLifetimeSeconds = 0f;
 
+        [Header("Charge (Charge class only)")]
+        [Tooltip("突進速度（m/s）。Charge のみ有効。0 は移動速度×既定倍率へフォールバック（P3-09。§9.3）。")]
+        [SerializeField] private float _chargeSpeed = 0f;
+
         [Header("Defense Interaction")]
         [Tooltip("ガード可能か。")]
         [SerializeField] private bool _guardable = true;
@@ -144,6 +148,9 @@ namespace Momotaro.Data.Combat
         public float ProjectileMaxDistance => _projectileMaxDistance;
         /// <summary>弾の寿命（秒）。</summary>
         public float ProjectileLifetimeSeconds => _projectileLifetimeSeconds;
+
+        /// <summary>突進速度（m/s）。Charge のみ有効。</summary>
+        public float ChargeSpeed => _chargeSpeed;
 
         // ---- Defense Interaction ----
         /// <summary>ガード可能か。</summary>

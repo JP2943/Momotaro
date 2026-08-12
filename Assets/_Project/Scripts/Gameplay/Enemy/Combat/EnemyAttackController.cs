@@ -29,6 +29,9 @@ namespace Momotaro.Gameplay.Enemy.Combat
         [Tooltip("Hitbox の対象レイヤー（既定は全レイヤー。IDamageable と Faction で絞る）。")]
         [SerializeField] private LayerMask _targetMask = ~0;
 
+        [Tooltip("ガード不能攻撃の頻度スケール（§9.3「全選択の20%以下」。Score へ乗じ相対的に選ばれにくくする。0..1）。")]
+        [SerializeField, Range(0f, 1f)] private float _unblockableFrequencyScale = 0.35f;
+
         private EnemyActor _actor;
         private EnemyMotor _motor;
         private readonly EnemyAttackMachine _machine = new EnemyAttackMachine();
@@ -64,6 +67,9 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
         /// <summary>現在段階（Debug/テスト用）。</summary>
         public EnemyAttackMachine.Phase Phase => _machine.Current;
+
+        /// <summary>実行中の攻撃分類（非攻撃中は Normal）。表示（分類別攻撃モーション）解決に用いる。</summary>
+        public EnemyAttackClass CurrentAttackClass => _machine.IsAttacking ? _machine.Snapshot.AttackClass : EnemyAttackClass.Normal;
 
         /// <summary>現在の狙い方向（XZ 正規化。Debug/テスト用）。</summary>
         public Vector3 AimDirection => _aimDir;
@@ -166,7 +172,8 @@ namespace Momotaro.Gameplay.Enemy.Combat
             {
                 EnemyAttackData d = a.Attack(i);
                 _snaps[i] = EnemyAttackSnapshot.From(d);
-                _options[i] = new AttackOption(d.UseRange, d.UseAngle, d.BaseScore);
+                float freq = d.AttackClass == EnemyAttackClass.Unblockable ? _unblockableFrequencyScale : 1f;
+                _options[i] = new AttackOption(d.UseRange, d.UseAngle, d.BaseScore, freq);
                 _cooldownValues[i] = d.CooldownSeconds;
             }
 
@@ -327,6 +334,15 @@ namespace Momotaro.Gameplay.Enemy.Combat
                 PollHitbox(snap);
             }
 
+            // 突進：Active 中は早期固定した狙い方向へ前進する（§9.3）。壁は Enemy↔Default 衝突で停止し貫通しない。同一対象1Hitは Swing で担保。
+            if (snap.AttackClass == EnemyAttackClass.Charge && _machine.IsHitboxActive)
+            {
+                float chargeSpeed = snap.ChargeSpeed > 0f
+                    ? snap.ChargeSpeed
+                    : (_actor.Archetype != null ? _actor.Archetype.MoveSpeed * 3f : 3f);
+                _motor?.SetCharge(_actor.WorldPosition + _aimDir * 10f, chargeSpeed);
+            }
+
             if (r.EnteredRecovery)
             {
                 _actor.RequestState(EnemyState.AttackRecovery, EnemyStateChangeReason.AttackAdvanced);
@@ -423,6 +439,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
             _machine.Cancel();
             _hitTracker.Clear();
             _attackTarget = null; // 中断で照準対象の固定を解除。
+            _motor?.Stop();       // 突進中の中断で前進を止める（§9.3）。
             ReleaseSlot(); // 中断（Stagger/Stunned/Down/Disable/Scene 離脱）で Slot を解放（§8.1）。
             PublishTelegraph(EnemyTelegraphPhase.Cancel, snap);
         }

@@ -24,6 +24,12 @@ namespace Momotaro.Presentation.Enemy
         [SerializeField] private string _layerName = "Base Layer";
         [SerializeField] private int _layerIndex = 0;
 
+        [Tooltip("State 命名スタイル（Basic＝剣士/弓兵 Walk/Attack、Elite＝侍骸骨 Move/分類別攻撃）。")]
+        [SerializeField] private EnemyVisualNamingStyle _namingStyle = EnemyVisualNamingStyle.Basic;
+
+        [Tooltip("分類別攻撃モーションの解決に用いる攻撃制御（未指定なら親から取得）。Basic では不要。")]
+        [SerializeField] private Momotaro.Gameplay.Enemy.Combat.EnemyAttackController _combat;
+
         private string _currentClip;
         private readonly HashSet<string> _warnedMissingStates = new HashSet<string>();
 
@@ -32,6 +38,11 @@ namespace Momotaro.Presentation.Enemy
             if (_actor == null)
             {
                 _actor = GetComponentInParent<EnemyActor>();
+            }
+
+            if (_combat == null)
+            {
+                _combat = GetComponentInParent<Momotaro.Gameplay.Enemy.Combat.EnemyAttackController>();
             }
         }
 
@@ -43,7 +54,9 @@ namespace Momotaro.Presentation.Enemy
             }
 
             EnemyVisualFacing facing = EnemyFacingResolver.FromForward(_actor.Forward);
-            string clip = EnemyVisualNames.StateName(_actor.State, facing);
+            Momotaro.Data.Combat.EnemyAttackClass attackClass =
+                _combat != null ? _combat.CurrentAttackClass : Momotaro.Data.Combat.EnemyAttackClass.Normal;
+            string clip = EnemyVisualNames.StateName(_actor.State, facing, _namingStyle, attackClass);
             if (clip == _currentClip)
             {
                 return; // 変化時のみ再生（毎フレーム Play しない）。

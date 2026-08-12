@@ -1,3 +1,4 @@
+using Momotaro.Data.Combat;
 using Momotaro.Gameplay.Enemy;
 using UnityEngine;
 
@@ -57,8 +58,17 @@ namespace Momotaro.Presentation.Enemy
             }
         }
 
-        /// <summary>状態＋Facing → Animator State 名。Down は Facing に関係なく正面 "Down"。</summary>
+        /// <summary>状態＋Facing → Animator State 名（Basic 命名＝剣士/弓兵：Walk/Attack）。Down は Facing 非依存で正面 "Down"。</summary>
         public static string StateName(EnemyState state, EnemyVisualFacing facing)
+        {
+            return StateName(state, facing, EnemyVisualNamingStyle.Basic, EnemyAttackClass.Normal);
+        }
+
+        /// <summary>
+        /// 状態＋Facing＋命名スタイル＋攻撃分類 → Animator State 名（Phase3 P3-09）。Basic は移動＝Walk・攻撃＝Attack（剣士/弓兵）。
+        /// Elite は移動＝Move・攻撃を分類別に NormalAttack／HeavyOverhead／UnguardableThrust（侍骸骨）へ解決する。Idle/Hurt/Stun/Down は共通。
+        /// </summary>
+        public static string StateName(EnemyState state, EnemyVisualFacing facing, EnemyVisualNamingStyle style, EnemyAttackClass attackClass)
         {
             switch (state)
             {
@@ -71,15 +81,41 @@ namespace Momotaro.Presentation.Enemy
                 case EnemyState.AttackPrepare:
                 case EnemyState.AttackActive:
                 case EnemyState.AttackRecovery:
-                    return "Attack_" + DirectionSuffix(facing);
+                    return AttackStateName(style, attackClass) + "_" + DirectionSuffix(facing);
                 case EnemyState.Chase:
                 case EnemyState.Reposition:
                 case EnemyState.Return:
-                    return "Walk_" + DirectionSuffix(facing);
+                    return (style == EnemyVisualNamingStyle.Elite ? "Move_" : "Walk_") + DirectionSuffix(facing);
                 default:
                     // Idle/Patrol/Suspicious/Alert/Guard/Evade/Event
                     return "Idle_" + DirectionSuffix(facing);
             }
         }
+
+        // 攻撃 State のベース名。Basic は単一 Attack、Elite は分類別（Charge は突進で通常攻撃モーションを流用）。
+        private static string AttackStateName(EnemyVisualNamingStyle style, EnemyAttackClass attackClass)
+        {
+            if (style != EnemyVisualNamingStyle.Elite)
+            {
+                return "Attack";
+            }
+
+            switch (attackClass)
+            {
+                case EnemyAttackClass.Heavy: return "HeavyOverhead";
+                case EnemyAttackClass.Unblockable: return "UnguardableThrust";
+                default: return "NormalAttack"; // Normal / Charge / Projectile
+            }
+        }
+    }
+
+    /// <summary>敵の Animator State 命名スタイル（Phase3 P3-09）。Basic＝剣士/弓兵（Walk/Attack）、Elite＝侍骸骨（Move/分類別攻撃）。</summary>
+    public enum EnemyVisualNamingStyle
+    {
+        /// <summary>剣士・弓兵：移動＝Walk、攻撃＝Attack。</summary>
+        Basic = 0,
+
+        /// <summary>侍骸骨（強敵）：移動＝Move、攻撃＝NormalAttack/HeavyOverhead/UnguardableThrust。</summary>
+        Elite = 1,
     }
 }

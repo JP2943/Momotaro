@@ -26,6 +26,8 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
 
         private Vector3 _moveTarget;
         private bool _hasMoveTarget;
+        private bool _charging;
+        private float _chargeSpeed;
         private Vector3 _facing;
         private bool _hasFacing;
 
@@ -34,6 +36,9 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
 
         /// <summary>指示に対して実移動が乏しい（壁等で詰まっている）か。</summary>
         public bool IsBlocked { get; private set; }
+
+        /// <summary>突進中か（Debug/テスト用）。</summary>
+        public bool IsCharging => _charging;
 
         private void Awake()
         {
@@ -72,12 +77,26 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
         {
             _moveTarget = target;
             _hasMoveTarget = true;
+            _charging = false;
         }
 
-        /// <summary>移動を停止する（速度ゼロ）。</summary>
+        /// <summary>
+        /// 突進する（Phase3 P3-09。§9.3）。指定方向へ <paramref name="speed"/> で前進する。壁は Enemy↔Default 衝突で停止し貫通しない。
+        /// 進行方向は攻撃側で早期固定した狙い方向を渡す。<see cref="Stop"/> で解除する。
+        /// </summary>
+        public void SetCharge(Vector3 target, float speed)
+        {
+            _moveTarget = target;
+            _hasMoveTarget = true;
+            _charging = true;
+            _chargeSpeed = speed < 0f ? 0f : speed;
+        }
+
+        /// <summary>移動・突進を停止する（速度ゼロ）。</summary>
         public void Stop()
         {
             _hasMoveTarget = false;
+            _charging = false;
         }
 
         /// <summary>向けたいワールド方向（XZ）。停止中も対象へ向き続けるために使う。ルートは回さず論理向きへ反映する。</summary>
@@ -110,8 +129,9 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             }
 
             Vector3 pos = _body.position;
+            float speed = _charging ? _chargeSpeed : _moveSpeed;
             Vector3 velocity = _hasMoveTarget
-                ? ApproachCalculator.DesiredVelocity(pos, _moveTarget, _moveSpeed, _stopRadius)
+                ? ApproachCalculator.DesiredVelocity(pos, _moveTarget, speed, _stopRadius)
                 : Vector3.zero;
 
             // XZ のみ駆動し Y 速度は 0（Y 位置は Rigidbody 制約でも固定。押し出しによる浮き上がりを二重に防ぐ）。

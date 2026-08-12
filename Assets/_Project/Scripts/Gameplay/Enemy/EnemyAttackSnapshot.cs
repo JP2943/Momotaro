@@ -71,6 +71,9 @@ namespace Momotaro.Gameplay.Enemy
         /// <summary>弾の寿命（秒）。</summary>
         public float ProjectileLifetimeSeconds { get; }
 
+        /// <summary>突進速度（m/s）。Charge のみ有効。</summary>
+        public float ChargeSpeed { get; }
+
         /// <summary>予兆種別。</summary>
         public AttackTelegraph Telegraph { get; }
         /// <summary>ヒットストップ要求（秒）。</summary>
@@ -113,6 +116,7 @@ namespace Momotaro.Gameplay.Enemy
             ProjectileSpeed = d.ProjectileSpeed;
             ProjectileMaxDistance = d.ProjectileMaxDistance;
             ProjectileLifetimeSeconds = d.ProjectileLifetimeSeconds;
+            ChargeSpeed = d.ChargeSpeed;
 
             Telegraph = d.Telegraph;
             HitStopSeconds = d.HitStopSeconds;
