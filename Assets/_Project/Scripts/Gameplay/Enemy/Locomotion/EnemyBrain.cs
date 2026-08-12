@@ -211,6 +211,14 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             IPerceptionTarget attackTarget = _threat != null ? _threat.CurrentTarget : null;
             bool started = canTryAttack && _combat.TryStartAttack(attackTarget, targetPos, Vector3.zero);
 
+            // 突進のみ Chase（間合いの外＝停止距離より遠い）でも、使用射程（5m）・角度を満たせば開始し、離れた対象へ間合いを詰める（§9.3）。
+            // 通常/強/ガード不能は上の Hold 帯でのみ開始する（TryStartApproachAttack が突進系以外を除外する）。
+            if (!started && output.Mode == EnemyEngagementMode.Chase && hasTarget && _combat != null
+                && !_combat.IsAttacking && !_postAttack.IsWaiting && _combat.HasApproachAttack)
+            {
+                started = _combat.TryStartApproachAttack(attackTarget, targetPos, Vector3.zero);
+            }
+
             if (started || _motor == null)
             {
                 return; // 攻撃開始（motor は攻撃制御が Stop／Facing 済み）／motor 無しは以降の移動指示なし。

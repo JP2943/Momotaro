@@ -29,8 +29,8 @@ namespace Momotaro.Gameplay.Enemy.Combat
         [Tooltip("Hitbox の対象レイヤー（既定は全レイヤー。IDamageable と Faction で絞る）。")]
         [SerializeField] private LayerMask _targetMask = ~0;
 
-        [Tooltip("ガード不能攻撃の頻度スケール（§9.3「全選択の20%以下」。Score へ乗じ相対的に選ばれにくくする。0..1）。")]
-        [SerializeField, Range(0f, 1f)] private float _unblockableFrequencyScale = 0.35f;
+        [Tooltip("ガード不能攻撃が全選択に占める割合の上限（§9.3「全選択の20%以下」。選択履歴で明示的に上限管理し、Score 乗算では保証しない）。")]
+        [SerializeField, Range(0.05f, 1f)] private float _unblockableMaxRatio = 0.2f;
 
         private EnemyActor _actor;
         private EnemyMotor _motor;
@@ -43,6 +43,10 @@ namespace Momotaro.Gameplay.Enemy.Combat
         private AttackOption[] _options;
         private float[] _cooldownValues;
         private float[] _cooldown;
+        private bool[] _chaseInitiable; // Charge のみ Chase（間合いの外）から開始できる（間合い詰め攻撃。§9.3）。
+        private bool[] _selectMask;     // Evaluate へ渡す可否バッファ（毎回再利用。approach 制限・頻度上限ゲート）。
+        private int _unblockableIndex = -1;
+        private AttackFrequencyGovernor _freqGov; // ガード不能の ≤20% 上限を選択履歴で固定する（§9.3）。
         private System.Random _rng;
         private bool _built;
 
@@ -85,6 +89,29 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
         /// <summary>攻撃 Slot を保持中か（Debug/テスト用）。</summary>
         public bool HoldsAttackSlot => _holdsSlot;
+
+        /// <summary>Chase（間合いの外）からでも開始できる攻撃（突進）を持つか。Brain が接近中の突進開始可否に用いる（§9.3）。</summary>
+        public bool HasApproachAttack
+        {
+            get
+            {
+                Build();
+                if (_chaseInitiable == null)
+                {
+                    return false;
+                }
+
+                for (int i = 0; i < _chaseInitiable.Length; i++)
+                {
+                    if (_chaseInitiable[i])
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
 
         /// <summary>射線プローブを差し替える（テストで Fake を注入する。§9.2）。</summary>
         public void SetFireLineProbe(IEnemyFireLineProbe probe) => _fireLineProbe = probe;
@@ -168,15 +195,23 @@ namespace Momotaro.Gameplay.Enemy.Combat
             _options = new AttackOption[n];
             _cooldownValues = new float[n];
             _cooldown = new float[n];
+            _chaseInitiable = new bool[n];
+            _selectMask = new bool[n];
+            _unblockableIndex = -1;
             for (int i = 0; i < n; i++)
             {
                 EnemyAttackData d = a.Attack(i);
                 _snaps[i] = EnemyAttackSnapshot.From(d);
-                float freq = d.AttackClass == EnemyAttackClass.Unblockable ? _unblockableFrequencyScale : 1f;
-                _options[i] = new AttackOption(d.UseRange, d.UseAngle, d.BaseScore, freq);
+                _options[i] = new AttackOption(d.UseRange, d.UseAngle, d.BaseScore);
                 _cooldownValues[i] = d.CooldownSeconds;
+                _chaseInitiable[i] = d.AttackClass == EnemyAttackClass.Charge; // 突進のみ接近中に開始可（§9.3）。
+                if (d.AttackClass == EnemyAttackClass.Unblockable && _unblockableIndex < 0)
+                {
+                    _unblockableIndex = i;
+                }
             }
 
+            _freqGov = new AttackFrequencyGovernor(_unblockableMaxRatio);
             _rng = new System.Random(_seed == 0 ? Environment.TickCount : _seed);
             _built = true;
         }
@@ -191,11 +226,26 @@ namespace Momotaro.Gameplay.Enemy.Combat
         }
 
         /// <summary>
-        /// 攻撃開始を試みる（Brain が停止帯で呼ぶ）。<paramref name="target"/> に Threat 選択対象を渡すと、その対象を攻撃終了まで
+        /// 攻撃開始を試みる（Brain が停止帯 Hold で呼ぶ）。<paramref name="target"/> に Threat 選択対象を渡すと、その対象を攻撃終了まで
         /// 照準対象として固定し（req2/3/4）、Tracking はこの対象の位置を追う（最寄り再取得しない）。<paramref name="target"/> が null／
-        /// 無効なら <paramref name="fallbackTargetPos"/> を用いる。選択に成功したら Prepare へ入り true。攻撃中・候補なし・画面外・Slot 不足は false。
+        /// 無効なら <paramref name="fallbackTargetPos"/> を用いる。全分類を候補に含む（通常/強/ガード不能/突進）。選択に成功したら Prepare へ入り true。
+        /// 攻撃中・候補なし・画面外・Slot 不足は false。
         /// </summary>
         public bool TryStartAttack(IPerceptionTarget target, Vector3 fallbackTargetPos, Vector3 targetVelocity)
+        {
+            return TryStartAttackInternal(target, fallbackTargetPos, targetVelocity, approachOnly: false);
+        }
+
+        /// <summary>
+        /// 接近中（Chase）の攻撃開始を試みる（§9.3）。突進など「間合いの外から開始してよい」分類のみを候補にし、通常/強/ガード不能が
+        /// 遠距離から始まらないよう制限する。使用射程・角度・Cooldown・Slot は通常どおり判定する。成立したら true。
+        /// </summary>
+        public bool TryStartApproachAttack(IPerceptionTarget target, Vector3 fallbackTargetPos, Vector3 targetVelocity)
+        {
+            return TryStartAttackInternal(target, fallbackTargetPos, targetVelocity, approachOnly: true);
+        }
+
+        private bool TryStartAttackInternal(IPerceptionTarget target, Vector3 fallbackTargetPos, Vector3 targetVelocity, bool approachOnly)
         {
             Build();
             EnsureEncounter(); // Awake 未実行（動的生成）でも Slot 調停を有効化する。
@@ -209,8 +259,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
             float distance = VisionCheck.PlanarDistance(selfPos, targetPos);
             float angle = AngleToTarget(selfPos, _actor.Forward, targetPos);
 
-            int index = EnemyAttackSelector.Evaluate(distance, angle, _options, _cooldown, _lastUsedIndex,
-                count => _rng.Next(count), out _);
+            int index = SelectAttackIndex(distance, angle, approachOnly);
             if (index < 0)
             {
                 return false;
@@ -256,6 +305,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
             _holdsSlot = coordinator != null && snap.SlotKind != AttackSlotKind.None;
 
             _selectedIndex = index;
+            _freqGov?.RecordSelection(index == _unblockableIndex); // ガード不能の ≤20% 上限を選択履歴で管理（§9.3）。
             _attackTarget = target; // 照準対象を固定（攻撃終了まで別対象へ切替えない。req2/3/4）。
             _aimDir = EnemyAimingResolver.Resolve(snap.AimingMode, selfPos, targetPos, targetVelocity, snap.PredictSeconds);
             _currentSwing = _allocator.NextSingle();
@@ -267,6 +317,54 @@ namespace Momotaro.Gameplay.Enemy.Combat
             _motor?.SetFacing(_aimDir);
             PublishTelegraph(EnemyTelegraphPhase.Begin, snap);
             return true;
+        }
+
+        /// <summary>
+        /// 使用する攻撃 index を決める（-1 で該当なし）。<paramref name="approachOnly"/> のときは Chase 開始可能分類（突進）のみを候補にする。
+        /// ガード不能は頻度ガバナが解禁したときだけ候補にし（上限側）、解禁かつ使用可能なら強制選択して出現を保証する（下限側＝0%回避。§9.3）。
+        /// それ以外は距離・角度・Cooldown・連続使用減点に基づく通常の Score 選択（<see cref="EnemyAttackSelector"/>）。
+        /// </summary>
+        private int SelectAttackIndex(float distance, float angle, bool approachOnly)
+        {
+            int n = _options.Length;
+            bool unblockableDue = _unblockableIndex >= 0 && (_freqGov == null || _freqGov.CappedEligible);
+            bool forceUnblockable = false;
+
+            for (int i = 0; i < n; i++)
+            {
+                bool allowed = !approachOnly || _chaseInitiable[i]; // approach 中は突進系のみ。
+                if (i == _unblockableIndex)
+                {
+                    allowed = allowed && unblockableDue; // 未解禁ガード不能は「唯一の候補」でも許可しない（上限を無条件に破らない）。
+                    if (allowed && !approachOnly && IsUsable(i, distance, angle))
+                    {
+                        forceUnblockable = true; // 解禁済みかつ使用可能：この回はガード不能を確定（≤20% 枠での出現保証）。
+                    }
+                }
+
+                _selectMask[i] = allowed;
+            }
+
+            if (forceUnblockable)
+            {
+                return _unblockableIndex;
+            }
+
+            return EnemyAttackSelector.Evaluate(distance, angle, _options, _cooldown, _lastUsedIndex,
+                count => _rng.Next(count), out _, _selectMask);
+        }
+
+        /// <summary>候補 i が距離・角度・Cooldown の観点で使用可能か（可否ゲートとは独立の素の使用可否）。</summary>
+        private bool IsUsable(int i, float distance, float angle)
+        {
+            if (i < 0 || i >= _options.Length)
+            {
+                return false;
+            }
+
+            AttackOption o = _options[i];
+            bool cool = _cooldown == null || i >= _cooldown.Length || _cooldown[i] <= 0f;
+            return cool && distance <= o.UseRange && angle <= o.UseAngle;
         }
 
         private void Update()

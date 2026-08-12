@@ -9,7 +9,7 @@ namespace Momotaro.Tests.EditMode
 {
     /// <summary>
     /// 強敵スプライト受入：侍骸骨の 29 Animation Clip（Idle/Move/Hurt/Stun/NormalAttack/HeavyOverhead/UnguardableThrust 各 4 方向＋Down）の
-    /// フレーム数・fps・Loop・昇順・Sprite 単独バインド・Animation Event 不使用・Transform カーブ不使用と、Animator Controller の 25 State を
+    /// フレーム数・fps・Loop・昇順・Sprite 単独バインド・Animation Event 不使用・Transform カーブ不使用と、Animator Controller の 29 State を
     /// 検証する。HeavyOverhead=7 枚（修正版）、UnguardableThrust=8 枚（修正版）、Down=7 枚。攻撃タイミングの正本は Gameplay（P3-09）。
     /// </summary>
     public sealed class SamuraiSkeletonClipTests
@@ -42,7 +42,7 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void Clips_25_FramesFpsLoop_SpriteOnly_NoMissing()
+        public void Clips_29_FramesFpsLoop_SpriteOnly_NoMissing()
         {
             Spec[] specs = BuildSpecs();
             Assert.AreEqual(29, specs.Length, "Stun 4 本を含め 29 本。");
@@ -89,7 +89,7 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void Controller_Has25States_NoMissingClips_DefaultIdleDown()
+        public void Controller_Has29States_NoMissingClips_DefaultIdleDown()
         {
             var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerPath);
             Assert.IsNotNull(controller, "AC_SamuraiSkeleton が無い: " + ControllerPath);

@@ -38,6 +38,8 @@ namespace Momotaro.Gameplay.Enemy.Combat
         /// <summary>
         /// 候補を評価し、選ばれた index（無ければ -1）を返す。<paramref name="scores"/> は各候補の Score
         /// （除外は <see cref="float.NegativeInfinity"/>）。<paramref name="tieBreak"/> は [0,count) を返す乱数源（null で先頭）。
+        /// <paramref name="allowMask"/> を渡すと <c>allowMask[i]==false</c> の候補を無条件に除外する（P3-09：突進のみ Chase 開始許可、
+        /// ガード不能の頻度上限ゲートなど、距離・角度・Cooldown とは独立の可否を上位から与える。null で全候補を許可）。
         /// </summary>
         public static int Evaluate(
             float distance,
@@ -46,7 +48,8 @@ namespace Momotaro.Gameplay.Enemy.Combat
             IReadOnlyList<float> cooldownRemaining,
             int lastUsedIndex,
             Func<int, int> tieBreak,
-            out float[] scores)
+            out float[] scores,
+            IReadOnlyList<bool> allowMask = null)
         {
             int n = options.Count;
             scores = new float[n];
@@ -56,7 +59,8 @@ namespace Momotaro.Gameplay.Enemy.Combat
             {
                 AttackOption o = options[i];
                 bool cool = cooldownRemaining == null || i >= cooldownRemaining.Count || cooldownRemaining[i] <= 0f;
-                bool usable = cool && distance <= o.UseRange && angleToTarget <= o.UseAngle;
+                bool allowed = allowMask == null || (i < allowMask.Count && allowMask[i]);
+                bool usable = allowed && cool && distance <= o.UseRange && angleToTarget <= o.UseAngle;
                 if (usable)
                 {
                     scores[i] = o.BaseScore * o.FrequencyScale; // 頻度スケール（ガード不能抑制。§9.3）。
