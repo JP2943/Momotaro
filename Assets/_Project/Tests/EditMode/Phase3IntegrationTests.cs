@@ -14,16 +14,15 @@ using UnityEngine;
 namespace Momotaro.Tests.EditMode
 {
     /// <summary>
-    /// P3-12 統合受入：検証 Scene／Prefab／Data の参照整合を担保する。敵 Prefab の必須 Component、仮 UI（頭上バー・デバッグ）の結線、
-    /// Missing Script 無し、敵 Archetype Data の検証（Stable ID 重複・必須値）、検証シナリオ／性能分岐の編成を EditMode で決定的に確認する。
+    /// P3-12 統合受入：検証 Prefab／Data の参照整合を担保する。敵 Prefab の必須 Component、仮 UI（頭上バー・デバッグ）の結線、
+    /// Missing Script 無し、敵 Archetype Data の検証（Stable ID 重複・必須値）、統合編成（<see cref="EnemyTestComposition"/>）の内訳を
+    /// EditMode で決定的に確認する。専用検証 Scene の生成は <see cref="Phase3EnemyTestFieldBuilderTests"/> が担う。
     /// </summary>
     public sealed class Phase3IntegrationTests
     {
         private const string Melee = "Assets/_Project/Prefabs/Enemies/PF_Enemy_Melee_Prototype.prefab";
         private const string Ranged = "Assets/_Project/Prefabs/Enemies/PF_Enemy_Ranged_Prototype.prefab";
         private const string Elite = "Assets/_Project/Prefabs/Enemies/PF_Enemy_Elite_Prototype.prefab";
-        private const string Harness = "Assets/_Project/Prefabs/Diagnostics/PF_EnemyPerformanceHarness.prefab";
-        private const string Launcher = "Assets/_Project/Prefabs/Diagnostics/PF_EnemyScenarioLauncher.prefab";
 
         private static GameObject Load(string p)
         {
@@ -67,34 +66,32 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void VerificationPrefabs_HaveNoMissingScripts()
+        public void EnemyPrefabs_HaveNoMissingScripts()
         {
-            foreach (string p in new[] { Melee, Ranged, Elite, Harness, Launcher })
-            {
-                AssertNoMissingScripts(p);
-            }
+            AssertNoMissingScripts(Melee);
+            AssertNoMissingScripts(Ranged);
+            AssertNoMissingScripts(Elite);
         }
 
         [Test]
-        public void VerificationHarnessAndLauncher_HaveDriverComponents()
+        public void TestFormations_MatchSpec()
         {
-            Assert.IsNotNull(Load(Harness).GetComponentInChildren<EnemyPerformanceHarness>(true), "Harness");
-            Assert.IsNotNull(Load(Launcher).GetComponentInChildren<EnemyScenarioLauncher>(true), "Launcher");
-        }
+            Assert.AreEqual(0, EnemyTestComposition.For(EnemyTestFormation.Clear).Total, "Clear は 0 体。");
 
-        [Test]
-        public void ScenarioCompositions_MatchSpec()
-        {
-            Assert.AreEqual(1, EnemyScenarioComposition.For(EnemyScenario.Melee1).Total);
-            Assert.AreEqual(1, EnemyScenarioComposition.For(EnemyScenario.Melee1).Melee);
+            Assert.AreEqual(1, EnemyTestComposition.For(EnemyTestFormation.Melee1).Melee);
+            Assert.AreEqual(1, EnemyTestComposition.For(EnemyTestFormation.Ranged1).Ranged);
+            Assert.AreEqual(1, EnemyTestComposition.For(EnemyTestFormation.Elite1).Elite);
 
-            Assert.AreEqual(1, EnemyScenarioComposition.For(EnemyScenario.Ranged1).Ranged);
-            Assert.AreEqual(1, EnemyScenarioComposition.For(EnemyScenario.Elite1).Elite);
-
-            EnemyScenarioComposition g = EnemyScenarioComposition.For(EnemyScenario.Group3);
+            EnemyTestComposition g = EnemyTestComposition.For(EnemyTestFormation.Group3);
             Assert.AreEqual(2, g.Melee);
             Assert.AreEqual(1, g.Ranged);
             Assert.AreEqual(3, g.Total, "3 体混成（近接2＋遠距離1）。");
+
+            Assert.AreEqual(6, EnemyTestComposition.For(EnemyTestFormation.Melee6).Total);
+            Assert.AreEqual(6, EnemyTestComposition.For(EnemyTestFormation.Mixed6).Total);
+            Assert.AreEqual(4, EnemyTestComposition.For(EnemyTestFormation.Mixed6).Melee);
+            Assert.AreEqual(2, EnemyTestComposition.For(EnemyTestFormation.Mixed6).Ranged);
+            Assert.AreEqual(8, EnemyTestComposition.For(EnemyTestFormation.Max8).Total, "最大 8 体。");
         }
 
         [Test]

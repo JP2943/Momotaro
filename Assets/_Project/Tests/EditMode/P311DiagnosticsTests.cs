@@ -59,19 +59,19 @@ namespace Momotaro.Tests.EditMode
         // ---- 性能分岐 ----
 
         [Test]
-        public void PerformanceBranch_Compositions()
+        public void PerformanceFormations_Compositions()
         {
-            var m6 = EnemyPerformanceComposition.For(EnemyPerformanceBranch.Melee6);
+            var m6 = EnemyTestComposition.For(EnemyTestFormation.Melee6);
             Assert.AreEqual(6, m6.Melee);
             Assert.AreEqual(0, m6.Ranged + m6.Elite);
             Assert.AreEqual(6, m6.Total);
 
-            var mr = EnemyPerformanceComposition.For(EnemyPerformanceBranch.Melee4Ranged2);
+            var mr = EnemyTestComposition.For(EnemyTestFormation.Mixed6);
             Assert.AreEqual(4, mr.Melee);
             Assert.AreEqual(2, mr.Ranged);
             Assert.AreEqual(6, mr.Total);
 
-            var max = EnemyPerformanceComposition.For(EnemyPerformanceBranch.Max8);
+            var max = EnemyTestComposition.For(EnemyTestFormation.Max8);
             Assert.AreEqual(8, max.Total, "最大 8 体。");
             Assert.LessOrEqual(max.Total, 8, "総数は 8 を超えない。");
         }
