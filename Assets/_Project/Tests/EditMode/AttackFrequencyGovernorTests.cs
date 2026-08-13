@@ -18,27 +18,36 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void CappedShare_NeverExceedsRatio_OverManySelections()
+        public void CappedShare_NeverExceedsRatio_AtEverySelection()
         {
             var gov = new AttackFrequencyGovernor(0.2f);
-            int total = 0;
-            int capped = 0;
 
-            // 「解禁されたら必ずガード不能を選ぶ（かつ常に使用可能）」最悪ケースでも割合は上限に張り付くだけで超えない。
+            // 「解禁されたら必ずガード不能を選ぶ（かつ常に使用可能）」最悪ケースでも、序盤を含む各選択後で割合が上限を超えない。
             for (int i = 0; i < 1000; i++)
             {
                 bool pickUnblockable = gov.CappedEligible; // 解禁され次第ガード不能を選ぶ。
                 gov.RecordSelection(pickUnblockable);
-                total++;
-                if (pickUnblockable)
-                {
-                    capped++;
-                }
+
+                float ratio = (float)gov.CappedSelections / gov.TotalSelections;
+                Assert.LessOrEqual(ratio, 0.2f + 1e-4f,
+                    "各選択後にガード不能割合が 20% を超えない（選択 " + gov.TotalSelections + " 回時点）。");
             }
 
-            float ratio = (float)capped / total;
-            Assert.LessOrEqual(ratio, 0.2f + 1e-4f, "ガード不能割合が 20% を超えない。");
-            Assert.Greater(capped, 0, "0%（全く使われない）にならない。");
+            Assert.Greater(gov.CappedSelections, 0, "十分な回数の後は 0%（全く使われない）にならない。");
+        }
+
+        [Test]
+        public void FirstFewSelections_AreNotUnblockable()
+        {
+            var gov = new AttackFrequencyGovernor(0.2f);
+            // 最初の min-gap 回は未解禁 → ガード不能にならない（序盤で 100%/50%/33%/25% に跳ねない）。
+            for (int i = 0; i < gov.MinGap; i++)
+            {
+                Assert.IsFalse(gov.CappedEligible, "序盤 " + i + " 回目は未解禁。");
+                gov.RecordSelection(false);
+            }
+
+            Assert.IsTrue(gov.CappedEligible, "他攻撃を min-gap 回挟んだ後に解禁。");
         }
 
         [Test]
@@ -59,10 +68,10 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void EligibleFromStart_ForFirstUse()
+        public void NotEligible_AtStart()
         {
             var gov = new AttackFrequencyGovernor(0.2f);
-            Assert.IsTrue(gov.CappedEligible, "初回は解禁済み（>0% を確保）。");
+            Assert.IsFalse(gov.CappedEligible, "開始直後は未解禁（最初の攻撃をガード不能にしない）。");
         }
     }
 }

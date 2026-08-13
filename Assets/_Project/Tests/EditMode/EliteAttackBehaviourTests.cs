@@ -155,10 +155,14 @@ namespace Momotaro.Tests.EditMode
                 }
 
                 c.CancelAttack(); // 次の選択へ（governor は開始時に記録済み）。
+
+                // 序盤（選択回数が少ない時点）を含め、各選択後の割合が 20% を超えない。
+                float ratio = (float)unblockable / (i + 1);
+                Assert.LessOrEqual(ratio, 0.2f + 1e-4f,
+                    "各選択後にガード不能割合が 20% 以下（" + unblockable + "/" + (i + 1) + "）。");
             }
 
-            Assert.LessOrEqual(unblockable, n / 5, "ガード不能は全選択の 20% 以下（" + unblockable + "/" + n + "）。");
-            Assert.Greater(unblockable, 0, "ガード不能が 0%（全く使われない）にならない。");
+            Assert.Greater(unblockable, 0, "十分な回数（40 回）の後はガード不能が 0% にならない。");
         }
     }
 }
