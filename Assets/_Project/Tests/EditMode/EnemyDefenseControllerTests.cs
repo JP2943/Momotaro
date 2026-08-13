@@ -74,6 +74,11 @@ namespace Momotaro.Tests.EditMode
             return new EnemyDangerStimulus(new Vector3(0, 0, 2f), new Vector3(0, 0, -1f), unblockable: false);
         }
 
+        private static EnemyDangerStimulus UnblockableFrontDanger()
+        {
+            return new EnemyDangerStimulus(new Vector3(0, 0, 2f), new Vector3(0, 0, -1f), unblockable: true);
+        }
+
         [Test]
         public void Evade_TriggersOnObservedDanger_NotWithout()
         {
@@ -120,6 +125,29 @@ namespace Momotaro.Tests.EditMode
             danger.Stimulus = EnemyDangerStimulus.None;
             ctrl.TickDefense(0.016f);
             Assert.IsFalse(ctrl.IsGuarding, "危険が消えたら構えを解く。");
+        }
+
+        [Test]
+        public void GuardOnly_DoesNotGuard_Unblockable()
+        {
+            var (ctrl, _, danger) = Make(canGuard: true, canEvade: false);
+            danger.Stimulus = UnblockableFrontDanger();
+            ctrl.TickDefense(0.016f);
+            Assert.IsFalse(ctrl.IsGuarding, "回避を持たない敵はガード不能な危険にガードを構えない（貫通するため無意味）。");
+            Assert.IsFalse(ctrl.IsDefending, "何も防御行動をしない。");
+        }
+
+        [Test]
+        public void Guard_Releases_WhenDangerBecomesUnblockable()
+        {
+            var (ctrl, _, danger) = Make(canGuard: true, canEvade: false);
+            danger.Stimulus = FrontDanger();
+            ctrl.TickDefense(0.016f);
+            Assert.IsTrue(ctrl.IsGuarding, "通常の危険には構える。");
+
+            danger.Stimulus = UnblockableFrontDanger();
+            ctrl.TickDefense(0.016f);
+            Assert.IsFalse(ctrl.IsGuarding, "構え中に危険がガード不能へ変わったら構えを解く。");
         }
 
         [Test]

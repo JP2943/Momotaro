@@ -132,11 +132,11 @@ namespace Momotaro.Gameplay.Enemy.Defense
 
             Vector3 selfPos = _actor.WorldPosition;
 
-            // ガード構え継続：危険が続く限り構え、消えたら解除する。
+            // ガード構え継続：危険が続く限り構え、消えたら解除する。ガード不能な危険は貫通して無意味なので構えを解く。
             if (_guard.IsGuarding)
             {
                 EnemyDangerStimulus d = Sense(selfPos);
-                if (!d.HasDanger)
+                if (!d.HasDanger || d.Unblockable)
                 {
                     _guard.Release();
                 }
@@ -167,7 +167,8 @@ namespace Momotaro.Gameplay.Enemy.Defense
                 return;
             }
 
-            if (_canGuard && _guard.IsReady && _guard.TryStart())
+            // ガードはガード不能な危険には無意味（貫通）なので構えない。通常の危険のみ構える。
+            if (!danger.Unblockable && _canGuard && _guard.IsReady && _guard.TryStart())
             {
                 _actor.RequestState(EnemyState.Guard, EnemyStateChangeReason.DefensiveAction);
                 _motor?.Stop();

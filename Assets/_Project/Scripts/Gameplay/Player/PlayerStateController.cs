@@ -136,11 +136,17 @@ namespace Momotaro.Gameplay.Player
         public bool IsSpecialAttacking => _specialAttackRemaining > 0f;
 
         // ---- IAttackThreatSource（敵の防御 AI が観測する「危険の質」。入力ではなく現在の攻撃状態から公開する。P3-11/P3-10） ----
-        /// <summary>攻撃中（通常コンボの Attack 状態、または必殺技発動中）＝観測可能な危険を出しているか。</summary>
-        public bool IsThreateningAttack => (_machine != null && _machine.Current == PlayerState.Attack) || IsSpecialAttacking;
+        /// <summary>
+        /// 必殺技の「危険な期間」。判定（Active）中に加え、フル充填して発動待ちの終盤（観測可能な予兆）を含める。後隙（Recovery）は
+        /// 判定が無く危険でないため除外する（<see cref="IsSpecialAttacking"/> は Recovery も含むため危険判定には使わない）。
+        /// </summary>
+        private bool IsSpecialDanger => _specialActiveRemaining > 0f || (_special != null && _special.IsActive && _special.IsCharged);
 
-        /// <summary>ガード不能な危険か（必殺技＝防御一部無視。通常コンボはガード可能なので false）。</summary>
-        public bool IsUnblockableThreat => IsSpecialAttacking;
+        /// <summary>攻撃中（通常コンボの Attack 状態、または必殺技の危険期間）＝観測可能な危険を出しているか（後隙は含めない）。</summary>
+        public bool IsThreateningAttack => (_machine != null && _machine.Current == PlayerState.Attack) || IsSpecialDanger;
+
+        /// <summary>ガード不能な危険か（必殺技＝防御一部無視。通常コンボはガード可能なので false。後隙は含めない）。</summary>
+        public bool IsUnblockableThreat => IsSpecialDanger;
 
         /// <summary>攻撃方向（前方）。</summary>
         public Vector3 ThreatForward => Forward;
