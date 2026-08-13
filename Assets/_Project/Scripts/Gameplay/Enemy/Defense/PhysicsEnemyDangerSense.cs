@@ -33,6 +33,7 @@ namespace Momotaro.Gameplay.Enemy.Defense
             float nearestSqr = float.MaxValue;
             bool found = false;
             Vector3 sourcePos = selfPosition;
+            bool nearestUnblockable = false;
 
             for (int i = 0; i < count; i++)
             {
@@ -48,10 +49,25 @@ namespace Momotaro.Gameplay.Enemy.Defense
                     continue; // 敵対（Player）のみ危険源とみなす。
                 }
 
-                var activity = col.GetComponentInParent<ICombatActivityState>();
-                if (activity == null || !activity.IsPoiseVulnerableAction)
+                // 観測可能な危険：まず攻撃の質を晒す契約（IAttackThreatSource）を読む。無ければ体幹補正状態で代替（Unblockable は不明→false）。
+                bool attacking;
+                bool unblockable;
+                var threat = col.GetComponentInParent<IAttackThreatSource>();
+                if (threat != null)
                 {
-                    continue; // 攻撃の予備動作／判定中（観測可能な危険）でなければ無視。入力そのものは読まない。
+                    attacking = threat.IsThreateningAttack;
+                    unblockable = threat.IsUnblockableThreat;
+                }
+                else
+                {
+                    var activity = col.GetComponentInParent<ICombatActivityState>();
+                    attacking = activity != null && activity.IsPoiseVulnerableAction;
+                    unblockable = false;
+                }
+
+                if (!attacking)
+                {
+                    continue; // 攻撃の予備動作／判定中でなければ無視。入力そのものは読まない。
                 }
 
                 Vector3 p = actor.WorldPosition;
@@ -60,6 +76,7 @@ namespace Momotaro.Gameplay.Enemy.Defense
                 {
                     nearestSqr = sqr;
                     sourcePos = p;
+                    nearestUnblockable = unblockable;
                     found = true;
                 }
             }
@@ -69,8 +86,8 @@ namespace Momotaro.Gameplay.Enemy.Defense
                 return EnemyDangerStimulus.None;
             }
 
-            // 進行方向＝危険源→自分（命中の AttackDirection と同じ向き）。Unblockable は本観測では判定できないため false（ガード可能扱い）。
-            return new EnemyDangerStimulus(sourcePos, selfPosition - sourcePos, unblockable: false);
+            // 進行方向＝危険源→自分（命中の AttackDirection と同じ向き）。Unblockable は攻撃側の契約から観測して伝える。
+            return new EnemyDangerStimulus(sourcePos, selfPosition - sourcePos, nearestUnblockable);
         }
     }
 }

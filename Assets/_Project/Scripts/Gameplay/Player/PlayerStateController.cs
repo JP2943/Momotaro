@@ -16,7 +16,7 @@ namespace Momotaro.Gameplay.Player
     /// 中断時 Hitbox 消去まで。HP/体幹/ひるみの実適用は対象外（対象側 <see cref="IDamageable"/> と後続 Task）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, ISpecialChargeCancel
+    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, ISpecialChargeCancel, IAttackThreatSource
     {
         [SerializeField] private PlayerMotor _motor;
         [SerializeField] private PlayerFacing _facing;
@@ -134,6 +134,16 @@ namespace Momotaro.Gameplay.Player
 
         /// <summary>必殺技（発動・後隙）実行中か。</summary>
         public bool IsSpecialAttacking => _specialAttackRemaining > 0f;
+
+        // ---- IAttackThreatSource（敵の防御 AI が観測する「危険の質」。入力ではなく現在の攻撃状態から公開する。P3-11/P3-10） ----
+        /// <summary>攻撃中（通常コンボの Attack 状態、または必殺技発動中）＝観測可能な危険を出しているか。</summary>
+        public bool IsThreateningAttack => (_machine != null && _machine.Current == PlayerState.Attack) || IsSpecialAttacking;
+
+        /// <summary>ガード不能な危険か（必殺技＝防御一部無視。通常コンボはガード可能なので false）。</summary>
+        public bool IsUnblockableThreat => IsSpecialAttacking;
+
+        /// <summary>攻撃方向（前方）。</summary>
+        public Vector3 ThreatForward => Forward;
 
         /// <summary>チャージ経過秒（HUD/検証用）。</summary>
         public float SpecialChargeElapsed => _special != null ? _special.Elapsed : 0f;

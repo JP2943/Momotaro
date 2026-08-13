@@ -63,7 +63,25 @@ namespace Momotaro.Gameplay.Enemy
             return _spawned.Count;
         }
 
+        /// <summary>分岐を設定して生成し直す（インスペクタ・他スクリプトからの切替方法）。</summary>
+        public void SetBranch(EnemyPerformanceBranch branch) => Spawn(branch);
+
+        // ---- 編成切替方法（Play 中にコンポーネント右クリックのコンテキストメニューから使える。Input 依存なし） ----
+
+        /// <summary>近接 6 体を生成する。</summary>
+        [ContextMenu("Spawn / 近接6")]
+        public void SpawnMelee6() => Spawn(EnemyPerformanceBranch.Melee6);
+
+        /// <summary>近接 4＋遠距離 2 体を生成する。</summary>
+        [ContextMenu("Spawn / 近接4+遠2")]
+        public void SpawnMelee4Ranged2() => Spawn(EnemyPerformanceBranch.Melee4Ranged2);
+
+        /// <summary>最大 8 体を生成する。</summary>
+        [ContextMenu("Spawn / 最大8")]
+        public void SpawnMax8() => Spawn(EnemyPerformanceBranch.Max8);
+
         /// <summary>生成済みの敵を全破棄する。</summary>
+        [ContextMenu("Clear / 全破棄")]
         public void Clear()
         {
             for (int i = 0; i < _spawned.Count; i++)

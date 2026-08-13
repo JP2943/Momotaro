@@ -24,6 +24,8 @@ GameObject:
   - component: {fileID: 7654321000000060}
   - component: {fileID: 7654321000000061}
   - component: {fileID: 7654321000000070}
+  - component: {fileID: 7654321000000071}
+  - component: {fileID: 7654321000000072}
   m_Layer: 0
   m_Name: PF_Enemy_Ranged_Prototype
   m_TagString: Untagged
@@ -480,3 +482,34 @@ MonoBehaviour:
   _projectilePrefab: {fileID: 7654323000000003, guid: 9471793fb13be7a1a7d53963d7537f1a, type: 3}
   _muzzleHeight: 1
   _muzzleForward: 0.6
+--- !u!114 &7654321000000071
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7654321000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ce571ae408288a3089b12fcb4457af92, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Diagnostics.EnemyOverheadBars
+  _actor: {fileID: 0}
+  _height: 2
+  _barWidth: 60
+  _barHeight: 6
+  _display: 1
+--- !u!114 &7654321000000072
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7654321000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3963727695abeb4ba57cac4038fca31d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Diagnostics.EnemyAiDebugOverlay
+  _display: 0
+  _height: 2.6
