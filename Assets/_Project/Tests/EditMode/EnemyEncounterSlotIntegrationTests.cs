@@ -145,20 +145,22 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void NextAcquires_AfterOwnerDown_ViaPrune()
+        public void NextAcquires_AfterOwnerDown_ReleasedImmediately()
         {
             BuildEncounterWithEnemies();
             Assert.IsTrue(_enemies[0].TryStartAttack(TargetPos, Vector3.zero));
 
-            // 1 体目を撃破（Down）。Update 非駆動のため中断は走らないが、Owner 不在として回収できる。
+            // 1 体目を撃破（Down）。P3-10：撃破時に EnemyActor が後始末（IEnemyDefeatCleanup）で攻撃中断・Slot 解放を即時に行う。
             var actor0 = _enemies[0].GetComponent<EnemyActor>();
             actor0.ReceiveHit(new HitInfo(null, actor0, Vector3.forward, actor0.WorldPosition,
                 new HitDamage(200f, 0f, 0f), false, false, default(HitId)));
             Assert.IsTrue(actor0.IsDown, "撃破で Down。");
+            Assert.IsFalse(_enemies[0].IsAttacking, "撃破で攻撃が中断される。");
+            Assert.AreEqual(0, _encounter.Coordinator.ActiveCount(AttackSlotKind.MeleeNormal), "撃破で Slot を即時解放。");
 
-            int reclaimed = _encounter.Coordinator.PruneInactive();
-            Assert.AreEqual(1, reclaimed, "Down（Owner 無効）の Slot を回収。");
-            Assert.IsTrue(_enemies[1].TryStartAttack(TargetPos, Vector3.zero), "回収後は次の敵が取得できる。");
+            // 既に解放済みなので回収対象は無い（Down が Slot をリークしない）。
+            Assert.AreEqual(0, _encounter.Coordinator.PruneInactive(), "解放済みで回収対象なし。");
+            Assert.IsTrue(_enemies[1].TryStartAttack(TargetPos, Vector3.zero), "撃破後は次の敵が取得できる。");
         }
     }
 }

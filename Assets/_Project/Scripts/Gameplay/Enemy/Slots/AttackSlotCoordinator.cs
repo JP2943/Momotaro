@@ -73,6 +73,7 @@ namespace Momotaro.Gameplay.Enemy.Slots
         /// </summary>
         public bool TryAcquire(ISlotOwner owner, AttackSlotKind kind)
         {
+            using var _perf = EnemyProfilerMarkers.Slot.Auto(); // P3-11：Slot 調停の負荷計測。
             if (owner == null)
             {
                 return false;

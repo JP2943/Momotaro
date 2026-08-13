@@ -2,6 +2,7 @@ using System;
 using Momotaro.Data.Combat;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Enemy.Combat.Projectile;
+using Momotaro.Gameplay.Enemy.Defense;
 using Momotaro.Gameplay.Enemy.Locomotion;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Screen;
@@ -21,7 +22,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(EnemyActor))]
-    public sealed class EnemyAttackController : MonoBehaviour, ISlotOwner
+    public sealed class EnemyAttackController : MonoBehaviour, ISlotOwner, IEnemyDefeatCleanup
     {
         [Tooltip("同点時の tie-break 乱数シード（0 で TickCount。EditMode 再現用に固定可）。")]
         [SerializeField] private int _seed;
@@ -89,6 +90,12 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
         /// <summary>攻撃 Slot を保持中か（Debug/テスト用）。</summary>
         public bool HoldsAttackSlot => _holdsSlot;
+
+        /// <summary>直近に選択した攻撃 index（無選択は -1。Debug 表示用。P3-11）。</summary>
+        public int DebugSelectedIndex { get; private set; } = -1;
+
+        /// <summary>直近に選択した攻撃の Score（Debug 表示用。P3-11）。</summary>
+        public float DebugSelectedScore { get; private set; }
 
         /// <summary>Chase（間合いの外）からでも開始できる攻撃（突進）を持つか。Brain が接近中の突進開始可否に用いる（§9.3）。</summary>
         public bool HasApproachAttack
@@ -170,6 +177,13 @@ namespace Momotaro.Gameplay.Enemy.Combat
         {
             CancelAttack(); // Disable でも判定・予兆を解除（Cleanup）。
             ReleaseSlot();  // Scene 離脱・Disable で Slot を必ず解放（§8.1）。
+        }
+
+        /// <inheritdoc />
+        /// <remarks>撃破（Down 確定）で攻撃を中断し、判定・予兆・Slot を即時に解除する（§9「Down 時に攻撃・Slot を解除」）。</remarks>
+        public void OnOwnerDefeated()
+        {
+            CancelAttack(); // 中断で Slot 解放・予兆消灯まで行う（冪等）。
         }
 
         private void Build()
@@ -326,6 +340,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
         /// </summary>
         private int SelectAttackIndex(float distance, float angle, bool approachOnly)
         {
+            using var _perf = EnemyProfilerMarkers.Selection.Auto(); // P3-11：攻撃選択の負荷計測。
             int n = _options.Length;
             bool unblockableDue = _unblockableIndex >= 0 && (_freqGov == null || _freqGov.CappedEligible);
             bool forceUnblockable = false;
@@ -347,11 +362,16 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
             if (forceUnblockable)
             {
+                DebugSelectedIndex = _unblockableIndex;
+                DebugSelectedScore = _unblockableIndex >= 0 ? _options[_unblockableIndex].BaseScore : 0f;
                 return _unblockableIndex;
             }
 
-            return EnemyAttackSelector.Evaluate(distance, angle, _options, _cooldown, _lastUsedIndex,
-                count => _rng.Next(count), out _, _selectMask);
+            int idx = EnemyAttackSelector.Evaluate(distance, angle, _options, _cooldown, _lastUsedIndex,
+                count => _rng.Next(count), out float[] scores, _selectMask);
+            DebugSelectedIndex = idx;
+            DebugSelectedScore = idx >= 0 && idx < scores.Length ? scores[idx] : 0f;
+            return idx;
         }
 
         /// <summary>候補 i が距離・角度・Cooldown の観点で使用可能か（可否ゲートとは独立の素の使用可否）。</summary>

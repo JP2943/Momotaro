@@ -77,6 +77,7 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
         /// <summary>1 物理ステップ進める（FixedUpdate から、またはテストが決定的に呼ぶ）。生存なら true。</summary>
         public bool Step(float deltaTime)
         {
+            using var _perf = EnemyProfilerMarkers.Projectile.Auto(); // P3-11：Projectile の負荷計測。
             if (!_live || _state == null)
             {
                 return false;

@@ -1,5 +1,6 @@
 using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
+using Momotaro.Gameplay.Enemy.Defense;
 using UnityEngine;
 
 namespace Momotaro.Gameplay.Enemy
@@ -20,11 +21,19 @@ namespace Momotaro.Gameplay.Enemy
         private EnemyVitals _vitals;
         private EnemyStateMachine _machine;
 
+        private IEnemyDefenseState _defense;          // ガード／回避の状態読み取り（P3-10。相互直接依存を避ける契約）。
+        private IEnemyDefeatCleanup[] _defeatCleanups; // 撃破時の後始末（攻撃・Slot 解除等）を委ねる先。
+        private bool _defenseResolved;
+        private bool _defeatHandled;                   // 型付き撃破・報酬要求を 1 回だけ発行する。
+
         /// <summary>被弾結果の通知チャネル（HUD・Feedback が購読。Phase 2 と同系統）。</summary>
         public HitResultChannel Results { get; } = new HitResultChannel();
 
         /// <summary>状態遷移の通知チャネル（型付き。Presentation／Debug／将来の仲間 AI が購読）。</summary>
         public EnemyStateChannel States { get; } = new EnemyStateChannel();
+
+        /// <summary>撃破（Down 確定）の通知チャネル（型付き。報酬要求を 1 回発行。P3-10）。</summary>
+        public EnemyDefeatChannel Defeats { get; } = new EnemyDefeatChannel();
 
         // ---- ICombatActor ----
         /// <inheritdoc />
@@ -176,13 +185,38 @@ namespace Momotaro.Gameplay.Enemy
         public void ReceiveHit(in HitInfo hit)
         {
             EnsureRuntime();
+            ResolveDefense();
 
-            EnemyVitals.HitApplication app = _vitals.Apply(hit);
+            // 撃破後は追加被弾を受け付けない（型付き撃破は 1 回・Down 後の余計な命中を無効化。§9）。
+            if (_vitals.IsDefeated)
+            {
+                return;
+            }
 
-            // 被弾由来の状態遷移（優先度：Down > Stunned > Stagger）。攻撃中なら中断され、後続 Task の Cleanup 対象になる。
+            // 回避無敵：命中を無効化（ダメージ・状態遷移なし。§9「短い無敵」）。
+            if (_defense != null && _defense.IsEvadeInvulnerable)
+            {
+                return;
+            }
+
+            // ガード軽減（§9）：構え中かつ前方 180°かつ Special 貫通でないとき HP×0.1／被体幹×1.5。背後・Special は貫通（等倍）。
+            float hpScale = 1f;
+            float poiseScale = 1f;
+            if (_defense != null && _defense.IsGuarding)
+            {
+                bool front = EnemyGuardMath.IsWithinFrontArc(Forward, hit);
+                EnemyGuardMath.Result g = EnemyGuardMath.Resolve(true, front, EnemyGuardMath.IsSpecialPierce(hit));
+                hpScale = g.HpScale;
+                poiseScale = g.PoiseScale;
+            }
+
+            EnemyVitals.HitApplication app = _vitals.Apply(hit, hpScale, poiseScale);
+
+            // 被弾由来の状態遷移（優先度：Down > Stunned > Stagger）。攻撃中なら中断され、Cleanup 対象になる。
             if (app.NewlyDefeated)
             {
                 _machine.ForceHitState(EnemyState.Down, EnemyStateChangeReason.Defeated);
+                HandleDefeated(); // 攻撃・衝突・Slot 解除＋型付き撃破／報酬要求を 1 回発行（§9）。
             }
             else if (app.NewlyStunned)
             {
@@ -194,6 +228,59 @@ namespace Momotaro.Gameplay.Enemy
             }
 
             Results.Publish(HitResult.Damage(hit.HitId, hit.Attacker, this, app.Applied));
+        }
+
+        /// <summary>防御状態・撃破後始末先を 1 回解決する（動的生成でも遅延解決）。</summary>
+        private void ResolveDefense()
+        {
+            if (_defenseResolved)
+            {
+                return;
+            }
+
+            _defense = GetComponent<IEnemyDefenseState>();
+            _defeatCleanups = GetComponents<IEnemyDefeatCleanup>();
+            _defenseResolved = true;
+        }
+
+        /// <summary>撃破確定時の後始末（1 回性）：攻撃・Slot 解除、衝突（Collider）解除、型付き撃破と報酬要求の発行。</summary>
+        private void HandleDefeated()
+        {
+            if (_defeatHandled)
+            {
+                return;
+            }
+
+            _defeatHandled = true;
+
+            // 攻撃中断・Slot 解放・能力リセット等は各コンポーネントへ委譲（1 回）。
+            if (_defeatCleanups != null)
+            {
+                for (int i = 0; i < _defeatCleanups.Length; i++)
+                {
+                    _defeatCleanups[i]?.OnOwnerDefeated();
+                }
+            }
+
+            // 衝突解除：自身の Collider を無効化（押し合い・被弾面を消す）。
+            SetCollidersEnabled(false);
+
+            EnemyRole role = _archetype != null ? _archetype.Role : EnemyRole.Melee;
+            var request = new EnemyRewardRequest(DamageableId, role,
+                _archetype != null ? _archetype.Reward : null, WorldPosition);
+            Defeats.Publish(new EnemyDefeatedEvent(DamageableId, request));
+        }
+
+        private void SetCollidersEnabled(bool enabled)
+        {
+            Collider[] colliders = GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                if (colliders[i] != null)
+                {
+                    colliders[i].enabled = enabled;
+                }
+            }
         }
 
         /// <summary>
@@ -213,6 +300,8 @@ namespace Momotaro.Gameplay.Enemy
             _vitals.ResetState();
             _machine.Reset(EnemyState.Idle);
             LastKnockback = 0f;
+            _defeatHandled = false;
+            SetCollidersEnabled(true); // 検証の再試行で被弾面・押し合いを戻す。
         }
     }
 }

@@ -1,4 +1,5 @@
 using Momotaro.Data.Combat;
+using Momotaro.Data.Progression;
 using UnityEngine;
 
 namespace Momotaro.Data.Characters
@@ -79,6 +80,10 @@ namespace Momotaro.Data.Characters
         [Tooltip("回避の Cooldown（秒）。")]
         [SerializeField] private float _evadeCooldownSeconds = 4f;
 
+        [Header("Reward (data only; granted by receiver, P4+)")]
+        [Tooltip("撃破時に発行する報酬 Data（任意。実付与は本 Phase 対象外。null 可）。")]
+        [SerializeField] private RewardData _reward;
+
         [Header("UI Policy")]
         [Tooltip("体幹を常時表示するか（false=被 Poise 時のみ。強敵は true 可）。")]
         [SerializeField] private bool _alwaysShowPoise = false;
@@ -154,6 +159,10 @@ namespace Momotaro.Data.Characters
         public bool CanEvade => _canEvade;
         /// <summary>回避の Cooldown（秒）。</summary>
         public float EvadeCooldownSeconds => _evadeCooldownSeconds;
+
+        // ---- Reward ----
+        /// <summary>撃破時に発行する報酬 Data（任意。null 可）。</summary>
+        public RewardData Reward => _reward;
 
         // ---- UI ----
         /// <summary>体幹を常時表示するか。</summary>

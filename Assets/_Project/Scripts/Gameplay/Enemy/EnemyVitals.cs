@@ -94,6 +94,15 @@ namespace Momotaro.Gameplay.Enemy
         /// </summary>
         public HitApplication Apply(in HitInfo hit)
         {
+            return Apply(hit, 1f, 1f);
+        }
+
+        /// <summary>
+        /// 敵ガードの倍率（<paramref name="hpDamageScale"/>＝HP 90% 軽減で 0.1、<paramref name="poiseDamageScale"/>＝被体幹×1.5）を
+        /// 併せて数値適用する（Phase3 P3-10。§9）。倍率は Special 貫通・背後で 1.0（貫通）となるよう呼び出し側が決める。
+        /// </summary>
+        public HitApplication Apply(in HitInfo hit, float hpDamageScale, float poiseDamageScale)
+        {
             bool wasStunned = _poise.IsStunned;
             bool wasFlinching = _flinch.IsFlinching;
             bool wasDefeated = IsDefeated;
@@ -102,9 +111,10 @@ namespace Momotaro.Gameplay.Enemy
             float stunHpMultiplier = _poise.IsStunned
                 ? (hit.StunHpMultiplierOverride > 0f ? hit.StunHpMultiplierOverride : _poise.StunHpMultiplier)
                 : 1f;
-            int appliedHp = DamageApplication.ApplyHpDamage(_hp, hit.Damage.Hp, effectiveDefense, stunHpMultiplier);
+            float scaledHp = hit.Damage.Hp * Mathf.Max(0f, hpDamageScale);
+            int appliedHp = DamageApplication.ApplyHpDamage(_hp, scaledHp, effectiveDefense, stunHpMultiplier);
 
-            float poiseDamage = hit.Damage.Poise * _targetPoiseMultiplier;
+            float poiseDamage = hit.Damage.Poise * _targetPoiseMultiplier * Mathf.Max(0f, poiseDamageScale);
             float appliedPoise = _poise.ApplyPoiseDamage(poiseDamage, isJustGuard: hit.IsJustGuardCounter);
 
             float appliedFlinch = _flinch.AddFlinch(hit.Damage.Flinch);

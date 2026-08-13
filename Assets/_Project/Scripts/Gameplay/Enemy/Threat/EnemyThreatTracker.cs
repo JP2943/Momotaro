@@ -165,6 +165,7 @@ namespace Momotaro.Gameplay.Enemy.Threat
         /// <summary>選択と減衰を 1 フレーム進める（Update から、またはテストが決定的に呼ぶ）。</summary>
         public void TickSelection(float deltaTime)
         {
+            using var _perf = EnemyProfilerMarkers.Threat.Auto(); // P3-11：Threat 選択の負荷計測。
             EnsureRefs();
             if (_actor == null || _table == null)
             {

@@ -1,4 +1,5 @@
 using Momotaro.Gameplay.Enemy.Combat;
+using Momotaro.Gameplay.Enemy.Defense;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Slots;
 using Momotaro.Gameplay.Enemy.Threat;
@@ -35,6 +36,7 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
         private EnemyMotor _motor;
         private EnemyPerception _perception;
         private EnemyAttackController _combat;
+        private IEnemyDefenseState _defense;
         private EnemyEncounter _encounter;
         private EnemyThreatTracker _threat;
         private bool _encounterResolved;
@@ -100,6 +102,7 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             if (_motor == null) _motor = GetComponent<EnemyMotor>();
             if (_perception == null) _perception = GetComponent<EnemyPerception>();
             if (_combat == null) _combat = GetComponent<EnemyAttackController>();
+            if (_defense == null) _defense = GetComponent<IEnemyDefenseState>();
             ResolveEncounter(); // Awake/OnEnable 未実行（動的生成）でも Threat/Encounter を解決する。
         }
 
@@ -157,6 +160,12 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             if (_combat != null && _combat.IsAttacking)
             {
                 _wasAttacking = true;
+                return;
+            }
+
+            // 防御行動中（ガード構え／回避）は移動・攻撃判断を防御制御へ委譲する（P3-10。§9）。
+            if (_defense != null && _defense.IsDefending)
+            {
                 return;
             }
 

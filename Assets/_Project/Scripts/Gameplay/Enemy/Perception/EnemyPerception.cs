@@ -140,6 +140,7 @@ namespace Momotaro.Gameplay.Enemy.Perception
         /// </summary>
         public void EvaluateOnce(float deltaTime)
         {
+            using var _perf = EnemyProfilerMarkers.Perception.Auto(); // P3-11：Perception 負荷計測。
             EnsureReady();
             if (!_ready || SensingPaused)
             {
