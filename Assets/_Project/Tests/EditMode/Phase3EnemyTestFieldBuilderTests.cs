@@ -25,13 +25,33 @@ namespace Momotaro.Tests.EditMode
         [OneTimeSetUp]
         public void OneTimeSetUp()
         {
-            // テストは Build/TearDown で NewSceneMode.Single により現在の Scene を置換するため、実行前に Editor の Scene 構成を退避する。
+            // 本テストは Build/TearDown で NewSceneMode.Single により現在の Scene を置換する。GetSceneManagerSetup/RestoreSceneManagerSetup は
+            // Scene の「構成（パス・ロード状態）」しか退避・復元せず、Scene 内の未保存編集そのものは戻せない。よって、開いている Scene に未保存
+            // （Dirty）または無題（path 空）のものが 1 つでもあれば、ユーザーの編集内容を失う恐れがあるためテストを実行しない（Ignore）。
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                Scene s = SceneManager.GetSceneAt(i);
+                if (s.isDirty || string.IsNullOrEmpty(s.path))
+                {
+                    Assert.Ignore(
+                        "Phase3 Scene生成テストは現在のSceneを置換するため、未保存または変更中のSceneがある場合は実行できません。"
+                        + "Sceneを保存してから再実行してください。（対象: " + (string.IsNullOrEmpty(s.path) ? "無題Scene" : s.path) + "）");
+                }
+            }
+
+            // ここに到達＝開いている Scene は全て保存済みかつ非 Dirty。構成を安全に退避できる。
             _originalSetup = EditorSceneManager.GetSceneManagerSetup();
         }
 
         [OneTimeTearDown]
         public void OneTimeTearDown()
         {
+            // Ignore で退避を取っていない場合（テスト未実行＝ユーザーの Scene は無傷）は、一切触らない。
+            if (_originalSetup == null)
+            {
+                return;
+            }
+
             // 一時 Scene を削除し、元の Scene 構成へ復元する（ユーザーが開いていた Scene を壊さない）。
             if (AssetDatabase.LoadAssetAtPath<SceneAsset>(TempPath) != null)
             {
