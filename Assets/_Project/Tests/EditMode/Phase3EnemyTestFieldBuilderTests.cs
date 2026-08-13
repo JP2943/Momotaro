@@ -20,14 +20,61 @@ namespace Momotaro.Tests.EditMode
     {
         private const string TempPath = "Assets/_Project/Scenes/Tests/__P3TmpEnemyTest__.unity";
 
+        private SceneSetup[] _originalSetup;
+
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
+        {
+            // テストは Build/TearDown で NewSceneMode.Single により現在の Scene を置換するため、実行前に Editor の Scene 構成を退避する。
+            _originalSetup = EditorSceneManager.GetSceneManagerSetup();
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
+        {
+            // 一時 Scene を削除し、元の Scene 構成へ復元する（ユーザーが開いていた Scene を壊さない）。
+            if (AssetDatabase.LoadAssetAtPath<SceneAsset>(TempPath) != null)
+            {
+                AssetDatabase.DeleteAsset(TempPath);
+            }
+
+            RestoreOriginalSetup();
+        }
+
         [TearDown]
         public void TearDown()
         {
-            // 開いている生成 Scene を空 Scene に置換してから一時アセットを削除する。
+            // 各テスト後：開いている生成 Scene を空 Scene に置換してから一時アセットを削除する（元 Scene の復元は OneTimeTearDown）。
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             if (AssetDatabase.LoadAssetAtPath<SceneAsset>(TempPath) != null)
             {
                 AssetDatabase.DeleteAsset(TempPath);
+            }
+        }
+
+        private void RestoreOriginalSetup()
+        {
+            // 保存済み Scene 構成のみ復元できる。未保存・無題 Scene を含む場合は復元不可のため、空 Scene のまま残す（安全側）。
+            bool restorable = _originalSetup != null && _originalSetup.Length > 0;
+            if (restorable)
+            {
+                for (int i = 0; i < _originalSetup.Length; i++)
+                {
+                    if (string.IsNullOrEmpty(_originalSetup[i].path))
+                    {
+                        restorable = false;
+                        break;
+                    }
+                }
+            }
+
+            if (restorable)
+            {
+                EditorSceneManager.RestoreSceneManagerSetup(_originalSetup);
+            }
+            else
+            {
+                EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             }
         }
 
