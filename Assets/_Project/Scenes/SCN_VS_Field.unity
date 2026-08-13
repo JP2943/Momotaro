@@ -858,6 +858,51 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 80a6643ff2a85962dbd5aa1a83cd4d29, type: 3}
+--- !u!1001 &800000340
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 3400000000000001, guid: 14a6ba1f93532ade50871f9734f81c5e, type: 3}
+      propertyPath: m_Name
+      value: PF_EnemyScenarioLauncher
+      objectReference: {fileID: 0}
+    - target: {fileID: 3400000000000002, guid: 14a6ba1f93532ade50871f9734f81c5e, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -5
+      objectReference: {fileID: 0}
+    - target: {fileID: 3400000000000002, guid: 14a6ba1f93532ade50871f9734f81c5e, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3400000000000002, guid: 14a6ba1f93532ade50871f9734f81c5e, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 3400000000000002, guid: 14a6ba1f93532ade50871f9734f81c5e, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3400000000000002, guid: 14a6ba1f93532ade50871f9734f81c5e, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3400000000000002, guid: 14a6ba1f93532ade50871f9734f81c5e, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3400000000000002, guid: 14a6ba1f93532ade50871f9734f81c5e, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 14a6ba1f93532ade50871f9734f81c5e, type: 3}
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -1630,3 +1675,4 @@ SceneRoots:
   - {fileID: 800000308}
   - {fileID: 800000320}
   - {fileID: 800000330}
+  - {fileID: 800000340}
