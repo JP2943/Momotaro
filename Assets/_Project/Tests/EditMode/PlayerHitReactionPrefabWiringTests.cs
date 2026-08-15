@@ -49,7 +49,9 @@ namespace Momotaro.Tests.EditMode
         public void HurtReaction_ResolvesFromRoot_AsInterface()
         {
             GameObject prefab = LoadPrefab();
-            var reaction = prefab.GetComponentInParent<IPlayerHurtReaction>();
+            // Prefab Asset はシーン非在籍で activeInHierarchy=false のため、includeInactive:true で解決する
+            // （実ゲームでは Player は在シーンで active のため既定解決で足りる。ここは接続の有無だけを検証する）。
+            var reaction = prefab.GetComponentInParent<IPlayerHurtReaction>(true);
             Assert.IsNotNull(reaction, "ルートから IPlayerHurtReaction を解決できる（実ゲームの解決経路と同じ）。");
         }
 

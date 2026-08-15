@@ -45,7 +45,9 @@ namespace Momotaro.Tests.EditMode
             var go = new GameObject("PlayerTarget");
             _spawned.Add(go);
             var defeat = go.AddComponent<FakeDefeatState>();
-            var binder = go.AddComponent<PerceptionTargetBinder>(); // 既定 faction=Player。OnEnable で Registry へ登録。
+            var binder = go.AddComponent<PerceptionTargetBinder>(); // 既定 faction=Player（=0）。
+            // EditMode では AddComponent で OnEnable が呼ばれない（PlayMode 限定）ため、実登録経路を模して明示登録する。
+            PerceptionTargetRegistry.Register(binder);
             return (binder, defeat);
         }
 
