@@ -48,6 +48,12 @@ namespace Momotaro.Gameplay.Player
         /// <summary>Hurt 硬直の残り秒（検証・HUD 用）。</summary>
         public float HurtRemaining => State.HurtRemaining;
 
+        /// <summary>硬直の設定秒（Runtime 確認・デバッグ・Prefab 接続テスト用）。</summary>
+        public float HurtSeconds => State.HurtSeconds;
+
+        /// <summary>被弾後無敵の設定秒（Runtime 確認・デバッグ・Prefab 接続テスト用）。</summary>
+        public float PostHitInvincibleSeconds => State.InvincibleSeconds;
+
         /// <inheritdoc />
         public void BeginHurt() => State.Begin();
 
