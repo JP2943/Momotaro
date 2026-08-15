@@ -229,8 +229,9 @@ namespace Momotaro.Gameplay.Player
             }
 
             // 無敵（ステップ I-frame 等）は最優先で命中を回避する（仕様書 §2/§10。無敵＞ガード＞JG＞被弾）。
+            // ただし Steppable=false の攻撃はステップ無敵を貫通し、回避できない（Phase3 P3-04。§6.3）。
             IEvadeState evade = ResolveEvadeState();
-            if (evade != null && evade.IsInvincible)
+            if (evade != null && evade.IsInvincible && hit.Steppable)
             {
                 Results.Publish(HitResult.Evade(hit.HitId, hit.Attacker, this));
                 return;

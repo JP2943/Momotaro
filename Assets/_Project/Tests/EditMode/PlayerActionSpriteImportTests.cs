@@ -88,7 +88,7 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void Pngs_Are128Square_WithSpecImporterSettings()
+        public void Pngs_Are192Square_WithSpecImporterSettings()
         {
             float expectedPpu = ExpectedPpu();
 
@@ -96,8 +96,8 @@ namespace Momotaro.Tests.EditMode
             {
                 var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
                 Assert.IsNotNull(tex, "テクスチャ読込失敗: " + path);
-                Assert.AreEqual(128, tex.width, "幅 128: " + path);
-                Assert.AreEqual(128, tex.height, "高さ 128: " + path);
+                Assert.AreEqual(192, tex.width, "幅 192: " + path);
+                Assert.AreEqual(192, tex.height, "高さ 192: " + path);
 
                 var ti = (TextureImporter)AssetImporter.GetAtPath(path);
                 Assert.IsNotNull(ti, "TextureImporter 取得失敗: " + path);

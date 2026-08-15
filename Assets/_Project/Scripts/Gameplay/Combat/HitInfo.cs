@@ -54,6 +54,12 @@ namespace Momotaro.Gameplay.Combat
         /// </summary>
         public float StunHpMultiplierOverride { get; }
 
+        /// <summary>
+        /// ステップ回避が可能か（Phase3 P3-04。§6.3）。true（既定）ならステップ無敵（I-frame）で回避できる。false の攻撃は
+        /// ステップ無敵中でも貫通する（ステップでは避けられない）。既存の命中は既定 true で従来どおり回避可能。
+        /// </summary>
+        public bool Steppable { get; }
+
         /// <summary>命中の同一性（多重ヒット防止のキー）。</summary>
         public HitId HitId { get; }
 
@@ -121,7 +127,11 @@ namespace Momotaro.Gameplay.Combat
         {
         }
 
-        /// <summary>すべての要素（必殺技用の防御一部無視・スタン倍率上書き含む）を指定して生成する。</summary>
+        /// <summary>
+        /// すべての要素（必殺技用の防御一部無視・スタン倍率上書き含む）を指定して生成する。ステップ回避可否は既定 true
+        /// （従来互換）。ステップ無敵を貫通する攻撃は <see cref="HitInfo(ICombatActor,IDamageable,Vector3,Vector3,HitDamage,float,float,bool,bool,bool,float,float,bool,HitId)"/>
+        /// を用いる。
+        /// </summary>
         public HitInfo(
             ICombatActor attacker,
             IDamageable target,
@@ -136,6 +146,30 @@ namespace Momotaro.Gameplay.Combat
             float defenseIgnoreRatio,
             float stunHpMultiplierOverride,
             HitId hitId)
+            : this(attacker, target, attackDirection, hitPoint, damage, guardStaminaDamage, justGuardPoiseDamage,
+                   guardable, justGuardable, isJustGuardCounter, defenseIgnoreRatio, stunHpMultiplierOverride,
+                   steppable: true, hitId)
+        {
+        }
+
+        /// <summary>
+        /// ステップ回避可否（<paramref name="steppable"/>）まで含めて指定して生成する最上位コンストラクタ（Phase3 P3-04）。
+        /// </summary>
+        public HitInfo(
+            ICombatActor attacker,
+            IDamageable target,
+            Vector3 attackDirection,
+            Vector3 hitPoint,
+            HitDamage damage,
+            float guardStaminaDamage,
+            float justGuardPoiseDamage,
+            bool guardable,
+            bool justGuardable,
+            bool isJustGuardCounter,
+            float defenseIgnoreRatio,
+            float stunHpMultiplierOverride,
+            bool steppable,
+            HitId hitId)
         {
             Attacker = attacker;
             Target = target;
@@ -149,6 +183,7 @@ namespace Momotaro.Gameplay.Combat
             IsJustGuardCounter = isJustGuardCounter;
             DefenseIgnoreRatio = defenseIgnoreRatio;
             StunHpMultiplierOverride = stunHpMultiplierOverride;
+            Steppable = steppable;
             HitId = hitId;
         }
     }

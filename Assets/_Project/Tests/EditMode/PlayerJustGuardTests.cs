@@ -182,7 +182,9 @@ namespace Momotaro.Tests.EditMode
 
             holder.ReceiveHit(JgHit(attacker, holder, -Vector3.forward)); // JG 反射
 
-            var poise = (PoiseState)GetField(attacker, "_poise");
+            // P3-01：CombatDummy の被弾状態は共通 Runtime（EnemyVitals）へ抽出済み。_vitals 経由で PoiseState を参照する。
+            var vitals = GetField(attacker, "_vitals");
+            var poise = (PoiseState)GetField(vitals, "_poise");
             Assert.AreEqual(4f, poise.RecoveryDelayRemaining, 1e-3f, "JG 由来の体幹ダメージは回復待機 4 秒。");
         }
 

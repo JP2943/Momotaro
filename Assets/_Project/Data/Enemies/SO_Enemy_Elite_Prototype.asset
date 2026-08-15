@@ -1,0 +1,55 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 68931492923bfeb8f7569a0e3c96646e, type: 3}
+  m_Name: SO_Enemy_Elite_Prototype
+  m_EditorClassIdentifier: Momotaro.Data::Momotaro.Data.Characters.EnemyArchetypeData
+  _id:
+    _value: enemy_elite_prototype
+  _displayName: Elite Prototype
+  _description: 
+  _version: 1
+  _debugNote: 
+  _maxHp: 200
+  _moveSpeed: 3
+  _attackPower: 60
+  _defense: 25
+  _role: 2
+  _poiseMax: 200
+  _poiseRecoveryDelaySeconds: 3
+  _poiseRecoveryRatioPerSecond: 0.08
+  _poiseDamageMultiplier: 1
+  _stunSeconds: 3
+  _flinchResistance: 100
+  _turnSpeedDegrees: 300
+  _stopDistance: 1.8
+  _pushWeight: 1.5
+  _viewAngleDegrees: 120
+  _viewDistance: 8
+  _alertViewDistance: 10
+  _backAwarenessRadius: 2
+  _fullRecognitionSeconds: 0.25
+  _loseSightSeconds: 3
+  _activityRadius: 15
+  _returnSpeed: 4
+  _returnWaitSeconds: 1
+  _postAttackWaitMin: 0.5
+  _postAttackWaitMax: 0.9
+  _attacks:
+  - {fileID: 11400000, guid: 17094a0ae6d852c2f9ffe7109ade0a3f, type: 2}
+  - {fileID: 11400000, guid: 89dfc2f7fbff8401f4ac502b6011196f, type: 2}
+  - {fileID: 11400000, guid: d6c58f98d34841417bd389e4bdc1e667, type: 2}
+  - {fileID: 11400000, guid: a6dc7ebb3f31e6bbc9c65c6aa646aae6, type: 2}
+  _canGuard: 0
+  _guardCooldownSeconds: 3
+  _canEvade: 0
+  _evadeCooldownSeconds: 4
+  _alwaysShowPoise: 1

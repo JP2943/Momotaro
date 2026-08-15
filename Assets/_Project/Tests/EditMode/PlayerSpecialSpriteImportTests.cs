@@ -8,10 +8,11 @@ using UnityEngine;
 namespace Momotaro.Tests.EditMode
 {
     /// <summary>
-    /// 必殺技仮スプライト受入：チャージ（4 方向×4＝16 枚）・必殺技本体（4 方向×7＝28 枚）の個別 PNG 計 44 枚と、
+    /// 必殺技仮スプライト受入：チャージ（4 方向×4＝16 枚・192px）・必殺技本体（4 方向×7＝28 枚・256px）の個別 PNG 計 44 枚と、
     /// 8 本の Animation Clip（Charge 4 本 Loop 有／Special Attack 4 本 Loop 無）の Import 設定・整合性を検証する。
-    /// フレームごとに PNG サイズが異なるため、Sprite Sheet 化せず Single mode・Custom Pivot・Full Rect で受け入れる。
-    /// 素材内容は pixel hash で固定せず、枚数・命名・設定・Clip 構成のみを検査する（Pivot の見た目は Editor で目視）。
+    /// 素材サイズ調整により各フレームは一律サイズ（トリミング前提の可変 Pivot／可変 PPU を廃止）。他モーションと同じ
+    /// Single mode・BottomCenter Pivot(0.5,0)・Full Rect・PPU100 へ統一する。素材内容は pixel hash で固定せず、
+    /// 枚数・命名・寸法・設定・Clip 構成のみを検査する。
     /// </summary>
     public sealed class PlayerSpecialSpriteImportTests
     {
@@ -19,15 +20,16 @@ namespace Momotaro.Tests.EditMode
             "Assets/_Project/Art/Characters/Player/Momotaro/Prototype/Sprites";
         private const string SpecialDir = SpritesDir + "/Special";
 
-        // 既存キャラクター素材（通常攻撃 1 段目・128px・PPU100）を身体サイズ基準の参照にする。
+        // 既存キャラクター素材（通常攻撃 1 段目・PPU100）を身体サイズ基準の参照にする。
         private const string PpuReferenceSprite = SpritesDir + "/Attack/Attack1/momotaro_attack1_down_01.png";
 
         private static readonly string[] Dirs = { "down", "left", "right", "up" };
         private static readonly string[] Caps = { "Down", "Left", "Right", "Up" };
 
-        // フレームごとに絵のピクセル寸法が異なるため、身体身長を既存 Idle に合わせて Charge/Attack で PPU を分ける。
-        private const float ChargePpu = 95f;
-        private const float AttackPpu = 253f;
+        // 一律サイズへ調整済み。他モーションと同じ PPU100・BottomCenter Pivot に統一する。
+        private const float SpecialPpu = 100f;
+        private const int ChargeSize = 192;
+        private const int AttackSize = 256;
 
         private static IEnumerable<string> ChargePngs()
         {
@@ -64,13 +66,18 @@ namespace Momotaro.Tests.EditMode
             }
         }
 
-        private static void AssertCommonImport(string path, float expectedPpu)
+        private static void AssertCommonImport(string path, int expectedSize)
         {
+            var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            Assert.IsNotNull(tex, "テクスチャ読込失敗: " + path);
+            Assert.AreEqual(expectedSize, tex.width, "幅: " + path);
+            Assert.AreEqual(expectedSize, tex.height, "高さ: " + path);
+
             var ti = (TextureImporter)AssetImporter.GetAtPath(path);
             Assert.IsNotNull(ti, "TextureImporter 取得失敗: " + path);
             Assert.AreEqual(TextureImporterType.Sprite, ti.textureType, "Texture Type Sprite: " + path);
             Assert.AreEqual(SpriteImportMode.Single, ti.spriteImportMode, "Sprite Mode Single（Sheet 化しない）: " + path);
-            Assert.AreEqual(expectedPpu, ti.spritePixelsPerUnit, "PPU: " + path);
+            Assert.AreEqual(SpecialPpu, ti.spritePixelsPerUnit, "PPU100（他モーションと統一）: " + path);
             Assert.AreEqual(FilterMode.Bilinear, ti.filterMode, "Filter Mode Bilinear: " + path);
             Assert.AreEqual(TextureImporterCompression.Uncompressed, ti.textureCompression, "Compression None: " + path);
             Assert.IsTrue(ti.alphaIsTransparency, "Alpha Is Transparency: " + path);
@@ -80,35 +87,36 @@ namespace Momotaro.Tests.EditMode
 
             var s = new TextureImporterSettings();
             ti.ReadTextureSettings(s);
-            Assert.AreEqual((int)SpriteAlignment.Custom, s.spriteAlignment, "Custom Pivot（足元基準）: " + path);
+            Assert.AreEqual((int)SpriteAlignment.BottomCenter, s.spriteAlignment, "BottomCenter Pivot（足元基準・他モーション統一）: " + path);
+            Assert.AreEqual(new Vector2(0.5f, 0f), s.spritePivot, "Pivot (0.5, 0): " + path);
             Assert.AreEqual(SpriteMeshType.FullRect, s.spriteMeshType, "Mesh Type Full Rect: " + path);
             Assert.IsFalse(s.spriteGenerateFallbackPhysicsShape, "Generate Physics Shape 無効: " + path);
         }
 
         [Test]
-        public void ChargePngs_SingleMode_CustomPivot_ChargePpu()
+        public void ChargePngs_SingleMode_BottomCenter_192_Ppu100()
         {
             foreach (string path in ChargePngs())
             {
-                AssertCommonImport(path, ChargePpu);
+                AssertCommonImport(path, ChargeSize);
             }
         }
 
         [Test]
-        public void AttackPngs_SingleMode_CustomPivot_AttackPpu()
+        public void AttackPngs_SingleMode_BottomCenter_256_Ppu100()
         {
             foreach (string path in AttackPngs())
             {
-                AssertCommonImport(path, AttackPpu);
+                AssertCommonImport(path, AttackSize);
             }
         }
 
         [Test]
-        public void Ppu_ChargeAndAttack_DifferAsDocumented_ReferenceUnchanged()
+        public void Ppu_UnifiedTo100_MatchingReference()
         {
             var refTi = (TextureImporter)AssetImporter.GetAtPath(PpuReferenceSprite);
-            Assert.AreEqual(100f, refTi.spritePixelsPerUnit, "既存 128px 素材は PPU100 のまま。");
-            Assert.AreNotEqual(ChargePpu, AttackPpu, "絵のピクセル寸法差により Charge/Attack で PPU を分ける。");
+            Assert.AreEqual(100f, refTi.spritePixelsPerUnit, "参照素材は PPU100。");
+            Assert.AreEqual(100f, SpecialPpu, "Special も PPU100 へ統一（Charge/Attack で分けない）。");
         }
 
         [Test]

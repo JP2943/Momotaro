@@ -2,9 +2,13 @@ using UnityEngine;
 
 namespace Momotaro.Data.Characters
 {
-    /// <summary>敵の基礎データ雛形（仕様書 6 章）。体幹値やボスフラグを持つ。</summary>
+    /// <summary>
+    /// 敵の基礎データ雛形（仕様書 6 章。Phase 0〜2 の検証用）。体幹値やボスフラグを持つ。Phase 3 の確定構造は
+    /// <see cref="EnemyArchetypeData"/> で、本型は段階移行のため残す。共通 Runtime（EnemyVitals）が同一経路で
+    /// 構築できるよう <see cref="IEnemyVitalsConfig"/> を実装する（数値プロパティは既存のものをそのまま公開）。
+    /// </summary>
     [CreateAssetMenu(fileName = "SO_Enemy_New", menuName = "Momotaro/Data/Character/Enemy Data", order = 2)]
-    public sealed class EnemyData : CharacterData
+    public sealed class EnemyData : CharacterData, IEnemyVitalsConfig
     {
         [Header("Enemy")]
         [SerializeField] private float _poiseMax = 100f;

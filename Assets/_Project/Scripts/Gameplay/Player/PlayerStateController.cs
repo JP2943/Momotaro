@@ -16,7 +16,7 @@ namespace Momotaro.Gameplay.Player
     /// 中断時 Hitbox 消去まで。HP/体幹/ひるみの実適用は対象外（対象側 <see cref="IDamageable"/> と後続 Task）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, ISpecialChargeCancel
+    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, ISpecialChargeCancel, IAttackThreatSource
     {
         [SerializeField] private PlayerMotor _motor;
         [SerializeField] private PlayerFacing _facing;
@@ -134,6 +134,22 @@ namespace Momotaro.Gameplay.Player
 
         /// <summary>必殺技（発動・後隙）実行中か。</summary>
         public bool IsSpecialAttacking => _specialAttackRemaining > 0f;
+
+        // ---- IAttackThreatSource（敵の防御 AI が観測する「危険の質」。入力ではなく現在の攻撃状態から公開する。P3-11/P3-10） ----
+        /// <summary>
+        /// 必殺技の「危険な期間」。判定（Active）中に加え、フル充填して発動待ちの終盤（観測可能な予兆）を含める。後隙（Recovery）は
+        /// 判定が無く危険でないため除外する（<see cref="IsSpecialAttacking"/> は Recovery も含むため危険判定には使わない）。
+        /// </summary>
+        private bool IsSpecialDanger => _specialActiveRemaining > 0f || (_special != null && _special.IsActive && _special.IsCharged);
+
+        /// <summary>攻撃中（通常コンボの Attack 状態、または必殺技の危険期間）＝観測可能な危険を出しているか（後隙は含めない）。</summary>
+        public bool IsThreateningAttack => (_machine != null && _machine.Current == PlayerState.Attack) || IsSpecialDanger;
+
+        /// <summary>ガード不能な危険か（必殺技＝防御一部無視。通常コンボはガード可能なので false。後隙は含めない）。</summary>
+        public bool IsUnblockableThreat => IsSpecialDanger;
+
+        /// <summary>攻撃方向（前方）。</summary>
+        public Vector3 ThreatForward => Forward;
 
         /// <summary>チャージ経過秒（HUD/検証用）。</summary>
         public float SpecialChargeElapsed => _special != null ? _special.Elapsed : 0f;
@@ -617,6 +633,9 @@ namespace Momotaro.Gameplay.Player
             }
 
             Vector3 center = transform.position + Forward * _hitboxForwardOffset + Vector3.up * _hitboxHeight;
+            // Physics.autoSyncTransforms=0 のため、Update 中の問い合わせ前に明示同期する。これが無いと移動中の
+            // 敵（動的 Rigidbody）が最後の物理ステップの古い位置で判定され、Hitbox が命中を取りこぼす。
+            Physics.SyncTransforms();
             int count = Physics.OverlapBoxNonAlloc(center, _hitboxHalfExtents, _overlapBuffer, Quaternion.identity, _targetMask, QueryTriggerInteraction.Collide);
             if (count == 0)
             {
@@ -812,6 +831,9 @@ namespace Momotaro.Gameplay.Player
             }
 
             Vector3 center = transform.position + Forward * _hitboxForwardOffset + Vector3.up * _hitboxHeight;
+            // Physics.autoSyncTransforms=0 のため、Update 中の問い合わせ前に明示同期する。これが無いと移動中の
+            // 敵（動的 Rigidbody）が最後の物理ステップの古い位置で判定され、Hitbox が命中を取りこぼす。
+            Physics.SyncTransforms();
             int count = Physics.OverlapBoxNonAlloc(center, _hitboxHalfExtents, _overlapBuffer, Quaternion.identity, _targetMask, QueryTriggerInteraction.Collide);
 
             if (count == 0)
