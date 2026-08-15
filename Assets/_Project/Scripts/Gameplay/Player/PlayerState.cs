@@ -38,5 +38,12 @@ namespace Momotaro.Gameplay.Player
 
         /// <summary>必殺技発動中（Phase2 P2-10）。チャージ解放後の攻撃・後隙。</summary>
         Special = 8,
+
+        /// <summary>
+        /// 被弾硬直（Phase3.5 P3.5-01）。実 HP ダメージを受けた結果の短い強制行動不能（既定 0.30 秒）。
+        /// 移動・攻撃・ガード・JG・ステップ・必殺技をすべて禁止する独立状態。優先度は GuardBreak より上・Defeated より下
+        /// （Defeated は P3.5-02 で追加）。被弾直前の Facing を保持し、攻撃者方向へ自動で振り向かない（仕様書 §3.1/§3.2/Table3）。
+        /// </summary>
+        Hurt = 9,
     }
 }

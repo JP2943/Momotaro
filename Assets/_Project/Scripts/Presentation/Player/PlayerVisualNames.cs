@@ -48,6 +48,11 @@ namespace Momotaro.Presentation.Player
                 case PlayerState.Special:
                     statePart = "SpecialAttack";
                     break;
+                case PlayerState.Hurt:
+                    // 被弾硬直（Phase3.5 P3.5-01）。4 方向 Hurt クリップ（AN_Player_Hurt_{Dir}）へ写像する。
+                    // 死亡（P3.5-02）は現 Facing の Hurt 最終 Frame 保持で流用するため、名前解決はここに集約する。
+                    statePart = "Hurt";
+                    break;
                 default:
                     statePart = "Idle";
                     break;

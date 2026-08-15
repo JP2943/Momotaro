@@ -78,6 +78,9 @@ namespace Momotaro.Gameplay.Player
         private HitId _currentSwing;
         private PlayerVitalsHolder _vitals;
         private bool _vitalsResolved;
+        private IPlayerHurtReaction _hurtReaction;
+        private bool _hurtReactionResolved;
+        private bool _wasHurt;
 
         /// <summary>現在の Gameplay 状態（Visual が参照する）。</summary>
         public PlayerState Current => _machine.Current;
@@ -189,6 +192,27 @@ namespace Momotaro.Gameplay.Player
             }
         }
 
+        private IPlayerHurtReaction ResolveHurtReaction()
+        {
+            if (!_hurtReactionResolved)
+            {
+                _hurtReaction = GetComponentInParent<IPlayerHurtReaction>();
+                _hurtReactionResolved = true;
+            }
+
+            return _hurtReaction;
+        }
+
+        /// <summary>被弾硬直（Hurt）中か。<see cref="PlayerHitReaction"/> が無ければ常に false。</summary>
+        private bool IsHurt
+        {
+            get
+            {
+                IPlayerHurtReaction r = ResolveHurtReaction();
+                return r != null && r.IsHurt;
+            }
+        }
+
         private void Awake()
         {
             EnsureRuntime();
@@ -200,6 +224,45 @@ namespace Momotaro.Gameplay.Player
         private void OnDisable()
         {
             ResetToNeutral();
+            _wasHurt = false;
+        }
+
+        /// <summary>
+        /// 被弾（Hurt）開始 Frame で、被弾中断の共通中立化を行う（Phase3.5 P3.5-01。仕様書 §2.3）。通常攻撃 Hitbox・Step 速度/無敵・
+        /// Guard/JG 受付・Special Charge/発動判定・入力 Buffer を同一経路で解除する。必殺技はスーパーアーマーを持たず、発動・後隙中でも
+        /// 中断する（§3.2）。<see cref="ResetToNeutral"/> と異なり <see cref="_input"/> の破棄や状態機械の Reset は行わない
+        /// （硬直終了後に入力状況へ自然復帰させるため）。被弾で必殺技は「要ボタン解除」ロックを立て、押しっぱなしで再チャージしない。
+        /// </summary>
+        private void NeutralizeForHurt()
+        {
+            _combo?.Interrupt();
+            _hitTracker.Clear();
+            _attackBuffer?.Clear();
+            _justGuard?.Reset();
+            _prevGuardHeld = false;
+            _step?.Reset();
+            _stepChainBuffered = false;
+
+            if (_special != null && _special.IsActive)
+            {
+                _special.Cancel();
+            }
+
+            _specialRequiresRelease = true;
+            _specialAttackRemaining = 0f;
+            _specialActiveRemaining = 0f;
+
+            if (_facing != null)
+            {
+                _facing.IsLocked = false;
+            }
+
+            if (_motor != null)
+            {
+                _motor.SpeedMultiplier = 1f;
+                _motor.MovementSuppressed = false;
+                _motor.StepVelocity = Vector3.zero;
+            }
         }
 
         /// <summary>状態・攻撃・ロック・移動抑制・先行入力を中立へ戻す（Disable 時）。</summary>
@@ -282,6 +345,43 @@ namespace Momotaro.Gameplay.Player
             {
                 _input = PlayerInputProvider.Current;
             }
+
+            // 被弾硬直（Hurt）：本 Task では最優先状態（Defeated は P3.5-02 で追加）。開始 Frame で全行動を中立化し、以後は
+            // 入力を破棄・移動を凍結・向きを保持して硬直終了まで維持する（仕様書 §2.3/§3.1/Table3）。
+            if (IsHurt)
+            {
+                if (!_wasHurt)
+                {
+                    NeutralizeForHurt();
+                }
+
+                _wasHurt = true;
+
+                if (_input != null)
+                {
+                    _input.ConsumeAttackPressed();
+                    _input.ConsumeStepPressed();
+                }
+
+                _attackBuffer?.Clear();
+
+                if (_motor != null)
+                {
+                    _motor.MovementSuppressed = true; // 硬直中は移動不能（踏み込み速度も 0）。
+                    _motor.StepVelocity = Vector3.zero;
+                    _motor.SpeedMultiplier = 1f;
+                }
+
+                if (_facing != null)
+                {
+                    _facing.IsLocked = true; // 被弾直前の向きを保持（攻撃者方向へ振り向かない）。
+                }
+
+                _machine.Tick(false, false, false, false, false, false, false, false, hurt: true);
+                return;
+            }
+
+            _wasHurt = false;
 
             // 状態優先度：ガードブレイク（行動不能）中は入力を無効化し、ガード・攻撃・移動・Buffer を受け付けない。
             // 状態機械へは guardBroken を最優先で渡し、独立状態 GuardBreak を表現する（仕様書 §3.2 / P2-07）。

@@ -36,6 +36,8 @@ namespace Momotaro.Gameplay.Player
         private bool _evadeStateResolved;
         private ISpecialChargeCancel _specialCancel;
         private bool _specialCancelResolved;
+        private IPlayerHurtReaction _hurtReaction;
+        private bool _hurtReactionResolved;
 
         /// <summary>生成された Runtime Vitals。data 未設定時は null。</summary>
         public PlayerVitals Vitals
@@ -201,6 +203,17 @@ namespace Momotaro.Gameplay.Player
             return _specialCancel;
         }
 
+        private IPlayerHurtReaction ResolveHurtReaction()
+        {
+            if (!_hurtReactionResolved)
+            {
+                _hurtReaction = GetComponentInParent<IPlayerHurtReaction>();
+                _hurtReactionResolved = true;
+            }
+
+            return _hurtReaction;
+        }
+
         /// <summary>
         /// ジャストガード成立時に攻撃者の体幹へ固定ダメージを反射する（Phase2 P2-08）。攻撃者が <see cref="IDamageable"/> の場合のみ、
         /// 体幹のみ（HP/ひるみ 0）・再ガード不可の逆方向 Hit を返す。攻撃者が存在しない/受け手でない場合は何もしない。
@@ -225,6 +238,15 @@ namespace Momotaro.Gameplay.Player
             EnsureVitals();
             if (_vitals == null)
             {
+                return;
+            }
+
+            // 被弾後無敵（Hurt 由来 I-frame。既定 0.50 秒）は、ステップ無敵より前に評価し、通常 Damage を種別に依らず無効化する
+            // （ガード不能・Steppable=false を含む。仕様書 §3.2 / Table3）。将来の明示的 InvincibilityBypass はここへ条件を足す拡張点。
+            IPlayerHurtReaction reaction = ResolveHurtReaction();
+            if (reaction != null && reaction.IsPostHitInvincible)
+            {
+                Results.Publish(HitResult.Evade(hit.HitId, hit.Attacker, this));
                 return;
             }
 
@@ -271,6 +293,16 @@ namespace Momotaro.Gameplay.Player
 
             // 通常被弾（実ダメージ）で必殺技チャージを中断する（Phase2 P2-10。仕様書 §3.6）。
             ResolveSpecialCancel()?.CancelSpecialChargeOnHit();
+
+            // 実 HP ダメージが 1 以上入り、かつ致死でない（HP 残 > 0）ときだけ Hurt を起動する（Phase3.5 P3.5-01。§3.1/§3.2）。
+            // Guard/JG/有効 Step は上で return 済みのため本経路に来ず、Hurt は発生しない。HP0（致死）は Hurt に入らず
+            // Defeated を最優先とする準備境界（Defeated 状態自体は P3.5-02 で追加。本 Task では Hurt を起動しないことで境界を担保）。
+            if (appliedHp >= 1 && _vitals.Health.Current > 0)
+            {
+                // GuardBreak 中の被弾でも Hurt へ遷移する。残存 Break 時間を破棄し、Hurt 終了後に GuardBreak へ戻さない（§3.3）。
+                _stamina?.ClearBreak();
+                reaction?.BeginHurt();
+            }
 
             // 実際に適用された HP のみ。体幹・ひるみは本 Task では未適用のため 0。
             var applied = new HitDamage(appliedHp, 0f, 0f);

@@ -59,11 +59,27 @@ namespace Momotaro.Gameplay.Player
         /// <summary>
         /// 必殺技（チャージ・発動）を含めて状態を更新する。優先度は
         /// ガードブレイク ＞ ステップ ＞ 必殺技発動 ＞ 必殺技チャージ ＞ 攻撃 ＞ ガード ＞ 移動/Idle（仕様書 §3 / §3.6）。
+        /// 被弾（Hurt）を含まない従来オーバーロード。<see cref="Tick(bool,bool,bool,bool,bool,bool,bool,bool,bool)"/> へ hurt:false で委譲する。
         /// </summary>
         public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken, bool stepping, bool charging, bool specialAttacking)
         {
+            Tick(enabled, isMoving, guarding, attacking, guardBroken, stepping, charging, specialAttacking, hurt: false);
+        }
+
+        /// <summary>
+        /// 被弾（<paramref name="hurt"/>）を含めて状態を更新する（Phase3.5 P3.5-01）。優先度は
+        /// 被弾 ＞ ガードブレイク ＞ ステップ ＞ 必殺技発動 ＞ 必殺技チャージ ＞ 攻撃 ＞ ガード ＞ 移動/Idle（仕様書 §3.1）。
+        /// Hurt は GuardBreak より上位で、GuardBreak 中の実ダメージでも Hurt へ割り込む（呼び出し側で残存 Break を破棄。§3.3）。
+        /// Defeated（最上位）は P3.5-02 で追加する。
+        /// </summary>
+        public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken, bool stepping, bool charging, bool specialAttacking, bool hurt)
+        {
             PlayerState next;
-            if (guardBroken)
+            if (hurt)
+            {
+                next = PlayerState.Hurt;
+            }
+            else if (guardBroken)
             {
                 next = PlayerState.GuardBreak;
             }
