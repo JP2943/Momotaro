@@ -30,12 +30,12 @@ namespace Momotaro.Tests.EditMode
         private static readonly string[] Directions = { "down", "left", "right", "up" };
         private static readonly string[] Caps = { "Down", "Left", "Right", "Up" };
 
-        // stage -> (frames, fps, size)
+        // stage -> (frames, fps, size)。素材サイズ調整により 3 段とも 192px へ統一（旧 1/2 段は 128px）。
         private static readonly Dictionary<int, (int frames, int fps, int size)> StageInfo =
             new Dictionary<int, (int, int, int)>
             {
-                { 1, (5, 12, 128) },
-                { 2, (5, 12, 128) },
+                { 1, (5, 12, 192) },
+                { 2, (5, 12, 192) },
                 { 3, (6, 10, 192) },
             };
 
