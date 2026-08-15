@@ -45,5 +45,12 @@ namespace Momotaro.Gameplay.Player
         /// （Defeated は P3.5-02 で追加）。被弾直前の Facing を保持し、攻撃者方向へ自動で振り向かない（仕様書 §3.1/§3.2/Table3）。
         /// </summary>
         Hurt = 9,
+
+        /// <summary>
+        /// 死亡（Phase3.5 P3.5-02）。HP が 0 に到達した結果の恒久的な行動不能。移動・Facing更新・攻撃・ガード・JG・ステップ・
+        /// 必殺技・入力 Buffer をすべて停止する最上位状態（Defeated &gt; Hurt &gt; GuardBreak &gt; ...）。復帰せず、Retry は Scene
+        /// 再読込で初期化する。仮表示は現在 Facing の Hurt 最終 Frame 保持＋低彩度（仕様書 §3.1/§4）。
+        /// </summary>
+        Defeated = 10,
     }
 }

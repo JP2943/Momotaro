@@ -81,6 +81,7 @@ namespace Momotaro.Gameplay.Player
         private IPlayerHurtReaction _hurtReaction;
         private bool _hurtReactionResolved;
         private bool _wasHurt;
+        private bool _wasDefeated;
 
         /// <summary>現在の Gameplay 状態（Visual が参照する）。</summary>
         public PlayerState Current => _machine.Current;
@@ -213,6 +214,16 @@ namespace Momotaro.Gameplay.Player
             }
         }
 
+        /// <summary>死亡（Defeated）確定済みか。Vitals（<see cref="PlayerVitalsHolder"/>）が無ければ常に false。</summary>
+        private bool IsDefeated
+        {
+            get
+            {
+                PlayerVitalsHolder v = ResolveVitals();
+                return v != null && v.IsDefeated;
+            }
+        }
+
         private void Awake()
         {
             EnsureRuntime();
@@ -225,6 +236,7 @@ namespace Momotaro.Gameplay.Player
         {
             ResetToNeutral();
             _wasHurt = false;
+            _wasDefeated = false;
         }
 
         /// <summary>
@@ -346,7 +358,42 @@ namespace Momotaro.Gameplay.Player
                 _input = PlayerInputProvider.Current;
             }
 
-            // 被弾硬直（Hurt）：本 Task では最優先状態（Defeated は P3.5-02 で追加）。開始 Frame で全行動を中立化し、以後は
+            // 死亡（Defeated）：最優先・恒久状態（Defeated > Hurt > ...）。確定 Frame で全行動を中立化し、以後は入力を破棄・
+            // 移動を凍結・Facing を保持したまま復帰しない（仕様書 §3.1/§4.1）。Retry は Scene 再読込で初期化する。
+            if (IsDefeated)
+            {
+                if (!_wasDefeated)
+                {
+                    NeutralizeForHurt(); // 攻撃/Step/Guard/JG/Special/入力 Buffer を同一経路で解除（被弾中断と共通）。
+                }
+
+                _wasDefeated = true;
+
+                if (_input != null)
+                {
+                    _input.ConsumeAttackPressed();
+                    _input.ConsumeStepPressed();
+                }
+
+                _attackBuffer?.Clear();
+
+                if (_motor != null)
+                {
+                    _motor.MovementSuppressed = true; // 移動停止（Facing 更新も止める）。
+                    _motor.StepVelocity = Vector3.zero;
+                    _motor.SpeedMultiplier = 1f;
+                }
+
+                if (_facing != null)
+                {
+                    _facing.IsLocked = true; // 死亡直前の向きを保持（Facing 更新停止）。
+                }
+
+                _machine.Tick(false, false, false, false, false, false, false, false, hurt: false, defeated: true);
+                return;
+            }
+
+            // 被弾硬直（Hurt）：Defeated 未確定時の最優先状態。開始 Frame で全行動を中立化し、以後は
             // 入力を破棄・移動を凍結・向きを保持して硬直終了まで維持する（仕様書 §2.3/§3.1/Table3）。
             if (IsHurt)
             {

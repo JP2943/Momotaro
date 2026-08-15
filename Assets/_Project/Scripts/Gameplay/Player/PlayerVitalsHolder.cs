@@ -22,10 +22,11 @@ namespace Momotaro.Gameplay.Player
     /// で進め、ガード中は停止する。表示・照会用に <see cref="PlayerVitals"/> の Stamina Vital を同期する。JG は対象外。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerVitalsHolder : MonoBehaviour, IDamageable
+    public sealed class PlayerVitalsHolder : MonoBehaviour, IDamageable, IPlayerDefeatState
     {
         [SerializeField] private PlayerData _data;
 
+        private bool _defeated;
         private PlayerVitals _vitals;
         private StaminaState _stamina;
         private IGuardState _guardState;
@@ -51,6 +52,13 @@ namespace Momotaro.Gameplay.Player
 
         /// <summary>被弾結果の通知チャネル（Dummy と同系統。HUD 等が購読）。</summary>
         public HitResultChannel Results { get; } = new HitResultChannel();
+
+        /// <summary>プレイヤー死亡（致死確定）の型付き通知チャネル（Phase3.5 P3.5-02。Session/HUD が購読。1 回性）。</summary>
+        public PlayerDefeatChannel Defeats { get; } = new PlayerDefeatChannel();
+
+        /// <inheritdoc />
+        /// <remarks>致死により死亡が確定したか。一度 true になったら復帰しない（Retry は Scene 再読込で初期化）。</remarks>
+        public bool IsDefeated => _defeated;
 
         /// <inheritdoc />
         public int DamageableId => GetInstanceID();
@@ -241,6 +249,13 @@ namespace Momotaro.Gameplay.Player
                 return;
             }
 
+            // 死亡後は追加被弾を一切受け付けない（HP・結果・敗北通知を重複発行しない。Hurtbox 無効化に相当。仕様書 §4.1）。
+            // 同一フレームの複数 Hit でも、致死を与えた最初の Hit 以降はここで即 return する。
+            if (_defeated)
+            {
+                return;
+            }
+
             // 被弾後無敵（Hurt 由来 I-frame。既定 0.50 秒）は、ステップ無敵より前に評価し、通常 Damage を種別に依らず無効化する
             // （ガード不能・Steppable=false を含む。仕様書 §3.2 / Table3）。将来の明示的 InvincibilityBypass はここへ条件を足す拡張点。
             IPlayerHurtReaction reaction = ResolveHurtReaction();
@@ -303,10 +318,28 @@ namespace Momotaro.Gameplay.Player
                 _stamina?.ClearBreak();
                 reaction?.BeginHurt();
             }
+            else if (_vitals.Health.Current <= 0)
+            {
+                // 致死（HP0 到達）：Hurt には入らず、同一命中解決内で一度だけ Defeated を確定・通知する（仕様書 §4.1）。
+                DefeatOnce();
+            }
 
-            // 実際に適用された HP のみ。体幹・ひるみは本 Task では未適用のため 0。
+            // 実際に適用された HP のみ。体幹・ひるみは本 Task では未適用のため 0。致死を与えた Hit 自体は Damage 結果を出す
+            // （撃破フィードバック用）。以後の追撃は上の _defeated ガードで結果・通知を出さない。
             var applied = new HitDamage(appliedHp, 0f, 0f);
             Results.Publish(HitResult.Damage(hit.HitId, hit.Attacker, this, applied));
+        }
+
+        /// <summary>致死を一度だけ確定し、型付き死亡通知を 1 回発行する（冪等）。接地 Collider は維持し、被弾無効化は ReceiveHit 先頭で担保。</summary>
+        private void DefeatOnce()
+        {
+            if (_defeated)
+            {
+                return;
+            }
+
+            _defeated = true;
+            Defeats.Publish(new PlayerDefeatedEvent(DamageableId, transform.position));
         }
     }
 }
