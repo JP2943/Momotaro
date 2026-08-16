@@ -32,8 +32,7 @@ namespace Momotaro.Presentation.Hud
 
         private bool _built;
         private float _locateTimer;
-        private bool _playerBound;
-        private bool _sessionBound;
+        private RectTransform _canvasRoot;
 
         private Bar _hpBar;
         private Bar _staminaBar;
@@ -67,7 +66,9 @@ namespace Momotaro.Presentation.Hud
 
         private void Update()
         {
-            if (!_playerBound || !_sessionBound)
+            // Player／Session／PlayerState のいずれかが未解決の間だけ低頻度で探索（毎フレーム FindObjects しない）。
+            // PlayerVitals だけ先に見つかっても、PlayerState を後から解決できるよう探索を継続する。
+            if (_player == null || _playerState == null || _session == null)
             {
                 _locateTimer += Time.unscaledDeltaTime;
                 if (_locateTimer >= _autoLocateInterval)
@@ -125,22 +126,22 @@ namespace Momotaro.Presentation.Hud
 
         private void TryBindFromFields()
         {
-            if (!_playerBound && _player != null)
+            if (_player != null)
             {
-                PlayerStateController state = _playerState;
+                // GuardBreak／Special のデリゲートは _player／_playerState フィールドを都度参照する。これにより
+                // PlayerVitals だけ先に Bind され、PlayerStateController が後から見つかった場合でも、再 Bind せずに
+                // Special Ready／Charging が反映される。同一 Vital 参照での再 Bind は VM 側で重複購読にならない。
                 _vm.BindPlayer(
                     _player.Vitals != null ? _player.Vitals.Health : null,
                     _player.Vitals != null ? _player.Vitals.Stamina : null,
                     () => _player != null && _player.IsGuardBroken,
-                    () => state != null && state.IsSpecialCharged,
-                    () => state != null && state.IsSpecialCharging);
-                _playerBound = true;
+                    () => _playerState != null && _playerState.IsSpecialCharged,
+                    () => _playerState != null && _playerState.IsSpecialCharging);
             }
 
-            if (!_sessionBound && _session != null)
+            if (_session != null)
             {
                 _vm.BindSession(_session);
-                _sessionBound = true;
             }
 
             RefreshVisuals();
@@ -158,27 +159,23 @@ namespace Momotaro.Presentation.Hud
 
             _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-            var canvas = GetComponent<Canvas>();
-            if (canvas == null)
-            {
-                canvas = gameObject.AddComponent<Canvas>();
-            }
+            // Canvas は RectTransform を必ず持つ専用の子 GameObject に載せる。CombatPlayHud 自体が通常 Transform の
+            // GameObject に追加されても安全（transform を RectTransform へキャストしないため InvalidCastException を起こさない）。
+            var canvasGo = new GameObject("HudCanvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
+            canvasGo.transform.SetParent(transform, false);
+            _canvasRoot = (RectTransform)canvasGo.transform;
 
+            var canvas = canvasGo.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 100; // Debug/敵頭上 Bar より前面。
 
-            var scaler = GetComponent<CanvasScaler>();
-            if (scaler == null)
-            {
-                scaler = gameObject.AddComponent<CanvasScaler>();
-            }
-
+            var scaler = canvasGo.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f); // 16:9 基準。
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 0.5f;
 
-            RectTransform root = (RectTransform)transform;
+            RectTransform root = _canvasRoot;
 
             // --- 左下：Player Vitals（敵頭上 Bar と重ならない画面端。Player 頭上 Bar は作らない） ---
             RectTransform vitals = NewRect("Vitals", root,

@@ -51,22 +51,33 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
+        public void PlainGameObject_EnsureBuilt_DoesNotThrow()
+        {
+            // 通常 Transform の GameObject に載っていても、transform を RectTransform へキャストせず
+            // 子 Canvas を生成するため InvalidCastException を出さない（回帰防止）。
+            CombatPlayHud hud = NewHud();
+            Assert.IsNull(hud.transform as RectTransform, "前提：ルートは通常 Transform。");
+            Assert.DoesNotThrow(() => hud.EnsureBuilt());
+        }
+
+        [Test]
         public void EnsureBuilt_CreatesScreenSpaceCanvas_With16By9Reference()
         {
             CombatPlayHud hud = NewHud();
             hud.EnsureBuilt();
 
-            var canvas = hud.GetComponent<Canvas>();
-            Assert.IsNotNull(canvas, "Canvas を構築する。");
+            var canvas = hud.GetComponentInChildren<Canvas>();
+            Assert.IsNotNull(canvas, "子に Canvas を構築する。");
             Assert.AreEqual(RenderMode.ScreenSpaceOverlay, canvas.renderMode);
+            Assert.IsNotNull(canvas.transform as RectTransform, "Canvas は RectTransform 上に載る。");
 
-            var scaler = hud.GetComponent<CanvasScaler>();
+            var scaler = hud.GetComponentInChildren<CanvasScaler>();
             Assert.IsNotNull(scaler, "CanvasScaler を構築する。");
             Assert.AreEqual(CanvasScaler.ScaleMode.ScaleWithScreenSize, scaler.uiScaleMode);
             Assert.AreEqual(1920f, scaler.referenceResolution.x, 0.01f, "16:9 基準 1920 幅。");
             Assert.AreEqual(1080f, scaler.referenceResolution.y, 0.01f);
 
-            Assert.Greater(hud.transform.childCount, 0, "表示要素を生成する。");
+            Assert.Greater(hud.transform.childCount, 0, "表示要素（子 Canvas）を生成する。");
         }
 
         [Test]
