@@ -13,7 +13,7 @@ namespace Momotaro.Gameplay.Enemy
     /// 認識・移動・敵攻撃は本 Task 対象外（EnemyBrain／Motor／CombatController が後続 Task で接続する）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class EnemyActor : MonoBehaviour, ICombatActor, IDamageable, ICombatActivityState, IKnockbackReceiver
+    public sealed class EnemyActor : MonoBehaviour, ICombatActor, IDamageable, ICombatActivityState, IKnockbackReceiver, IEnemyDefeatSource
     {
         [Tooltip("敵アーキタイプ Data（HP／防御／体幹／ひるみ／スタン等の数値と役割）。")]
         [SerializeField] private EnemyArchetypeData _archetype;
