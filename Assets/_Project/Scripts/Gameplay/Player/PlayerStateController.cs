@@ -16,7 +16,7 @@ namespace Momotaro.Gameplay.Player
     /// 中断時 Hitbox 消去まで。HP/体幹/ひるみの実適用は対象外（対象側 <see cref="IDamageable"/> と後続 Task）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, ISpecialChargeCancel, IAttackThreatSource
+    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, ISpecialChargeCancel, IAttackThreatSource, IAttackSwingSource
     {
         [SerializeField] private PlayerMotor _motor;
         [SerializeField] private PlayerFacing _facing;
@@ -88,6 +88,24 @@ namespace Momotaro.Gameplay.Player
 
         /// <summary>現在の攻撃段（1..3、非攻撃時は直近値）。Visual がクリップ選択に用いる。</summary>
         public int AttackStage { get; private set; } = 1;
+
+        // ---- IAttackSwingSource（近接攻撃 Active 区間の観測。剣閃VFX が参照。P3.5-05。読み取りのみ・挙動不変） ----
+
+        /// <inheritdoc />
+        public bool IsSwingHitboxActive => _combo != null && _combo.HitboxActive;
+
+        /// <inheritdoc />
+        public int SwingStage => _combo != null ? _combo.Stage : 0;
+
+        /// <inheritdoc />
+        /// <remarks><see cref="PollHitbox"/> と同一の中心式（前方オフセット＋高さ）。剣閃の表示位置に用いる。</remarks>
+        public Vector3 SwingCenter => transform.position + Forward * _hitboxForwardOffset + Vector3.up * _hitboxHeight;
+
+        /// <inheritdoc />
+        public Vector3 SwingHalfExtents => _hitboxHalfExtents;
+
+        /// <inheritdoc />
+        public Vector3 SwingForward => Forward;
 
         // ---- ICombatActor（攻撃者としての同定） ----
 
