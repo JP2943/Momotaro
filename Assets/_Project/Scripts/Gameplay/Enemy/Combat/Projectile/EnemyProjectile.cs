@@ -225,7 +225,17 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
         {
             _live = false;
             EnemyProjectileRegistry.Unregister(this); // 生存レジストリから即時に外す（Destroy は遅延するため同期で数を整合させる）。
-            Destroy(gameObject);
+
+            // Play 中は次フレーム破棄（Destroy）。EditMode テスト等の非 Play では即時破棄でないと
+            // 「Destroy may not be called from edit mode」で失敗するため DestroyImmediate を用いる。
+            if (Application.isPlaying)
+            {
+                Destroy(gameObject);
+            }
+            else
+            {
+                DestroyImmediate(gameObject);
+            }
         }
 
         private static bool IsGameplayActive()

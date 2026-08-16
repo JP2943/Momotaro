@@ -151,9 +151,10 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void Tracking_DoesNotFollow_DownLockedTarget()
+        public void Attack_CancelsWhenLockedTargetGoesDown()
         {
-            // 固定対象が Down（IsActive は true のまま）になったら、その位置を追尾せず現在方向を保持する（別対象へ急旋回しない。req1/4）。
+            // P3.5-02 受入修正：固定対象が Down（追尾不能）になったら進行中の攻撃を打ち切る（CancelAttack）。
+            // 別対象へ急旋回はせず（現在方向を保持）、照準対象の固定も解ける（IsAttacking=false／AttackTargetId=0）。
             var target = new FakeThreatTarget { ActorId = 7, Position = new Vector3(0, 0, 1.5f) };
             var c = MakeController(EnemyAimingMode.Tracking);
             Assert.IsTrue(c.TryStartAttack(target, target.Position, Vector3.zero));
@@ -161,10 +162,11 @@ namespace Momotaro.Tests.EditMode
 
             target.IsDown = true;                     // Down（EnemyThreatTable では即時無効化される）。
             target.Position = new Vector3(1.5f, 0, 0); // 真横へ移動
-            c.TickAttack(0.05f);                       // 追尾停止前だが、Down 対象は追尾しない。
+            c.TickAttack(0.05f);                       // Down 対象は追尾不能 → 攻撃を打ち切る。
 
-            Assert.Less(Vector3.Angle(aimAtStart, c.AimDirection), 1e-3f, "Down 対象の位置は Tracking しない（現在方向を保持）。");
-            Assert.AreEqual(target.ActorId, c.AttackTargetId, "照準対象の固定は攻撃終了まで維持（AttackTargetId 不変。req2）。");
+            Assert.Less(Vector3.Angle(aimAtStart, c.AimDirection), 1e-3f, "Down 対象の位置へ急旋回しない（現在方向を保持）。");
+            Assert.IsFalse(c.IsAttacking, "追尾不能になった対象への攻撃は打ち切られる。");
+            Assert.AreEqual(0, c.AttackTargetId, "打ち切りで照準対象の固定が解ける。");
         }
 
         [Test]

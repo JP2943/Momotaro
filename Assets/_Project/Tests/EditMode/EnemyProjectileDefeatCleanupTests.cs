@@ -83,7 +83,7 @@ namespace Momotaro.Tests.EditMode
 
             channel.Publish(new PlayerDefeatedEvent(1, Vector3.zero));
 
-            Assert.IsFalse(p.IsLive, "死亡通知で Projectile が消滅。");
+            Assert.IsTrue(p == null, "死亡通知で Projectile GameObject が破棄される。");
             Assert.AreEqual(0, EnemyProjectileRegistry.LiveCount, "レジストリから外れる。");
         }
 
@@ -99,9 +99,9 @@ namespace Momotaro.Tests.EditMode
             MakeBridge(channel);
             channel.Publish(new PlayerDefeatedEvent(1, Vector3.zero));
 
-            Assert.IsFalse(a.IsLive);
-            Assert.IsFalse(b.IsLive);
-            Assert.IsFalse(d.IsLive);
+            Assert.IsTrue(a == null);
+            Assert.IsTrue(b == null);
+            Assert.IsTrue(d == null);
             Assert.AreEqual(0, EnemyProjectileRegistry.LiveCount, "複数弾すべて Cleanup。");
         }
 
@@ -133,14 +133,15 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void DestroyedProjectile_UnregistersFromRegistry()
+        public void Cleanup_UnregistersFromRegistry()
         {
             var p = MakeProjectile();
             Assert.AreEqual(1, EnemyProjectileRegistry.LiveCount);
 
-            Object.DestroyImmediate(p.gameObject); // 破棄取りこぼしの Backstop（OnDestroy で解除）。
+            p.Cleanup(); // 生存レジストリから即時解除し GameObject を破棄する（同期でレジストリと整合）。
 
-            Assert.AreEqual(0, EnemyProjectileRegistry.LiveCount, "破棄でレジストリから外れ、参照を残さない。");
+            Assert.IsTrue(p == null, "Cleanup で GameObject が破棄される。");
+            Assert.AreEqual(0, EnemyProjectileRegistry.LiveCount, "Cleanup でレジストリから外れ、参照を残さない。");
         }
 
         [Test]
@@ -165,7 +166,7 @@ namespace Momotaro.Tests.EditMode
                 new HitDamage(1000f, 0f, 0f), true, true, HitId.Single(9))); // 致死
 
             Assert.IsTrue(holder.IsDefeated);
-            Assert.IsFalse(p.IsLive, "実プレイヤー死亡で残存 Projectile が消滅。");
+            Assert.IsTrue(p == null, "実プレイヤー死亡で残存 Projectile GameObject が破棄される。");
             Assert.AreEqual(0, EnemyProjectileRegistry.LiveCount);
         }
     }
