@@ -22,7 +22,7 @@ namespace Momotaro.Gameplay.Player
     /// で進め、ガード中は停止する。表示・照会用に <see cref="PlayerVitals"/> の Stamina Vital を同期する。JG は対象外。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerVitalsHolder : MonoBehaviour, IDamageable, IPlayerDefeatState
+    public sealed class PlayerVitalsHolder : MonoBehaviour, IDamageable, IPlayerDefeatState, IPlayerDefeatSource
     {
         [SerializeField] private PlayerData _data;
 

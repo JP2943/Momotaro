@@ -268,6 +268,13 @@ namespace Momotaro.Gameplay.Enemy.Combat
                 return false;
             }
 
+            // 対象喪失後は新規攻撃を開始しない（P3.5-02 受入修正。§4.1「新しい攻撃・追跡を開始しない」）。固定対象が非活動／Down なら不開始。
+            // 対象未指定（テスト用の対象なし攻撃）は従来どおり許可する。通常の探索は死亡プレイヤーを認識対象から外すため本経路には来ない。
+            if (target != null && (!target.IsActive || (target is IThreatTarget downTarget && downTarget.IsDown)))
+            {
+                return false;
+            }
+
             Vector3 targetPos = target != null && target.IsActive ? target.Position : fallbackTargetPos;
             Vector3 selfPos = _actor.WorldPosition;
             float distance = VisionCheck.PlanarDistance(selfPos, targetPos);
@@ -417,6 +424,16 @@ namespace Momotaro.Gameplay.Enemy.Combat
         {
             if (!_machine.IsAttacking)
             {
+                return;
+            }
+
+            // 対象喪失 Cleanup（P3.5-02 受入修正。§4.1）：開始時に固定した攻撃対象（_attackTarget）が非活動／Down になったら、
+            // 進行中攻撃を Prepare／Active／Recovery を問わず即座に安全終了する。既存 CancelAttack を再利用し、攻撃中断・Hitbox 無効化・
+            // _hitTracker クリア・Telegraph Cancel・Slot 解放・突進停止・_attackTarget 解除を同一経路で行う（別 Cleanup 経路を増やさない）。
+            // 対象未指定（テスト用の対象なし攻撃）は _attackTarget==null のため対象外。別対象へ途中で切り替えず、そのまま中断する。
+            if (_attackTarget != null && !IsAttackTargetTrackable())
+            {
+                CancelAttack();
                 return;
             }
 
