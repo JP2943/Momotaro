@@ -45,14 +45,14 @@ namespace Momotaro.Tests.EditMode
             return s;
         }
 
-        private PlayerSlashVfxPresenter.SlashFrameSet MakeFrameSet()
+        private PlayerSlashVfxPresenter.SlashFrameSet MakeFrameSet(string tag)
         {
             return new PlayerSlashVfxPresenter.SlashFrameSet
             {
-                down = new[] { MakeSprite("d0"), MakeSprite("d1"), MakeSprite("d2") },
-                up = new[] { MakeSprite("u0"), MakeSprite("u1"), MakeSprite("u2") },
-                left = new[] { MakeSprite("l0"), MakeSprite("l1"), MakeSprite("l2") },
-                right = new[] { MakeSprite("r0"), MakeSprite("r1"), MakeSprite("r2") },
+                down = new[] { MakeSprite("d0" + tag), MakeSprite("d1" + tag), MakeSprite("d2" + tag) },
+                up = new[] { MakeSprite("u0" + tag), MakeSprite("u1" + tag), MakeSprite("u2" + tag) },
+                left = new[] { MakeSprite("l0" + tag), MakeSprite("l1" + tag), MakeSprite("l2" + tag) },
+                right = new[] { MakeSprite("r0" + tag), MakeSprite("r1" + tag), MakeSprite("r2" + tag) },
             };
         }
 
@@ -63,7 +63,8 @@ namespace Momotaro.Tests.EditMode
             var p = go.AddComponent<PlayerSlashVfxPresenter>();
             if (assignFrames)
             {
-                p.Stage1Frames = MakeFrameSet();
+                p.Stage1Frames = MakeFrameSet("a");
+                p.Stage2Frames = MakeFrameSet("b");
             }
 
             p.SlashDuration = 0.12f;
@@ -97,7 +98,7 @@ namespace Momotaro.Tests.EditMode
             SlashVfxInstance inst = Playing(p.Pool);
             Assert.IsNotNull(inst);
             Assert.AreEqual(new Vector3(1f, 0.5f, 0f), inst.transform.position, "Hitbox 中心へ配置。");
-            Assert.AreEqual("r0", inst.CurrentSprite.name, "Right 方向の素材を選択。");
+            Assert.AreEqual("r0a", inst.CurrentSprite.name, "1段目・Right 方向の素材を選択。");
         }
 
         [Test]
@@ -130,7 +131,7 @@ namespace Momotaro.Tests.EditMode
             src.SwingForward = Vector3.forward; // +Z = Up
             src.IsSwingHitboxActive = true;
             p.Tick(0.01f);
-            Assert.AreEqual("u0", Playing(p.Pool).CurrentSprite.name, "Up=+Z。");
+            Assert.AreEqual("u0a", Playing(p.Pool).CurrentSprite.name, "Up=+Z。");
 
             // 判定終了→再度立ち上げ（Down）。
             src.IsSwingHitboxActive = false;
@@ -138,19 +139,33 @@ namespace Momotaro.Tests.EditMode
             src.SwingForward = Vector3.back; // -Z = Down
             src.IsSwingHitboxActive = true;
             p.Tick(0.01f);
-            Assert.AreEqual("d0", Playing(p.Pool).CurrentSprite.name, "Down=-Z。");
+            Assert.AreEqual("d0a", Playing(p.Pool).CurrentSprite.name, "Down=-Z。");
         }
 
         [Test]
-        public void Stage2_DoesNotSpawn_AssetsInProduction()
+        public void Stage2_SpawnsWithStage2Frames()
         {
             PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
             src.IsSwingHitboxActive = true;
-            src.SwingStage = 2; // 2 段目は素材制作中。
+            src.SwingStage = 2; // 2 段目（Slash_Small_B）。
+            src.SwingForward = Vector3.right;
 
             p.Tick(0.01f);
 
-            Assert.AreEqual(0, p.Pool.ActiveCount, "1 段目以外は表示しない。");
+            Assert.AreEqual(1, p.Pool.ActiveCount, "2 段目でも剣閃を表示する。");
+            Assert.AreEqual("r0b", Playing(p.Pool).CurrentSprite.name, "2 段目は 2 段目用素材を選択。");
+        }
+
+        [Test]
+        public void Stage3_DoesNotSpawn_AssetsInProduction()
+        {
+            PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
+            src.IsSwingHitboxActive = true;
+            src.SwingStage = 3; // 3 段目は素材制作中。
+
+            p.Tick(0.01f);
+
+            Assert.AreEqual(0, p.Pool.ActiveCount, "3 段目以降は表示しない。");
             Assert.AreEqual(0, p.Pool.TotalCount, "生成もしない。");
         }
 
