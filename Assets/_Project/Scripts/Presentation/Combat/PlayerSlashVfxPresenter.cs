@@ -10,7 +10,7 @@ namespace Momotaro.Presentation.Combat
     /// 汎用 Slash 素材（Slash_Small_A）をプール（<see cref="SlashVfxPool"/>）から生成する。命中の有無に依存せず「空振りでも」表示し、
     /// VFX には当たり判定・ダメージを持たせない（表示専用）。
     ///
-    /// 本 Task の範囲は「通常攻撃 1〜2 段目」まで（3 段目・必殺技・敵の剣閃は素材制作中のため未割当＝無処理）。
+    /// 本 Task の範囲は「通常攻撃 1〜3 段目」まで（必殺技・敵の剣閃は素材制作中のため未割当＝無処理）。
     /// Active 終了・攻撃中断・Disable・Scene 離脱で残留を残さない。Gameplay ロジックには一切干渉しない（読み取りのみ）。
     /// </summary>
     [DisallowMultipleComponent]
@@ -26,12 +26,15 @@ namespace Momotaro.Presentation.Combat
             public Sprite[] right;
         }
 
-        [Header("剣閃素材（1〜2 段目。3 段目以降・必殺技は素材制作中）")]
+        [Header("剣閃素材（1〜3 段目。必殺技・敵は素材制作中）")]
         [Tooltip("通常攻撃 1 段目（Slash_Small_A）。")]
         [SerializeField] private SlashFrameSet _stage1;
 
         [Tooltip("通常攻撃 2 段目（Slash_Small_B）。")]
         [SerializeField] private SlashFrameSet _stage2;
+
+        [Tooltip("通常攻撃 3 段目（Slash_Small_C）。")]
+        [SerializeField] private SlashFrameSet _stage3;
 
         [Tooltip("剣閃 1 発の表示時間（秒）。判定区間に概ね合わせる短め既定。")]
         [SerializeField] private float _slashDuration = 0.12f;
@@ -56,6 +59,9 @@ namespace Momotaro.Presentation.Combat
 
         /// <summary>2 段目の剣閃素材（Scene 構築 P3.5-06・テストが設定）。</summary>
         public SlashFrameSet Stage2Frames { get => _stage2; set => _stage2 = value; }
+
+        /// <summary>3 段目の剣閃素材（Scene 構築 P3.5-06・テストが設定）。</summary>
+        public SlashFrameSet Stage3Frames { get => _stage3; set => _stage3 = value; }
 
         /// <summary>剣閃 1 発の表示時間（秒）。</summary>
         public float SlashDuration { get => _slashDuration; set => _slashDuration = value; }
@@ -152,13 +158,14 @@ namespace Momotaro.Presentation.Combat
             _current.Play(frames, _source.SwingCenter, _slashDuration, _sortingOrder);
         }
 
-        /// <summary>段に対応する剣閃素材セット（1=Slash_Small_A, 2=Slash_Small_B）。3 段目以降・必殺技は未割当。</summary>
+        /// <summary>段に対応する剣閃素材セット（1=Slash_Small_A, 2=Slash_Small_B, 3=Slash_Small_C）。必殺技・敵は未割当。</summary>
         private SlashFrameSet FrameSetFor(int stage)
         {
             switch (stage)
             {
                 case 1: return _stage1;
                 case 2: return _stage2;
+                case 3: return _stage3;
                 default: return null;
             }
         }

@@ -65,6 +65,7 @@ namespace Momotaro.Tests.EditMode
             {
                 p.Stage1Frames = MakeFrameSet("a");
                 p.Stage2Frames = MakeFrameSet("b");
+                p.Stage3Frames = MakeFrameSet("c");
             }
 
             p.SlashDuration = 0.12f;
@@ -157,15 +158,29 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void Stage3_DoesNotSpawn_AssetsInProduction()
+        public void Stage3_SpawnsWithStage3Frames()
         {
             PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
             src.IsSwingHitboxActive = true;
-            src.SwingStage = 3; // 3 段目は素材制作中。
+            src.SwingStage = 3; // 3 段目（Slash_Small_C）。
+            src.SwingForward = Vector3.right;
 
             p.Tick(0.01f);
 
-            Assert.AreEqual(0, p.Pool.ActiveCount, "3 段目以降は表示しない。");
+            Assert.AreEqual(1, p.Pool.ActiveCount, "3 段目でも剣閃を表示する。");
+            Assert.AreEqual("r0c", Playing(p.Pool).CurrentSprite.name, "3 段目は 3 段目用素材を選択。");
+        }
+
+        [Test]
+        public void Stage4_DoesNotSpawn_AssetsInProduction()
+        {
+            PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
+            src.IsSwingHitboxActive = true;
+            src.SwingStage = 4; // 4 段目以降・必殺技は素材制作中／存在しない。
+
+            p.Tick(0.01f);
+
+            Assert.AreEqual(0, p.Pool.ActiveCount, "4 段目以降は表示しない。");
             Assert.AreEqual(0, p.Pool.TotalCount, "生成もしない。");
         }
 
