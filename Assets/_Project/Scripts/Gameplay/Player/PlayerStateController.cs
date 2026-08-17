@@ -92,10 +92,14 @@ namespace Momotaro.Gameplay.Player
         // ---- IAttackSwingSource（近接攻撃 Active 区間の観測。剣閃VFX が参照。P3.5-05。読み取りのみ・挙動不変） ----
 
         /// <inheritdoc />
-        public bool IsSwingHitboxActive => _combo != null && _combo.HitboxActive;
+        /// <remarks>通常コンボの判定区間に加え、必殺技の判定区間（<see cref="_specialActiveRemaining"/> &gt; 0）も含める。</remarks>
+        public bool IsSwingHitboxActive => (_combo != null && _combo.HitboxActive) || _specialActiveRemaining > 0f;
 
         /// <inheritdoc />
-        public int SwingStage => _combo != null ? _combo.Stage : 0;
+        /// <remarks>必殺技の判定区間中は <see cref="AttackSwing.SpecialStage"/> を返し、通常コンボ段（1..N）と区別する。</remarks>
+        public int SwingStage => _specialActiveRemaining > 0f
+            ? AttackSwing.SpecialStage
+            : (_combo != null ? _combo.Stage : 0);
 
         /// <inheritdoc />
         /// <remarks><see cref="PollHitbox"/> と同一の中心式（前方オフセット＋高さ）。剣閃の表示位置に用いる。</remarks>

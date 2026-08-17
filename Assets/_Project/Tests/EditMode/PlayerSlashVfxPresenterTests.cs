@@ -66,6 +66,7 @@ namespace Momotaro.Tests.EditMode
                 p.Stage1Frames = MakeFrameSet("a");
                 p.Stage2Frames = MakeFrameSet("b");
                 p.Stage3Frames = MakeFrameSet("c");
+                p.SpecialFrames = MakeFrameSet("s");
             }
 
             p.SlashDuration = 0.12f;
@@ -169,6 +170,20 @@ namespace Momotaro.Tests.EditMode
 
             Assert.AreEqual(1, p.Pool.ActiveCount, "3 段目でも剣閃を表示する。");
             Assert.AreEqual("r0c", Playing(p.Pool).CurrentSprite.name, "3 段目は 3 段目用素材を選択。");
+        }
+
+        [Test]
+        public void SpecialSwing_SpawnsWithSpecialFrames()
+        {
+            PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
+            src.IsSwingHitboxActive = true;
+            src.SwingStage = AttackSwing.SpecialStage; // 必殺技（Slash_Special_A）。
+            src.SwingForward = Vector3.right;
+
+            p.Tick(0.01f);
+
+            Assert.AreEqual(1, p.Pool.ActiveCount, "必殺技でも剣閃を表示する。");
+            Assert.AreEqual("r0s", Playing(p.Pool).CurrentSprite.name, "必殺技は必殺技用素材を選択。");
         }
 
         [Test]
