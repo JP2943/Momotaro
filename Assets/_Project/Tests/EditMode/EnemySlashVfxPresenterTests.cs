@@ -78,7 +78,7 @@ namespace Momotaro.Tests.EditMode
                 p.Entries = new[]
                 {
                     new EnemySlashVfxPresenter.EnemySlashEntry { key = "Small", normal = MakeFrameSet("s") },
-                    new EnemySlashVfxPresenter.EnemySlashEntry { key = "Medium", normal = MakeFrameSet("m") },
+                    new EnemySlashVfxPresenter.EnemySlashEntry { key = "Medium", normal = MakeFrameSet("m"), heavy = MakeFrameSet("mh") },
                 };
             }
 
@@ -183,12 +183,27 @@ namespace Momotaro.Tests.EditMode
         [Test]
         public void HeavyUnassigned_DoesNotSpawn()
         {
+            // Small タイプは強を未割当のため表示しない（未割当分類は無処理）。
             EnemySlashVfxPresenter p = NewPresenter();
             var src = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Small", SwingStage = AttackSwing.EnemyMeleeHeavy };
             p.Bind(new IAttackSwingSource[] { src });
 
             Assert.DoesNotThrow(() => p.Tick(0.01f));
-            Assert.AreEqual(0, p.Pool.ActiveCount, "強は素材未割当のため表示しない。");
+            Assert.AreEqual(0, p.Pool.ActiveCount, "Small は強を未割当のため表示しない。");
+        }
+
+        [Test]
+        public void HeavyAssigned_SpawnsHeavyFrames()
+        {
+            // Medium(侍骸骨)は強を割当済み（Slash_Enemy_Heavy_A 相当）→ 強攻撃で強用素材を表示する。
+            EnemySlashVfxPresenter p = NewPresenter();
+            var src = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Medium", SwingStage = AttackSwing.EnemyMeleeHeavy, SwingForward = Vector3.right };
+            p.Bind(new IAttackSwingSource[] { src });
+
+            p.Tick(0.01f);
+
+            Assert.AreEqual(1, p.Pool.ActiveCount, "強攻撃も割り当て済みなら表示する。");
+            Assert.AreEqual("r0mh", FirstPlaying(p.Pool).CurrentSprite.name, "強は強用素材を選択。");
         }
 
         [Test]
