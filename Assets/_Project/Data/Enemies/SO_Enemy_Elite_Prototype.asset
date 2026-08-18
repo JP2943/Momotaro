@@ -31,7 +31,7 @@ MonoBehaviour:
   _stunSeconds: 3
   _flinchResistance: 100
   _turnSpeedDegrees: 300
-  _stopDistance: 1.8
+  _stopDistance: 1.5
   _pushWeight: 1.5
   _viewAngleDegrees: 120
   _viewDistance: 8

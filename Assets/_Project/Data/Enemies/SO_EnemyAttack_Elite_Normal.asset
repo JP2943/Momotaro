@@ -45,7 +45,7 @@ MonoBehaviour:
   _predictSeconds: 0.3
   _trackingAngularSpeed: 180
   _hitboxHalfExtents: {x: 0.6, y: 0.5, z: 0.6}
-  _hitboxForwardOffset: 0.9
+  _hitboxForwardOffset: 0.55
   _hitboxHeight: 0.5
   _telegraph: 0
   _presentationId: 

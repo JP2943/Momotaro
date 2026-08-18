@@ -30,7 +30,7 @@ MonoBehaviour:
   _stunSeconds: 3
   _flinchResistance: 40
   _turnSpeedDegrees: 360
-  _stopDistance: 1.6
+  _stopDistance: 1.3
   _pushWeight: 1
   _viewAngleDegrees: 120
   _viewDistance: 8
