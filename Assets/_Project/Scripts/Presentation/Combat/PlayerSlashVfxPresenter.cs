@@ -25,6 +25,9 @@ namespace Momotaro.Presentation.Combat
             public Sprite[] up;
             public Sprite[] left;
             public Sprite[] right;
+
+            [Tooltip("この素材セットの再生時間（秒）。素材ごとに調整する。0 以下でも無限再生しない（安全に極小時間へ丸める）。")]
+            public float duration = 0.12f;
         }
 
         [Header("剣閃素材（通常1〜3段目＋必殺技。敵は素材制作中）")]
@@ -40,8 +43,9 @@ namespace Momotaro.Presentation.Combat
         [Tooltip("必殺技（Slash_Special_A）。")]
         [SerializeField] private SlashFrameSet _special;
 
-        [Tooltip("剣閃 1 発の表示時間（秒）。判定区間に概ね合わせる短め既定。")]
-        [SerializeField] private float _slashDuration = 0.12f;
+        [Header("色（Tint）")]
+        [Tooltip("主人公の剣閃に乗せる色。素材はほぼ白のため薄い寒色で「主人公らしさ」を付ける。")]
+        [SerializeField] private Color _playerSlashColor = new Color(0.85f, 0.95f, 1f, 1f);
 
         [Tooltip("剣閃スプライトの Sorting Order（敵頭上 Bar 等より前面）。")]
         [SerializeField] private int _sortingOrder = 50;
@@ -70,8 +74,8 @@ namespace Momotaro.Presentation.Combat
         /// <summary>必殺技の剣閃素材（Scene 構築 P3.5-06・テストが設定）。</summary>
         public SlashFrameSet SpecialFrames { get => _special; set => _special = value; }
 
-        /// <summary>剣閃 1 発の表示時間（秒）。</summary>
-        public float SlashDuration { get => _slashDuration; set => _slashDuration = value; }
+        /// <summary>主人公の剣閃色（Tint。Scene 構築 P3.5-06・テストが設定）。</summary>
+        public Color PlayerSlashColor { get => _playerSlashColor; set => _playerSlashColor = value; }
 
         /// <summary>プール（テスト・検証用）。</summary>
         public SlashVfxPool Pool => EnsurePool();
@@ -162,7 +166,7 @@ namespace Momotaro.Presentation.Combat
             }
 
             _current = EnsurePool().Get();
-            _current.Play(frames, _source.SwingCenter, _slashDuration, _sortingOrder);
+            _current.Play(frames, _source.SwingCenter, set.duration, _sortingOrder, _playerSlashColor);
         }
 
         /// <summary>段に対応する剣閃素材セット（1..3=通常コンボ Slash_Small_A/B/C, 必殺技=Slash_Special_A）。敵は未割当。</summary>

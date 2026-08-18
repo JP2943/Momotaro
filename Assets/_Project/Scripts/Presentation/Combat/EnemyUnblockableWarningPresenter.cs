@@ -25,6 +25,9 @@ namespace Momotaro.Presentation.Combat
         [Tooltip("予告コマのループ周期（秒）。")]
         [SerializeField] private float _loopSeconds = 0.4f;
 
+        [Tooltip("予告に乗せる色（Tint）。ガード不能予告は危険を伝える赤系が前提（既定 #FF3B30）。")]
+        [SerializeField] private Color _warningColor = new Color(1f, 0.23137255f, 0.1882353f, 1f);
+
         [Tooltip("予告スプライトの Sorting Order。")]
         [SerializeField] private int _sortingOrder = 60;
 
@@ -42,6 +45,9 @@ namespace Momotaro.Presentation.Combat
 
         /// <summary>予告素材（Scene 構築 P3.5-06・テストが設定）。</summary>
         public Sprite[] WarningFrames { get => _warningFrames; set => _warningFrames = value; }
+
+        /// <summary>予告色（Tint。ガード不能予告は赤系前提。Scene 構築 P3.5-06・テストが設定）。</summary>
+        public Color WarningColor { get => _warningColor; set => _warningColor = value; }
 
         /// <summary>現在表示中の予告数（テスト・検証用）。</summary>
         public int ActiveCount => _active.Count;
@@ -122,7 +128,7 @@ namespace Momotaro.Presentation.Combat
                     if (!_active.TryGetValue(src, out WarningVfxInstance w))
                     {
                         w = Acquire();
-                        w.Show(_warningFrames, pos, _sortingOrder, _loopSeconds);
+                        w.Show(_warningFrames, pos, _sortingOrder, _loopSeconds, _warningColor);
                         _active[src] = w;
                     }
                     else

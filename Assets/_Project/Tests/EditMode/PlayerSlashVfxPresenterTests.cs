@@ -69,7 +69,6 @@ namespace Momotaro.Tests.EditMode
                 p.SpecialFrames = MakeFrameSet("s");
             }
 
-            p.SlashDuration = 0.12f;
             src = new FakeSwing();
             p.Bind(src);
             return p;
@@ -252,6 +251,74 @@ namespace Momotaro.Tests.EditMode
 
             p.StopAll();
             Assert.AreEqual(0, p.Pool.ActiveCount, "Disable/Scene 離脱相当で全消灯。");
+        }
+
+        [Test]
+        public void Spawn_AppliesPlayerSlashColor_AsTint()
+        {
+            PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
+            var color = new Color(0.2f, 0.4f, 0.9f, 0.8f);
+            p.PlayerSlashColor = color;
+            src.IsSwingHitboxActive = true;
+
+            p.Tick(0.01f);
+
+            SlashVfxInstance inst = Playing(p.Pool);
+            Assert.IsNotNull(inst);
+            Assert.AreEqual(color, inst.CurrentColor, "主人公の剣閃色（Tint）をインスタンスへ適用する。");
+        }
+
+        [Test]
+        public void ReusedInstance_ResetsColor_NoResidualTint()
+        {
+            // 別色で 2 回発生させ、2 回目に前回色が残らない（再利用時に毎回色を設定する）ことを確認する。
+            PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
+            p.PlayerSlashColor = new Color(1f, 0f, 0f, 1f);
+            src.IsSwingHitboxActive = true;
+            p.Tick(0.01f);
+            p.Tick(0.2f); // 満了して完了→プールへ戻る。
+            src.IsSwingHitboxActive = false;
+            p.Tick(0.01f);
+
+            var second = new Color(0f, 1f, 0f, 1f);
+            p.PlayerSlashColor = second;
+            src.IsSwingHitboxActive = true;
+            p.Tick(0.01f);
+
+            Assert.AreEqual(1, p.Pool.TotalCount, "同じインスタンスを再利用。");
+            Assert.AreEqual(second, Playing(p.Pool).CurrentColor, "再利用時に前回色が残らない。");
+        }
+
+        [Test]
+        public void PerSetDuration_ControlsPlaybackLength()
+        {
+            // 段ごとに再生時間を変えられる：Stage1 を 0.3 秒に設定すると 0.12 秒では完了しない。
+            PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
+            p.Stage1Frames.duration = 0.3f;
+            src.IsSwingHitboxActive = true;
+            src.SwingStage = 1;
+            p.Tick(0.01f);
+            Assert.AreEqual(1, p.Pool.ActiveCount);
+
+            p.Tick(0.12f); // 既定(0.12)なら完了する時間。0.3 設定では継続。
+            Assert.AreEqual(1, p.Pool.ActiveCount, "素材セットごとの再生時間で長さを制御する。");
+
+            p.Tick(0.3f); // 0.13+0.3 > 0.3 → 完了。
+            Assert.AreEqual(0, p.Pool.ActiveCount, "設定時間の満了で完了する。");
+        }
+
+        [Test]
+        public void ZeroDuration_DoesNotPlayForever_NoException()
+        {
+            // Duration<=0 でも無限再生・例外にならない（極小時間へ丸めて 1 フレームで完了）。
+            PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
+            p.Stage1Frames.duration = 0f;
+            src.IsSwingHitboxActive = true;
+            src.SwingStage = 1;
+            p.Tick(0.01f);
+
+            Assert.DoesNotThrow(() => p.Tick(0.01f));
+            Assert.AreEqual(0, p.Pool.ActiveCount, "Duration<=0 は無限再生せず即完了する。");
         }
     }
 }

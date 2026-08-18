@@ -29,6 +29,9 @@ namespace Momotaro.Presentation.Combat
         /// <summary>現在表示中のコマ（テスト・検証用）。</summary>
         public Sprite CurrentSprite => _renderer != null ? _renderer.sprite : null;
 
+        /// <summary>現在の Tint 色（テスト・検証用）。</summary>
+        public Color CurrentColor => _renderer != null ? _renderer.color : Color.white;
+
         private SpriteRenderer EnsureRenderer()
         {
             if (_renderer == null)
@@ -43,8 +46,11 @@ namespace Momotaro.Presentation.Combat
             return _renderer;
         }
 
-        /// <summary>指定位置で 3 コマを <paramref name="duration"/> 秒かけて再生する。空フレームは即完了（asset 未割当でも安全）。</summary>
-        public void Play(Sprite[] frames, Vector3 worldPosition, float duration, int sortingOrder)
+        /// <summary>
+        /// 指定位置・色でコマを <paramref name="duration"/> 秒かけて再生する。空フレームは即完了（asset 未割当でも安全）。
+        /// 色はプール再利用時に前回値が残らないよう毎回必ず設定する。<paramref name="duration"/> が 0 以下でも無限再生しない。
+        /// </summary>
+        public void Play(Sprite[] frames, Vector3 worldPosition, float duration, int sortingOrder, Color color)
         {
             _frames = frames;
             _duration = duration <= 0f ? 0.0001f : duration;
@@ -54,6 +60,7 @@ namespace Momotaro.Presentation.Combat
             transform.position = worldPosition;
             SpriteRenderer r = EnsureRenderer();
             r.sortingOrder = sortingOrder;
+            r.color = color; // 再利用時に前回の色を残さない。
             r.enabled = _playing;
             if (_playing)
             {

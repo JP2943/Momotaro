@@ -27,6 +27,9 @@ namespace Momotaro.Presentation.Combat
             public Sprite[] up;
             public Sprite[] left;
             public Sprite[] right;
+
+            [Tooltip("この素材セットの再生時間（秒）。素材ごとに調整する。0 以下でも無限再生しない（安全に極小時間へ丸める）。")]
+            public float duration = 0.12f;
         }
 
         /// <summary>敵タイプ鍵ごとの剣閃素材（§7.2 通常／強／ガード不能）。鍵は <see cref="EnemyAttackController.SlashVfxKey"/> と一致させる。</summary>
@@ -38,13 +41,20 @@ namespace Momotaro.Presentation.Combat
             public SlashFrameSet normal;
             public SlashFrameSet heavy;
             public SlashFrameSet unblockable;
+
+            [Header("色（Tint。攻撃分類ごとに危険度が伝わる暖色系）")]
+            [Tooltip("通常攻撃の剣閃色（既定 #FF8055）。")]
+            public Color normalColor = new Color(1f, 0.5019608f, 0.33333334f, 1f);
+
+            [Tooltip("強攻撃の剣閃色（既定 #FF7045）。")]
+            public Color heavyColor = new Color(1f, 0.4392157f, 0.27058825f, 1f);
+
+            [Tooltip("ガード不能攻撃の剣閃色（既定 #FF453A）。")]
+            public Color unblockableColor = new Color(1f, 0.27058825f, 0.22745098f, 1f);
         }
 
         [Header("敵タイプ別の剣閃素材（鍵は EnemyAttackController.SlashVfxKey に一致。強/ガード不能は素材制作中）")]
         [SerializeField] private EnemySlashEntry[] _entries;
-
-        [Tooltip("剣閃 1 発の表示時間（秒）。")]
-        [SerializeField] private float _slashDuration = 0.12f;
 
         [Tooltip("剣閃スプライトの Sorting Order。")]
         [SerializeField] private int _sortingOrder = 45;
@@ -198,14 +208,15 @@ namespace Momotaro.Presentation.Combat
 
         private SlashVfxInstance SpawnSlash(IAttackSwingSource src)
         {
-            Sprite[] frames = FramesFor(FrameSetForSource(src), src.SwingForward);
+            SlashFrameSet set = FrameSetForSource(src);
+            Sprite[] frames = FramesFor(set, src.SwingForward);
             if (frames == null || frames.Length == 0)
             {
                 return null; // 未割当（素材制作中）：無処理で継続。
             }
 
             SlashVfxInstance inst = EnsurePool().Get();
-            inst.Play(frames, src.SwingCenter, _slashDuration, _sortingOrder);
+            inst.Play(frames, src.SwingCenter, set.duration, _sortingOrder, ColorForSource(src));
             return inst;
         }
 
@@ -224,6 +235,24 @@ namespace Momotaro.Presentation.Combat
                 case AttackSwing.EnemyMeleeHeavy: return entry.heavy;
                 case AttackSwing.EnemyMeleeUnblockable: return entry.unblockable;
                 default: return null; // 突進/投射は剣閃なし。
+            }
+        }
+
+        /// <summary>攻撃分類ごとの剣閃色（通常／強／ガード不能）。未登録は白（Tint なし）で安全側。</summary>
+        private Color ColorForSource(IAttackSwingSource src)
+        {
+            EnemySlashEntry entry = EntryFor(src);
+            if (entry == null)
+            {
+                return Color.white;
+            }
+
+            switch (src.SwingStage)
+            {
+                case AttackSwing.EnemyMeleeNormal: return entry.normalColor;
+                case AttackSwing.EnemyMeleeHeavy: return entry.heavyColor;
+                case AttackSwing.EnemyMeleeUnblockable: return entry.unblockableColor;
+                default: return Color.white;
             }
         }
 

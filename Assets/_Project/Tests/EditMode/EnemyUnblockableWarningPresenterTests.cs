@@ -188,5 +188,43 @@ namespace Momotaro.Tests.EditMode
             p.HideAll();
             Assert.AreEqual(0, p.ActiveCount);
         }
+
+        [Test]
+        public void Warning_AppliesWarningColor_AsTint()
+        {
+            EnemyUnblockableWarningPresenter p = NewPresenter();
+            var color = new Color(1f, 0.1f, 0.1f, 1f);
+            p.WarningColor = color;
+            var src = new FakeWarn { IsUnblockableTelegraphing = true };
+            p.Bind(new IEnemyUnblockableWarningSource[] { src });
+
+            p.Tick(0.01f);
+
+            WarningVfxInstance w = FirstShown(p);
+            Assert.IsNotNull(w);
+            Assert.AreEqual(color, w.CurrentColor, "予告色（赤系 Tint）を適用する。");
+        }
+
+        [Test]
+        public void ReusedWarning_ResetsColor_NoResidualTint()
+        {
+            EnemyUnblockableWarningPresenter p = NewPresenter();
+            var src = new FakeWarn { IsUnblockableTelegraphing = true };
+            p.Bind(new IEnemyUnblockableWarningSource[] { src });
+
+            p.WarningColor = new Color(1f, 0f, 0f, 1f);
+            p.Tick(0.01f);
+            src.IsUnblockableTelegraphing = false;
+            p.Tick(0.01f); // 隠してプールへ。
+            Assert.AreEqual(0, p.ActiveCount);
+
+            var second = new Color(1f, 0.5f, 0f, 1f);
+            p.WarningColor = second;
+            src.IsUnblockableTelegraphing = true;
+            p.Tick(0.01f);
+
+            Assert.AreEqual(1, p.TotalCount, "同じインスタンスを再利用。");
+            Assert.AreEqual(second, FirstShown(p).CurrentColor, "再利用時に前回色が残らない。");
+        }
     }
 }

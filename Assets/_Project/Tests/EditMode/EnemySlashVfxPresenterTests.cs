@@ -282,5 +282,72 @@ namespace Momotaro.Tests.EditMode
             p.StopAll();
             Assert.AreEqual(0, p.Pool.ActiveCount);
         }
+
+        [Test]
+        public void PerClassColors_AreAppliedAsTint()
+        {
+            // Medium は通常/強/ガード不能すべて割当済み。攻撃分類ごとに異なる色（Tint）を適用する。
+            var nColor = new Color(1f, 0.5f, 0.3f, 1f);
+            var hColor = new Color(1f, 0.4f, 0.2f, 1f);
+            var uColor = new Color(1f, 0.2f, 0.2f, 1f);
+            var go = new GameObject("EnemyPresenter");
+            _spawned.Add(go);
+            var p = go.AddComponent<EnemySlashVfxPresenter>();
+            p.Entries = new[]
+            {
+                new EnemySlashVfxPresenter.EnemySlashEntry
+                {
+                    key = "Medium",
+                    normal = MakeFrameSet("m"), heavy = MakeFrameSet("mh"), unblockable = MakeFrameSet("mu"),
+                    normalColor = nColor, heavyColor = hColor, unblockableColor = uColor,
+                },
+            };
+
+            var normal = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Medium", SwingStage = AttackSwing.EnemyMeleeNormal };
+            p.Bind(new IAttackSwingSource[] { normal });
+            p.Tick(0.01f);
+            Assert.AreEqual(nColor, FirstPlaying(p.Pool).CurrentColor, "通常攻撃は通常色。");
+
+            var heavy = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Medium", SwingStage = AttackSwing.EnemyMeleeHeavy };
+            p.Bind(new IAttackSwingSource[] { heavy });
+            p.Tick(0.01f);
+            Assert.AreEqual(hColor, FirstPlaying(p.Pool).CurrentColor, "強攻撃は強色。");
+
+            var unblockable = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Medium", SwingStage = AttackSwing.EnemyMeleeUnblockable };
+            p.Bind(new IAttackSwingSource[] { unblockable });
+            p.Tick(0.01f);
+            Assert.AreEqual(uColor, FirstPlaying(p.Pool).CurrentColor, "ガード不能攻撃はガード不能色。");
+        }
+
+        [Test]
+        public void PerSetDuration_ControlsPlaybackLength()
+        {
+            EnemySlashVfxPresenter p = NewPresenter();
+            // Small の通常セットを 0.3 秒に。0.12 秒では完了しない。
+            p.Entries[0].normal.duration = 0.3f;
+            var src = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Small" };
+            p.Bind(new IAttackSwingSource[] { src });
+            p.Tick(0.01f);
+            Assert.AreEqual(1, p.Pool.ActiveCount);
+
+            p.Tick(0.12f);
+            Assert.AreEqual(1, p.Pool.ActiveCount, "素材セットごとの再生時間で長さを制御する。");
+
+            p.Tick(0.3f);
+            Assert.AreEqual(0, p.Pool.ActiveCount, "設定時間の満了で完了する。");
+        }
+
+        [Test]
+        public void ZeroDuration_DoesNotPlayForever_NoException()
+        {
+            EnemySlashVfxPresenter p = NewPresenter();
+            p.Entries[0].normal.duration = 0f;
+            var src = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Small" };
+            p.Bind(new IAttackSwingSource[] { src });
+            p.Tick(0.01f);
+
+            Assert.DoesNotThrow(() => p.Tick(0.01f));
+            Assert.AreEqual(0, p.Pool.ActiveCount, "Duration<=0 は無限再生せず即完了する。");
+        }
     }
 }

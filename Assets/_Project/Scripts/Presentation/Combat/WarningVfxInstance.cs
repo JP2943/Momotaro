@@ -23,6 +23,9 @@ namespace Momotaro.Presentation.Combat
         /// <summary>現在表示中のコマ（テスト・検証用）。</summary>
         public Sprite CurrentSprite => _renderer != null ? _renderer.sprite : null;
 
+        /// <summary>現在の Tint 色（テスト・検証用）。</summary>
+        public Color CurrentColor => _renderer != null ? _renderer.color : Color.white;
+
         private SpriteRenderer EnsureRenderer()
         {
             if (_renderer == null)
@@ -37,8 +40,11 @@ namespace Momotaro.Presentation.Combat
             return _renderer;
         }
 
-        /// <summary>指定位置で予告のループ再生を開始する。空フレームは表示しない（asset 未割当でも安全）。</summary>
-        public void Show(Sprite[] frames, Vector3 worldPosition, int sortingOrder, float loopSeconds)
+        /// <summary>
+        /// 指定位置・色で予告のループ再生を開始する。空フレームは表示しない（asset 未割当でも安全）。
+        /// 色は再利用時に前回値が残らないよう毎回必ず設定する（ガード不能予告は赤系 Tint 前提）。
+        /// </summary>
+        public void Show(Sprite[] frames, Vector3 worldPosition, int sortingOrder, float loopSeconds, Color color)
         {
             _frames = frames;
             _loopSeconds = loopSeconds <= 0f ? 0.4f : loopSeconds;
@@ -48,6 +54,7 @@ namespace Momotaro.Presentation.Combat
             transform.position = worldPosition;
             SpriteRenderer r = EnsureRenderer();
             r.sortingOrder = sortingOrder;
+            r.color = color; // 再利用時に前回の色を残さない。
             r.enabled = _shown;
             if (_shown)
             {
