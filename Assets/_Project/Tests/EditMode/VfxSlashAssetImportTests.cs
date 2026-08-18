@@ -18,19 +18,21 @@ namespace Momotaro.Tests.EditMode
         private static readonly string[] Dirs = { "Down", "Left", "Right", "Up" };
 
         /// <summary>方向別 VFX セット（フォルダ名・ファイル接頭辞・1 方向あたりのコマ数）。</summary>
+        // P3.5-06：素材はネスト構造（Slash/Player/<段>, Slash/Enemy/<鍵>/<分類>, Warning/Enemy/<鍵>/<分類>）へ再編。
+        // ファイル接頭辞（prefix）は据え置き（フォルダのみ移動）のため、sub のみ新パスへ更新する。
         private static readonly (string sub, string prefix, int perDir)[] Directional =
         {
-            ("Slash/Slash_Small_A", "slash_small_a", 3),
-            ("Slash/Slash_Small_B", "slash_small_b", 3),
-            ("Slash/Slash_Small_C", "slash_small_c", 4),
-            ("Slash/Slash_Special_A", "slash_special_a", 5),
-            ("Slash/Slash_Enemy_Small_A", "slash_enemy_small_a", 3),
-            ("Slash/Slash_Enemy_Medium_A", "slash_enemy_medium_a", 3),
-            ("Slash/Slash_Enemy_Heavy_A", "slash_enemy_heavy_a", 4),
-            ("Thrust/Thrust_Enemy_Unguardable_A", "thrust_enemy_unguardable_a", 4),
+            ("Slash/Player/Combo1", "slash_small_a", 3),
+            ("Slash/Player/Combo2", "slash_small_b", 3),
+            ("Slash/Player/Combo3", "slash_small_c", 4),
+            ("Slash/Player/Special", "slash_special_a", 5),
+            ("Slash/Enemy/Small/Normal", "slash_enemy_small_a", 3),
+            ("Slash/Enemy/Medium/Normal", "slash_enemy_medium_a", 3),
+            ("Slash/Enemy/Medium/Heavy", "slash_enemy_heavy_a", 4),
+            ("Slash/Enemy/Medium/Unblockable", "thrust_enemy_unguardable_a", 4),
         };
 
-        private const string WarningSub = "Warning/Warning_Enemy_Unguardable_A";
+        private const string WarningSub = "Warning/Enemy/Medium/Unblockable";
         private const string WarningPrefix = "warning_enemy_unguardable_a";
         private const int WarningFrames = 4;
 
