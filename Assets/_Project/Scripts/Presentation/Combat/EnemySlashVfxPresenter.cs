@@ -10,8 +10,9 @@ namespace Momotaro.Presentation.Combat
     /// 同時に存在するため、Scene 内の <see cref="EnemyAttackController"/>（＝<see cref="IAttackSwingSource"/>）を低頻度で探索し、
     /// 個々の判定（Active）区間の立ち上がりを検出して、共有プール（<see cref="SlashVfxPool"/>）から剣閃を生成する。
     ///
-    /// §7.2 の識別：通常／強／ガード不能を段値（<see cref="AttackSwing.EnemyMeleeNormal"/> 等）で受け取り、割り当て済みの
-    /// 種別のみ表示する（当面は通常＝Slash_Enemy_Small_A のみ。強・ガード不能は素材制作中＝未割当・無処理）。突進・投射は剣閃を出さない。
+    /// §7.2 の識別：敵タイプ鍵（<see cref="IEnemySlashVisual.SlashVfxKey"/>。近接骸骨=Small／侍骸骨=Medium 等）と攻撃分類
+    /// （通常／強／ガード不能）の両方で剣閃素材を引き当てる。割り当て済みの組み合わせのみ表示する（当面は各タイプの通常＝
+    /// Slash_Enemy_Small_A／Medium_A。強・ガード不能は素材制作中＝未割当・無処理）。突進・投射は剣閃を出さない。
     /// VFX は表示専用（Collider・ダメージ無し）。命中の有無に依存せず空振りでも表示し、Active 終了・撃破・Disable・Scene 離脱で残さない。
     /// Gameplay ロジックには一切干渉しない（読み取りのみ）。
     /// </summary>
@@ -28,15 +29,19 @@ namespace Momotaro.Presentation.Combat
             public Sprite[] right;
         }
 
-        [Header("敵剣閃素材（近接骸骨=通常。強・ガード不能は素材制作中）")]
-        [Tooltip("通常（§7.2 通常。Slash_Enemy_Small_A）。")]
-        [SerializeField] private SlashFrameSet _normal;
+        /// <summary>敵タイプ鍵ごとの剣閃素材（§7.2 通常／強／ガード不能）。鍵は <see cref="EnemyAttackController.SlashVfxKey"/> と一致させる。</summary>
+        [System.Serializable]
+        public sealed class EnemySlashEntry
+        {
+            [Tooltip("敵タイプ鍵（例：Small=近接骸骨／Medium=侍骸骨）。EnemyAttackController.SlashVfxKey と一致させる。")]
+            public string key = "Small";
+            public SlashFrameSet normal;
+            public SlashFrameSet heavy;
+            public SlashFrameSet unblockable;
+        }
 
-        [Tooltip("強（§7.2 強。素材制作中）。")]
-        [SerializeField] private SlashFrameSet _heavy;
-
-        [Tooltip("ガード不能（§7.2 ガード不能。素材制作中）。")]
-        [SerializeField] private SlashFrameSet _unblockable;
+        [Header("敵タイプ別の剣閃素材（鍵は EnemyAttackController.SlashVfxKey に一致。強/ガード不能は素材制作中）")]
+        [SerializeField] private EnemySlashEntry[] _entries;
 
         [Tooltip("剣閃 1 発の表示時間（秒）。")]
         [SerializeField] private float _slashDuration = 0.12f;
@@ -60,8 +65,8 @@ namespace Momotaro.Presentation.Combat
         private readonly List<IAttackSwingSource> _scratch = new List<IAttackSwingSource>();
         private float _rescanTimer;
 
-        /// <summary>通常の敵剣閃素材（Scene 構築 P3.5-06・テストが設定）。</summary>
-        public SlashFrameSet NormalFrames { get => _normal; set => _normal = value; }
+        /// <summary>敵タイプ別の剣閃素材テーブル（Scene 構築 P3.5-06・テストが設定）。</summary>
+        public EnemySlashEntry[] Entries { get => _entries; set => _entries = value; }
 
         /// <summary>プール（テスト・検証用）。</summary>
         public SlashVfxPool Pool => EnsurePool();
@@ -164,7 +169,7 @@ namespace Momotaro.Presentation.Combat
                     t.Current = null;
                 }
 
-                bool active = src.IsSwingHitboxActive && FrameSetFor(src.SwingStage) != null;
+                bool active = src.IsSwingHitboxActive && FrameSetForSource(src) != null;
 
                 if (active && !t.WasActive)
                 {
@@ -193,7 +198,7 @@ namespace Momotaro.Presentation.Combat
 
         private SlashVfxInstance SpawnSlash(IAttackSwingSource src)
         {
-            Sprite[] frames = FramesFor(FrameSetFor(src.SwingStage), src.SwingForward);
+            Sprite[] frames = FramesFor(FrameSetForSource(src), src.SwingForward);
             if (frames == null || frames.Length == 0)
             {
                 return null; // 未割当（素材制作中）：無処理で継続。
@@ -204,15 +209,46 @@ namespace Momotaro.Presentation.Combat
             return inst;
         }
 
-        private SlashFrameSet FrameSetFor(int stage)
+        /// <summary>観測元の敵タイプ鍵（<see cref="IEnemySlashVisual"/>）と攻撃分類から剣閃素材を引き当てる。未登録・未割当は null。</summary>
+        private SlashFrameSet FrameSetForSource(IAttackSwingSource src)
         {
-            switch (stage)
+            EnemySlashEntry entry = EntryFor(src);
+            if (entry == null)
             {
-                case AttackSwing.EnemyMeleeNormal: return _normal;
-                case AttackSwing.EnemyMeleeHeavy: return _heavy;
-                case AttackSwing.EnemyMeleeUnblockable: return _unblockable;
-                default: return null;
+                return null;
             }
+
+            switch (src.SwingStage)
+            {
+                case AttackSwing.EnemyMeleeNormal: return entry.normal;
+                case AttackSwing.EnemyMeleeHeavy: return entry.heavy;
+                case AttackSwing.EnemyMeleeUnblockable: return entry.unblockable;
+                default: return null; // 突進/投射は剣閃なし。
+            }
+        }
+
+        private EnemySlashEntry EntryFor(IAttackSwingSource src)
+        {
+            if (_entries == null)
+            {
+                return null;
+            }
+
+            string key = (src as IEnemySlashVisual)?.SlashVfxKey;
+            if (string.IsNullOrEmpty(key))
+            {
+                return null;
+            }
+
+            for (int i = 0; i < _entries.Length; i++)
+            {
+                if (_entries[i] != null && _entries[i].key == key)
+                {
+                    return _entries[i];
+                }
+            }
+
+            return null; // 未登録の敵タイプは無処理。
         }
 
         private Sprite[] FramesFor(SlashFrameSet set, Vector3 forward)

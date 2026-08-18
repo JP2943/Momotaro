@@ -22,10 +22,13 @@ namespace Momotaro.Gameplay.Enemy.Combat
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(EnemyActor))]
-    public sealed class EnemyAttackController : MonoBehaviour, ISlotOwner, IEnemyDefeatCleanup, IAttackSwingSource
+    public sealed class EnemyAttackController : MonoBehaviour, ISlotOwner, IEnemyDefeatCleanup, IAttackSwingSource, IEnemySlashVisual
     {
         [Tooltip("同点時の tie-break 乱数シード（0 で TickCount。EditMode 再現用に固定可）。")]
         [SerializeField] private int _seed;
+
+        [Tooltip("敵剣閃VFXの素材選択に用いる敵タイプ鍵（近接骸骨=Small／侍骸骨=Medium 等。P3.5-05）。")]
+        [SerializeField] private string _slashVfxKey = "Small";
 
         [Tooltip("Hitbox の対象レイヤー（既定は全レイヤー。IDamageable と Faction で絞る）。")]
         [SerializeField] private LayerMask _targetMask = ~0;
@@ -119,6 +122,10 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
         /// <inheritdoc />
         public Vector3 SwingForward => _aimDir;
+
+        /// <inheritdoc />
+        /// <remarks>§7.2 の敵タイプ鍵（Small/Medium 等）。Presentation が剣閃素材テーブルの引き当てに用いる。</remarks>
+        public string SlashVfxKey => _slashVfxKey;
 
         /// <summary>攻撃中に固定された照準対象の ActorId（無ければ 0。req8 検証用）。攻撃終了まで変わらない。</summary>
         public int AttackTargetId => _attackTarget != null ? _attackTarget.ActorId : 0;

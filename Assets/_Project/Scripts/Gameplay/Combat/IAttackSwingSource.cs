@@ -40,4 +40,15 @@ namespace Momotaro.Gameplay.Combat
         /// <summary>攻撃前方（XZ）。剣閃の 4 方向選択に用いる。</summary>
         Vector3 SwingForward { get; }
     }
+
+    /// <summary>
+    /// 敵剣閃 VFX の素材選択に用いる、敵タイプ（見た目の大きさ・種別）の識別鍵（Phase3.5 P3.5-05）。§7.2 の敵タイプ
+    /// （近接骸骨＝Small／侍骸骨＝Medium 等）ごとに専用の剣閃素材を割り当てるため、Presentation が観測元から鍵を取得する。
+    /// <see cref="IAttackSwingSource"/> を実装する敵が併せて実装する（プレイヤーは実装しない）。
+    /// </summary>
+    public interface IEnemySlashVisual
+    {
+        /// <summary>敵タイプ鍵（例："Small"／"Medium"）。Presentation の剣閃素材テーブルの引き当てに用いる。</summary>
+        string SlashVfxKey { get; }
+    }
 }
