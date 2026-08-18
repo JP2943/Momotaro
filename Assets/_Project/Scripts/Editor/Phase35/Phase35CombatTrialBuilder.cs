@@ -23,8 +23,9 @@ namespace Momotaro.Editor.Phase35
     /// CombatFeedback( Dispatcher + HitStop/Flash/CameraShake/SE + CombatFeedbackPresenter + EnemyDefeatFade ),
     /// CombatVFX( PlayerSlashVfx + EnemySlashVfx + UnblockableWarning ) }。斬撃/警告素材は規約パスから割り当てる。
     ///
-    /// 失敗方針：必要 Prefab（Player/近接/遠距離/強敵）が欠ける場合は Scene に一切触れず失敗する。VFX 素材が欠けるフォルダは空割当（無表示・安全）
-    /// とし、欠落一覧を Message/警告ログへ出す（黙って握り潰さない）。Pause 系は本 Phase 未実装のため HitStop の PausedQuery は未接続（将来接続）。
+    /// 失敗方針（完成 VFX 前提）：必要 Prefab（Player/近接/遠距離/強敵）が欠ける場合、および斬撃/警告素材が方向ごとの期待枚数と一致しない
+    /// （欠け・過不足・フォルダ不在）場合は、Scene に一切触れず失敗する（具体パス＋実枚数を Message に列挙）。壊れた Scene を保存しない。
+    /// Pause 系は本 Phase 未実装のため HitStop の PausedQuery は未接続（将来接続）。
     /// </summary>
     public static class Phase35CombatTrialBuilder
     {
@@ -39,6 +40,21 @@ namespace Momotaro.Editor.Phase35
         private const string PlayerSlashRoot = "Assets/_Project/Art/VFX/Slash/Player";
         private const string EnemySlashRoot = "Assets/_Project/Art/VFX/Slash/Enemy";
         private const string WarningFolder = "Assets/_Project/Art/VFX/Warning/Enemy/Medium/Unblockable";
+
+        private static readonly string[] Directions = { "Down", "Up", "Left", "Right" };
+
+        // 完成済み VFX の期待枚数（方向別セット：フォルダ相対名, 1 方向あたりの期待コマ数）。生成前検証に用いる。
+        private static readonly (string folder, int perDir)[] PlayerVfxSpec =
+        {
+            ("Combo1", 3), ("Combo2", 3), ("Combo3", 4), ("Special", 5),
+        };
+
+        private static readonly (string folder, int perDir)[] EnemyVfxSpec =
+        {
+            ("Small/Normal", 3), ("Medium/Normal", 3), ("Medium/Heavy", 4), ("Medium/Unblockable", 4),
+        };
+
+        private const int WarningFrameCount = 4; // ガード不能予告は無方向フラットの 4 コマ。
 
         /// <summary>生成結果。</summary>
         public readonly struct BuildResult
@@ -118,14 +134,21 @@ namespace Momotaro.Editor.Phase35
                     "必要な Prefab が見つかりません（Player/近接/遠距離/強敵）。");
             }
 
-            EnsureFolder(Path.GetDirectoryName(outputPath).Replace('\\', '/'));
+            // 完成済み VFX 前提：方向ごとの期待枚数と一致しなければ、Scene を保存せず（一切触れず）失敗する。方向欠け・過不足も検出する。
+            var vfxErrors = new List<string>();
+            ValidateVfx(vfxErrors);
+            if (vfxErrors.Count > 0)
+            {
+                return new BuildResult(false, outputPath,
+                    "VFX 素材が期待枚数と一致しません（Scene は保存していません）:\n- " + string.Join("\n- ", vfxErrors));
+            }
 
-            var missing = new List<string>();
+            EnsureFolder(Path.GetDirectoryName(outputPath).Replace('\\', '/'));
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             try
             {
-                Populate(playerPrefab, meleePrefab, rangedPrefab, elitePrefab, missing);
+                Populate(playerPrefab, meleePrefab, rangedPrefab, elitePrefab);
             }
             catch (System.Exception e)
             {
@@ -142,18 +165,11 @@ namespace Momotaro.Editor.Phase35
             AssetDatabase.Refresh();
 
             string msg = "Environment/Player/CameraRig+Main Camera/Light/SceneMode/SpawnCenter/Phase35Systems"
-                + "(EnemyTestFieldController+EnemyDebugToggle+CombatFeedback+CombatVFX), 初期敵0体。";
-            if (missing.Count > 0)
-            {
-                string list = string.Join(", ", missing);
-                msg += " ※未割当VFX素材(空表示): " + list;
-                Debug.LogWarning("[Phase3.5] 一部 VFX 素材フォルダが空/不在のため空割当にしました: " + list);
-            }
-
+                + "(EnemyTestFieldController+EnemyDebugToggle+CombatFeedback+CombatVFX), 初期敵0体。VFX 素材は全方向の期待枚数を満たしています。";
             return new BuildResult(true, outputPath, msg);
         }
 
-        private static void Populate(GameObject playerPrefab, GameObject meleePrefab, GameObject rangedPrefab, GameObject elitePrefab, List<string> missing)
+        private static void Populate(GameObject playerPrefab, GameObject meleePrefab, GameObject rangedPrefab, GameObject elitePrefab)
         {
             // Environment（Floor 上面 Y=0、壁は正スケールのみ）。
             var environment = new GameObject("Environment");
@@ -214,7 +230,7 @@ namespace Momotaro.Editor.Phase35
             toggleGo.AddComponent<EnemyDebugToggle>();
 
             BuildFeedback(systems.transform, cameraGo.transform);
-            BuildVfx(systems.transform, playerController, cam, missing);
+            BuildVfx(systems.transform, playerController, cam);
         }
 
         private static void BuildFeedback(Transform systems, Transform cameraTransform)
@@ -241,18 +257,18 @@ namespace Momotaro.Editor.Phase35
             go.AddComponent<EnemyDefeatFadePresenter>();
         }
 
-        private static void BuildVfx(Transform systems, PlayerStateController playerController, Camera camera, List<string> missing)
+        private static void BuildVfx(Transform systems, PlayerStateController playerController, Camera camera)
         {
             var go = new GameObject("CombatVFX");
             go.transform.SetParent(systems, false);
 
-            // 主人公の剣閃（通常1〜3段＋必殺技）。
+            // 主人公の剣閃（通常1〜3段＋必殺技）。素材は Build 冒頭の ValidateVfx で期待枚数を保証済み。
             var playerVfx = go.AddComponent<PlayerSlashVfxPresenter>();
             playerVfx.SetCamera(camera); // 正対（billboard）・表示位置補正の基準（P3.5-06）。
-            playerVfx.Stage1Frames = PlayerSet("Combo1", 0.12f, missing);
-            playerVfx.Stage2Frames = PlayerSet("Combo2", 0.12f, missing);
-            playerVfx.Stage3Frames = PlayerSet("Combo3", 0.14f, missing);
-            playerVfx.SpecialFrames = PlayerSet("Special", 0.2f, missing);
+            playerVfx.Stage1Frames = PlayerSet("Combo1", 0.12f);
+            playerVfx.Stage2Frames = PlayerSet("Combo2", 0.12f);
+            playerVfx.Stage3Frames = PlayerSet("Combo3", 0.14f);
+            playerVfx.SpecialFrames = PlayerSet("Special", 0.2f);
             if (playerController != null)
             {
                 var so = new SerializedObject(playerVfx);
@@ -273,31 +289,26 @@ namespace Momotaro.Editor.Phase35
                 {
                     // 近接骸骨（Small）は通常のみ。強・ガード不能は侍骸骨（Medium）が持つ（敵タイプ鍵は archetype 駆動。P3.5-06）。
                     key = "Small",
-                    normal = EnemySet(EnemySlashRoot + "/Small/Normal", 0.12f, missing),
+                    normal = EnemySet(EnemySlashRoot + "/Small/Normal", 0.12f),
                 },
                 new EnemySlashVfxPresenter.EnemySlashEntry
                 {
                     key = "Medium",
-                    normal = EnemySet(EnemySlashRoot + "/Medium/Normal", 0.12f, missing),
-                    heavy = EnemySet(EnemySlashRoot + "/Medium/Heavy", 0.14f, missing),
-                    unblockable = EnemySet(EnemySlashRoot + "/Medium/Unblockable", 0.18f, missing),
+                    normal = EnemySet(EnemySlashRoot + "/Medium/Normal", 0.12f),
+                    heavy = EnemySet(EnemySlashRoot + "/Medium/Heavy", 0.14f),
+                    unblockable = EnemySet(EnemySlashRoot + "/Medium/Unblockable", 0.18f),
                 },
             };
 
-            // ガード不能の頭上警告。
+            // ガード不能の頭上警告（枚数は ValidateVfx で保証済み）。
             var warn = go.AddComponent<EnemyUnblockableWarningPresenter>();
-            Sprite[] warnFrames = LoadFrames(WarningFolder);
-            warn.WarningFrames = warnFrames;
-            if (warnFrames.Length == 0)
-            {
-                missing.Add("Warning_Enemy_Unguardable_A");
-            }
+            warn.WarningFrames = LoadFrames(WarningFolder);
         }
 
-        private static PlayerSlashVfxPresenter.SlashFrameSet PlayerSet(string setFolder, float duration, List<string> missing)
+        private static PlayerSlashVfxPresenter.SlashFrameSet PlayerSet(string setFolder, float duration)
         {
             string b = PlayerSlashRoot + "/" + setFolder;
-            var set = new PlayerSlashVfxPresenter.SlashFrameSet
+            return new PlayerSlashVfxPresenter.SlashFrameSet
             {
                 down = LoadFrames(b + "/Down"),
                 up = LoadFrames(b + "/Up"),
@@ -305,17 +316,11 @@ namespace Momotaro.Editor.Phase35
                 right = LoadFrames(b + "/Right"),
                 duration = duration,
             };
-            if (IsEmpty(set.down) && IsEmpty(set.up) && IsEmpty(set.left) && IsEmpty(set.right))
-            {
-                missing.Add(setFolder);
-            }
-
-            return set;
         }
 
-        private static EnemySlashVfxPresenter.SlashFrameSet EnemySet(string baseFolder, float duration, List<string> missing)
+        private static EnemySlashVfxPresenter.SlashFrameSet EnemySet(string baseFolder, float duration)
         {
-            var set = new EnemySlashVfxPresenter.SlashFrameSet
+            return new EnemySlashVfxPresenter.SlashFrameSet
             {
                 down = LoadFrames(baseFolder + "/Down"),
                 up = LoadFrames(baseFolder + "/Up"),
@@ -323,17 +328,48 @@ namespace Momotaro.Editor.Phase35
                 right = LoadFrames(baseFolder + "/Right"),
                 duration = duration,
             };
-            if (IsEmpty(set.down) && IsEmpty(set.up) && IsEmpty(set.left) && IsEmpty(set.right))
-            {
-                missing.Add(Path.GetFileName(baseFolder));
-            }
-
-            return set;
         }
 
-        private static bool IsEmpty(Sprite[] a)
+        /// <summary>
+        /// 完成済み VFX の受入検証（P3.5-06。GPT 指摘対応）。方向別セットは各方向の期待枚数、警告は無方向フラットの期待枚数を検査し、
+        /// 不足・過多・フォルダ不在を <paramref name="errors"/> へ具体パス＋実枚数で積む。呼び出し側は空でなければ Scene を保存せず失敗する。
+        /// </summary>
+        private static void ValidateVfx(List<string> errors)
         {
-            return a == null || a.Length == 0;
+            for (int i = 0; i < PlayerVfxSpec.Length; i++)
+            {
+                CheckDirectional(PlayerSlashRoot + "/" + PlayerVfxSpec[i].folder, PlayerVfxSpec[i].perDir, errors);
+            }
+
+            for (int i = 0; i < EnemyVfxSpec.Length; i++)
+            {
+                CheckDirectional(EnemySlashRoot + "/" + EnemyVfxSpec[i].folder, EnemyVfxSpec[i].perDir, errors);
+            }
+
+            CheckCount(WarningFolder, WarningFrameCount, errors);
+        }
+
+        private static void CheckDirectional(string baseFolder, int perDir, List<string> errors)
+        {
+            for (int d = 0; d < Directions.Length; d++)
+            {
+                CheckCount(baseFolder + "/" + Directions[d], perDir, errors);
+            }
+        }
+
+        private static void CheckCount(string folder, int expected, List<string> errors)
+        {
+            if (!AssetDatabase.IsValidFolder(folder))
+            {
+                errors.Add(folder + ": 期待 " + expected + " 枚 / 実際 0 枚（フォルダ不在）");
+                return;
+            }
+
+            int actual = LoadFrames(folder).Length;
+            if (actual != expected)
+            {
+                errors.Add(folder + ": 期待 " + expected + " 枚 / 実際 " + actual + " 枚");
+            }
         }
 
         /// <summary>規約フォルダ配下の Sprite を名前順（＝コマ順）に読み込む。フォルダ不在・空は空配列（無表示・安全）。</summary>

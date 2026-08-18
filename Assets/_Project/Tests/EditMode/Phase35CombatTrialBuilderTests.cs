@@ -202,8 +202,10 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, players.Count, "主人公斬撃 VFX は 1 つ。");
             PlayerSlashVfxPresenter pv = players[0];
             Assert.IsNotNull(pv.Stage1Frames, "1 段目素材セットがある。");
-            Assert.Greater(pv.Stage1Frames.down.Length, 0, "1 段目 Down に実素材が割り当てられている。");
-            Assert.Greater(pv.SpecialFrames.up.Length, 0, "必殺技 Up に実素材が割り当てられている。");
+            // 完成 VFX 前提：方向ごとの期待枚数を満たす（Combo1=3, Combo3=4, Special=5）。
+            Assert.AreEqual(3, pv.Stage1Frames.down.Length, "1 段目 Down は 3 コマ。");
+            Assert.AreEqual(4, pv.Stage3Frames.down.Length, "3 段目 Down は 4 コマ。");
+            Assert.AreEqual(5, pv.SpecialFrames.up.Length, "必殺技 Up は 5 コマ。");
 
             List<EnemySlashVfxPresenter> enemies = InScene<EnemySlashVfxPresenter>(scene);
             Assert.AreEqual(1, enemies.Count, "敵斬撃 VFX は 1 つ。");
@@ -213,15 +215,15 @@ namespace Momotaro.Tests.EditMode
             EnemySlashVfxPresenter.EnemySlashEntry medium = entries.FirstOrDefault(e => e.key == "Medium");
             Assert.IsNotNull(small, "Small 鍵のエントリがある。");
             Assert.IsNotNull(medium, "Medium 鍵のエントリがある。");
-            Assert.Greater(small.normal.down.Length, 0, "Small 通常 Down に実素材。");
-            Assert.Greater(medium.normal.down.Length, 0, "Medium 通常 Down に実素材。");
+            Assert.AreEqual(3, small.normal.down.Length, "Small 通常 Down は 3 コマ。");
+            Assert.AreEqual(3, medium.normal.down.Length, "Medium 通常 Down は 3 コマ。");
             // 侍骸骨（Medium）は強・ガード不能も持つ（鍵は archetype 駆動＝強敵→"Medium"。P3.5-06）。
-            Assert.Greater(medium.heavy.down.Length, 0, "Medium 強 Down に実素材（強敵の強斬撃）。");
-            Assert.Greater(medium.unblockable.down.Length, 0, "Medium ガード不能 Down に実素材（強敵のガード不能斬撃）。");
+            Assert.AreEqual(4, medium.heavy.down.Length, "Medium 強 Down は 4 コマ（強敵の強斬撃）。");
+            Assert.AreEqual(4, medium.unblockable.down.Length, "Medium ガード不能 Down は 4 コマ（強敵のガード不能斬撃）。");
 
             List<EnemyUnblockableWarningPresenter> warns = InScene<EnemyUnblockableWarningPresenter>(scene);
             Assert.AreEqual(1, warns.Count, "ガード不能警告は 1 つ。");
-            Assert.Greater(warns[0].WarningFrames.Length, 0, "警告フレームに実素材が割り当てられている。");
+            Assert.AreEqual(4, warns[0].WarningFrames.Length, "警告フレームは 4 コマ（無方向フラット）。");
         }
 
         [Test]
