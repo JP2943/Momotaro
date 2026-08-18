@@ -10,6 +10,7 @@ namespace Momotaro.Tests.EditMode
     /// P3.5-05：<see cref="EnemySlashVfxPresenter"/> が敵の攻撃判定区間に同期して剣閃を表示することを検証する。
     /// 敵タイプ鍵（Small/Medium）×攻撃分類（通常/強/ガード不能）での素材選択、複数体の同時攻撃、判定立ち上がりでの生成（空振りでも）、
     /// 未登録鍵・未割当分類・突進/投射（段0）の非表示、Collider 無し、Active 終了消灯、プール共有・再利用、撃破（破棄）追跡解除、StopAll を確認する。
+    /// P3.5-06：表示位置の高さオフセット・カメラ正対（billboard）・DepthOffset も検証する。
     /// </summary>
     public sealed class EnemySlashVfxPresenterTests
     {
@@ -67,7 +68,7 @@ namespace Momotaro.Tests.EditMode
             };
         }
 
-        // Small=通常のみ、Medium=通常のみ を登録（強/ガード不能は未割当）。
+        // Small=通常のみ、Medium=通常/強/ガード不能 を登録。
         private EnemySlashVfxPresenter NewPresenter(bool assign = true)
         {
             var go = new GameObject("EnemyPresenter");
@@ -99,6 +100,9 @@ namespace Momotaro.Tests.EditMode
         public void SmallKey_UsesSmallFrames_AtCenterForFacing()
         {
             EnemySlashVfxPresenter p = NewPresenter();
+            // 基準配置＝SwingCenter を検証するため補正を 0 に（高さ0・深度0なら位置は SwingCenter に一致：カメラ有無に非依存）。
+            p.SlashHeightOffset = 0f;
+            p.DepthOffset = 0f;
             var src = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Small", SwingCenter = new Vector3(2f, 0.5f, 0f), SwingForward = Vector3.right };
             p.Bind(new IAttackSwingSource[] { src });
 
@@ -106,8 +110,35 @@ namespace Momotaro.Tests.EditMode
 
             Assert.AreEqual(1, p.Pool.ActiveCount);
             SlashVfxInstance inst = FirstPlaying(p.Pool);
-            Assert.AreEqual(new Vector3(2f, 0.5f, 0f), inst.transform.position);
+            Assert.AreEqual(new Vector3(2f, 0.5f, 0f), inst.transform.position, "補正0では Hitbox 中心へ配置。");
             Assert.AreEqual("r0s", inst.CurrentSprite.name, "Small・Right の素材を選択。");
+        }
+
+        [Test]
+        public void Spawn_BillboardsToCamera_AppliesHeightAndDepth()
+        {
+            EnemySlashVfxPresenter p = NewPresenter();
+            var camGo = new GameObject("Cam");
+            _spawned.Add(camGo);
+            camGo.transform.SetPositionAndRotation(new Vector3(0f, 12f, -14f), Quaternion.Euler(45f, 0f, 0f));
+            var cam = camGo.AddComponent<Camera>();
+            p.SetCamera(cam);
+            p.SlashHeightOffset = 0.8f;
+            p.DepthOffset = 0.4f;
+
+            var src = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Small", SwingCenter = new Vector3(2f, 0.3f, 1f), SwingForward = Vector3.right };
+            p.Bind(new IAttackSwingSource[] { src });
+
+            p.Tick(0.01f);
+
+            SlashVfxInstance inst = FirstPlaying(p.Pool);
+            Assert.IsNotNull(inst);
+            Vector3 anchor = new Vector3(2f, 0.3f + 0.8f, 1f);
+            Vector3 expected = anchor - cam.transform.forward * 0.4f;
+            Assert.AreEqual(expected.x, inst.transform.position.x, 1e-4f);
+            Assert.AreEqual(expected.y, inst.transform.position.y, 1e-4f);
+            Assert.AreEqual(expected.z, inst.transform.position.z, 1e-4f);
+            Assert.Less(Quaternion.Angle(inst.transform.rotation, cam.transform.rotation), 0.01f, "敵剣閃もカメラへ正対（billboard）。");
         }
 
         [Test]

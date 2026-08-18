@@ -9,7 +9,7 @@ namespace Momotaro.Tests.EditMode
     /// <summary>
     /// P3.5-05（第1弾）：<see cref="PlayerSlashVfxPresenter"/> が通常攻撃 1 段目の判定区間に同期して剣閃 VFX を表示することを検証する。
     /// 立ち上がりで生成（空振りでも）、Facing で方向選択、Hitbox 中心へ配置、VFX に Collider が無い、段2は非表示、Active 終了で消灯、
-    /// プール再利用、素材未割当でも例外なく継続、StopAll で残留なし（仕様書 §6/§7.2、テスト §5 [219]/[220]/[223]）。
+    /// プール再利用、素材未割当でも例外なく継続、StopAll で残留なし。P3.5-06：表示位置の高さオフセット・カメラ正対（billboard）・DepthOffset も検証する。
     /// </summary>
     public sealed class PlayerSlashVfxPresenterTests
     {
@@ -88,6 +88,9 @@ namespace Momotaro.Tests.EditMode
         public void RisingEdge_SpawnsSlash_AtCenter_ForRightFacing()
         {
             PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
+            // 基準配置＝SwingCenter を検証するため補正を 0 に（高さ0・深度0なら位置は SwingCenter に一致：カメラ有無に非依存）。
+            p.SlashHeightOffset = 0f;
+            p.DepthOffset = 0f;
             src.IsSwingHitboxActive = true;
             src.SwingStage = 1;
             src.SwingCenter = new Vector3(1f, 0.5f, 0f);
@@ -98,8 +101,37 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, p.Pool.ActiveCount, "判定立ち上がりで剣閃を 1 つ生成。");
             SlashVfxInstance inst = Playing(p.Pool);
             Assert.IsNotNull(inst);
-            Assert.AreEqual(new Vector3(1f, 0.5f, 0f), inst.transform.position, "Hitbox 中心へ配置。");
+            Assert.AreEqual(new Vector3(1f, 0.5f, 0f), inst.transform.position, "補正0では Hitbox 中心へ配置。");
             Assert.AreEqual("r0a", inst.CurrentSprite.name, "1段目・Right 方向の素材を選択。");
+        }
+
+        [Test]
+        public void Spawn_BillboardsToCamera_AppliesHeightAndDepth()
+        {
+            PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
+            var camGo = new GameObject("Cam");
+            _spawned.Add(camGo);
+            camGo.transform.SetPositionAndRotation(new Vector3(0f, 12f, -14f), Quaternion.Euler(45f, 0f, 0f));
+            var cam = camGo.AddComponent<Camera>();
+            p.SetCamera(cam);
+            p.SlashHeightOffset = 0.9f;
+            p.DepthOffset = 0.5f;
+
+            src.IsSwingHitboxActive = true;
+            src.SwingCenter = new Vector3(1f, 0.2f, 3f);
+            src.SwingForward = Vector3.right;
+
+            p.Tick(0.01f);
+
+            SlashVfxInstance inst = Playing(p.Pool);
+            Assert.IsNotNull(inst);
+
+            Vector3 anchor = new Vector3(1f, 0.2f + 0.9f, 3f);
+            Vector3 expected = anchor - cam.transform.forward * 0.5f;
+            Assert.AreEqual(expected.x, inst.transform.position.x, 1e-4f, "高さ＋カメラ側 DepthOffset を反映(x)。");
+            Assert.AreEqual(expected.y, inst.transform.position.y, 1e-4f, "高さ＋カメラ側 DepthOffset を反映(y)。");
+            Assert.AreEqual(expected.z, inst.transform.position.z, 1e-4f, "高さ＋カメラ側 DepthOffset を反映(z)。");
+            Assert.Less(Quaternion.Angle(inst.transform.rotation, cam.transform.rotation), 0.01f, "カメラへ正対（billboard）。");
         }
 
         [Test]

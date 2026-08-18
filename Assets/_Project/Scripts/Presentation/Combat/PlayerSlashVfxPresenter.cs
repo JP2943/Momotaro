@@ -10,9 +10,9 @@ namespace Momotaro.Presentation.Combat
     /// 汎用 Slash 素材（Slash_Small_A）をプール（<see cref="SlashVfxPool"/>）から生成する。命中の有無に依存せず「空振りでも」表示し、
     /// VFX には当たり判定・ダメージを持たせない（表示専用）。
     ///
-    /// 本 Task の範囲は「通常攻撃 1〜3 段目＋必殺技」まで（敵の剣閃は素材制作中のため未割当＝無処理）。必殺技は
-    /// コンボ段とは別系統の判定区間（<see cref="AttackSwing.SpecialStage"/>）として観測し、専用素材で表示する。
-    /// Active 終了・攻撃中断・Disable・Scene 離脱で残留を残さない。Gameplay ロジックには一切干渉しない（読み取りのみ）。
+    /// 表示位置は判定中心（<c>SwingCenter</c>）そのものではなく、<see cref="SlashVfxPlacement"/> で刀身高さへ持ち上げ・カメラ正対
+    /// （billboard）・DepthOffset を適用する（P3.5-06。俯瞰カメラでの沈み込みと床/壁の深度欠けを防ぐ）。Active 終了・攻撃中断・Disable・
+    /// Scene 離脱で残留を残さない。Gameplay ロジックには一切干渉しない（読み取りのみ）。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class PlayerSlashVfxPresenter : MonoBehaviour
@@ -50,6 +50,16 @@ namespace Momotaro.Presentation.Combat
         [Tooltip("剣閃スプライトの Sorting Order（敵頭上 Bar 等より前面）。")]
         [SerializeField] private int _sortingOrder = 50;
 
+        [Header("表示位置補正（P3.5-06。SwingCenter は戦闘判定用で見た目の刀身高さと一致しない）")]
+        [Tooltip("剣閃を刀身高さへ持ち上げるワールド上方向オフセット（m）。")]
+        [SerializeField] private float _slashHeightOffset = 1.1f;
+
+        [Tooltip("カメラ側（-forward）へ逃がす深度オフセット（m）。床・壁との深度交差による欠けを防ぐ。キャラ billboard と同値が目安。")]
+        [SerializeField] private float _depthOffset = 0.5f;
+
+        [Tooltip("正対（billboard）対象カメラ。未指定なら Main Camera を取得してキャッシュする。")]
+        [SerializeField] private Camera _camera;
+
         [Tooltip("未 Bind の間の自動探索間隔（秒）。毎フレーム FindObjects しないためのスロットル。")]
         [SerializeField] private float _autoLocateInterval = 0.5f;
 
@@ -61,6 +71,7 @@ namespace Momotaro.Presentation.Combat
         private bool _wasActive;
         private float _locateTimer;
         private SlashVfxInstance _current;
+        private Camera _cachedCamera;
 
         /// <summary>1 段目の剣閃素材（Scene 構築 P3.5-06・テストが設定）。</summary>
         public SlashFrameSet Stage1Frames { get => _stage1; set => _stage1 = value; }
@@ -76,6 +87,19 @@ namespace Momotaro.Presentation.Combat
 
         /// <summary>主人公の剣閃色（Tint。Scene 構築 P3.5-06・テストが設定）。</summary>
         public Color PlayerSlashColor { get => _playerSlashColor; set => _playerSlashColor = value; }
+
+        /// <summary>刀身高さへの持ち上げオフセット（m。Scene 構築・試遊調整・テストが設定）。</summary>
+        public float SlashHeightOffset { get => _slashHeightOffset; set => _slashHeightOffset = value; }
+
+        /// <summary>深度オフセット（m。Scene 構築・試遊調整・テストが設定）。</summary>
+        public float DepthOffset { get => _depthOffset; set => _depthOffset = value; }
+
+        /// <summary>正対対象カメラを設定する（Scene 構築 P3.5-06・テスト）。キャッシュをリセットする。</summary>
+        public void SetCamera(Camera camera)
+        {
+            _camera = camera;
+            _cachedCamera = null;
+        }
 
         /// <summary>プール（テスト・検証用）。</summary>
         public SlashVfxPool Pool => EnsurePool();
@@ -165,8 +189,25 @@ namespace Momotaro.Presentation.Combat
                 return; // 未割当（素材制作中）：無処理でGameplay継続。
             }
 
+            SlashVfxPlacement.Compute(_source.SwingCenter, ResolveCamera(), _slashHeightOffset, _depthOffset,
+                out Vector3 pos, out Quaternion rot);
             _current = EnsurePool().Get();
-            _current.Play(frames, _source.SwingCenter, set.duration, _sortingOrder, _playerSlashColor);
+            _current.Play(frames, pos, rot, set.duration, _sortingOrder, _playerSlashColor);
+        }
+
+        private Camera ResolveCamera()
+        {
+            if (_camera != null)
+            {
+                return _camera;
+            }
+
+            if (_cachedCamera == null)
+            {
+                _cachedCamera = Camera.main;
+            }
+
+            return _cachedCamera;
         }
 
         /// <summary>段に対応する剣閃素材セット（1..3=通常コンボ Slash_Small_A/B/C, 必殺技=Slash_Special_A）。敵は未割当。</summary>

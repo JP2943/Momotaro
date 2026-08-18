@@ -10,6 +10,7 @@ namespace Momotaro.Presentation.Combat
     ///
     /// 時間は <see cref="SlashVfxPool.TickActive"/>→<see cref="Tick"/> で外部から与える（Pause 時は Presenter が
     /// スケール時間を渡すため進まない）。自前 Update は持たず、駆動点を一つにしてテストを決定的にする。
+    /// 位置に加え回転も外部から受け取り（P3.5-06）、カメラへ正対（billboard）した向きで表示できる。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class SlashVfxInstance : MonoBehaviour
@@ -47,10 +48,19 @@ namespace Momotaro.Presentation.Combat
         }
 
         /// <summary>
-        /// 指定位置・色でコマを <paramref name="duration"/> 秒かけて再生する。空フレームは即完了（asset 未割当でも安全）。
-        /// 色はプール再利用時に前回値が残らないよう毎回必ず設定する。<paramref name="duration"/> が 0 以下でも無限再生しない。
+        /// 位置のみ指定（回転は identity）で再生する後方互換オーバーロード。
         /// </summary>
         public void Play(Sprite[] frames, Vector3 worldPosition, float duration, int sortingOrder, Color color)
+        {
+            Play(frames, worldPosition, Quaternion.identity, duration, sortingOrder, color);
+        }
+
+        /// <summary>
+        /// 指定位置・回転・色でコマを <paramref name="duration"/> 秒かけて再生する。空フレームは即完了（asset 未割当でも安全）。
+        /// 色はプール再利用時に前回値が残らないよう毎回必ず設定する。<paramref name="rotation"/> はカメラ正対（billboard）用。
+        /// <paramref name="duration"/> が 0 以下でも無限再生しない。
+        /// </summary>
+        public void Play(Sprite[] frames, Vector3 worldPosition, Quaternion rotation, float duration, int sortingOrder, Color color)
         {
             _frames = frames;
             _duration = duration <= 0f ? 0.0001f : duration;
@@ -58,6 +68,7 @@ namespace Momotaro.Presentation.Combat
             _playing = frames != null && frames.Length > 0;
 
             transform.position = worldPosition;
+            transform.rotation = rotation; // billboard（カメラ正対）用。再利用時に前回の向きを残さない。
             SpriteRenderer r = EnsureRenderer();
             r.sortingOrder = sortingOrder;
             r.color = color; // 再利用時に前回の色を残さない。

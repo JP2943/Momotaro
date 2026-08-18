@@ -214,7 +214,7 @@ namespace Momotaro.Editor.Phase35
             toggleGo.AddComponent<EnemyDebugToggle>();
 
             BuildFeedback(systems.transform, cameraGo.transform);
-            BuildVfx(systems.transform, playerController, missing);
+            BuildVfx(systems.transform, playerController, cam, missing);
         }
 
         private static void BuildFeedback(Transform systems, Transform cameraTransform)
@@ -241,13 +241,14 @@ namespace Momotaro.Editor.Phase35
             go.AddComponent<EnemyDefeatFadePresenter>();
         }
 
-        private static void BuildVfx(Transform systems, PlayerStateController playerController, List<string> missing)
+        private static void BuildVfx(Transform systems, PlayerStateController playerController, Camera camera, List<string> missing)
         {
             var go = new GameObject("CombatVFX");
             go.transform.SetParent(systems, false);
 
             // 主人公の剣閃（通常1〜3段＋必殺技）。
             var playerVfx = go.AddComponent<PlayerSlashVfxPresenter>();
+            playerVfx.SetCamera(camera); // 正対（billboard）・表示位置補正の基準（P3.5-06）。
             playerVfx.Stage1Frames = PlayerSet("Slash_Small_A", 0.12f, missing);
             playerVfx.Stage2Frames = PlayerSet("Slash_Small_B", 0.12f, missing);
             playerVfx.Stage3Frames = PlayerSet("Slash_Small_C", 0.14f, missing);
@@ -265,6 +266,7 @@ namespace Momotaro.Editor.Phase35
 
             // 敵の剣閃（鍵：Small=近接骸骨／Medium=侍骸骨。Medium は強・ガード不能も持つ）。
             var enemyVfx = go.AddComponent<EnemySlashVfxPresenter>();
+            enemyVfx.SetCamera(camera); // 正対（billboard）・表示位置補正の基準（P3.5-06）。
             enemyVfx.Entries = new[]
             {
                 new EnemySlashVfxPresenter.EnemySlashEntry
