@@ -7,6 +7,15 @@ namespace Momotaro.Gameplay.Combat
     {
         /// <summary>必殺技の振りを表す SwingStage 値。通常コンボ段（1..N）と区別する。</summary>
         public const int SpecialStage = 100;
+
+        /// <summary>敵近接（通常）の振りを表す SwingStage 値（§7.2 通常）。</summary>
+        public const int EnemyMeleeNormal = 200;
+
+        /// <summary>敵近接（強）の振りを表す SwingStage 値（§7.2 強）。</summary>
+        public const int EnemyMeleeHeavy = 201;
+
+        /// <summary>敵近接（ガード不能）の振りを表す SwingStage 値（§7.2 ガード不能）。</summary>
+        public const int EnemyMeleeUnblockable = 202;
     }
 
     /// <summary>

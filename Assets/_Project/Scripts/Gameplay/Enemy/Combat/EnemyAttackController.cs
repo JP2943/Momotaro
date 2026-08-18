@@ -22,7 +22,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(EnemyActor))]
-    public sealed class EnemyAttackController : MonoBehaviour, ISlotOwner, IEnemyDefeatCleanup
+    public sealed class EnemyAttackController : MonoBehaviour, ISlotOwner, IEnemyDefeatCleanup, IAttackSwingSource
     {
         [Tooltip("同点時の tie-break 乱数シード（0 で TickCount。EditMode 再現用に固定可）。")]
         [SerializeField] private int _seed;
@@ -78,6 +78,47 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
         /// <summary>現在の狙い方向（XZ 正規化。Debug/テスト用）。</summary>
         public Vector3 AimDirection => _aimDir;
+
+        // ---- IAttackSwingSource（近接攻撃 Active 区間の観測。敵剣閃VFX が参照。P3.5-05。読み取りのみ・挙動不変） ----
+
+        /// <inheritdoc />
+        /// <remarks>近接（Active）判定区間のみ true。Charge／Projectile は <see cref="SwingStage"/> が 0 になり剣閃は出ない。</remarks>
+        public bool IsSwingHitboxActive => _machine.IsAttacking && _machine.Current == EnemyAttackMachine.Phase.Active;
+
+        /// <inheritdoc />
+        /// <remarks>§7.2 の識別：通常／強／ガード不能を段値へ写像する。突進・投射は 0（剣閃なし）。</remarks>
+        public int SwingStage
+        {
+            get
+            {
+                if (!_machine.IsAttacking)
+                {
+                    return 0;
+                }
+
+                switch (_machine.Snapshot.AttackClass)
+                {
+                    case EnemyAttackClass.Normal: return AttackSwing.EnemyMeleeNormal;
+                    case EnemyAttackClass.Heavy: return AttackSwing.EnemyMeleeHeavy;
+                    case EnemyAttackClass.Unblockable: return AttackSwing.EnemyMeleeUnblockable;
+                    default: return 0; // Charge/Projectile は剣閃を出さない。
+                }
+            }
+        }
+
+        /// <inheritdoc />
+        /// <remarks><see cref="PollHitbox"/> と同一の中心式（AimDir オフセット＋高さ）。攻撃中のみ Snapshot を参照する。</remarks>
+        public Vector3 SwingCenter => _actor == null
+            ? transform.position
+            : (_machine.IsAttacking
+                ? _actor.WorldPosition + _aimDir * _machine.Snapshot.HitboxForwardOffset + Vector3.up * _machine.Snapshot.HitboxHeight
+                : _actor.WorldPosition);
+
+        /// <inheritdoc />
+        public Vector3 SwingHalfExtents => _machine.IsAttacking ? _machine.Snapshot.HitboxHalfExtents : Vector3.zero;
+
+        /// <inheritdoc />
+        public Vector3 SwingForward => _aimDir;
 
         /// <summary>攻撃中に固定された照準対象の ActorId（無ければ 0。req8 検証用）。攻撃終了まで変わらない。</summary>
         public int AttackTargetId => _attackTarget != null ? _attackTarget.ActorId : 0;
