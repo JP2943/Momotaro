@@ -303,15 +303,18 @@ namespace Momotaro.Tests.EditMode
                 },
             };
 
+            // 各分類は前の剣閃が残っていない状態で単独に検証する（StopAll で直前の再生を消してから次を出す）。
             var normal = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Medium", SwingStage = AttackSwing.EnemyMeleeNormal };
             p.Bind(new IAttackSwingSource[] { normal });
             p.Tick(0.01f);
             Assert.AreEqual(nColor, FirstPlaying(p.Pool).CurrentColor, "通常攻撃は通常色。");
+            p.StopAll();
 
             var heavy = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Medium", SwingStage = AttackSwing.EnemyMeleeHeavy };
             p.Bind(new IAttackSwingSource[] { heavy });
             p.Tick(0.01f);
             Assert.AreEqual(hColor, FirstPlaying(p.Pool).CurrentColor, "強攻撃は強色。");
+            p.StopAll();
 
             var unblockable = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Medium", SwingStage = AttackSwing.EnemyMeleeUnblockable };
             p.Bind(new IAttackSwingSource[] { unblockable });
