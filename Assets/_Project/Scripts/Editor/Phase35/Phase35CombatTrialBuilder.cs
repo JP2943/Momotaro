@@ -267,7 +267,11 @@ namespace Momotaro.Editor.Phase35
             playerVfx.SetCamera(camera); // 正対（billboard）・表示位置補正の基準（P3.5-06）。
             playerVfx.Stage1Frames = PlayerSet("Combo1", 0.12f);
             playerVfx.Stage2Frames = PlayerSet("Combo2", 0.12f);
-            playerVfx.Stage3Frames = PlayerSet("Combo3", 0.14f);
+            // 3段目はジャンプ切り下ろし。判定終了後も着地モーションまで剣閃を残す（holdThroughRecovery＋長め duration）。
+            // 攻撃全体 ≈ startup0.18+active0.12+recovery0.35 ≈ 0.65s、VFX は Active 開始(0.18s)から再生 → 0.5s で着地後に消える。
+            var combo3 = PlayerSet("Combo3", 0.5f);
+            combo3.holdThroughRecovery = true;
+            playerVfx.Stage3Frames = combo3;
             playerVfx.SpecialFrames = PlayerSet("Special", 0.2f);
             if (playerController != null)
             {

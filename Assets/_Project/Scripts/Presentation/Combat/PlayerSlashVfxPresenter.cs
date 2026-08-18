@@ -28,6 +28,10 @@ namespace Momotaro.Presentation.Combat
 
             [Tooltip("この素材セットの再生時間（秒）。素材ごとに調整する。0 以下でも無限再生しない（安全に極小時間へ丸める）。")]
             public float duration = 0.12f;
+
+            [Tooltip("判定（Active）終了後も自前の再生時間まで表示を継続する（P3.5-06）。ジャンプ切り下ろし(3段目)のように、"
+                + "判定終了後の着地モーションまで剣閃を残したい攻撃で true にする。通常の横斬りは false（判定終了で消灯）。")]
+            public bool holdThroughRecovery;
         }
 
         [Header("剣閃素材（通常1〜3段目＋必殺技。敵は素材制作中）")]
@@ -75,6 +79,7 @@ namespace Momotaro.Presentation.Combat
         private bool _wasActive;
         private float _locateTimer;
         private SlashVfxInstance _current;
+        private bool _currentHold; // 現在の剣閃が holdThroughRecovery（判定終了後も継続）か。
         private Camera _cachedCamera;
 
         /// <summary>1 段目の剣閃素材（Scene 構築 P3.5-06・テストが設定）。</summary>
@@ -172,8 +177,16 @@ namespace Momotaro.Presentation.Combat
             }
             else if (!active && _wasActive && _current != null)
             {
-                _current.Stop(); // 判定終了・中断で剣閃を消す（遅れて残さない）。
-                _current = null;
+                if (_currentHold)
+                {
+                    // ジャンプ切り下ろし等：判定終了後も自前 duration まで表示継続（着地モーションまで残す）。追跡だけ解除。
+                    _current = null;
+                }
+                else
+                {
+                    _current.Stop(); // 通常攻撃：判定終了・中断で剣閃を消す（遅れて残さない）。
+                    _current = null;
+                }
             }
 
             _wasActive = active;
@@ -201,6 +214,7 @@ namespace Momotaro.Presentation.Combat
             SlashVfxPlacement.Compute(center, ResolveCamera(), _slashHeightOffset, _depthOffset,
                 out Vector3 pos, out Quaternion rot);
             _current = EnsurePool().Get();
+            _currentHold = set.holdThroughRecovery; // 判定終了後も残すか（3段目のジャンプ切り下ろし等）。
             _current.Play(frames, pos, rot, set.duration, _sortingOrder, _playerSlashColor);
         }
 

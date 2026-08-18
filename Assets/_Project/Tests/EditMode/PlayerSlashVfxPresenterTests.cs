@@ -158,6 +158,41 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
+        public void HoldThroughRecovery_KeepsVfx_AfterActiveEnds_UntilDuration()
+        {
+            // 3段目のジャンプ切り下ろし相当：判定(Active)終了後も自前 duration まで表示継続し、着地モーション後に消える。
+            PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
+            p.Stage3Frames.holdThroughRecovery = true;
+            p.Stage3Frames.duration = 0.5f;
+            src.SwingStage = 3;
+            src.IsSwingHitboxActive = true;
+            p.Tick(0.01f);
+            Assert.AreEqual(1, p.Pool.ActiveCount, "判定立ち上がりで生成。");
+
+            src.IsSwingHitboxActive = false; // 判定終了（頂点付近）。
+            p.Tick(0.05f);
+            Assert.AreEqual(1, p.Pool.ActiveCount, "判定終了後も継続（着地まで残す）。");
+
+            p.Tick(0.6f); // 自前 duration 満了。
+            Assert.AreEqual(0, p.Pool.ActiveCount, "duration 満了で消灯（着地後）。");
+        }
+
+        [Test]
+        public void NormalAttack_StopsAtActiveEnd_NotHeld()
+        {
+            // 通常攻撃（hold なし）は従来どおり判定終了で消灯する（着地継続は 3 段目専用）。
+            PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
+            src.SwingStage = 1; // Stage1 は holdThroughRecovery=false（既定）。
+            src.IsSwingHitboxActive = true;
+            p.Tick(0.01f);
+            Assert.AreEqual(1, p.Pool.ActiveCount);
+
+            src.IsSwingHitboxActive = false;
+            p.Tick(0.01f);
+            Assert.AreEqual(0, p.Pool.ActiveCount, "hold なしは判定終了で即消灯。");
+        }
+
+        [Test]
         public void Whiff_SpawnsSlash_IndependentOfHit()
         {
             // 命中の有無に依存しない（Presenter は HitResult を参照しない）。空振り相当でも表示する。
