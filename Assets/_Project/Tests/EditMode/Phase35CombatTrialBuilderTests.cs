@@ -215,6 +215,9 @@ namespace Momotaro.Tests.EditMode
             Assert.IsNotNull(medium, "Medium 鍵のエントリがある。");
             Assert.Greater(small.normal.down.Length, 0, "Small 通常 Down に実素材。");
             Assert.Greater(medium.normal.down.Length, 0, "Medium 通常 Down に実素材。");
+            // 現状すべての敵が既定鍵 "Small" で解決されるため、強敵の強・ガード不能斬撃が出るよう Small に全分類を登録する。
+            Assert.Greater(small.heavy.down.Length, 0, "Small に強素材も割当（強敵の強斬撃対応）。");
+            Assert.Greater(small.unblockable.down.Length, 0, "Small にガード不能素材も割当（強敵のガード不能斬撃対応）。");
 
             List<EnemyUnblockableWarningPresenter> warns = InScene<EnemyUnblockableWarningPresenter>(scene);
             Assert.AreEqual(1, warns.Count, "ガード不能警告は 1 つ。");

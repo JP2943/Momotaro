@@ -271,8 +271,13 @@ namespace Momotaro.Editor.Phase35
             {
                 new EnemySlashVfxPresenter.EnemySlashEntry
                 {
+                    // 現状すべての敵は EnemyAttackController._slashVfxKey 既定の "Small" で解決される（プレハブがこの
+                    // 新フィールドを未シリアライズのため）。強敵の強・ガード不能斬撃も出るよう、Small に全分類を登録する。
+                    // 本来は敵タイプ別に鍵を分ける（例：強敵→"Medium"）のが正攻法（プレハブ／archetype に鍵を持たせる後続対応）。
                     key = "Small",
                     normal = EnemySet(SlashRoot + "/Slash_Enemy_Small_A", 0.12f, missing),
+                    heavy = EnemySet(SlashRoot + "/Slash_Enemy_Heavy_A", 0.14f, missing),
+                    unblockable = EnemySet(ThrustRoot + "/Thrust_Enemy_Unguardable_A", 0.18f, missing),
                 },
                 new EnemySlashVfxPresenter.EnemySlashEntry
                 {
