@@ -23,6 +23,7 @@ MonoBehaviour:
   _attackPower: 60
   _defense: 25
   _role: 2
+  _slashVfxKey: Medium
   _poiseMax: 200
   _poiseRecoveryDelaySeconds: 3
   _poiseRecoveryRatioPerSecond: 0.08

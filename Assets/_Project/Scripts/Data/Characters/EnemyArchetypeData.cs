@@ -17,6 +17,9 @@ namespace Momotaro.Data.Characters
         [Tooltip("敵の役割（近接／遠距離／強敵）。")]
         [SerializeField] private EnemyRole _role = EnemyRole.Melee;
 
+        [Tooltip("敵剣閃VFXの素材選択に用いる敵タイプ鍵（近接骸骨=Small／侍骸骨=Medium 等。P3.5-05/06）。Presentation の剣閃素材テーブルの引き当てに用いる。")]
+        [SerializeField] private string _slashVfxKey = "Small";
+
         [Header("Poise / Flinch / Stun")]
         [SerializeField] private float _poiseMax = 100f;
         [Tooltip("体幹の回復開始遅延（秒）。")]
@@ -149,6 +152,10 @@ namespace Momotaro.Data.Characters
         public int AttackCount => _attacks != null ? _attacks.Length : 0;
         /// <summary>指定 index の攻撃 Data。</summary>
         public EnemyAttackData Attack(int index) => _attacks[index];
+
+        // ---- VFX ----
+        /// <summary>敵剣閃VFXの素材選択に用いる敵タイプ鍵（Small/Medium 等。P3.5-05/06）。</summary>
+        public string SlashVfxKey => _slashVfxKey;
 
         // ---- Guard / Evade ----
         /// <summary>ガード能力を持つか。</summary>

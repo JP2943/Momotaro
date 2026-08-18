@@ -124,8 +124,19 @@ namespace Momotaro.Gameplay.Enemy.Combat
         public Vector3 SwingForward => _aimDir;
 
         /// <inheritdoc />
-        /// <remarks>§7.2 の敵タイプ鍵（Small/Medium 等）。Presentation が剣閃素材テーブルの引き当てに用いる。</remarks>
-        public string SlashVfxKey => _slashVfxKey;
+        /// <remarks>
+        /// §7.2 の敵タイプ鍵（Small/Medium 等）。Presentation が剣閃素材テーブルの引き当てに用いる。P3.5-06：鍵は archetype
+        /// （<see cref="EnemyArchetypeData.SlashVfxKey"/>）を優先し、未設定（null/空）のときのみ本コンポーネントの直列化値へフォールバックする。
+        /// 敵タイプごとの鍵をデータ（archetype）で一元管理するため（例：侍骸骨=Medium）。戦闘挙動には一切影響しない。
+        /// </remarks>
+        public string SlashVfxKey
+        {
+            get
+            {
+                string fromArchetype = _actor != null && _actor.Archetype != null ? _actor.Archetype.SlashVfxKey : null;
+                return string.IsNullOrEmpty(fromArchetype) ? _slashVfxKey : fromArchetype;
+            }
+        }
 
         // ---- IEnemyUnblockableWarningSource（ガード不能予告の観測。P3.5-05。読み取りのみ・挙動不変） ----
 
