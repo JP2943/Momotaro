@@ -51,4 +51,18 @@ namespace Momotaro.Gameplay.Combat
         /// <summary>敵タイプ鍵（例："Small"／"Medium"）。Presentation の剣閃素材テーブルの引き当てに用いる。</summary>
         string SlashVfxKey { get; }
     }
+
+    /// <summary>
+    /// ガード不能攻撃の「予告（予兆）」を Presentation が観測するための読み取り専用契約（Phase3.5 P3.5-05）。
+    /// ガード不能攻撃は Guard／JG 不可のため、発生前（Prepare 区間）に敵頭上へ警告表示を出して回避（Step）を促す。
+    /// EnemyAttackController が実装する。Gameplay は一切変更しない。
+    /// </summary>
+    public interface IEnemyUnblockableWarningSource
+    {
+        /// <summary>ガード不能攻撃の予兆（Prepare 区間）中か。</summary>
+        bool IsUnblockableTelegraphing { get; }
+
+        /// <summary>予告表示の基準位置（world。敵の中心）。表示側が頭上オフセットを加える。</summary>
+        Vector3 WarningPosition { get; }
+    }
 }

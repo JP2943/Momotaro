@@ -22,7 +22,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(EnemyActor))]
-    public sealed class EnemyAttackController : MonoBehaviour, ISlotOwner, IEnemyDefeatCleanup, IAttackSwingSource, IEnemySlashVisual
+    public sealed class EnemyAttackController : MonoBehaviour, ISlotOwner, IEnemyDefeatCleanup, IAttackSwingSource, IEnemySlashVisual, IEnemyUnblockableWarningSource
     {
         [Tooltip("同点時の tie-break 乱数シード（0 で TickCount。EditMode 再現用に固定可）。")]
         [SerializeField] private int _seed;
@@ -126,6 +126,17 @@ namespace Momotaro.Gameplay.Enemy.Combat
         /// <inheritdoc />
         /// <remarks>§7.2 の敵タイプ鍵（Small/Medium 等）。Presentation が剣閃素材テーブルの引き当てに用いる。</remarks>
         public string SlashVfxKey => _slashVfxKey;
+
+        // ---- IEnemyUnblockableWarningSource（ガード不能予告の観測。P3.5-05。読み取りのみ・挙動不変） ----
+
+        /// <inheritdoc />
+        /// <remarks>ガード不能攻撃の予兆（Prepare）区間中か。Guard／JG 不可のため予告で Step 回避を促す。</remarks>
+        public bool IsUnblockableTelegraphing => _machine.IsAttacking
+            && _machine.Current == EnemyAttackMachine.Phase.Prepare
+            && _machine.Snapshot.AttackClass == EnemyAttackClass.Unblockable;
+
+        /// <inheritdoc />
+        public Vector3 WarningPosition => _actor != null ? _actor.WorldPosition : transform.position;
 
         /// <summary>攻撃中に固定された照準対象の ActorId（無ければ 0。req8 検証用）。攻撃終了まで変わらない。</summary>
         public int AttackTargetId => _attackTarget != null ? _attackTarget.ActorId : 0;

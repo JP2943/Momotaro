@@ -78,7 +78,7 @@ namespace Momotaro.Tests.EditMode
                 p.Entries = new[]
                 {
                     new EnemySlashVfxPresenter.EnemySlashEntry { key = "Small", normal = MakeFrameSet("s") },
-                    new EnemySlashVfxPresenter.EnemySlashEntry { key = "Medium", normal = MakeFrameSet("m"), heavy = MakeFrameSet("mh") },
+                    new EnemySlashVfxPresenter.EnemySlashEntry { key = "Medium", normal = MakeFrameSet("m"), heavy = MakeFrameSet("mh"), unblockable = MakeFrameSet("mu") },
                 };
             }
 
@@ -204,6 +204,20 @@ namespace Momotaro.Tests.EditMode
 
             Assert.AreEqual(1, p.Pool.ActiveCount, "強攻撃も割り当て済みなら表示する。");
             Assert.AreEqual("r0mh", FirstPlaying(p.Pool).CurrentSprite.name, "強は強用素材を選択。");
+        }
+
+        [Test]
+        public void UnblockableAssigned_SpawnsUnblockableFrames()
+        {
+            // Medium(侍骸骨)はガード不能(突き)を割当済み（Thrust_Enemy_Unguardable_A 相当）→ ガード不能攻撃で専用素材を表示。
+            EnemySlashVfxPresenter p = NewPresenter();
+            var src = new FakeSwing { IsSwingHitboxActive = true, SlashVfxKey = "Medium", SwingStage = AttackSwing.EnemyMeleeUnblockable, SwingForward = Vector3.right };
+            p.Bind(new IAttackSwingSource[] { src });
+
+            p.Tick(0.01f);
+
+            Assert.AreEqual(1, p.Pool.ActiveCount, "ガード不能攻撃も割り当て済みなら表示する。");
+            Assert.AreEqual("r0mu", FirstPlaying(p.Pool).CurrentSprite.name, "ガード不能は専用素材を選択。");
         }
 
         [Test]
