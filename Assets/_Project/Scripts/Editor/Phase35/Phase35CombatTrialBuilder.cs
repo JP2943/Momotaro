@@ -36,9 +36,9 @@ namespace Momotaro.Editor.Phase35
         private const string RangedPrefabPath = "Assets/_Project/Prefabs/Enemies/PF_Enemy_Ranged_Prototype.prefab";
         private const string ElitePrefabPath = "Assets/_Project/Prefabs/Enemies/PF_Enemy_Elite_Prototype.prefab";
 
-        private const string SlashRoot = "Assets/_Project/Art/VFX/Slash";
-        private const string ThrustRoot = "Assets/_Project/Art/VFX/Thrust";
-        private const string WarningFolder = "Assets/_Project/Art/VFX/Warning/Warning_Enemy_Unguardable_A";
+        private const string PlayerSlashRoot = "Assets/_Project/Art/VFX/Slash/Player";
+        private const string EnemySlashRoot = "Assets/_Project/Art/VFX/Slash/Enemy";
+        private const string WarningFolder = "Assets/_Project/Art/VFX/Warning/Enemy/Medium/Unblockable";
 
         /// <summary>生成結果。</summary>
         public readonly struct BuildResult
@@ -249,10 +249,10 @@ namespace Momotaro.Editor.Phase35
             // 主人公の剣閃（通常1〜3段＋必殺技）。
             var playerVfx = go.AddComponent<PlayerSlashVfxPresenter>();
             playerVfx.SetCamera(camera); // 正対（billboard）・表示位置補正の基準（P3.5-06）。
-            playerVfx.Stage1Frames = PlayerSet("Slash_Small_A", 0.12f, missing);
-            playerVfx.Stage2Frames = PlayerSet("Slash_Small_B", 0.12f, missing);
-            playerVfx.Stage3Frames = PlayerSet("Slash_Small_C", 0.14f, missing);
-            playerVfx.SpecialFrames = PlayerSet("Slash_Special_A", 0.2f, missing);
+            playerVfx.Stage1Frames = PlayerSet("Combo1", 0.12f, missing);
+            playerVfx.Stage2Frames = PlayerSet("Combo2", 0.12f, missing);
+            playerVfx.Stage3Frames = PlayerSet("Combo3", 0.14f, missing);
+            playerVfx.SpecialFrames = PlayerSet("Special", 0.2f, missing);
             if (playerController != null)
             {
                 var so = new SerializedObject(playerVfx);
@@ -273,14 +273,14 @@ namespace Momotaro.Editor.Phase35
                 {
                     // 近接骸骨（Small）は通常のみ。強・ガード不能は侍骸骨（Medium）が持つ（敵タイプ鍵は archetype 駆動。P3.5-06）。
                     key = "Small",
-                    normal = EnemySet(SlashRoot + "/Slash_Enemy_Small_A", 0.12f, missing),
+                    normal = EnemySet(EnemySlashRoot + "/Small/Normal", 0.12f, missing),
                 },
                 new EnemySlashVfxPresenter.EnemySlashEntry
                 {
                     key = "Medium",
-                    normal = EnemySet(SlashRoot + "/Slash_Enemy_Medium_A", 0.12f, missing),
-                    heavy = EnemySet(SlashRoot + "/Slash_Enemy_Heavy_A", 0.14f, missing),
-                    unblockable = EnemySet(ThrustRoot + "/Thrust_Enemy_Unguardable_A", 0.18f, missing),
+                    normal = EnemySet(EnemySlashRoot + "/Medium/Normal", 0.12f, missing),
+                    heavy = EnemySet(EnemySlashRoot + "/Medium/Heavy", 0.14f, missing),
+                    unblockable = EnemySet(EnemySlashRoot + "/Medium/Unblockable", 0.18f, missing),
                 },
             };
 
@@ -296,7 +296,7 @@ namespace Momotaro.Editor.Phase35
 
         private static PlayerSlashVfxPresenter.SlashFrameSet PlayerSet(string setFolder, float duration, List<string> missing)
         {
-            string b = SlashRoot + "/" + setFolder;
+            string b = PlayerSlashRoot + "/" + setFolder;
             var set = new PlayerSlashVfxPresenter.SlashFrameSet
             {
                 down = LoadFrames(b + "/Down"),
