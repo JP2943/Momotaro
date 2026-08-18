@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
+using Momotaro.Gameplay.Enemy;
 using Momotaro.Gameplay.Player;
 using Momotaro.Presentation.Diagnostics;
 using NUnit.Framework;
@@ -11,9 +12,9 @@ using UnityEngine;
 namespace Momotaro.Tests.EditMode
 {
     /// <summary>
-    /// P2-11：フィードバック配信（<see cref="CombatFeedbackDispatcher"/>）が結果チャネルを購読して仮 Cue を配信し、無効化で確実に
-    /// 購読解除、シーン再取得（<see cref="CombatFeedbackDispatcher.Rescan"/>）で購読し直し、Gameplay へ干渉しない（Logic 非依存）
-    /// ことを検証する。
+    /// P2-11 / P3.5-05B：フィードバック配信（<see cref="CombatFeedbackDispatcher"/>）が結果チャネル（主人公・ダミー・実戦の敵）を購読して
+    /// 仮 Cue を配信し、無効化で確実に購読解除、シーン再取得（<see cref="CombatFeedbackDispatcher.Rescan"/>）で購読し直し、Gameplay へ
+    /// 干渉しない（Logic 非依存）ことを検証する。P3.5-05B で <see cref="EnemyActor"/> 購読を追加し、主人公→敵の命中でも敵側演出が働く。
     /// </summary>
     public sealed class CombatFeedbackDispatcherTests
     {
@@ -73,6 +74,25 @@ namespace Momotaro.Tests.EditMode
             SetField(d, "_data", e);
             go.SetActive(true);
             return d;
+        }
+
+        private EnemyActor MakeEnemy(int hp = 100, EnemyRole role = EnemyRole.Melee)
+        {
+            var a = ScriptableObject.CreateInstance<EnemyArchetypeData>();
+            _spawned.Add(a);
+            SetField(a, "_maxHp", hp);
+            SetField(a, "_defense", 0f);
+            SetField(a, "_poiseMax", 100f);
+            SetField(a, "_flinchResistance", 60f);
+            SetField(a, "_role", role);
+
+            var go = new GameObject("Enemy");
+            _spawned.Add(go);
+            go.SetActive(false);
+            var actor = go.AddComponent<EnemyActor>();
+            SetField(actor, "_archetype", a);
+            go.SetActive(true);
+            return actor;
         }
 
         private CombatFeedbackDispatcher MakeDispatcher()
@@ -152,6 +172,126 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, second.Results.ListenerCount, "再取得で新しいダミーを購読。");
         }
 
+        // ---- P3.5-05B：実戦の敵（EnemyActor）購読 ----
+
+        [Test]
+        public void Rescan_SubscribesToEnemyResults()
+        {
+            var enemy = MakeEnemy();
+            var disp = MakeDispatcher();
+            disp.Rescan();
+            Assert.AreEqual(1, enemy.Results.ListenerCount, "実 EnemyActor の結果を購読する。");
+        }
+
+        [Test]
+        public void EnemyHitResult_PublishesFeedbackCue()
+        {
+            var enemy = MakeEnemy();
+            var disp = MakeDispatcher();
+            disp.Rescan();
+            var fake = new FakeFeedback();
+            disp.Feedback.AddListener(fake);
+
+            // 主人公→敵の命中相当：敵の結果チャネルへ結果を流す（購読経由で Dispatcher が受ける）。
+            enemy.Results.Publish(HitResult.Damage(HitId.Single(11), null, enemy, new HitDamage(9f, 0f, 0f)));
+
+            Assert.IsTrue(fake.Got, "敵命中でもフィードバックが配信される。");
+            Assert.AreEqual(HitResultKind.Damage, fake.Last.Result.Kind);
+            Assert.AreEqual("SE_Hit_Normal", fake.Last.Cue.SeId);
+            Assert.Greater(fake.Last.Cue.HitStopSeconds, 0f, "敵命中でも HitStop 要求が出る。");
+        }
+
+        [Test]
+        public void MultipleEnemies_AllSubscribed_EachDelivers()
+        {
+            var e1 = MakeEnemy();
+            var e2 = MakeEnemy();
+            var disp = MakeDispatcher();
+            disp.Rescan();
+            Assert.AreEqual(1, e1.Results.ListenerCount);
+            Assert.AreEqual(1, e2.Results.ListenerCount, "複数敵を同時購読する。");
+
+            var fake = new FakeFeedback();
+            disp.Feedback.AddListener(fake);
+            e1.Results.Publish(DamageOn(e1, 21));
+            e2.Results.Publish(DamageOn(e2, 22));
+            Assert.AreEqual(2, fake.Count, "各敵の命中がそれぞれ配信される。");
+        }
+
+        [Test]
+        public void EnemyDynamicallySpawned_Rescan_Subscribes()
+        {
+            var disp = MakeDispatcher();
+            disp.Rescan(); // まだ敵は居ない。
+
+            var enemy = MakeEnemy(); // 動的生成相当。
+            disp.Rescan();
+            Assert.AreEqual(1, enemy.Results.ListenerCount, "動的生成された敵を Rescan で購読する。");
+        }
+
+        [Test]
+        public void EnemyDestroyed_Rescan_SafeUnsubscribe()
+        {
+            var enemy = MakeEnemy();
+            var disp = MakeDispatcher();
+            disp.Rescan();
+            Assert.AreEqual(1, enemy.Results.ListenerCount);
+
+            // 撃破・破棄相当：敵を破棄しても Rescan は例外なく安定し、購読状態がクリアされる。
+            Object.DestroyImmediate(enemy.gameObject);
+            Assert.DoesNotThrow(() => { disp.Rescan(); disp.Rescan(); }, "破棄された敵があっても Rescan は安定する。");
+        }
+
+        [Test]
+        public void RepeatedRescan_NoDuplicateEnemyNotification()
+        {
+            var enemy = MakeEnemy();
+            var disp = MakeDispatcher();
+            disp.Rescan();
+            disp.Rescan();
+            disp.Rescan();
+            Assert.AreEqual(1, enemy.Results.ListenerCount, "複数回 Rescan でも重複購読しない。");
+
+            var fake = new FakeFeedback();
+            disp.Feedback.AddListener(fake);
+            enemy.Results.Publish(DamageOn(enemy, 31));
+            Assert.AreEqual(1, fake.Count, "重複通知されない（1 回のみ）。");
+        }
+
+        [Test]
+        public void EnemyOnDisable_Unsubscribes()
+        {
+            var enemy = MakeEnemy();
+            var disp = MakeDispatcher();
+            disp.Rescan();
+            Assert.AreEqual(1, enemy.Results.ListenerCount);
+
+            OnDisableMethod.Invoke(disp, null);
+            Assert.AreEqual(0, enemy.Results.ListenerCount, "無効化で敵購読も解除される。");
+        }
+
+        [Test]
+        public void ExistingRoutes_NotBroken_WithEnemyAdded()
+        {
+            // 主人公・ダミー・敵を同居させ、各経路が 1 回ずつ配信されることを確認（既存経路を壊さない）。
+            var player = MakePlayer(active: true);
+            var dummy = MakeDummy();
+            var enemy = MakeEnemy();
+            var disp = MakeDispatcher();
+            disp.Rescan();
+
+            Assert.AreEqual(1, player.Results.ListenerCount, "主人公購読は維持。");
+            Assert.AreEqual(1, dummy.Results.ListenerCount, "ダミー購読は維持。");
+            Assert.AreEqual(1, enemy.Results.ListenerCount, "敵購読が追加。");
+
+            var fake = new FakeFeedback();
+            disp.Feedback.AddListener(fake);
+            player.Results.Publish(DamageOn(player, 41));
+            dummy.Results.Publish(DamageOn(dummy, 42));
+            enemy.Results.Publish(DamageOn(enemy, 43));
+            Assert.AreEqual(3, fake.Count, "3 経路ともそれぞれ 1 回配信（既存経路非破壊）。");
+        }
+
         [Test]
         public void Hud_DebugToggle_TogglesVisibility()
         {
@@ -180,6 +320,19 @@ namespace Momotaro.Tests.EditMode
             disp.OnHitResult(HitResult.Damage(HitId.Single(2), null, dummy, new HitDamage(8f, 0f, 0f)));
 
             Assert.AreEqual(hpBefore, dummy.CurrentHp, "フィードバック配信は Gameplay を変更しない。");
+        }
+
+        [Test]
+        public void EnemyDispatch_DoesNotMutateGameplay_LogicIndependent()
+        {
+            var enemy = MakeEnemy(100);
+            var disp = MakeDispatcher();
+            int hpBefore = enemy.CurrentHp;
+
+            // 敵の結果でも配信は読み取りのみ（HP を変えない）。
+            disp.OnHitResult(HitResult.Damage(HitId.Single(51), null, enemy, new HitDamage(8f, 0f, 0f)));
+
+            Assert.AreEqual(hpBefore, enemy.CurrentHp, "敵へのフィードバック配信も Gameplay を変更しない。");
         }
 
         [Test]

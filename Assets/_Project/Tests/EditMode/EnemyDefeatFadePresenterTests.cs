@@ -8,7 +8,7 @@ namespace Momotaro.Tests.EditMode
 {
     /// <summary>
     /// P3.5-05B：<see cref="EnemyDefeatFadePresenter"/> が撃破イベントを受けて対応する敵の SpriteRenderer をフェードアウトさせることを検証する。
-    /// EnemyId→Renderer の解決、フェード進行と満了、破棄済みの無処理、素材(Renderer)未割当の無例外、ClearAll を確認する。
+    /// EnemyId→Renderer の解決、フェード進行と満了、破棄済みの無処理、素材(Renderer)未割当の無例外、ClearAll での元色復元（半透明残留なし）を確認する。
     /// </summary>
     public sealed class EnemyDefeatFadePresenterTests
     {
@@ -119,6 +119,22 @@ namespace Momotaro.Tests.EditMode
 
             Assert.DoesNotThrow(() => Publish(enemy));
             Assert.AreEqual(0, p.ActiveFadeCount, "表示体が無い敵は無処理。");
+        }
+
+        [Test]
+        public void ClearAll_MidFade_RestoresOriginalColor_NoResidue()
+        {
+            EnemyDefeatFadePresenter p = New();
+            NewEnemy(5, true, out SpriteRenderer r); // 元色：不透明の白。
+            p.BeginFade(new[] { r });
+
+            p.Tick(0.1f); // t=0.5 → 半透明。
+            Assert.AreEqual(0.5f, r.color.a, 0.03f, "途中は半透明。");
+
+            p.ClearAll();
+            Assert.AreEqual(0, p.ActiveFadeCount);
+            Assert.AreEqual(1f, r.color.a, 0.001f, "途中解除で元色（不透明）へ復元し半透明残留を残さない。");
+            Assert.AreEqual(Color.white, r.color, "色相も元通り。");
         }
 
         [Test]

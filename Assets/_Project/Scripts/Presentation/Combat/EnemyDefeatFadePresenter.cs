@@ -10,7 +10,8 @@ namespace Momotaro.Presentation.Combat
     /// （＝<see cref="IEnemyDefeatSource"/>）を低頻度で探索して各撃破チャネル（<see cref="EnemyDefeatChannel"/>）を購読し、撃破イベントの
     /// <c>EnemyId</c> に対応する敵の SpriteRenderer 群を透明へ向けて減衰させる。撃破後も敵は Down 状態で表示体を保持するため生存中に適用できる。
     ///
-    /// 時間は <see cref="Tick"/> で外部から与える。破棄済み Renderer は無処理でフェードを終える（残留なし）。Disable・Scene 離脱で購読解除・全消去。
+    /// 時間は <see cref="Tick"/> で外部から与える。破棄済み Renderer は無処理でフェードを終える（残留なし）。Disable・Scene 離脱では購読解除し、
+    /// 進行中フェードは元色へ復元して半透明残留を残さない（他 Presenter の後始末方針に整合。撃破済みの最終見た目は Scene 再構築側の責務）。
     /// Gameplay ロジックには一切干渉しない（読み取りのみ）。素材未割当（Renderer 無し）でも例外なく継続する。
     /// </summary>
     [DisallowMultipleComponent]
@@ -168,9 +169,24 @@ namespace Momotaro.Presentation.Combat
             }
         }
 
-        /// <summary>全フェードを打ち切る（Disable・Scene 離脱・Retry）。</summary>
+        /// <summary>
+        /// 全フェードを打ち切る（Disable・Scene 離脱・Retry）。途中まで減衰させた Renderer は元色へ復元し、半透明残留を残さない
+        /// （他 Presenter の後始末方針に整合）。撃破済みの最終的な見た目（非表示化）は Scene 再構築側の責務とする。
+        /// </summary>
         public void ClearAll()
         {
+            for (int i = 0; i < _fades.Count; i++)
+            {
+                FadeState f = _fades[i];
+                for (int j = 0; j < f.Renderers.Length; j++)
+                {
+                    if (f.Renderers[j] != null)
+                    {
+                        f.Renderers[j].color = f.Orig[j];
+                    }
+                }
+            }
+
             _fades.Clear();
         }
 
