@@ -88,9 +88,10 @@ namespace Momotaro.Tests.EditMode
         public void RisingEdge_SpawnsSlash_AtCenter_ForRightFacing()
         {
             PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
-            // 基準配置＝SwingCenter を検証するため補正を 0 に（高さ0・深度0なら位置は SwingCenter に一致：カメラ有無に非依存）。
+            // 基準配置＝SwingCenter を検証するため補正を 0 に（高さ0・深度0・引き戻し0なら位置は SwingCenter に一致：カメラ有無に非依存）。
             p.SlashHeightOffset = 0f;
             p.DepthOffset = 0f;
+            p.VfxForwardPull = 0f;
             src.IsSwingHitboxActive = true;
             src.SwingStage = 1;
             src.SwingCenter = new Vector3(1f, 0.5f, 0f);
@@ -116,6 +117,7 @@ namespace Momotaro.Tests.EditMode
             p.SetCamera(cam);
             p.SlashHeightOffset = 0.9f;
             p.DepthOffset = 0.5f;
+            p.VfxForwardPull = 0f; // billboard/高さ/深度のみ検証（引き戻しは別テスト）。
 
             src.IsSwingHitboxActive = true;
             src.SwingCenter = new Vector3(1f, 0.2f, 3f);
@@ -132,6 +134,27 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(expected.y, inst.transform.position.y, 1e-4f, "高さ＋カメラ側 DepthOffset を反映(y)。");
             Assert.AreEqual(expected.z, inst.transform.position.z, 1e-4f, "高さ＋カメラ側 DepthOffset を反映(z)。");
             Assert.Less(Quaternion.Angle(inst.transform.rotation, cam.transform.rotation), 0.01f, "カメラへ正対（billboard）。");
+        }
+
+        [Test]
+        public void Spawn_ForwardPull_MovesVfxTowardPlayer()
+        {
+            // 判定は不変で、表示だけ攻撃方向へ引き戻して手元へ寄せる（P3.5-06。Down 以外が離れて見える症状の対策）。
+            PlayerSlashVfxPresenter p = NewPresenter(out FakeSwing src);
+            p.SlashHeightOffset = 0f;
+            p.DepthOffset = 0f;
+            p.VfxForwardPull = 0.3f;
+            src.IsSwingHitboxActive = true;
+            src.SwingCenter = new Vector3(1f, 0f, 0f);
+            src.SwingForward = Vector3.right; // +X
+
+            p.Tick(0.01f);
+
+            SlashVfxInstance inst = Playing(p.Pool);
+            Assert.IsNotNull(inst);
+            // 判定中心(1,0,0) から Forward(+X) へ 0.3 引き戻し → (0.7,0,0)。
+            Assert.AreEqual(0.7f, inst.transform.position.x, 1e-4f, "攻撃方向へ引き戻して手元へ寄る。");
+            Assert.AreEqual(0f, inst.transform.position.z, 1e-4f);
         }
 
         [Test]

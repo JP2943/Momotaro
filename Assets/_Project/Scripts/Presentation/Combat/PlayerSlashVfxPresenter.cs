@@ -57,6 +57,10 @@ namespace Momotaro.Presentation.Combat
         [Tooltip("カメラ側（-forward）へ逃がす深度オフセット（m）。床・壁との深度交差による欠けを防ぐ。キャラ billboard と同値が目安。")]
         [SerializeField] private float _depthOffset = 0.5f;
 
+        [Tooltip("剣閃を攻撃方向（SwingForward）に沿ってプレイヤー側へ引き戻す量（m。P3.5-06）。判定（Hitbox）は不変で、表示だけ手元へ寄せる。"
+            + " 俯瞰カメラでは Left/Right が画面上で最も補正され、Down は圧縮で最小になる（Down 以外が離れて見える症状に対応）。")]
+        [SerializeField] private float _vfxForwardPull = 0.35f;
+
         [Tooltip("正対（billboard）対象カメラ。未指定なら Main Camera を取得してキャッシュする。")]
         [SerializeField] private Camera _camera;
 
@@ -93,6 +97,9 @@ namespace Momotaro.Presentation.Combat
 
         /// <summary>深度オフセット（m。Scene 構築・試遊調整・テストが設定）。</summary>
         public float DepthOffset { get => _depthOffset; set => _depthOffset = value; }
+
+        /// <summary>剣閃を攻撃方向に沿ってプレイヤー側へ引き戻す量（m。判定は不変。試遊調整・テストが設定）。</summary>
+        public float VfxForwardPull { get => _vfxForwardPull; set => _vfxForwardPull = value; }
 
         /// <summary>正対対象カメラを設定する（Scene 構築 P3.5-06・テスト）。キャッシュをリセットする。</summary>
         public void SetCamera(Camera camera)
@@ -189,7 +196,9 @@ namespace Momotaro.Presentation.Combat
                 return; // 未割当（素材制作中）：無処理でGameplay継続。
             }
 
-            SlashVfxPlacement.Compute(_source.SwingCenter, ResolveCamera(), _slashHeightOffset, _depthOffset,
+            // 判定中心（SwingCenter）から攻撃方向へ引き戻し、表示だけプレイヤー側へ寄せる（判定 Hitbox は不変。P3.5-06）。
+            Vector3 center = _source.SwingCenter - _source.SwingForward.normalized * _vfxForwardPull;
+            SlashVfxPlacement.Compute(center, ResolveCamera(), _slashHeightOffset, _depthOffset,
                 out Vector3 pos, out Quaternion rot);
             _current = EnsurePool().Get();
             _current.Play(frames, pos, rot, set.duration, _sortingOrder, _playerSlashColor);
