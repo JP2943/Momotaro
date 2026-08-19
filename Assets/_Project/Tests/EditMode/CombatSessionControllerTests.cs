@@ -50,7 +50,8 @@ namespace Momotaro.Tests.EditMode
         private sealed class FakeReloader : ICombatSceneReloader
         {
             public int Calls;
-            public bool ReloadCurrent() { Calls++; return true; }
+            public bool Result = true; // 読込開始の成否（Build Settings 未登録等の失敗を再現するため可変）。
+            public bool ReloadCurrent() { Calls++; return Result; }
         }
 
         private static void InvokePrivate(object target, string method)
@@ -181,6 +182,60 @@ namespace Momotaro.Tests.EditMode
 
             Assert.IsFalse(c.RequestReload(), "Victory/Defeat 以外からは再読込しない。");
             Assert.AreEqual(0, reloader.Calls);
+        }
+
+        [Test]
+        public void RequestReload_WhenReloaderFails_StaysInResultState_AndRetryable()
+        {
+            var c = MakeController();
+            var reloader = new FakeReloader { Result = false }; // 読込開始に失敗（例：Build Settings 未登録）。
+            c.SetReloader(reloader);
+            c.StartWave();
+            c.ToVictory();
+
+            Assert.IsFalse(c.RequestReload(), "開始失敗時は false。");
+            Assert.AreEqual(CombatSessionState.Victory, c.State, "失敗時は Reloading へ落ちず Victory のまま（固定化しない）。");
+            Assert.AreEqual(1, reloader.Calls);
+
+            // 復旧後（例：Build Settings 追加）に Retry を再試行できる。
+            reloader.Result = true;
+            Assert.IsTrue(c.RequestReload(), "復旧後の再試行で成功。");
+            Assert.AreEqual(CombatSessionState.Reloading, c.State);
+            Assert.AreEqual(2, reloader.Calls);
+        }
+
+        [Test]
+        public void RequestReload_NullReloader_StaysInResultState()
+        {
+            var c = MakeController();
+            c.StartWave();
+            c.ToDefeat();
+
+            Assert.IsFalse(c.RequestReload(), "Reloader 未設定では再読込しない。");
+            Assert.AreEqual(CombatSessionState.Defeat, c.State, "状態は Defeat のまま（Retry 再試行可能）。");
+        }
+
+        [Test]
+        public void VictoryDefeat_Conflict_FirstAppliedWins_SecondRejected()
+        {
+            // Defeat が先：以後の Victory は拒否（Player 死亡は Victory 判定より前に確定する現実の順序＝Defeat 優先）。
+            var c1 = MakeController();
+            var ch1 = new PlayerDefeatChannel();
+            c1.BindPlayerDefeat(ch1);
+            c1.StartWave();
+            ch1.Publish(new PlayerDefeatedEvent(1, Vector3.zero)); // → Defeat
+            Assert.AreEqual(CombatSessionState.Defeat, c1.State);
+            Assert.IsFalse(c1.ToVictory(), "Defeat 後の Victory は拒否。");
+            Assert.AreEqual(CombatSessionState.Defeat, c1.State);
+
+            // Victory が先：以後の Defeat 通知は拒否（二重遷移しない）。
+            var c2 = MakeController();
+            var ch2 = new PlayerDefeatChannel();
+            c2.BindPlayerDefeat(ch2);
+            c2.StartWave();
+            Assert.IsTrue(c2.ToVictory());
+            ch2.Publish(new PlayerDefeatedEvent(2, Vector3.zero)); // Victory からは Defeat 不可
+            Assert.AreEqual(CombatSessionState.Victory, c2.State, "Victory 後の Defeat は拒否（二重遷移なし）。");
         }
 
         [Test]

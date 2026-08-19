@@ -1,4 +1,5 @@
 using Momotaro.Gameplay.Enemy.Combat.Projectile;
+using Momotaro.Gameplay.Modes;
 using UnityEngine;
 
 namespace Momotaro.Gameplay.Scenes
@@ -10,9 +11,9 @@ namespace Momotaro.Gameplay.Scenes
     /// Retry 受付遅延を制御する。Retry は <see cref="CombatSessionController.RequestReload"/> 経由で現在 Scene を再読込し、
     /// 二重要求は Session 状態機が拒否する（<see cref="CombatRetryInput"/> が本 Controller の <see cref="RequestRetry"/> を呼ぶ）。
     ///
-    /// 入力停止は Defeat では Defeated 状態が既に担保する。Victory では GameMode 等のグローバル状態を切り替えず（副作用・フリーズ回避）、
-    /// 敵不在の空アリーナで待機させる（厳密な入力停止は安定確認後に再導入）。結果表示・Retry 受付は timeScale に依存しない
-    /// （<see cref="Time.unscaledDeltaTime"/> 駆動）。Scene API・入力読取・UI 描画には直接触れない（Scene 再読込は
+    /// 結果表示中は Victory・Defeat 双方で入力を停止する（§5.1 Table4 / §9.1）。GameMode を GameOver へ切り替えて Gameplay Action Map を
+    /// 閉じ、Player 入力を無効化する（Retry 入力は <see cref="CombatRetryInput"/> が Action Map に依らず受け付ける）。結果表示・Retry 受付は
+    /// timeScale に依存しない（<see cref="Time.unscaledDeltaTime"/> 駆動）。Scene API・入力読取・UI 描画には直接触れない（Scene 再読込は
     /// <see cref="ICombatSceneReloader"/>、入力は <see cref="CombatRetryInput"/>、パネルは HUD が本 Controller の
     /// <see cref="ResultVisible"/> を読んで描く）。状態検出はイベントではなくポーリングで行い、EditMode で決定的に駆動できる
     /// （<see cref="Tick"/>）。
@@ -132,9 +133,8 @@ namespace Momotaro.Gameplay.Scenes
                 case CombatSessionState.Victory:
                 case CombatSessionState.Defeat:
                     Timer.Enter();
+                    LockInput();        // 結果表示中は操作不能（§5.1 Table4 / §9.1）。Victory・Defeat 双方で明示的に入力停止。
                     CleanupResiduals(); // 残留 Projectile を掃除（§9.1。Telegraph/Slot は撃破 Cleanup 済み）。
-                    // 入力ロックは Defeat では Defeated 状態が既に担保する。Victory では GameMode を切り替えず
-                    // （グローバル副作用・フリーズ回避）、敵不在の空アリーナで待機させる。厳密な入力停止は安定確認後に再導入する。
                     break;
                 default:
                     Timer.Reset(); // Preparing／Playing／Intermission／Reloading（Loading への切替は Reloader が担う）。
@@ -156,6 +156,15 @@ namespace Momotaro.Gameplay.Scenes
 
             _waves.AllWavesCleared += OnAllWavesCleared;
             _wavesSubscribed = true;
+        }
+
+        private static void LockInput()
+        {
+            // Gameplay Action Map を閉じて Player 入力を停止する（結果表示中は操作不能。§5.1/§9.1）。GameMode は Bootstrap が
+            // 常駐生成するため試遊では常に有効。未起動でも null 安全（no-op）。Retry 入力は Action Map に依らず低レベル Device を直接
+            // 読む CombatRetryInput が担うため、GameOver でも受け付けられる。読込完了後は新 Scene の GameplaySceneMode が Exploration
+            // を要求して操作可能へ戻る。GameMode 切替は timeScale を変えないため、結果タイマ（unscaled 駆動）とも干渉しない。
+            GameModeProvider.Current?.ChangeMode(GameMode.GameOver);
         }
 
         private static void CleanupResiduals()

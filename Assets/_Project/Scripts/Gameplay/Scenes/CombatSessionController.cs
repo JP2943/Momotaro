@@ -78,18 +78,28 @@ namespace Momotaro.Gameplay.Scenes
         public bool ToDefeat() => Apply(_machine.ToDefeat());
 
         /// <summary>
-        /// 再読込を要求する（Victory/Defeat → Reloading）。二重要求は状態機が拒否するため、再読込 Adapter は一度だけ呼ばれる。
+        /// 再読込を要求する（Victory/Defeat → Reloading）。再読込 Adapter の <see cref="ICombatSceneReloader.ReloadCurrent"/> が
+        /// 読込を開始できた（true）ときにのみ Reloading へ遷移する。開始に失敗（Adapter 未設定・Build Settings 未登録等）した場合は
+        /// 状態を Victory/Defeat のまま保ち、Retry を再試行できるようにする。二重要求は Reloading 以後は拒否され、再読込は一度だけ発行される。
         /// 開始できたら true。
         /// </summary>
         public bool RequestReload()
         {
-            if (!Apply(_machine.ToReloading()))
+            // Victory/Defeat 以外・既に Reloading からは不可。ここではまだ状態を変えない（開始成功後にのみ Reloading へ遷移する）。
+            if (!_machine.CanEnter(CombatSessionState.Reloading))
             {
-                return false; // Victory/Defeat 以外、または既に Reloading（二重要求）。
+                return false;
             }
 
-            _reloader?.ReloadCurrent(); // 一回だけ。以後は Reloading のため ToReloading が false になり再呼び出しされない。
-            return true;
+            // Reloader 未設定、または Build Settings 未登録等で読込を開始できない（false）場合は状態を変えず、Retry を再試行可能なまま保つ
+            // （Reloading へ落ちて復帰不能になるのを防ぐ。P3.5-08 受入指摘）。ReloadCurrent は自前フラグで二重要求を無視する。
+            if (_reloader == null || !_reloader.ReloadCurrent())
+            {
+                return false;
+            }
+
+            // 読込開始に成功したときだけ Reloading へ遷移する。以後の二重要求は CanEnter が false で拒否される。
+            return Apply(_machine.ToReloading());
         }
 
         private bool Apply(bool changed)
