@@ -3,8 +3,10 @@ using System.Linq;
 using Momotaro.Editor.Phase35;
 using Momotaro.Gameplay.Enemy;
 using Momotaro.Gameplay.Player;
+using Momotaro.Gameplay.Scenes;
 using Momotaro.Presentation.Combat;
 using Momotaro.Presentation.Diagnostics;
+using Momotaro.Presentation.Hud;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -129,7 +131,10 @@ namespace Momotaro.Tests.EditMode
             }
 
             Assert.AreEqual(1, InScene<PlayerStateController>(scene).Count, "Player は 1 体。");
-            Assert.AreEqual(1, InScene<EnemyTestFieldController>(scene).Count, "Controller は 1 つ。");
+            Assert.AreEqual(1, InScene<CombatSessionController>(scene).Count, "Session は 1 つ。");
+            Assert.AreEqual(1, InScene<WaveRunner>(scene).Count, "WaveRunner は 1 つ。");
+            Assert.AreEqual(1, InScene<CombatPlayHud>(scene).Count, "試遊 HUD は 1 つ。");
+            Assert.AreEqual(0, InScene<EnemyTestFieldController>(scene).Count, "試遊 Scene に手動編成ツールは置かない（Wave 駆動へ置換）。");
             Assert.AreEqual(0, InScene<EnemyActor>(scene).Count, "初期状態の有効な敵は 0 体。");
 
             int cams = 0;
@@ -139,10 +144,12 @@ namespace Momotaro.Tests.EditMode
             }
             Assert.AreEqual(1, cams, "Main Camera は 1 台。");
 
-            EnemyTestFieldController ctrl = InScene<EnemyTestFieldController>(scene)[0];
-            Assert.IsNotNull(ctrl.MeleePrefab, "近接 Prefab 割当。");
-            Assert.IsNotNull(ctrl.RangedPrefab, "遠距離 Prefab 割当。");
-            Assert.IsNotNull(ctrl.ElitePrefab, "強敵 Prefab 割当。");
+            WaveRunner runner = InScene<WaveRunner>(scene)[0];
+            Assert.IsNotNull(runner.MeleePrefab, "近接 Prefab 割当。");
+            Assert.IsNotNull(runner.RangedPrefab, "遠距離 Prefab 割当。");
+            Assert.IsNotNull(runner.ElitePrefab, "強敵 Prefab 割当。");
+            Assert.AreEqual(4, runner.WaveCount, "Wave は 4 構成（§8.2）。");
+            Assert.AreEqual(4, runner.SpawnPointCount, "固定 Spawn Point は 4 つ。");
 
             Transform floor = FindByName(scene, "Floor");
             Assert.IsNotNull(floor, "Floor が存在。");

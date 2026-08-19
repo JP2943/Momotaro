@@ -24,6 +24,7 @@ namespace Momotaro.Presentation.Hud
         [SerializeField] private PlayerVitalsHolder _player;
         [SerializeField] private PlayerStateController _playerState;
         [SerializeField] private CombatSessionController _session;
+        [SerializeField] private WaveRunner _waves;
 
         [Tooltip("未 Bind の間の自動探索間隔（秒）。毎フレーム FindObjects しないためのスロットル。")]
         [SerializeField] private float _autoLocateInterval = 0.5f;
@@ -33,6 +34,7 @@ namespace Momotaro.Presentation.Hud
         private bool _built;
         private float _locateTimer;
         private RectTransform _canvasRoot;
+        private WaveRunner _boundWaves; // 現在購読中の WaveRunner（対称管理・重複購読防止）。
 
         private Bar _hpBar;
         private Bar _staminaBar;
@@ -60,6 +62,12 @@ namespace Momotaro.Presentation.Hud
 
         private void OnDestroy()
         {
+            if (_boundWaves != null)
+            {
+                _boundWaves.WaveChanged -= OnWaveChanged;
+                _boundWaves = null;
+            }
+
             _vm.Changed -= RefreshVisuals;
             _vm.Dispose();
         }
@@ -68,7 +76,7 @@ namespace Momotaro.Presentation.Hud
         {
             // Player／Session／PlayerState のいずれかが未解決の間だけ低頻度で探索（毎フレーム FindObjects しない）。
             // PlayerVitals だけ先に見つかっても、PlayerState を後から解決できるよう探索を継続する。
-            if (_player == null || _playerState == null || _session == null)
+            if (_player == null || _playerState == null || _session == null || _waves == null)
             {
                 _locateTimer += Time.unscaledDeltaTime;
                 if (_locateTimer >= _autoLocateInterval)
@@ -104,6 +112,17 @@ namespace Momotaro.Presentation.Hud
             TryBindFromFields();
         }
 
+        /// <summary>Wave 供給元（P3.5-07）を注入する（Scene 構築が接続。null は無視）。現在 Wave／総数を「WAVE n / N」へ反映する。</summary>
+        public void SetWaveSource(WaveRunner waves)
+        {
+            if (waves != null)
+            {
+                _waves = waves;
+            }
+
+            TryBindFromFields();
+        }
+
         private void AutoLocate()
         {
             if (_player == null)
@@ -119,6 +138,11 @@ namespace Momotaro.Presentation.Hud
             if (_session == null)
             {
                 _session = FindFirstObjectByType<CombatSessionController>();
+            }
+
+            if (_waves == null)
+            {
+                _waves = FindFirstObjectByType<WaveRunner>();
             }
 
             TryBindFromFields();
@@ -144,7 +168,34 @@ namespace Momotaro.Presentation.Hud
                 _vm.BindSession(_session);
             }
 
+            BindWaves();
             RefreshVisuals();
+        }
+
+        /// <summary>WaveRunner の <see cref="WaveRunner.WaveChanged"/> を対称購読し、現在 Wave／総数を ViewModel へ反映する（重複購読なし）。</summary>
+        private void BindWaves()
+        {
+            if (ReferenceEquals(_boundWaves, _waves))
+            {
+                return;
+            }
+
+            if (_boundWaves != null)
+            {
+                _boundWaves.WaveChanged -= OnWaveChanged;
+            }
+
+            _boundWaves = _waves;
+            if (_boundWaves != null)
+            {
+                _boundWaves.WaveChanged += OnWaveChanged;
+                _vm.SetWave(_boundWaves.CurrentWave, _boundWaves.WaveCount);
+            }
+        }
+
+        private void OnWaveChanged(int wave)
+        {
+            _vm.SetWave(wave, _boundWaves != null ? _boundWaves.WaveCount : 0);
         }
 
         // ---- 構築（冪等。重複 UI を作らない） ----
@@ -260,7 +311,10 @@ namespace Momotaro.Presentation.Hud
 
             if (_waveText != null)
             {
-                _waveText.text = "WAVE  " + _vm.Wave;
+                // 総数が既知なら「WAVE n / N」（§6.1）、未設定（0）なら「WAVE n」。
+                _waveText.text = _vm.WaveTotal > 0
+                    ? "WAVE  " + _vm.Wave + " / " + _vm.WaveTotal
+                    : "WAVE  " + _vm.Wave;
             }
 
             if (_phaseText != null)

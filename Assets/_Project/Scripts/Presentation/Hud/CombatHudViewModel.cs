@@ -31,6 +31,7 @@ namespace Momotaro.Presentation.Hud
         private bool _hasSession;
 
         private int _wave = 1;
+        private int _waveTotal;
 
         /// <summary>現在 HP。未 Bind 時は 0。</summary>
         public int HpCurrent { get; private set; }
@@ -62,8 +63,11 @@ namespace Momotaro.Presentation.Hud
         /// <summary>戦闘 Session の現在状態。未 Bind 時は <see cref="CombatSessionState.Preparing"/>。</summary>
         public CombatSessionState Phase { get; private set; } = CombatSessionState.Preparing;
 
-        /// <summary>現在 Wave（1 始まり）。連続 Wave 進行（P3.5-07）が <see cref="SetWave"/> で更新する。</summary>
+        /// <summary>現在 Wave（1 始まり）。連続 Wave 進行（P3.5-07）が <see cref="SetWave(int)"/> / <see cref="SetWave(int,int)"/> で更新する。</summary>
         public int Wave { get; private set; } = 1;
+
+        /// <summary>Wave 総数（0 なら未設定＝「WAVE n」のみ表示）。連続 Wave 進行（P3.5-07）が設定し、HUD が「WAVE n / N」を描く（§6.1）。</summary>
+        public int WaveTotal { get; private set; }
 
         /// <summary>Player が Bind 済みか。</summary>
         public bool HasPlayer => _hasPlayer;
@@ -168,10 +172,18 @@ namespace Momotaro.Presentation.Hud
             Recompute();
         }
 
-        /// <summary>Wave 番号を設定する（連続 Wave 進行 P3.5-07 が駆動。1 未満は 1 に丸め）。</summary>
+        /// <summary>Wave 番号を設定する（連続 Wave 進行 P3.5-07 が駆動。1 未満は 1 に丸め）。総数は据え置く。</summary>
         public void SetWave(int wave)
         {
             _wave = wave < 1 ? 1 : wave;
+            Recompute();
+        }
+
+        /// <summary>Wave 番号と総数を設定する（P3.5-07。1 未満の番号は 1 に、負の総数は 0 に丸め）。「WAVE n / N」表示用。</summary>
+        public void SetWave(int wave, int total)
+        {
+            _wave = wave < 1 ? 1 : wave;
+            _waveTotal = total < 0 ? 0 : total;
             Recompute();
         }
 
@@ -207,12 +219,13 @@ namespace Momotaro.Presentation.Hud
             bool sc = _hasPlayer && _specialCharging != null && _specialCharging();
             CombatSessionState ph = _session != null ? _session.State : CombatSessionState.Preparing;
             int wv = _wave < 1 ? 1 : _wave;
+            int wt = _waveTotal < 0 ? 0 : _waveTotal;
 
             bool changed =
                 hpC != HpCurrent || hpM != HpMax || !Approximately(hpR, HpRatio) ||
                 stC != StaminaCurrent || stM != StaminaMax || !Approximately(stR, StaminaRatio) ||
                 gb != GuardBroken || sr != SpecialReady || sc != SpecialCharging ||
-                ph != Phase || wv != Wave;
+                ph != Phase || wv != Wave || wt != WaveTotal;
 
             if (!changed)
             {
@@ -230,6 +243,7 @@ namespace Momotaro.Presentation.Hud
             SpecialCharging = sc;
             Phase = ph;
             Wave = wv;
+            WaveTotal = wt;
 
             Changed?.Invoke();
         }

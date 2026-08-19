@@ -151,6 +151,25 @@ namespace Momotaro.Gameplay.Player
         }
 
         /// <summary>
+        /// Wave 間の全回復（Phase3.5 P3.5-07。仕様書 §8.3 の試遊仮仕様）。HP とスタミナを最大へ戻し、GuardBreak（行動不能）を
+        /// 解除する。各 Encounter を独立評価するための試遊専用回復であり、本編戦闘の回復仕様ではない。死亡確定（<see cref="IsDefeated"/>）は
+        /// 対象外（Retry は Scene 再読込で初期化する）。
+        /// </summary>
+        public void RestoreForWaveRecovery()
+        {
+            EnsureVitals();
+            if (_vitals != null)
+            {
+                _vitals.Health.SetCurrent(_vitals.Health.Max);
+            }
+
+            // スタミナの正本は StaminaState。Reset で満タン＋ブレイク解除し、表示用 Vital を同期する
+            // （Vital を直接書くと次 Tick で StaminaState 値に上書きされるため、必ず正本経由で戻す）。
+            _stamina?.Reset();
+            SyncStaminaVital();
+        }
+
+        /// <summary>
         /// 条件付きスタミナ消費（Phase2 P2-09。ステップ等）。残量が <paramref name="amount"/> 以上でブレイク中でないときだけ消費し
         /// true を返す。不足時は消費せず false（ステップ不発）。ステップ消費はガードブレイクを誘発しない（<c>canTriggerBreak:false</c>）。
         /// </summary>

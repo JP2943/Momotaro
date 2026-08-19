@@ -1,11 +1,11 @@
 using System.Collections.Generic;
 using System.IO;
-using Momotaro.Gameplay.Enemy;
 using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Scenes;
 using Momotaro.Presentation.Cameras;
 using Momotaro.Presentation.Combat;
 using Momotaro.Presentation.Diagnostics;
+using Momotaro.Presentation.Hud;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -19,8 +19,8 @@ namespace Momotaro.Editor.Phase35
     /// 同じプロジェクト状態から実行すれば毎回同等の構成（名前・階層・Transform・参照が一定）になる。既存の手動配置 Scene（SCN_VS_Field）には触れない。
     ///
     /// 構成：Environment(Floor+Wall×4)/Player(Prefab)/CameraRig(TopDownCameraFollow)+Main Camera(子・被 Shake)/Directional Light/SceneMode/
-    /// SpawnCenter/Phase35Systems{ EnemyTestFieldController(初期敵0・Context Menu で編成), EnemyDebugToggle,
-    /// CombatFeedback( Dispatcher + HitStop/Flash/CameraShake/SE + CombatFeedbackPresenter + EnemyDefeatFade ),
+    /// SpawnPoints(×4)/Phase35Systems{ CombatSession(P3.5-03), WaveRunner(初期敵0・4Wave 連続進行 P3.5-07), CombatTrialHud(P3.5-04),
+    /// EnemyDebugToggle, CombatFeedback( Dispatcher + HitStop/Flash/CameraShake/SE + CombatFeedbackPresenter + EnemyDefeatFade ),
     /// CombatVFX( PlayerSlashVfx + EnemySlashVfx + UnblockableWarning ) }。斬撃/警告素材は規約パスから割り当てる。
     ///
     /// 失敗方針（完成 VFX 前提）：必要 Prefab（Player/近接/遠距離/強敵）が欠ける場合、および斬撃/警告素材が方向ごとの期待枚数と一致しない
@@ -102,14 +102,14 @@ namespace Momotaro.Editor.Phase35
                 return;
             }
 
-            var controller = Object.FindAnyObjectByType<EnemyTestFieldController>();
-            if (controller != null)
+            var waveRunner = Object.FindAnyObjectByType<WaveRunner>();
+            if (waveRunner != null)
             {
-                Selection.activeGameObject = controller.gameObject;
+                Selection.activeGameObject = waveRunner.gameObject;
             }
 
             Debug.Log("[Phase3.5] 試遊Scene生成: " + DefaultScenePath + " — " + r.Message
-                + " Play 後 EnemyTestFieldController の Context Menu から編成を選択してください。");
+                + " Play すると Wave1 から連続ウェーブが開始します（§8.2）。");
         }
 
         /// <summary>
@@ -164,8 +164,9 @@ namespace Momotaro.Editor.Phase35
 
             AssetDatabase.Refresh();
 
-            string msg = "Environment/Player/CameraRig+Main Camera/Light/SceneMode/SpawnCenter/Phase35Systems"
-                + "(EnemyTestFieldController+EnemyDebugToggle+CombatFeedback+CombatVFX), 初期敵0体。VFX 素材は全方向の期待枚数を満たしています。";
+            string msg = "Environment/Player/CameraRig+Main Camera/Light/SceneMode/SpawnPoints(×4)/Phase35Systems"
+                + "(CombatSession+WaveRunner+CombatTrialHud+EnemyDebugToggle+CombatFeedback+CombatVFX), 初期敵0体・4Wave構成。"
+                + "VFX 素材は全方向の期待枚数を満たしています。";
             return new BuildResult(true, outputPath, msg);
         }
 
@@ -184,6 +185,8 @@ namespace Momotaro.Editor.Phase35
             player.name = "Player";
             player.transform.position = new Vector3(0f, 0f, -6f);
             var playerController = player.GetComponentInChildren<PlayerStateController>(true);
+            var playerVitals = player.GetComponentInChildren<PlayerVitalsHolder>(true);
+            var playerHurt = player.GetComponentInChildren<PlayerHitReaction>(true);
 
             // CameraRig（TopDownCameraFollow は自分の position を毎フレーム上書きするため、揺れは子カメラの localPosition に当てる）。
             var rig = new GameObject("CameraRig");
@@ -213,17 +216,44 @@ namespace Momotaro.Editor.Phase35
             var sceneModeGo = new GameObject("SceneMode");
             sceneModeGo.AddComponent<GameplaySceneMode>();
 
-            // SpawnCenter（生成の中心）。
-            var spawnCenter = new GameObject("SpawnCenter");
-            spawnCenter.transform.position = Vector3.zero;
+            // 固定 Spawn Point（Player=(0,0,-6) と重ならず Camera 内。連続 Wave の生成位置。§8.3）。
+            var spawnPoints = new GameObject("SpawnPoints");
+            Transform[] spawnTransforms =
+            {
+                CreateSpawnPoint("SpawnPoint_0", new Vector3(0f, 0f, 4f), spawnPoints.transform),
+                CreateSpawnPoint("SpawnPoint_1", new Vector3(-4f, 0f, 5f), spawnPoints.transform),
+                CreateSpawnPoint("SpawnPoint_2", new Vector3(4f, 0f, 5f), spawnPoints.transform),
+                CreateSpawnPoint("SpawnPoint_3", new Vector3(0f, 0f, 7f), spawnPoints.transform),
+            };
 
-            // Phase35Systems（編成＋フィードバック＋VFX を一元管理）。
+            // Phase35Systems（Session＋Wave 進行＋フィードバック＋VFX を一元管理）。
             var systems = new GameObject("Phase35Systems");
 
-            var controllerGo = new GameObject("EnemyTestFieldController");
-            controllerGo.transform.SetParent(systems.transform, false);
-            var controller = controllerGo.AddComponent<EnemyTestFieldController>();
-            AssignController(controller, meleePrefab, rangedPrefab, elitePrefab, spawnCenter.transform);
+            // 戦闘 Session（状態・生存数・Player/Enemy 死亡購読の基盤。P3.5-03）。
+            var sessionGo = new GameObject("CombatSession");
+            sessionGo.transform.SetParent(systems.transform, false);
+            var session = sessionGo.AddComponent<CombatSessionController>();
+
+            // 連続 Wave 進行（P3.5-07）。Session/Player 死亡購読は WaveRunner が Runtime に結線する。
+            var waveGo = new GameObject("WaveRunner");
+            waveGo.transform.SetParent(systems.transform, false);
+            var waveRunner = waveGo.AddComponent<WaveRunner>();
+            waveRunner.ConfigurePrefabs(meleePrefab, rangedPrefab, elitePrefab);
+            waveRunner.ConfigureSpawnPoints(spawnTransforms);
+            waveRunner.ConfigureWaves(new[]
+            {
+                new WaveDefinition(1, 0, 0), // Wave1：骸骨剣士 ×1。
+                new WaveDefinition(0, 1, 0), // Wave2：骸骨弓兵 ×1。
+                new WaveDefinition(2, 1, 0), // Wave3：剣士 ×2＋弓兵 ×1（混成）。
+                new WaveDefinition(0, 0, 1), // Wave4：侍骸骨 ×1（強敵）。
+            });
+            waveRunner.Bind(session, playerController, playerVitals, playerHurt);
+
+            // 試遊 HUD（HP/Stamina/Special/GuardBreak/Wave/勝敗。Debug HUD と分離。P3.5-04）。
+            var hudGo = new GameObject("CombatTrialHud");
+            hudGo.transform.SetParent(systems.transform, false);
+            var hud = hudGo.AddComponent<CombatPlayHud>();
+            WireHud(hud, playerVitals, playerController, session, waveRunner);
 
             var toggleGo = new GameObject("EnemyDebugToggle");
             toggleGo.transform.SetParent(systems.transform, false);
@@ -231,6 +261,35 @@ namespace Momotaro.Editor.Phase35
 
             BuildFeedback(systems.transform, cameraGo.transform);
             BuildVfx(systems.transform, playerController, cam);
+        }
+
+        private static Transform CreateSpawnPoint(string name, Vector3 pos, Transform parent)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.position = pos; // ルート Y=0。
+            return go.transform;
+        }
+
+        /// <summary>試遊 HUD の Serialized 参照（Player/PlayerState/Session/Wave）を設定する（Runtime の自動探索より決定的）。</summary>
+        private static void WireHud(CombatPlayHud hud, PlayerVitalsHolder playerVitals,
+            PlayerStateController playerState, CombatSessionController session, WaveRunner waveRunner)
+        {
+            var so = new SerializedObject(hud);
+            SetRef(so, "_player", playerVitals);
+            SetRef(so, "_playerState", playerState);
+            SetRef(so, "_session", session);
+            SetRef(so, "_waves", waveRunner);
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void SetRef(SerializedObject so, string prop, UnityEngine.Object value)
+        {
+            SerializedProperty p = so.FindProperty(prop);
+            if (p != null)
+            {
+                p.objectReferenceValue = value;
+            }
         }
 
         private static void BuildFeedback(Transform systems, Transform cameraTransform)
@@ -417,16 +476,6 @@ namespace Momotaro.Editor.Phase35
             go.transform.position = pos;
             go.transform.localScale = scale; // 正スケールのみ。
             return go;
-        }
-
-        private static void AssignController(EnemyTestFieldController controller, GameObject melee, GameObject ranged, GameObject elite, Transform spawnCenter)
-        {
-            var so = new SerializedObject(controller);
-            so.FindProperty("_meleePrefab").objectReferenceValue = melee;
-            so.FindProperty("_rangedPrefab").objectReferenceValue = ranged;
-            so.FindProperty("_elitePrefab").objectReferenceValue = elite;
-            so.FindProperty("_spawnCenter").objectReferenceValue = spawnCenter;
-            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static void EnsureFolder(string folder)

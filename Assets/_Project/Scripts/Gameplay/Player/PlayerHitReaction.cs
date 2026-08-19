@@ -60,6 +60,12 @@ namespace Momotaro.Gameplay.Player
         /// <summary>時間を進める（テストから直接駆動できるよう分離）。</summary>
         public void Tick(float deltaTime) => State.Tick(deltaTime);
 
+        /// <summary>
+        /// Hurt 硬直・被弾後無敵を即時解除する（Phase3.5 P3.5-07。Wave 間の Player 中立化 §8.3）。OnDisable と同じ
+        /// 純粋タイマ Reset を明示入口として公開し、WaveRunner が Intermission 入りで呼ぶ。二重呼び出し安全。
+        /// </summary>
+        public void ResetHurt() => State.Reset();
+
         private void Update()
         {
             Tick(Time.deltaTime);
