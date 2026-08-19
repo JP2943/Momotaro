@@ -1,5 +1,4 @@
 using Momotaro.Gameplay.Enemy.Combat.Projectile;
-using Momotaro.Gameplay.Modes;
 using UnityEngine;
 
 namespace Momotaro.Gameplay.Scenes
@@ -7,14 +6,16 @@ namespace Momotaro.Gameplay.Scenes
     /// <summary>
     /// 勝利・敗北・リトライの統合（Phase3.5 P3.5-08。仕様書 §4.3 / §9）。戦闘開始から終了・再挑戦までを切れ目なく接続する。
     /// 最終 Wave 完了（<see cref="WaveRunner.AllWavesCleared"/>）を Session の Victory へ、Player 死亡由来の Defeat（Session が
-    /// 既に遷移）を受けて、結果状態に入った瞬間から入力ロック・残留 Cleanup・結果パネル表示遅延（<see cref="CombatOutcomeTimer"/>）・
+    /// 既に遷移）を受けて、結果状態に入った瞬間から残留 Cleanup・結果パネル表示遅延（<see cref="CombatOutcomeTimer"/>）・
     /// Retry 受付遅延を制御する。Retry は <see cref="CombatSessionController.RequestReload"/> 経由で現在 Scene を再読込し、
     /// 二重要求は Session 状態機が拒否する（<see cref="CombatRetryInput"/> が本 Controller の <see cref="RequestRetry"/> を呼ぶ）。
     ///
-    /// 入力ロックは GameMode を <see cref="GameMode.GameOver"/>（＝Gameplay Action Map を閉じる）へ切り替えて行う。Scene API・
-    /// 入力読取・UI 描画には直接触れない（Scene 再読込は <see cref="ICombatSceneReloader"/>、入力は <see cref="CombatRetryInput"/>、
-    /// パネルは HUD が本 Controller の <see cref="ResultVisible"/> を読んで描く）。状態検出はイベントではなくポーリングで行い、EditMode で
-    /// 決定的に駆動できる（<see cref="Tick"/>）。
+    /// 入力停止は Defeat では Defeated 状態が既に担保する。Victory では GameMode 等のグローバル状態を切り替えず（副作用・フリーズ回避）、
+    /// 敵不在の空アリーナで待機させる（厳密な入力停止は安定確認後に再導入）。結果表示・Retry 受付は timeScale に依存しない
+    /// （<see cref="Time.unscaledDeltaTime"/> 駆動）。Scene API・入力読取・UI 描画には直接触れない（Scene 再読込は
+    /// <see cref="ICombatSceneReloader"/>、入力は <see cref="CombatRetryInput"/>、パネルは HUD が本 Controller の
+    /// <see cref="ResultVisible"/> を読んで描く）。状態検出はイベントではなくポーリングで行い、EditMode で決定的に駆動できる
+    /// （<see cref="Tick"/>）。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class CombatOutcomeController : MonoBehaviour
@@ -27,9 +28,6 @@ namespace Momotaro.Gameplay.Scenes
 
         [Tooltip("結果パネル表示までの遅延（§9.1 初期 0.75s）。")]
         [SerializeField] private float _panelDelay = 0.75f;
-
-        [Tooltip("結果状態で要求する入力ロック用 GameMode（Gameplay Action Map を閉じる）。")]
-        [SerializeField] private GameMode _lockMode = GameMode.GameOver;
 
         private CombatOutcomeTimer _timer;
         private CombatSessionState _lastState = CombatSessionState.Preparing;
@@ -83,7 +81,8 @@ namespace Momotaro.Gameplay.Scenes
 
         private void Update()
         {
-            Tick(Time.deltaTime);
+            // 結果表示・Retry 受付は timeScale に依存させない（万一 HitStop 等で timeScale が 0 でもパネルと受付が進む）。
+            Tick(Time.unscaledDeltaTime);
         }
 
         /// <summary>1 フレーム進める（Update から、またはテストが決定的に呼ぶ）。状態のポーリング・結果計時を行う。</summary>
@@ -133,15 +132,12 @@ namespace Momotaro.Gameplay.Scenes
                 case CombatSessionState.Victory:
                 case CombatSessionState.Defeat:
                     Timer.Enter();
-                    LockInput();
                     CleanupResiduals(); // 残留 Projectile を掃除（§9.1。Telegraph/Slot は撃破 Cleanup 済み）。
-                    break;
-                case CombatSessionState.Reloading:
-                    Timer.Reset();
-                    SetMode(GameMode.Loading);
+                    // 入力ロックは Defeat では Defeated 状態が既に担保する。Victory では GameMode を切り替えず
+                    // （グローバル副作用・フリーズ回避）、敵不在の空アリーナで待機させる。厳密な入力停止は安定確認後に再導入する。
                     break;
                 default:
-                    Timer.Reset(); // Preparing／Playing／Intermission。
+                    Timer.Reset(); // Preparing／Playing／Intermission／Reloading（Loading への切替は Reloader が担う）。
                     break;
             }
         }
@@ -160,16 +156,6 @@ namespace Momotaro.Gameplay.Scenes
 
             _waves.AllWavesCleared += OnAllWavesCleared;
             _wavesSubscribed = true;
-        }
-
-        private void LockInput()
-        {
-            SetMode(_lockMode); // Gameplay Action Map を閉じ、Player 入力を停止する（§9.1 戦闘入力停止）。
-        }
-
-        private static void SetMode(GameMode mode)
-        {
-            GameModeProvider.Current?.ChangeMode(mode); // サービス未起動でも安全（試遊は Bootstrap 起動済み）。
         }
 
         private static void CleanupResiduals()

@@ -1,4 +1,3 @@
-using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Scenes;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -10,7 +9,7 @@ namespace Momotaro.Infrastructure.SceneFlow
     /// Gameplay（Session）は Scene API に直接触れず、本コンポーネント経由でのみ現在 Scene を Async 再読込する。読込対象は
     /// 起動時に捕捉した「現在の Scene」（名前文字列を散在させない）。二重要求は自前フラグと Session の Reloading 状態の二段で防ぐ。
     ///
-    /// 再読込開始時に GameMode を <see cref="GameMode.Loading"/> へ切り替え、入力を閉じる。読込完了で新しい Scene の
+    /// 再読込開始時に <see cref="Time.timeScale"/> を 1 へ戻し（万一の低速・凍結状態からの確実な復帰）、読込完了で新しい Scene の
     /// <see cref="GameplaySceneMode"/> が Exploration を要求し、HP／Stamina／Special／Wave／敵／UI は新規 Session として Preparing から
     /// 初期化される（Object を個別復元しない）。
     ///
@@ -59,7 +58,7 @@ namespace Momotaro.Infrastructure.SceneFlow
             }
 
             _loading = true;
-            GameModeProvider.Current?.ChangeMode(GameMode.Loading); // 入力を閉じる。
+            Time.timeScale = 1f; // 万一 timeScale が落ちていても、再読込後は通常速度で始める（フリーズからの確実な復帰）。
 
             if (byIndex)
             {
