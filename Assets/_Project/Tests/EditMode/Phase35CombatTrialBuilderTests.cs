@@ -4,6 +4,8 @@ using Momotaro.Editor.Phase35;
 using Momotaro.Gameplay.Enemy;
 using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Scenes;
+using Momotaro.Infrastructure.Input;
+using Momotaro.Infrastructure.SceneFlow;
 using Momotaro.Presentation.Combat;
 using Momotaro.Presentation.Diagnostics;
 using Momotaro.Presentation.Hud;
@@ -133,6 +135,9 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, InScene<PlayerStateController>(scene).Count, "Player は 1 体。");
             Assert.AreEqual(1, InScene<CombatSessionController>(scene).Count, "Session は 1 つ。");
             Assert.AreEqual(1, InScene<WaveRunner>(scene).Count, "WaveRunner は 1 つ。");
+            Assert.AreEqual(1, InScene<CombatOutcomeController>(scene).Count, "勝敗統合は 1 つ（P3.5-08）。");
+            Assert.AreEqual(1, InScene<CombatSceneReloader>(scene).Count, "Scene 再読込は 1 つ（P3.5-08）。");
+            Assert.AreEqual(1, InScene<CombatRetryInput>(scene).Count, "Retry 入力は 1 つ（P3.5-08）。");
             Assert.AreEqual(1, InScene<CombatPlayHud>(scene).Count, "試遊 HUD は 1 つ。");
             Assert.AreEqual(0, InScene<EnemyTestFieldController>(scene).Count, "試遊 Scene に手動編成ツールは置かない（Wave 駆動へ置換）。");
             Assert.AreEqual(0, InScene<EnemyActor>(scene).Count, "初期状態の有効な敵は 0 体。");

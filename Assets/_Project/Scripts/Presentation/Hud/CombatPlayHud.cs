@@ -25,6 +25,7 @@ namespace Momotaro.Presentation.Hud
         [SerializeField] private PlayerStateController _playerState;
         [SerializeField] private CombatSessionController _session;
         [SerializeField] private WaveRunner _waves;
+        [SerializeField] private CombatOutcomeController _outcome;
 
         [Tooltip("未 Bind の間の自動探索間隔（秒）。毎フレーム FindObjects しないためのスロットル。")]
         [SerializeField] private float _autoLocateInterval = 0.5f;
@@ -76,7 +77,7 @@ namespace Momotaro.Presentation.Hud
         {
             // Player／Session／PlayerState のいずれかが未解決の間だけ低頻度で探索（毎フレーム FindObjects しない）。
             // PlayerVitals だけ先に見つかっても、PlayerState を後から解決できるよう探索を継続する。
-            if (_player == null || _playerState == null || _session == null || _waves == null)
+            if (_player == null || _playerState == null || _session == null || _waves == null || _outcome == null)
             {
                 _locateTimer += Time.unscaledDeltaTime;
                 if (_locateTimer >= _autoLocateInterval)
@@ -87,6 +88,12 @@ namespace Momotaro.Presentation.Hud
             }
 
             _vm.Tick(); // GuardBreak／Special など非イベント値のポーリング反映。
+
+            // 結果パネルの表示遅延（§9.1 0.75s）は時間で変化しイベントを伴わないため、結果状態の間は毎フレーム再描画する。
+            if (_vm.Phase == CombatSessionState.Victory || _vm.Phase == CombatSessionState.Defeat)
+            {
+                RefreshVisuals();
+            }
         }
 
         /// <summary>
@@ -143,6 +150,11 @@ namespace Momotaro.Presentation.Hud
             if (_waves == null)
             {
                 _waves = FindFirstObjectByType<WaveRunner>();
+            }
+
+            if (_outcome == null)
+            {
+                _outcome = FindFirstObjectByType<CombatOutcomeController>();
             }
 
             TryBindFromFields();
@@ -319,8 +331,24 @@ namespace Momotaro.Presentation.Hud
 
             if (_phaseText != null)
             {
-                _phaseText.text = PhaseLabel(_vm.Phase);
+                _phaseText.text = ResolvePhaseLabel();
             }
+        }
+
+        /// <summary>
+        /// フェーズ表示文字列を返す。Victory／Defeat の結果パネルは <see cref="CombatOutcomeController.ResultVisible"/> が立つまで
+        /// （突入から 0.75s。§9.1）表示を保留する。Outcome 未解決時は従来どおり即時表示にフォールバックする。
+        /// </summary>
+        private string ResolvePhaseLabel()
+        {
+            CombatSessionState phase = _vm.Phase;
+            if ((phase == CombatSessionState.Victory || phase == CombatSessionState.Defeat)
+                && _outcome != null && !_outcome.ResultVisible)
+            {
+                return string.Empty; // 0.75s の表示待機中はパネルを出さない。
+            }
+
+            return PhaseLabel(phase);
         }
 
         private static string PhaseLabel(CombatSessionState state)

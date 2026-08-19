@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.IO;
 using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Scenes;
+using Momotaro.Infrastructure.Input;
+using Momotaro.Infrastructure.SceneFlow;
 using Momotaro.Presentation.Cameras;
 using Momotaro.Presentation.Combat;
 using Momotaro.Presentation.Diagnostics;
@@ -165,8 +167,8 @@ namespace Momotaro.Editor.Phase35
             AssetDatabase.Refresh();
 
             string msg = "Environment/Player/CameraRig+Main Camera/Light/SceneMode/SpawnPoints(×4)/Phase35Systems"
-                + "(CombatSession+WaveRunner+CombatTrialHud+EnemyDebugToggle+CombatFeedback+CombatVFX), 初期敵0体・4Wave構成。"
-                + "VFX 素材は全方向の期待枚数を満たしています。";
+                + "(CombatSession+WaveRunner+CombatOutcome+CombatSceneReloader+CombatRetryInput+CombatTrialHud"
+                + "+EnemyDebugToggle+CombatFeedback+CombatVFX), 初期敵0体・4Wave構成。VFX 素材は全方向の期待枚数を満たしています。";
             return new BuildResult(true, outputPath, msg);
         }
 
@@ -249,11 +251,31 @@ namespace Momotaro.Editor.Phase35
             });
             waveRunner.Bind(session, playerController, playerVitals, playerHurt);
 
+            // 勝敗・リトライ統合（P3.5-08）。最終Wave完了→Victory、Player死亡→Defeat、入力ロック・結果パネル遅延・Retry受付。
+            var outcomeGo = new GameObject("CombatOutcome");
+            outcomeGo.transform.SetParent(systems.transform, false);
+            var outcome = outcomeGo.AddComponent<CombatOutcomeController>();
+            outcome.Bind(session, waveRunner);
+
+            // 現在Sceneの安全なAsync再読込Adapter（P3.5-08）。Session へ Runtime 結線（ICombatSceneReloader）。
+            var reloaderGo = new GameObject("CombatSceneReloader");
+            reloaderGo.transform.SetParent(systems.transform, false);
+            var reloader = reloaderGo.AddComponent<CombatSceneReloader>();
+            var reloaderSo = new SerializedObject(reloader);
+            SetRef(reloaderSo, "_session", session);
+            reloaderSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // Retry 入力（結果状態でのみ受付。Gameplay Map が閉じても効くよう Input System Device を直接読む。P3.5-08）。
+            var retryGo = new GameObject("CombatRetryInput");
+            retryGo.transform.SetParent(systems.transform, false);
+            var retry = retryGo.AddComponent<CombatRetryInput>();
+            retry.Bind(outcome);
+
             // 試遊 HUD（HP/Stamina/Special/GuardBreak/Wave/勝敗。Debug HUD と分離。P3.5-04）。
             var hudGo = new GameObject("CombatTrialHud");
             hudGo.transform.SetParent(systems.transform, false);
             var hud = hudGo.AddComponent<CombatPlayHud>();
-            WireHud(hud, playerVitals, playerController, session, waveRunner);
+            WireHud(hud, playerVitals, playerController, session, waveRunner, outcome);
 
             var toggleGo = new GameObject("EnemyDebugToggle");
             toggleGo.transform.SetParent(systems.transform, false);
@@ -271,15 +293,17 @@ namespace Momotaro.Editor.Phase35
             return go.transform;
         }
 
-        /// <summary>試遊 HUD の Serialized 参照（Player/PlayerState/Session/Wave）を設定する（Runtime の自動探索より決定的）。</summary>
+        /// <summary>試遊 HUD の Serialized 参照（Player/PlayerState/Session/Wave/Outcome）を設定する（Runtime の自動探索より決定的）。</summary>
         private static void WireHud(CombatPlayHud hud, PlayerVitalsHolder playerVitals,
-            PlayerStateController playerState, CombatSessionController session, WaveRunner waveRunner)
+            PlayerStateController playerState, CombatSessionController session, WaveRunner waveRunner,
+            CombatOutcomeController outcome)
         {
             var so = new SerializedObject(hud);
             SetRef(so, "_player", playerVitals);
             SetRef(so, "_playerState", playerState);
             SetRef(so, "_session", session);
             SetRef(so, "_waves", waveRunner);
+            SetRef(so, "_outcome", outcome);
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
