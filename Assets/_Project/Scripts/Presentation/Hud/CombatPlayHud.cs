@@ -220,7 +220,7 @@ namespace Momotaro.Presentation.Hud
                 return;
             }
 
-            _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _font = ResolveUiFont();
 
             // Canvas は RectTransform を必ず持つ専用の子 GameObject に載せる。CombatPlayHud 自体が通常 Transform の
             // GameObject に追加されても安全（transform を RectTransform へキャストしないため InvalidCastException を起こさない）。
@@ -272,6 +272,28 @@ namespace Momotaro.Presentation.Hud
 
             _built = true;
             RefreshVisuals();
+        }
+
+        /// <summary>
+        /// レガシー uGUI Text 用フォントを堅牢に解決する（Phase3.5 P3.5-08 修正）。組み込み LegacyRuntime.ttf を第一候補に、取得失敗時は
+        /// Arial.ttf、さらに OS フォントへフォールバックする。null のままだと Text が一切描画されず HUD の文字（HP/Wave/勝敗等）が消えるため、
+        /// 少なくとも有効なフォントを返す。
+        /// </summary>
+        private static Font ResolveUiFont()
+        {
+            Font f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (f == null)
+            {
+                f = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            }
+
+            if (f == null)
+            {
+                f = Font.CreateDynamicFontFromOSFont(
+                    new[] { "Arial", "Helvetica", "Verdana", "Segoe UI", "sans-serif" }, 16);
+            }
+
+            return f;
         }
 
         private string BuildControlGuide()
