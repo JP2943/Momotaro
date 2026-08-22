@@ -303,7 +303,8 @@ namespace Momotaro.Gameplay.Player
             {
                 ReflectJustGuardPoise(hit);
                 jg.NotifyJustGuardSuccess();
-                Results.Publish(HitResult.JustGuard(hit.HitId, hit.Attacker, this, HitDamage.None));
+                // P3.5-08B：接触点・攻撃方向を結果へ載せ、JG VFX を弾いた位置へ表示できるようにする（表示専用。解決には不使用）。
+                Results.Publish(HitResult.JustGuard(hit.HitId, hit.Attacker, this, HitDamage.None, hit.HitPoint, hit.AttackDirection));
                 return;
             }
 

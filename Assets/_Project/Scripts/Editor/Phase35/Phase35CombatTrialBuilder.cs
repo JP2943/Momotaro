@@ -42,6 +42,21 @@ namespace Momotaro.Editor.Phase35
         private const string PlayerSlashRoot = "Assets/_Project/Art/VFX/Slash/Player";
         private const string EnemySlashRoot = "Assets/_Project/Art/VFX/Slash/Enemy";
         private const string WarningFolder = "Assets/_Project/Art/VFX/Warning/Enemy/Medium/Unblockable";
+        private const string JustGuardVfxFolder = "Assets/_Project/Art/VFX/JustGuard"; // 無方向フラットの JG 閃光（P3.5-08B）。
+        private const string JustGuardSeId = "SE_JustGuard"; // CombatFeedbackMap の JG SeId と一致させる。
+        private const string JustGuardSePath = "Assets/_Project/Audio/SE/Player/JustGuard/JustGuard.ogg";
+        private const int JustGuardFrameCount = 4; // JG 閃光は無方向フラットの 4 コマ。
+
+        // 主人公スイング SE（刀を振る音。P3.5-08C）。ヒット SE とは別系統で、Active 立ち上がりに同期して段別に鳴らす。
+        private const string PlayerAudioRoot = "Assets/_Project/Audio/SE/Player";
+        private const string SwingStage1SeId = "SE_Player_Attack1";
+        private const string SwingStage2SeId = "SE_Player_Attack2";
+        private const string SwingStage3SeId = "SE_Player_Attack3";
+        private const string SwingSpecialSeId = "SE_Player_Special";
+        private const string SwingStage1SePath = PlayerAudioRoot + "/Attack/Attack_01.ogg";
+        private const string SwingStage2SePath = PlayerAudioRoot + "/Attack/Attack_02.ogg";
+        private const string SwingStage3SePath = PlayerAudioRoot + "/Attack/Attack_03.ogg";
+        private const string SwingSpecialSePath = PlayerAudioRoot + "/Special/Special_01.ogg";
 
         private static readonly string[] Directions = { "Down", "Up", "Left", "Right" };
 
@@ -330,6 +345,17 @@ namespace Momotaro.Editor.Phase35
             var shake = go.AddComponent<CameraShakePresenter>();
             shake.Target = cameraTransform; // 揺れは子カメラの localPosition に当てる（follow と非競合）。
             var se = go.AddComponent<CombatSePlayer>();
+            // ジャストガード SE（P3.5-08B）。CombatFeedbackMap が JG→SE_JustGuard を解決し、CombatFeedbackPresenter が Play する。
+            // 実素材（OGG）をスロットへ差し込む。未 Import でも clip=null で無音・無例外（Play 側が安全）。
+            se.Slots = new[]
+            {
+                new CombatSePlayer.SeSlot
+                {
+                    seId = JustGuardSeId,
+                    clip = AssetDatabase.LoadAssetAtPath<AudioClip>(JustGuardSePath),
+                    volume = 1f,
+                },
+            };
 
             var coordinator = go.AddComponent<CombatFeedbackPresenter>();
             coordinator.HitStop = hitStop;
@@ -390,6 +416,38 @@ namespace Momotaro.Editor.Phase35
             // ガード不能の頭上警告（枚数は ValidateVfx で保証済み）。
             var warn = go.AddComponent<EnemyUnblockableWarningPresenter>();
             warn.WarningFrames = LoadFrames(WarningFolder);
+
+            // ジャストガード閃光（P3.5-08B。接触点へ無方向フラッシュ。枚数は ValidateVfx で保証済み）。
+            var jgVfx = go.AddComponent<JustGuardVfxPresenter>();
+            jgVfx.SetCamera(camera); // 正対（billboard）・深度補正の基準。
+            jgVfx.FlashFrames = LoadFrames(JustGuardVfxFolder);
+
+            // 主人公スイング SE（刀を振る音。P3.5-08C）。ヒット SE とは別系統のため専用 CombatSePlayer を持ち、段の出現（Startup）に段別発火。
+            // clip 未 Import でも null で無音・無例外（未確定素材でも Scene は壊れない）。
+            // 音量はヒット SE が後段で加わる前提で控えめにする（P3.5-08C 調整）。体感で約半分になるようリニア 0.3（≒ -10dB）とする
+            // （0.5=-6dB は振幅半分でも体感差が小さいため）。
+            const float swingVolume = 0.3f;
+            var swingSe = go.AddComponent<CombatSePlayer>();
+            swingSe.Slots = new[]
+            {
+                new CombatSePlayer.SeSlot { seId = SwingStage1SeId, clip = AssetDatabase.LoadAssetAtPath<AudioClip>(SwingStage1SePath), volume = swingVolume },
+                new CombatSePlayer.SeSlot { seId = SwingStage2SeId, clip = AssetDatabase.LoadAssetAtPath<AudioClip>(SwingStage2SePath), volume = swingVolume },
+                new CombatSePlayer.SeSlot { seId = SwingStage3SeId, clip = AssetDatabase.LoadAssetAtPath<AudioClip>(SwingStage3SePath), volume = swingVolume },
+                new CombatSePlayer.SeSlot { seId = SwingSpecialSeId, clip = AssetDatabase.LoadAssetAtPath<AudioClip>(SwingSpecialSePath), volume = swingVolume },
+            };
+
+            var swingPresenter = go.AddComponent<PlayerAttackSwingSePresenter>();
+            swingPresenter.Se = swingSe;
+            if (playerController != null)
+            {
+                var so = new SerializedObject(swingPresenter);
+                SerializedProperty prop = so.FindProperty("_player");
+                if (prop != null)
+                {
+                    prop.objectReferenceValue = playerController;
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                }
+            }
         }
 
         private static PlayerSlashVfxPresenter.SlashFrameSet PlayerSet(string setFolder, float duration)
@@ -434,6 +492,7 @@ namespace Momotaro.Editor.Phase35
             }
 
             CheckCount(WarningFolder, WarningFrameCount, errors);
+            CheckCount(JustGuardVfxFolder, JustGuardFrameCount, errors); // JG 閃光（無方向フラット。P3.5-08B）。
         }
 
         private static void CheckDirectional(string baseFolder, int perDir, List<string> errors)

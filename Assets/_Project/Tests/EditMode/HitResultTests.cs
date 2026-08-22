@@ -93,5 +93,33 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(2f, result.AppliedDamage.Poise);
             Assert.AreEqual(3f, result.AppliedDamage.Flinch);
         }
+
+        [Test]
+        public void HitPoint_And_Direction_DefaultToZero_WhenOmitted()
+        {
+            var a = new FakeActor();
+            var t = new FakeTarget();
+
+            // 既存の生成箇所（接触点を渡さない）は従来どおり動き、接触点・方向は Vector3.zero（P3.5-08B 後方互換）。
+            HitResult result = HitResult.Damage(HitId.Single(1), a, t, HitDamage.None);
+            Assert.AreEqual(Vector3.zero, result.HitPoint);
+            Assert.AreEqual(Vector3.zero, result.AttackDirection);
+        }
+
+        [Test]
+        public void JustGuard_CarriesHitPoint_And_Direction()
+        {
+            var a = new FakeActor();
+            var t = new FakeTarget();
+            var hitPoint = new Vector3(3f, 1.2f, 5f);
+            var dir = new Vector3(1f, 0f, 0f);
+
+            // P3.5-08B：JG 結果は接触点・攻撃方向を運ぶ（JG VFX の表示位置に用いる）。
+            HitResult jg = HitResult.JustGuard(HitId.Single(2), a, t, HitDamage.None, hitPoint, dir);
+
+            Assert.AreEqual(HitResultKind.JustGuard, jg.Kind);
+            Assert.AreEqual(hitPoint, jg.HitPoint);
+            Assert.AreEqual(dir, jg.AttackDirection);
+        }
     }
 }
