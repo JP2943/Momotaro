@@ -1,3 +1,4 @@
+using Momotaro.Gameplay.Combat;
 using UnityEngine;
 
 namespace Momotaro.Gameplay.Enemy.Locomotion
@@ -13,7 +14,7 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(Rigidbody))]
-    public sealed class EnemyMotor : MonoBehaviour
+    public sealed class EnemyMotor : MonoBehaviour, IReactionMotor
     {
         // 全回転固定＋Y 位置固定（FreezeRotationX|Y|Z=112 + FreezePositionY=4 = 116）。
         private const RigidbodyConstraints GroundedConstraints =
@@ -33,6 +34,7 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
 
         private Vector3 _lastPos;
         private float _blockedTimer;
+        private readonly ExternalReactionMotion _reaction = new ExternalReactionMotion();
 
         /// <summary>指示に対して実移動が乏しい（壁等で詰まっている）か。</summary>
         public bool IsBlocked { get; private set; }
@@ -99,6 +101,23 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             _charging = false;
         }
 
+        /// <inheritdoc />
+        public void PushReaction(Vector3 direction, float distance, float seconds)
+        {
+            _reaction.Begin(direction, distance, seconds);
+        }
+
+        /// <inheritdoc />
+        public void ClearReaction()
+        {
+            _reaction.Clear();
+        }
+
+        private void OnDisable()
+        {
+            _reaction.Clear(); // Disable・Scene 離脱で残留変位を残さない（§7.4）。
+        }
+
         /// <summary>向けたいワールド方向（XZ）。停止中も対象へ向き続けるために使う。ルートは回さず論理向きへ反映する。</summary>
         public void SetFacing(Vector3 worldDirection)
         {
@@ -129,6 +148,17 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
             }
 
             Vector3 pos = _body.position;
+
+            // P3.5-08A：ヒットバックは通常移動・突進より優先。XZ を反応速度で上書きし Y=0（Y 位置は制約で固定）。壁は物理が停止。
+            if (_reaction.IsActive)
+            {
+                Vector3 rv = _reaction.CurrentVelocity;
+                _body.linearVelocity = new Vector3(rv.x, 0f, rv.z);
+                _reaction.Tick(Time.fixedDeltaTime);
+                _lastPos = _body.position; // 反応中の移動で「詰まり(IsBlocked)」を誤検出しない。
+                return;
+            }
+
             float speed = _charging ? _chargeSpeed : _moveSpeed;
             Vector3 velocity = _hasMoveTarget
                 ? ApproachCalculator.DesiredVelocity(pos, _moveTarget, speed, _stopRadius)

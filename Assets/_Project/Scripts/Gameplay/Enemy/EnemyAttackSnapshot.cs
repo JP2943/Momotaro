@@ -40,6 +40,12 @@ namespace Momotaro.Gameplay.Enemy
         public float Knockback { get; }
         /// <summary>JG 成立時に攻撃者へ返す体幹ダメージ。</summary>
         public float JustGuardPoiseReturn { get; }
+        /// <summary>Damage 時ヒットバック距離（m。Phase3.5 §7.4）。</summary>
+        public float HitbackDistance { get; }
+        /// <summary>ヒットバック／ガードバック所要時間（秒。Phase3.5 §7.4）。</summary>
+        public float HitbackSeconds { get; }
+        /// <summary>通常 Guard 時ガードバック距離（m。Phase3.5 §7.4）。</summary>
+        public float GuardbackDistance { get; }
 
         /// <summary>ガード可能か。</summary>
         public bool Guardable { get; }
@@ -99,6 +105,9 @@ namespace Momotaro.Gameplay.Enemy
             GuardStaminaCost = d.GuardStaminaCost;
             Knockback = d.Knockback;
             JustGuardPoiseReturn = d.JustGuardPoiseReturn;
+            HitbackDistance = d.HitbackDistance;
+            HitbackSeconds = d.HitbackSeconds;
+            GuardbackDistance = d.GuardbackDistance;
 
             Guardable = d.Guardable;
             JustGuardable = d.JustGuardable;

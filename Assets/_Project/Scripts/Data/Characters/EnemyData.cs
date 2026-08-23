@@ -25,6 +25,8 @@ namespace Momotaro.Data.Characters
         [SerializeField] private float _stunSeconds = 3f;
         [Tooltip("ひるみ耐性値（この蓄積以上でひるみ）。標準 60。仕様書 §7.2。")]
         [SerializeField] private float _flinchResistance = 60f;
+        [Tooltip("ひるみ（やられ）状態の持続時間（秒）。この間は移動・攻撃とも行動不能（Stagger）。標準 0.8。")]
+        [SerializeField] private float _flinchSeconds = 0.8f;
 
         /// <summary>体幹の最大値。</summary>
         public float PoiseMax => _poiseMax;
@@ -46,6 +48,9 @@ namespace Momotaro.Data.Characters
 
         /// <summary>ひるみ耐性値。</summary>
         public float FlinchResistance => _flinchResistance;
+
+        /// <summary>ひるみ（やられ）持続時間（秒）。</summary>
+        public float FlinchSeconds => _flinchSeconds;
 
         /// <inheritdoc />
         public override void Validate(DataValidationReport report)

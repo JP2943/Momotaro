@@ -53,3 +53,6 @@ MonoBehaviour:
   _seId: SE_Elite_Heavy
   _hitStopSeconds: 0.07
   _requiresOffscreenWarning: 0
+  _hitbackDistance: 0.25
+  _hitbackSeconds: 0.16
+  _guardbackDistance: 0.16

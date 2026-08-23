@@ -32,6 +32,8 @@ namespace Momotaro.Data.Characters
         [SerializeField] private float _stunSeconds = 3f;
         [Tooltip("ひるみ耐性値（この蓄積以上でひるみ）。標準 60。")]
         [SerializeField] private float _flinchResistance = 60f;
+        [Tooltip("ひるみ（やられ）状態の持続時間（秒）。この間は移動・攻撃とも行動不能（Stagger）。標準 0.8。")]
+        [SerializeField] private float _flinchSeconds = 0.8f;
 
         [Header("Movement (data only; logic in P3-03)")]
         [Tooltip("旋回速度（度/秒）。")]
@@ -108,6 +110,8 @@ namespace Momotaro.Data.Characters
         public float StunSeconds => _stunSeconds;
         /// <inheritdoc />
         public float FlinchResistance => _flinchResistance;
+        /// <inheritdoc />
+        public float FlinchSeconds => _flinchSeconds;
 
         // ---- Movement ----
         /// <summary>旋回速度（度/秒）。</summary>

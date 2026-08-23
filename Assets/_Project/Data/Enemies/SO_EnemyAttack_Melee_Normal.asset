@@ -53,3 +53,6 @@ MonoBehaviour:
   _seId: SE_Enemy_Melee
   _hitStopSeconds: 0.05
   _requiresOffscreenWarning: 0
+  _hitbackDistance: 0.16
+  _hitbackSeconds: 0.12
+  _guardbackDistance: 0.12

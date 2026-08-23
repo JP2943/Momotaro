@@ -13,7 +13,7 @@ namespace Momotaro.Gameplay.Enemy
     /// 認識・移動・敵攻撃は本 Task 対象外（EnemyBrain／Motor／CombatController が後続 Task で接続する）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class EnemyActor : MonoBehaviour, ICombatActor, IDamageable, ICombatActivityState, IKnockbackReceiver, IEnemyDefeatSource
+    public sealed class EnemyActor : MonoBehaviour, ICombatActor, IDamageable, ICombatActivityState, IKnockbackReceiver, IForcedFlinchReceiver, IEnemyDefeatSource
     {
         [Tooltip("敵アーキタイプ Data（HP／防御／体幹／ひるみ／スタン等の数値と役割）。")]
         [SerializeField] private EnemyArchetypeData _archetype;
@@ -25,6 +25,9 @@ namespace Momotaro.Gameplay.Enemy
         private IEnemyDefeatCleanup[] _defeatCleanups; // 撃破時の後始末（攻撃・Slot 解除等）を委ねる先。
         private bool _defenseResolved;
         private bool _defeatHandled;                   // 型付き撃破・報酬要求を 1 回だけ発行する。
+        private IReactionMotor _reactionMotor;          // ヒットバック（外部変位）先。EnemyMotor が実装（P3.5-08A）。
+        private bool _reactionMotorResolved;
+        private float _forcedFlinchRemaining;           // JG 由来の強制ひるみ残時間（秒。§7.5）。
 
         /// <summary>被弾結果の通知チャネル（HUD・Feedback が購読。Phase 2 と同系統）。</summary>
         public HitResultChannel Results { get; } = new HitResultChannel();
@@ -163,13 +166,24 @@ namespace Momotaro.Gameplay.Enemy
             // 体幹回復・ひるみの時間経過（AI・攻撃は後続 Task。Pause 連動も Brain 追加時に接続する）。
             _vitals.Tick(Time.deltaTime);
 
+            // JG 由来の強制ひるみ（§7.5）の残時間を進める。体幹ひるみとは独立に Stagger を保持する。
+            if (_forcedFlinchRemaining > 0f)
+            {
+                _forcedFlinchRemaining -= Time.deltaTime;
+                if (_forcedFlinchRemaining < 0f)
+                {
+                    _forcedFlinchRemaining = 0f;
+                }
+            }
+
             // スタン・ひるみが自然回復したら通常状態へ戻す（観測可能な復帰）。Down は復活処理まで維持。
             if (_machine.Current == EnemyState.Stunned && !_vitals.IsStunned)
             {
                 _machine.TryTransition(EnemyState.Idle, EnemyStateChangeReason.Recovered);
             }
-            else if (_machine.Current == EnemyState.Stagger && !_vitals.IsFlinching)
+            else if (_machine.Current == EnemyState.Stagger && !_vitals.IsFlinching && _forcedFlinchRemaining <= 0f)
             {
+                // 体幹ひるみ・強制ひるみの双方が尽きたら復帰（どちらか残っていれば Stagger を維持）。
                 _machine.TryTransition(EnemyState.Idle, EnemyStateChangeReason.Recovered);
             }
         }
@@ -227,7 +241,67 @@ namespace Momotaro.Gameplay.Enemy
                 _machine.ForceHitState(EnemyState.Stagger, EnemyStateChangeReason.Staggered);
             }
 
+            // P3.5-08A：被弾（Damage）で AttackDirection（攻撃者→自分）へヒットバック。撃破時は押し出さない（死体が滑らない。§7.4）。
+            if (!app.NewlyDefeated)
+            {
+                RequestHitback(hit);
+            }
+
             Results.Publish(HitResult.Damage(hit.HitId, hit.Attacker, this, app.Applied));
+        }
+
+        /// <summary>命中に載った <see cref="HitReaction"/> の距離・時間で AttackDirection へヒットバックを要求する（Motor が実移動。§7.4）。</summary>
+        private void RequestHitback(in HitInfo hit)
+        {
+            float distance = hit.Reaction.HitbackDistance;
+            float seconds = hit.Reaction.HitbackSeconds;
+            if (distance <= 0f || seconds <= 0f)
+            {
+                return;
+            }
+
+            Vector3 dir = hit.AttackDirection;
+            if (dir.sqrMagnitude < 1e-6f)
+            {
+                return;
+            }
+
+            ResolveReactionMotor()?.PushReaction(dir, distance, seconds);
+        }
+
+        private IReactionMotor ResolveReactionMotor()
+        {
+            if (!_reactionMotorResolved)
+            {
+                _reactionMotor = GetComponent<IReactionMotor>();
+                _reactionMotorResolved = true;
+            }
+
+            return _reactionMotor;
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// JG 成立時の強制ひるみ（§7.5）。指定秒だけ Stagger を保持し、進行中の攻撃（Hitbox／Active／Recovery／Telegraph／移動／
+        /// 次攻撃）は <see cref="EnemyStateMachine.ForceHitState"/> による Stagger 遷移で中断され、EnemyAttackController が Slot を解放する。
+        /// Down／Stunned は上書きしない（より高優先）。体幹反射・HP は変更しない（水増ししない）。
+        /// </remarks>
+        public void ForceFlinch(float seconds)
+        {
+            EnsureRuntime();
+            if (seconds <= 0f || _vitals.IsDefeated)
+            {
+                return;
+            }
+
+            // Down／Stunned（Stagger より高優先）は上書きしない。既に Stagger でも残時間を延長する。
+            if (_machine.Current == EnemyState.Down || _machine.Current == EnemyState.Stunned)
+            {
+                return;
+            }
+
+            _machine.ForceHitState(EnemyState.Stagger, EnemyStateChangeReason.Staggered);
+            _forcedFlinchRemaining = Mathf.Max(_forcedFlinchRemaining, seconds);
         }
 
         /// <summary>防御状態・撃破後始末先を 1 回解決する（動的生成でも遅延解決）。</summary>
@@ -252,6 +326,8 @@ namespace Momotaro.Gameplay.Enemy
             }
 
             _defeatHandled = true;
+            _forcedFlinchRemaining = 0f;
+            ResolveReactionMotor()?.ClearReaction(); // 撃破確定で進行中の押し出しを打ち切る（§7.4）。
 
             // 攻撃中断・Slot 解放・能力リセット等は各コンポーネントへ委譲（1 回）。
             if (_defeatCleanups != null)
@@ -301,6 +377,8 @@ namespace Momotaro.Gameplay.Enemy
             _machine.Reset(EnemyState.Idle);
             LastKnockback = 0f;
             _defeatHandled = false;
+            _forcedFlinchRemaining = 0f;
+            ResolveReactionMotor()?.ClearReaction(); // 再試行で残留変位を残さない（§7.4）。
             SetCollidersEnabled(true); // 検証の再試行で被弾面・押し合いを戻す。
         }
     }

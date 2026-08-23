@@ -22,6 +22,7 @@ namespace Momotaro.Tests.EditMode
             public float PoiseDamageMultiplier { get; set; } = 1f;
             public float StunSeconds { get; set; } = 3f;
             public float FlinchResistance { get; set; } = 60f;
+            public float FlinchSeconds { get; set; } = 0.8f;
         }
 
         private static HitInfo Hit(float hp, float poise, float flinch, int id = 1)

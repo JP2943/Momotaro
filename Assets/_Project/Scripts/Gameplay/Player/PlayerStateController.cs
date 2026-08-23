@@ -1070,7 +1070,10 @@ namespace Momotaro.Gameplay.Player
 
                 var damage = new HitDamage(hpContribution, poiseContribution, flinchValue);
 
-                HitInfo hit = HitBuilder.FromSnapshot(snapshot, this, target, Forward, center, damage, _currentSwing);
+                // P3.5-08A：この攻撃段のヒットバック値を載せる（被弾した敵を AttackDirection へ押し出す）。主人公攻撃は
+                // 近接のみ・ガードバックなし（敵は Guard 結果を出さない）。距離・時間は AttackData を正本とする（§7.4）。
+                HitInfo hit = HitBuilder.FromSnapshot(snapshot, this, target, Forward, center, damage, _currentSwing)
+                    .WithReaction(new HitReaction(d.HitbackDistance, d.HitbackSeconds, 0f, isProjectile: false));
                 target.ReceiveHit(hit);
             }
         }

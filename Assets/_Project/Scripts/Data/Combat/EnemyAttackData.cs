@@ -49,6 +49,14 @@ namespace Momotaro.Data.Combat
         [Tooltip("ジャストガード成立時に発射者／攻撃者へ返す体幹ダメージ（§9.1：15〜20）。")]
         [SerializeField] private float _justGuardPoiseReturn = 18f;
 
+        [Header("Reaction (Phase3.5 P3.5-08A)")]
+        [Tooltip("Damage 時に被弾者（主人公）を AttackDirection へ押し出す距離（m）。0 で無効。仕様書 §7.4（通常=0.16／強=0.25 目安）。")]
+        [SerializeField] private float _hitbackDistance = 0.16f;
+        [Tooltip("ヒットバック／ガードバックの所要時間（秒）。0 で無効。仕様書 §7.4（通常=0.12／強=0.16 目安）。")]
+        [SerializeField] private float _hitbackSeconds = 0.12f;
+        [Tooltip("通常 Guard 成立時に防御者を AttackDirection へ押し戻す距離（m）。0 で無効。仕様書 §7.4（0.10〜0.16）。JG は 0（踏み止まり）。")]
+        [SerializeField] private float _guardbackDistance = 0.12f;
+
         [Header("Projectile (Projectile class only)")]
         [Tooltip("弾速（m/s）。Projectile のみ有効。")]
         [SerializeField] private float _projectileSpeed = 0f;
@@ -140,6 +148,12 @@ namespace Momotaro.Data.Combat
         public float Knockback => _knockback;
         /// <summary>JG 成立時に攻撃者へ返す体幹ダメージ。</summary>
         public float JustGuardPoiseReturn => _justGuardPoiseReturn;
+        /// <summary>Damage 時ヒットバック距離（m。Phase3.5 §7.4）。</summary>
+        public float HitbackDistance => _hitbackDistance;
+        /// <summary>ヒットバック／ガードバック所要時間（秒。Phase3.5 §7.4）。</summary>
+        public float HitbackSeconds => _hitbackSeconds;
+        /// <summary>通常 Guard 時ガードバック距離（m。Phase3.5 §7.4）。JG は呼び出し側が 0 とする。</summary>
+        public float GuardbackDistance => _guardbackDistance;
 
         // ---- Projectile ----
         /// <summary>弾速（m/s）。</summary>

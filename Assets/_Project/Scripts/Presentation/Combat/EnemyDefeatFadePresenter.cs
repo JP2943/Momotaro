@@ -17,6 +17,9 @@ namespace Momotaro.Presentation.Combat
     [DisallowMultipleComponent]
     public sealed class EnemyDefeatFadePresenter : MonoBehaviour, IEnemyDefeatListener
     {
+        [Tooltip("撃破後、フェード開始までダウン体を表示し続ける保持時間（秒。Phase3.5 調整）。この間は敵が Down 姿勢のまま見える。")]
+        [SerializeField] private float _downHoldSeconds = 1f;
+
         [Tooltip("撃破フェードの長さ（秒）。")]
         [SerializeField] private float _fadeSeconds = 0.6f;
 
@@ -30,9 +33,16 @@ namespace Momotaro.Presentation.Combat
             public float Elapsed;
         }
 
+        private sealed class PendingFade
+        {
+            public SpriteRenderer[] Renderers;
+            public float DelayRemaining;
+        }
+
         private readonly List<IEnemyDefeatSource> _sources = new List<IEnemyDefeatSource>();
         private readonly Dictionary<int, SpriteRenderer[]> _renderersById = new Dictionary<int, SpriteRenderer[]>();
         private readonly List<FadeState> _fades = new List<FadeState>();
+        private readonly List<PendingFade> _pending = new List<PendingFade>();
         private float _rescanTimer;
 
         /// <summary>進行中のフェード数（テスト・検証用）。</summary>
@@ -43,6 +53,12 @@ namespace Momotaro.Presentation.Combat
 
         /// <summary>フェード長（秒。Scene 構築 P3.5-06・テストが設定）。</summary>
         public float FadeSeconds { get => _fadeSeconds; set => _fadeSeconds = value; }
+
+        /// <summary>撃破後フェード開始までのダウン保持時間（秒。Scene 構築・試遊調整・テストが設定）。</summary>
+        public float DownHoldSeconds { get => _downHoldSeconds; set => _downHoldSeconds = value; }
+
+        /// <summary>フェード開始待ちのダウン体数（テスト・検証用）。</summary>
+        public int PendingCount => _pending.Count;
 
         /// <summary>観測元を明示注入する（テスト・Scene 構築。読み取りのみ）。</summary>
         public void Bind(IEnumerable<IEnemyDefeatSource> sources)
@@ -106,7 +122,18 @@ namespace Momotaro.Presentation.Combat
         /// <inheritdoc />
         public void OnEnemyDefeated(in EnemyDefeatedEvent defeated)
         {
-            if (_renderersById.TryGetValue(defeated.EnemyId, out SpriteRenderer[] rs))
+            if (!_renderersById.TryGetValue(defeated.EnemyId, out SpriteRenderer[] rs))
+            {
+                return;
+            }
+
+            // ダウン保持（Phase3.5 調整）：撃破直後は Down 姿勢のまま一定時間表示し、その後フェードを開始する。
+            // 保持 0 以下なら従来どおり即フェード。
+            if (_downHoldSeconds > 0f)
+            {
+                _pending.Add(new PendingFade { Renderers = rs, DelayRemaining = _downHoldSeconds });
+            }
+            else
             {
                 BeginFade(rs);
             }
@@ -136,6 +163,18 @@ namespace Momotaro.Presentation.Combat
             if (deltaTime < 0f)
             {
                 deltaTime = 0f;
+            }
+
+            // ダウン保持：保持時間が尽きた撃破体からフェードへ移行する（保持中は色を変えず Down 姿勢を維持）。
+            for (int i = _pending.Count - 1; i >= 0; i--)
+            {
+                PendingFade p = _pending[i];
+                p.DelayRemaining -= deltaTime;
+                if (p.DelayRemaining <= 0f)
+                {
+                    _pending.RemoveAt(i);
+                    BeginFade(p.Renderers);
+                }
             }
 
             float dur = _fadeSeconds <= 0f ? 0.0001f : _fadeSeconds;
@@ -188,6 +227,7 @@ namespace Momotaro.Presentation.Combat
             }
 
             _fades.Clear();
+            _pending.Clear(); // フェード開始待ちも破棄（Disable・Scene 離脱・Retry。残留なし）。
         }
 
         private void OnDisable()

@@ -38,6 +38,7 @@ namespace Momotaro.Tests.EditMode
             _spawned.Add(go);
             var p = go.AddComponent<EnemyDefeatFadePresenter>();
             p.FadeSeconds = 0.2f;
+            p.DownHoldSeconds = 0f; // 既存テストは即フェードを検証（保持は専用テストで確認）。
             return p;
         }
 
@@ -147,6 +148,46 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, p.ActiveFadeCount);
 
             p.ClearAll();
+            Assert.AreEqual(0, p.ActiveFadeCount);
+        }
+
+        [Test]
+        public void DownHold_KeepsVisible_ThenFadesAfterDelay()
+        {
+            EnemyDefeatFadePresenter p = New();
+            p.DownHoldSeconds = 1f; // 撃破後 1 秒はダウン体を表示（フェード開始を遅らせる）。
+            FakeDefeatSource enemy = NewEnemy(11, true, out SpriteRenderer r);
+            p.Bind(new IEnemyDefeatSource[] { enemy });
+
+            Publish(enemy);
+            Assert.AreEqual(0, p.ActiveFadeCount, "撃破直後はまだフェードしない（Down 保持）。");
+            Assert.AreEqual(1, p.PendingCount, "フェード開始待ち 1 体。");
+
+            p.Tick(0.5f); // 保持中
+            Assert.AreEqual(0, p.ActiveFadeCount, "保持中はフェード開始しない。");
+            Assert.AreEqual(1f, r.color.a, 0.001f, "保持中は不透明のまま（Down 姿勢を維持）。");
+
+            p.Tick(0.6f); // 累計 1.1s > 保持 1.0s → フェード開始
+            Assert.AreEqual(0, p.PendingCount, "保持満了で待機解消。");
+            Assert.AreEqual(1, p.ActiveFadeCount, "保持後にフェード開始。");
+
+            p.Tick(0.2f); // フェード満了
+            Assert.AreEqual(0, p.ActiveFadeCount, "フェード完了。");
+            Assert.AreEqual(0f, r.color.a, 0.001f, "透明へ到達。");
+        }
+
+        [Test]
+        public void DownHold_ClearAll_DropsPending()
+        {
+            EnemyDefeatFadePresenter p = New();
+            p.DownHoldSeconds = 1f;
+            FakeDefeatSource enemy = NewEnemy(12, true, out _);
+            p.Bind(new IEnemyDefeatSource[] { enemy });
+            Publish(enemy);
+            Assert.AreEqual(1, p.PendingCount);
+
+            p.ClearAll();
+            Assert.AreEqual(0, p.PendingCount, "保持待ちも破棄（残留なし）。");
             Assert.AreEqual(0, p.ActiveFadeCount);
         }
     }
