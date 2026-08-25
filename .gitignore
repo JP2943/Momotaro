@@ -64,3 +64,7 @@ sysinfo.txt
 # - .meta ファイルは追跡する（Visible Meta Files 前提のため無視しない）
 # - ProjectSettings/ と Packages/ は追跡する
 # ==============================================================
+
+# Claude 転送用の一時アーカイブ（リポジトリ対象外）
+_transfer/
+_to_delete/

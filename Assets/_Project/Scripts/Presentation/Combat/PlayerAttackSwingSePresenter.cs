@@ -9,10 +9,12 @@ namespace Momotaro.Presentation.Combat
     /// <see cref="IAttackSwingSource.SwingStage"/> の切り替わり（段の出現）を検出し、その段（1〜3 段目・必殺技）に対応する SE を
     /// <see cref="CombatSePlayer"/> 経由で 1 回鳴らす。命中の有無に依存せず「空振りでも」鳴らす（＝振りの音であり、当たった音ではない）。
     ///
-    /// タイミング：通常コンボの <c>SwingStage</c> は判定（Active）区間より前の予備動作（Startup）から立つため、判定（＝剣閃 VFX の発生）より
-    /// わずかに早く鳴り、振り出しに音が先行する（P3.5-08C 調整。ヒット SE は別途加わる想定）。段番号の変化で検出するため、連続コンボ
-    /// （1→2→3 がシームレスに切り替わる場合）も各段で確実に鳴る。必殺技は判定区間で <see cref="AttackSwing.SpecialStage"/> が立つため、
-    /// その振り（発動）に同期する。
+    /// タイミング【正式仕様・P3.5-08 受入決定】：主人公の通常コンボは判定（Active）区間より前の予備動作（Startup）の立ち上がりで鳴らす。
+    /// これは「Active 開始で鳴らす」当初仕様からの意図的な変更で、振り出しに音を先行させて手応えを出すためのユーザー確定方針である
+    /// （2025-08 の試遊調整で採用）。したがって Active 前に中断された攻撃でも Startup 到達時点で鳴りうる点は仕様として許容する。
+    /// 敵側（<see cref="EnemyAttackSwingSePresenter"/>）は当初どおり Active 開始で鳴らす（主人公のみ先行）。段番号の変化で検出するため、
+    /// 連続コンボ（1→2→3 がシームレスに切り替わる場合）も各段で確実に鳴る。必殺技は判定区間で <see cref="AttackSwing.SpecialStage"/> が
+    /// 立つため、その振り（発動）に同期する。
     ///
     /// ヒット時の手応え SE（通常ダメージ・ガード・ジャストガード）は <see cref="CombatFeedbackPresenter"/> が別系統で担当する。本 Presenter は
     /// 攻撃アクション由来の SE だけを扱い、専用の <see cref="CombatSePlayer"/>（スロット表）を持って役割を分離する。
