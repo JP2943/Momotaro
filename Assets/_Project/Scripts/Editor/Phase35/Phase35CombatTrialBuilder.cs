@@ -58,6 +58,35 @@ namespace Momotaro.Editor.Phase35
         private const string SwingStage3SePath = PlayerAudioRoot + "/Attack/Attack_03.ogg";
         private const string SwingSpecialSePath = PlayerAudioRoot + "/Special/Special_01.ogg";
 
+        // 通常ガード成功 SE（ヒット結果系。P3.5-08B）。
+        private const string GuardSeId = "SE_Guard"; // CombatFeedbackMap の Guard SeId と一致させる。
+        private const string GuardSePath = PlayerAudioRoot + "/Guard/Guard.ogg";
+        private const float GuardVolume = 0.15f; // 通常ガード SE は大幅に控えめ（試遊調整）。
+
+        // 主人公ヒット音（攻撃命中時。段別に出し分け。1・2段=Hit1／3段・必殺技=Hit2）。
+        private const string HitStage12SeId = "SE_Player_Hit1";
+        private const string HitStage3SeId = "SE_Player_Hit2";
+        private const string HitStage12SePath = PlayerAudioRoot + "/Attack/Hit_01.ogg";
+        private const string HitStage3SePath = PlayerAudioRoot + "/Attack/Hit_02.ogg";
+        private const float HitVolume = 0.7f; // ヒット音は手応えの主音（試遊調整）。
+
+        // 主人公ステップ（回避）SE。
+        private const string StepSeId = "SE_Player_Step";
+        private const string StepSePath = PlayerAudioRoot + "/Step/Step.ogg";
+        private const float StepVolume = 0.45f; // 移動アクション音（試遊調整）。
+
+        // 敵攻撃スイング SE（P3.5-08C・敵側）。主人公より大幅に音量を抑える。侍骸骨の通常・強は共通 SE。
+        private const string EnemyAudioRoot = "Assets/_Project/Audio/SE/Enemy";
+        private const float EnemySwingVolume = 0.12f; // 主人公スイング(0.3)より大幅に小さく（§7.7 の敵SEは控えめ）。
+        private const string EnemySwordsmanSeId = "SE_Enemy_Swordsman";
+        private const string EnemySamuraiSeId = "SE_Enemy_Samurai";
+        private const string EnemySamuraiThrustSeId = "SE_Enemy_Samurai_Thrust";
+        private const string EnemyBowSeId = "SE_Enemy_Bow";
+        private const string EnemySwordsmanSePath = EnemyAudioRoot + "/SkeletonSwordsman/Attack.ogg";
+        private const string EnemySamuraiSePath = EnemyAudioRoot + "/SamuraiSkelton/Attack.ogg";
+        private const string EnemySamuraiThrustSePath = EnemyAudioRoot + "/SamuraiSkelton/Thrust.ogg";
+        private const string EnemyBowSePath = EnemyAudioRoot + "/SkeletonArcher/Bow.ogg";
+
         private static readonly string[] Directions = { "Down", "Up", "Left", "Right" };
 
         // 完成済み VFX の期待枚数（方向別セット：フォルダ相対名, 1 方向あたりの期待コマ数）。生成前検証に用いる。
@@ -298,6 +327,9 @@ namespace Momotaro.Editor.Phase35
 
             BuildFeedback(systems.transform, cameraGo.transform);
             BuildVfx(systems.transform, playerController, cam);
+            BuildEnemyAudio(systems.transform);
+            BuildPlayerHitAudio(systems.transform);
+            BuildPlayerStepAudio(systems.transform, playerController);
         }
 
         private static Transform CreateSpawnPoint(string name, Vector3 pos, Transform parent)
@@ -345,8 +377,8 @@ namespace Momotaro.Editor.Phase35
             var shake = go.AddComponent<CameraShakePresenter>();
             shake.Target = cameraTransform; // 揺れは子カメラの localPosition に当てる（follow と非競合）。
             var se = go.AddComponent<CombatSePlayer>();
-            // ジャストガード SE（P3.5-08B）。CombatFeedbackMap が JG→SE_JustGuard を解決し、CombatFeedbackPresenter が Play する。
-            // 実素材（OGG）をスロットへ差し込む。未 Import でも clip=null で無音・無例外（Play 側が安全）。
+            // ヒット結果 SE（P3.5-08B）。CombatFeedbackMap が種別→SeId を解決し、CombatFeedbackPresenter が Play する。
+            // 実素材（OGG）をスロットへ差し込む。未 Import でも clip=null で無音・無例外（Play 側が安全）。ヒット音は後日追加予定。
             se.Slots = new[]
             {
                 new CombatSePlayer.SeSlot
@@ -354,6 +386,12 @@ namespace Momotaro.Editor.Phase35
                     seId = JustGuardSeId,
                     clip = AssetDatabase.LoadAssetAtPath<AudioClip>(JustGuardSePath),
                     volume = 1f,
+                },
+                new CombatSePlayer.SeSlot
+                {
+                    seId = GuardSeId,
+                    clip = AssetDatabase.LoadAssetAtPath<AudioClip>(GuardSePath),
+                    volume = GuardVolume, // 大幅に控えめ（他のヒット結果 SE より小さく）。
                 },
             };
 
@@ -364,6 +402,91 @@ namespace Momotaro.Editor.Phase35
             coordinator.Se = se;
 
             go.AddComponent<EnemyDefeatFadePresenter>();
+        }
+
+        /// <summary>
+        /// 敵攻撃スイング SE（P3.5-08C・敵側）。専用の <see cref="CombatSePlayer"/>（＝主人公 SE とは別インスタンス）へ敵タイプ別スロットを
+        /// 差し込み、<see cref="EnemyAttackSwingSePresenter"/> が敵の Active 立ち上がりで鳴らす。音量は主人公より大幅に抑える（§7.7）。
+        /// 侍骸骨の通常・強は共通 SE。未 Import でも clip=null で無音・無例外。
+        /// </summary>
+        private static void BuildEnemyAudio(Transform systems)
+        {
+            var go = new GameObject("EnemyCombatSE");
+            go.transform.SetParent(systems, false);
+
+            var se = go.AddComponent<CombatSePlayer>();
+            se.Slots = new[]
+            {
+                new CombatSePlayer.SeSlot { seId = EnemySwordsmanSeId, clip = AssetDatabase.LoadAssetAtPath<AudioClip>(EnemySwordsmanSePath), volume = EnemySwingVolume },
+                new CombatSePlayer.SeSlot { seId = EnemySamuraiSeId, clip = AssetDatabase.LoadAssetAtPath<AudioClip>(EnemySamuraiSePath), volume = EnemySwingVolume },
+                new CombatSePlayer.SeSlot { seId = EnemySamuraiThrustSeId, clip = AssetDatabase.LoadAssetAtPath<AudioClip>(EnemySamuraiThrustSePath), volume = EnemySwingVolume },
+                new CombatSePlayer.SeSlot { seId = EnemyBowSeId, clip = AssetDatabase.LoadAssetAtPath<AudioClip>(EnemyBowSePath), volume = EnemySwingVolume },
+            };
+
+            var presenter = go.AddComponent<EnemyAttackSwingSePresenter>();
+            presenter.Se = se;
+            presenter.ProjectileSeId = EnemyBowSeId;
+            presenter.Entries = new[]
+            {
+                // 鍵は EnemyAttackController.SlashVfxKey（archetype）に一致：近接骸骨=Small／侍骸骨=Medium。
+                new EnemyAttackSwingSePresenter.EnemySeEntry { key = "Small", normalSeId = EnemySwordsmanSeId },
+                new EnemyAttackSwingSePresenter.EnemySeEntry
+                {
+                    key = "Medium",
+                    normalSeId = EnemySamuraiSeId,
+                    heavySeId = EnemySamuraiSeId,          // 通常・強は共通 SE。
+                    unblockableSeId = EnemySamuraiThrustSeId,
+                },
+            };
+        }
+
+        /// <summary>
+        /// 主人公ヒット音（攻撃命中時。P3.5-08B/09）。専用の <see cref="CombatSePlayer"/> へ段別スロットを差し込み、
+        /// <see cref="PlayerHitSePresenter"/> が命中（Damage）時に段（1・2＝Hit1／3・必殺技＝Hit2）で出し分ける。未 Import でも無音・無例外。
+        /// </summary>
+        private static void BuildPlayerHitAudio(Transform systems)
+        {
+            var go = new GameObject("PlayerHitSE");
+            go.transform.SetParent(systems, false);
+
+            var se = go.AddComponent<CombatSePlayer>();
+            se.Slots = new[]
+            {
+                new CombatSePlayer.SeSlot { seId = HitStage12SeId, clip = AssetDatabase.LoadAssetAtPath<AudioClip>(HitStage12SePath), volume = HitVolume },
+                new CombatSePlayer.SeSlot { seId = HitStage3SeId, clip = AssetDatabase.LoadAssetAtPath<AudioClip>(HitStage3SePath), volume = HitVolume },
+            };
+
+            var presenter = go.AddComponent<PlayerHitSePresenter>();
+            presenter.Se = se;
+        }
+
+        /// <summary>
+        /// 主人公ステップ（回避）SE（P3.5-09）。専用 <see cref="CombatSePlayer"/> にステップ SE を差し込み、
+        /// <see cref="PlayerStepSePresenter"/> がステップ開始の立ち上がりで鳴らす。未 Import でも無音・無例外。
+        /// </summary>
+        private static void BuildPlayerStepAudio(Transform systems, PlayerStateController playerController)
+        {
+            var go = new GameObject("PlayerStepSE");
+            go.transform.SetParent(systems, false);
+
+            var se = go.AddComponent<CombatSePlayer>();
+            se.Slots = new[]
+            {
+                new CombatSePlayer.SeSlot { seId = StepSeId, clip = AssetDatabase.LoadAssetAtPath<AudioClip>(StepSePath), volume = StepVolume },
+            };
+
+            var presenter = go.AddComponent<PlayerStepSePresenter>();
+            presenter.Se = se;
+            if (playerController != null)
+            {
+                var so = new SerializedObject(presenter);
+                SerializedProperty prop = so.FindProperty("_player");
+                if (prop != null)
+                {
+                    prop.objectReferenceValue = playerController;
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                }
+            }
         }
 
         private static void BuildVfx(Transform systems, PlayerStateController playerController, Camera camera)

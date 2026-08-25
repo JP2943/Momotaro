@@ -16,6 +16,9 @@ namespace Momotaro.Gameplay.Combat
 
         /// <summary>敵近接（ガード不能）の振りを表す SwingStage 値（§7.2 ガード不能）。</summary>
         public const int EnemyMeleeUnblockable = 202;
+
+        /// <summary>敵の飛び道具（弓発射など）の振りを表す SwingStage 値（Phase3.5 P3.5-08C。攻撃 SE 用。剣閃 VFX は出さない）。</summary>
+        public const int EnemyProjectile = 203;
     }
 
     /// <summary>

@@ -16,7 +16,7 @@ namespace Momotaro.Gameplay.Player
     /// 中断時 Hitbox 消去まで。HP/体幹/ひるみの実適用は対象外（対象側 <see cref="IDamageable"/> と後続 Task）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, ISpecialChargeCancel, IAttackThreatSource, IAttackSwingSource
+    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, ISpecialChargeCancel, IAttackThreatSource, IAttackSwingSource, IStepObserver
     {
         [SerializeField] private PlayerMotor _motor;
         [SerializeField] private PlayerFacing _facing;
@@ -1071,9 +1071,10 @@ namespace Momotaro.Gameplay.Player
                 var damage = new HitDamage(hpContribution, poiseContribution, flinchValue);
 
                 // P3.5-08A：この攻撃段のヒットバック値を載せる（被弾した敵を AttackDirection へ押し出す）。主人公攻撃は
-                // 近接のみ・ガードバックなし（敵は Guard 結果を出さない）。距離・時間は AttackData を正本とする（§7.4）。
+                // 近接のみ・ガードバックなし（敵は Guard 結果を出さない）。値は攻撃開始時に確定した不変 Snapshot を正本とする
+                // （ダメージ値と同じ時点の値を使う。§2.2 / §7.4。GPT レビュー対応：原本 AttackData を直接参照しない）。
                 HitInfo hit = HitBuilder.FromSnapshot(snapshot, this, target, Forward, center, damage, _currentSwing)
-                    .WithReaction(new HitReaction(d.HitbackDistance, d.HitbackSeconds, 0f, isProjectile: false));
+                    .WithReaction(new HitReaction(snapshot.HitbackDistance, snapshot.HitbackSeconds, 0f, isProjectile: false));
                 target.ReceiveHit(hit);
             }
         }

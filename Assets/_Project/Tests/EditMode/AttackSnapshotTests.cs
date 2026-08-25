@@ -32,6 +32,8 @@ namespace Momotaro.Tests.EditMode
                 SetPrivate(data, "_justGuardable", false);
                 SetPrivate(data, "_stepAvoidable", true);
                 SetPrivate(data, "_telegraph", AttackTelegraph.Heavy);
+                SetPrivate(data, "_hitbackDistance", 0.24f); // P3.5-08A
+                SetPrivate(data, "_hitbackSeconds", 0.16f);
 
                 AttackSnapshot snap = AttackSnapshot.FromData(data);
 
@@ -43,6 +45,8 @@ namespace Momotaro.Tests.EditMode
                 Assert.IsFalse(snap.JustGuardable);
                 Assert.IsTrue(snap.StepAvoidable);
                 Assert.AreEqual(AttackTelegraph.Heavy, snap.Telegraph);
+                Assert.AreEqual(0.24f, snap.HitbackDistance, "ヒットバック距離を複製（P3.5-08A）。");
+                Assert.AreEqual(0.16f, snap.HitbackSeconds, "ヒットバック時間を複製（P3.5-08A）。");
             }
             finally
             {
@@ -60,6 +64,8 @@ namespace Momotaro.Tests.EditMode
                 SetPrivate(data, "_poiseDamage", 8f);
                 SetPrivate(data, "_guardable", true);
                 SetPrivate(data, "_telegraph", AttackTelegraph.Normal);
+                SetPrivate(data, "_hitbackDistance", 0.10f);
+                SetPrivate(data, "_hitbackSeconds", 0.10f);
 
                 AttackSnapshot snap = AttackSnapshot.FromData(data);
 
@@ -68,11 +74,15 @@ namespace Momotaro.Tests.EditMode
                 SetPrivate(data, "_poiseDamage", 999f);
                 SetPrivate(data, "_guardable", false);
                 SetPrivate(data, "_telegraph", AttackTelegraph.Unblockable);
+                SetPrivate(data, "_hitbackDistance", 9.9f);
+                SetPrivate(data, "_hitbackSeconds", 9.9f);
 
                 Assert.AreEqual(1.0f, snap.HpMultiplier, "HP 倍率は捕捉時の値を保持。");
                 Assert.AreEqual(8f, snap.PoiseDamage, "体幹は捕捉時の値を保持。");
                 Assert.IsTrue(snap.Guardable, "Guardable は捕捉時の値を保持。");
                 Assert.AreEqual(AttackTelegraph.Normal, snap.Telegraph, "Telegraph は捕捉時の値を保持。");
+                Assert.AreEqual(0.10f, snap.HitbackDistance, "ヒットバック距離も捕捉時の値で不変（P3.5-08A）。");
+                Assert.AreEqual(0.10f, snap.HitbackSeconds, "ヒットバック時間も捕捉時の値で不変（P3.5-08A）。");
             }
             finally
             {
@@ -90,6 +100,8 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(0f, snap.HpMultiplier);
             Assert.AreEqual(0f, snap.PoiseDamage);
             Assert.AreEqual(AttackTelegraph.Normal, snap.Telegraph);
+            Assert.AreEqual(0f, snap.HitbackDistance, "null は既定 0（P3.5-08A）。");
+            Assert.AreEqual(0f, snap.HitbackSeconds, "null は既定 0（P3.5-08A）。");
         }
 
         [Test]

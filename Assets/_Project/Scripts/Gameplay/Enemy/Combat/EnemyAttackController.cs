@@ -104,7 +104,8 @@ namespace Momotaro.Gameplay.Enemy.Combat
                     case EnemyAttackClass.Normal: return AttackSwing.EnemyMeleeNormal;
                     case EnemyAttackClass.Heavy: return AttackSwing.EnemyMeleeHeavy;
                     case EnemyAttackClass.Unblockable: return AttackSwing.EnemyMeleeUnblockable;
-                    default: return 0; // Charge/Projectile は剣閃を出さない。
+                    case EnemyAttackClass.Projectile: return AttackSwing.EnemyProjectile; // 弓発射 SE 用（P3.5-08C）。剣閃 VFX は非対象（下記 default 相当）。
+                    default: return 0; // Charge 等は剣閃・スイング SE を出さない。
                 }
             }
         }
