@@ -189,6 +189,16 @@ namespace Momotaro.Presentation.Combat
                 }
             }
 
+            // 必殺技は判定中心が Active 中に前方へ進む（P3.5-09）。剣閃を SwingCenter に毎フレーム追従させ、判定と見た目を一致させる。
+            // 通常コンボは中心が固定のため対象外（生成時の姿勢のまま）。
+            if (_current != null && _current.IsPlaying && active && _source.SwingStage == AttackSwing.SpecialStage)
+            {
+                Vector3 followCenter = _source.SwingCenter - _source.SwingForward.normalized * _vfxForwardPull;
+                SlashVfxPlacement.Compute(followCenter, ResolveCamera(), _slashHeightOffset, _depthOffset,
+                    out Vector3 followPos, out Quaternion followRot);
+                _current.SetPose(followPos, followRot);
+            }
+
             _wasActive = active;
         }
 

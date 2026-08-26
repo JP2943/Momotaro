@@ -84,5 +84,12 @@ namespace Momotaro.Gameplay.Combat
         {
             return new HitResult(HitResultKind.Rejected, hitId, attacker, target, HitDamage.None, hitPoint, attackDirection);
         }
+
+        /// <summary>ジャスト回避結果を生成する（適用値 0。接触点・攻撃方向は任意。P3.5-09。専用フィードバックが接触点を参照する）。</summary>
+        public static HitResult JustEvade(HitId hitId, ICombatActor attacker, IDamageable target, HitDamage appliedDamage,
+            Vector3 hitPoint = default, Vector3 attackDirection = default)
+        {
+            return new HitResult(HitResultKind.JustEvade, hitId, attacker, target, appliedDamage, hitPoint, attackDirection);
+        }
     }
 }

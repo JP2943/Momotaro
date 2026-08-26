@@ -19,8 +19,8 @@ namespace Momotaro.Presentation.Combat
         [Header("ガード不能予告素材（無方向・ループ。Warning_Enemy_Unguardable_A）")]
         [SerializeField] private Sprite[] _warningFrames;
 
-        [Tooltip("敵中心からの頭上オフセット（m）。")]
-        [SerializeField] private float _height = 2f;
+        [Tooltip("敵中心からの頭上オフセット（m）。頭上 HP／体幹バー（既定 1.6m）より上へ出して重なりを避ける（P3.5-09 視認性調整）。")]
+        [SerializeField] private float _height = 2.9f;
 
         [Tooltip("予告コマのループ周期（秒）。")]
         [SerializeField] private float _loopSeconds = 0.4f;
@@ -28,8 +28,9 @@ namespace Momotaro.Presentation.Combat
         [Tooltip("予告に乗せる色（Tint）。ガード不能予告は危険を伝える赤系が前提（既定 #FF3B30）。")]
         [SerializeField] private Color _warningColor = new Color(1f, 0.23137255f, 0.1882353f, 1f);
 
-        [Tooltip("予告スプライトの Sorting Order。")]
-        [SerializeField] private int _sortingOrder = 60;
+        [Tooltip("予告スプライトの Sorting Order。他のワールド VFX（剣閃50・JG閃光等）より前面へ（P3.5-09 視認性調整で 60→100）。"
+            + "※頭上 HP／体幹バーは IMGUI 描画で常に最前面のため、重なり回避は本値ではなく高さ（位置）と α（透過）で行う。")]
+        [SerializeField] private int _sortingOrder = 100;
 
         [Tooltip("Scene 内の敵を再取得する間隔（秒）。毎フレーム FindObjects しない。")]
         [SerializeField] private float _rescanInterval = 1f;

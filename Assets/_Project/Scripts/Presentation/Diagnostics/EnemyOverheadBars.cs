@@ -14,8 +14,8 @@ namespace Momotaro.Presentation.Diagnostics
         [Tooltip("表示元の Actor（未指定なら親から取得）。")]
         [SerializeField] private EnemyActor _actor;
 
-        [Tooltip("頭上の表示高さ（m）。")]
-        [SerializeField] private float _height = 2.0f;
+        [Tooltip("頭上の表示高さ（m）。ガード不能予告（頭上さらに上）と重ならないよう頭寄りに下げる（P3.5-09 視認性調整）。")]
+        [SerializeField] private float _height = 1.6f;
 
         [Tooltip("バーの画面上の幅・高さ（px）。")]
         [SerializeField] private float _barWidth = 60f;
@@ -82,12 +82,14 @@ namespace Momotaro.Presentation.Diagnostics
                 _actor.CurrentHp, _actor.MaxHp, _actor.CurrentPoise, _actor.MaxPoise,
                 _actor.Archetype != null && _actor.Archetype.AlwaysShowPoise);
 
-            DrawBar(x, y, model.HpFill, new Color(0.15f, 0.15f, 0.15f, 0.85f), new Color(0.85f, 0.2f, 0.2f, 0.95f));
+            // 透過処理（P3.5-09 視認性調整）：IMGUI バーは常にワールドの上へ描かれるため、背後のガード不能予告（赤）が
+            // 透けて見えるよう α を下げる（背景 0.45／前景 0.7）。仮 UI の主張も抑える。
+            DrawBar(x, y, model.HpFill, new Color(0.1f, 0.1f, 0.1f, 0.45f), new Color(0.85f, 0.2f, 0.2f, 0.7f));
 
             if (model.ShowPoise)
             {
                 DrawBar(x, y + _barHeight + 1f, model.PoiseFill,
-                    new Color(0.15f, 0.15f, 0.15f, 0.85f), new Color(0.95f, 0.8f, 0.2f, 0.95f));
+                    new Color(0.1f, 0.1f, 0.1f, 0.45f), new Color(0.95f, 0.8f, 0.2f, 0.7f));
             }
         }
 

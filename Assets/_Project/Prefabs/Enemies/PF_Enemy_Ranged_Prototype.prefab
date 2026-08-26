@@ -495,7 +495,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Diagnostics.EnemyOverheadBars
   _actor: {fileID: 0}
-  _height: 2
+  _height: 1.6
   _barWidth: 60
   _barHeight: 6
   _display: 1

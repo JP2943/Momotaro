@@ -86,6 +86,16 @@ namespace Momotaro.Presentation.Combat
             }
         }
 
+        /// <summary>
+        /// 再生中に表示位置・回転だけを更新する（コマ進行・再生状態には触れない。P3.5-09）。
+        /// 必殺技のように判定中心が Active 中に前方へ進む攻撃で、剣閃を判定へ追従させるために Presenter が毎フレーム呼ぶ。
+        /// </summary>
+        public void SetPose(Vector3 worldPosition, Quaternion rotation)
+        {
+            transform.position = worldPosition;
+            transform.rotation = rotation;
+        }
+
         /// <summary>時間を進めてコマを更新する。完了で <see cref="Completed"/> を通知する。</summary>
         public void Tick(float deltaTime)
         {

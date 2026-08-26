@@ -104,5 +104,47 @@ namespace Momotaro.Tests.EditMode
             Assert.IsFalse(s.IsInvincible);
             Assert.AreEqual(Vector3.zero, s.Direction);
         }
+
+        // ---- ジャスト回避受付窓（P3.5-09。既定 0.12 秒・ステップ開始から。1 ステップ 1 回） ----
+
+        [Test]
+        public void CanJustEvade_OpenAtStart_ClosesAfterWindow()
+        {
+            var s = Make();
+            s.Begin(Vector3.forward);
+            Assert.IsTrue(s.CanJustEvade, "開始直後はジャスト回避受付。");
+
+            s.Tick(0.11f); // 0.11 < 0.12
+            Assert.IsTrue(s.CanJustEvade, "窓内(0.11)は受付継続。");
+
+            s.Tick(0.02f); // 0.13 > 0.12
+            Assert.IsFalse(s.CanJustEvade, "窓(0.12)を過ぎたら受付終了。");
+        }
+
+        [Test]
+        public void CanJustEvade_ConsumedBySuccess_ReopensNextBegin()
+        {
+            var s = Make();
+            s.Begin(Vector3.forward);
+            Assert.IsTrue(s.CanJustEvade);
+
+            s.NotifyJustEvadeSuccess();
+            Assert.IsFalse(s.CanJustEvade, "成立後は同一ステップ中は再受付しない（1 ステップ 1 回）。");
+
+            s.Reset();
+            s.Begin(Vector3.forward);
+            Assert.IsTrue(s.CanJustEvade, "新しいステップでは受付が開き直す。");
+        }
+
+        [Test]
+        public void CanJustEvade_FalseWhenInactive()
+        {
+            var s = Make();
+            Assert.IsFalse(s.CanJustEvade, "未開始は受付なし。");
+
+            s.Begin(Vector3.forward);
+            s.Tick(0.30f); // 終了
+            Assert.IsFalse(s.CanJustEvade, "終了後は受付なし。");
+        }
     }
 }

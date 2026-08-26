@@ -31,11 +31,17 @@ namespace Momotaro.Presentation.Combat
         [Tooltip("ジャストガードの点滅色（強調）。")]
         [SerializeField] private Color _justGuardFlash = new Color(1f, 0.95f, 0.5f, 1f);
 
+        [Tooltip("ジャスト回避の点滅色（P3.5-09。JG と区別する寒色の閃き）。")]
+        [SerializeField] private Color _justEvadeFlash = new Color(0.55f, 0.95f, 1f, 1f);
+
         [Tooltip("通常ダメージのカメラ揺れ幅。")]
         [SerializeField] private float _damageShake = 0.12f;
 
         [Tooltip("ジャストガードのカメラ揺れ幅（強調）。")]
         [SerializeField] private float _justGuardShake = 0.22f;
+
+        [Tooltip("ジャスト回避のカメラ揺れ幅（P3.5-09。手応えを出しつつ JG より控えめ）。")]
+        [SerializeField] private float _justEvadeShake = 0.16f;
 
         [Tooltip("カメラ揺れの長さ（秒）。")]
         [SerializeField] private float _shakeSeconds = 0.12f;
@@ -142,6 +148,12 @@ namespace Momotaro.Presentation.Combat
                 case HitResultKind.JustGuard:
                     if (_flash != null) _flash.Trigger(r.Target, _justGuardFlash);
                     if (_shake != null) _shake.Shake(_justGuardShake, _shakeSeconds); // 強調。
+                    break;
+
+                case HitResultKind.JustEvade:
+                    // ジャスト回避（P3.5-09）：回避成功の中でも「弾き回避」。点滅＋控えめのカメラ揺れで手応えを出す（ヒットストップ・SE は Cue で処理済み）。
+                    if (_flash != null) _flash.Trigger(r.Target, _justEvadeFlash);
+                    if (_shake != null) _shake.Shake(_justEvadeShake, _shakeSeconds);
                     break;
 
                 default:

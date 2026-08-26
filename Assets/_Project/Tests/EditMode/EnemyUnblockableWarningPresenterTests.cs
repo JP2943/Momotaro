@@ -88,7 +88,7 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, p.ActiveCount, "予兆中は予告を表示する。");
             WarningVfxInstance w = FirstShown(p);
             Assert.IsNotNull(w);
-            Assert.AreEqual(new Vector3(5f, 2f, 3f), w.transform.position, "既定の頭上オフセット(2m)を加えて表示。");
+            Assert.AreEqual(new Vector3(5f, 2.9f, 3f), w.transform.position, "既定の頭上オフセット(2.9m。P3.5-09 視認性調整で頭上バーより上へ)を加えて表示。");
         }
 
         [Test]

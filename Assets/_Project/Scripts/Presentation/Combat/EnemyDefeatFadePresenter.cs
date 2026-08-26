@@ -165,18 +165,6 @@ namespace Momotaro.Presentation.Combat
                 deltaTime = 0f;
             }
 
-            // ダウン保持：保持時間が尽きた撃破体からフェードへ移行する（保持中は色を変えず Down 姿勢を維持）。
-            for (int i = _pending.Count - 1; i >= 0; i--)
-            {
-                PendingFade p = _pending[i];
-                p.DelayRemaining -= deltaTime;
-                if (p.DelayRemaining <= 0f)
-                {
-                    _pending.RemoveAt(i);
-                    BeginFade(p.Renderers);
-                }
-            }
-
             float dur = _fadeSeconds <= 0f ? 0.0001f : _fadeSeconds;
 
             for (int i = _fades.Count - 1; i >= 0; i--)
@@ -204,6 +192,19 @@ namespace Momotaro.Presentation.Combat
                 if (t >= 1f || !anyAlive)
                 {
                     _fades.RemoveAt(i);
+                }
+            }
+
+            // ダウン保持の満了判定はフェード更新の後に行う（P3.5-10 修正）：保持満了で開始したフェードを同一 Tick で進めず、
+            // 「保持満了 → 次 Tick からフェード開始」の順序を保証する（満了を跨ぐ Tick の余剰時間でフェードが即完了するのを防ぐ）。
+            for (int i = _pending.Count - 1; i >= 0; i--)
+            {
+                PendingFade p = _pending[i];
+                p.DelayRemaining -= deltaTime;
+                if (p.DelayRemaining <= 0f)
+                {
+                    _pending.RemoveAt(i);
+                    BeginFade(p.Renderers);
                 }
             }
         }

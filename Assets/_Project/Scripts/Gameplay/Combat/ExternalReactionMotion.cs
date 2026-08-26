@@ -13,6 +13,10 @@ namespace Momotaro.Gameplay.Combat
     /// </summary>
     public sealed class ExternalReactionMotion
     {
+        // 所要時間ちょうどまで積分（例：0.02×8=0.16）した際に浮動小数点の累積誤差で残時間が微小正値（~1e-8）として残り、
+        // 供給が 1 フレーム余計に続くのを防ぐための吸収閾値。実 dt・実所要時間（~0.02/~0.16）より十分小さく、実挙動には影響しない。
+        private const float TimeEpsilon = 1e-5f;
+
         private Vector3 _velocity; // XZ のみ（Y=0）。
         private float _remaining;
 
@@ -53,8 +57,9 @@ namespace Momotaro.Gameplay.Combat
             }
 
             _remaining -= deltaTime < 0f ? 0f : deltaTime;
-            if (_remaining <= 0f)
+            if (_remaining <= TimeEpsilon)
             {
+                // 所要時間ちょうど（累積誤差込み）で供給終了。微小正値を残さない。
                 _remaining = 0f;
                 _velocity = Vector3.zero;
             }

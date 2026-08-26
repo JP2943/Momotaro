@@ -48,6 +48,9 @@ namespace Momotaro.Gameplay.Combat
                     return new CombatFeedbackCue("VFX_JustGuard", "SE_JustGuard", 0.09f);
                 case HitResultKind.Evade:
                     return new CombatFeedbackCue(string.Empty, "SE_Evade", 0f);
+                case HitResultKind.JustEvade:
+                    // ジャスト回避は「弾き回避」。通常回避より手応えを付け、JG よりは軽いヒットストップ＋専用 SE（P3.5-09）。
+                    return new CombatFeedbackCue("VFX_JustEvade", "SE_JustEvade", 0.07f);
                 default:
                     return CombatFeedbackCue.None; // Rejected 等
             }

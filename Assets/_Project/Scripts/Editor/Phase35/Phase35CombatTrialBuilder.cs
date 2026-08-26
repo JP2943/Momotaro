@@ -45,6 +45,8 @@ namespace Momotaro.Editor.Phase35
         private const string JustGuardVfxFolder = "Assets/_Project/Art/VFX/JustGuard"; // 無方向フラットの JG 閃光（P3.5-08B）。
         private const string JustGuardSeId = "SE_JustGuard"; // CombatFeedbackMap の JG SeId と一致させる。
         private const string JustGuardSePath = "Assets/_Project/Audio/SE/Player/JustGuard/JustGuard.ogg";
+        private const string JustEvadeSeId = "SE_JustEvade"; // CombatFeedbackMap の JustEvade SeId と一致させる（P3.5-09）。
+        private const string JustEvadeSePath = "Assets/_Project/Audio/SE/Player/JustEvade/JustEvade.ogg";
         private const int JustGuardFrameCount = 4; // JG 閃光は無方向フラットの 4 コマ。
 
         // 主人公スイング SE（刀を振る音。P3.5-08C）。ヒット SE とは別系統で、Active 立ち上がりに同期して段別に鳴らす。
@@ -393,6 +395,12 @@ namespace Momotaro.Editor.Phase35
                     clip = AssetDatabase.LoadAssetAtPath<AudioClip>(GuardSePath),
                     volume = GuardVolume, // 大幅に控えめ（他のヒット結果 SE より小さく）。
                 },
+                new CombatSePlayer.SeSlot
+                {
+                    seId = JustEvadeSeId, // ジャスト回避成立音（P3.5-09）。CombatFeedbackMap の JustEvade SeId と一致。
+                    clip = AssetDatabase.LoadAssetAtPath<AudioClip>(JustEvadeSePath),
+                    volume = 1f,
+                },
             };
 
             var coordinator = go.AddComponent<CombatFeedbackPresenter>();
@@ -504,7 +512,8 @@ namespace Momotaro.Editor.Phase35
             var combo3 = PlayerSet("Combo3", 0.5f);
             combo3.holdThroughRecovery = true;
             playerVfx.Stage3Frames = combo3;
-            playerVfx.SpecialFrames = PlayerSet("Special", 0.2f);
+            // 必殺技は判定を長く持続し前方へ進む（P3.5-09）。剣閃も Active 秒（SO_Special_Momotaro=0.35）に合わせて長く残し、判定へ追従させる。
+            playerVfx.SpecialFrames = PlayerSet("Special", 0.35f);
             if (playerController != null)
             {
                 var so = new SerializedObject(playerVfx);
@@ -539,6 +548,21 @@ namespace Momotaro.Editor.Phase35
             // ガード不能の頭上警告（枚数は ValidateVfx で保証済み）。
             var warn = go.AddComponent<EnemyUnblockableWarningPresenter>();
             warn.WarningFrames = LoadFrames(WarningFolder);
+            // P3.5-09 視認性調整：頭上 HP／体幹バー（1.6m）より高く（2.9m）、ワールド VFX の最前面（sorting 100）へ Scene に焼き込む。
+            var warnSo = new SerializedObject(warn);
+            SerializedProperty warnHeight = warnSo.FindProperty("_height");
+            SerializedProperty warnOrder = warnSo.FindProperty("_sortingOrder");
+            if (warnHeight != null)
+            {
+                warnHeight.floatValue = 2.9f;
+            }
+
+            if (warnOrder != null)
+            {
+                warnOrder.intValue = 100;
+            }
+
+            warnSo.ApplyModifiedPropertiesWithoutUndo();
 
             // ジャストガード閃光（P3.5-08B。接触点へ無方向フラッシュ。枚数は ValidateVfx で保証済み）。
             var jgVfx = go.AddComponent<JustGuardVfxPresenter>();

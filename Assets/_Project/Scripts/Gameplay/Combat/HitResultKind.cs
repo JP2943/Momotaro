@@ -21,5 +21,8 @@ namespace Momotaro.Gameplay.Combat
 
         /// <summary>陣営不一致・多重ヒット・不正など、命中として棄却された。</summary>
         Rejected = 4,
+
+        /// <summary>ジャスト回避が成立した（P3.5-09。回避成功のうちタイト窓での「弾き回避」。体幹反射＋反撃猶予を伴う）。</summary>
+        JustEvade = 5,
     }
 }

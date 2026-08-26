@@ -35,6 +35,8 @@ namespace Momotaro.Gameplay.Player
         private bool _justGuardStateResolved;
         private IEvadeState _evadeState;
         private bool _evadeStateResolved;
+        private IJustEvadeState _justEvadeState;
+        private bool _justEvadeStateResolved;
         private ISpecialChargeCancel _specialCancel;
         private bool _specialCancelResolved;
         private IPlayerHurtReaction _hurtReaction;
@@ -226,6 +228,17 @@ namespace Momotaro.Gameplay.Player
             return _evadeState;
         }
 
+        private IJustEvadeState ResolveJustEvadeState()
+        {
+            if (!_justEvadeStateResolved)
+            {
+                _justEvadeState = GetComponentInParent<IJustEvadeState>();
+                _justEvadeStateResolved = true;
+            }
+
+            return _justEvadeState;
+        }
+
         private ISpecialChargeCancel ResolveSpecialCancel()
         {
             if (!_specialCancelResolved)
@@ -285,12 +298,22 @@ namespace Momotaro.Gameplay.Player
         /// </summary>
         private void ReflectJustGuardPoise(in HitInfo hit)
         {
-            if (hit.JustGuardPoiseDamage <= 0f || !(hit.Attacker is IDamageable attackerDamageable))
+            ReflectPoiseCounter(hit, hit.JustGuardPoiseDamage);
+        }
+
+        /// <summary>
+        /// 攻撃者の体幹（Poise）へ固定ダメージを反射する共通処理（JG／ジャスト回避で共用。P3.5-09）。攻撃者が <see cref="IDamageable"/>
+        /// の場合のみ、体幹のみ（HP/ひるみ 0）・再ガード不可・カウンター扱いの逆方向 Hit を返す。量が 0 以下／攻撃者が受け手でなければ無処理。
+        /// ジャスト回避はガード不能攻撃にも成立するため、反射量は命中側の <c>JustGuardPoiseDamage</c> ではなく回避側の設定値を渡す。
+        /// </summary>
+        private void ReflectPoiseCounter(in HitInfo hit, float poise)
+        {
+            if (poise <= 0f || !(hit.Attacker is IDamageable attackerDamageable))
             {
                 return;
             }
 
-            var reflect = new HitDamage(0f, hit.JustGuardPoiseDamage, 0f);
+            var reflect = new HitDamage(0f, poise, 0f);
             var reverse = new HitInfo(
                 null, attackerDamageable, -hit.AttackDirection, hit.HitPoint, reflect,
                 0f, 0f, guardable: false, justGuardable: false, isJustGuardCounter: true, hit.HitId);
@@ -327,6 +350,24 @@ namespace Momotaro.Gameplay.Player
             IEvadeState evade = ResolveEvadeState();
             if (evade != null && evade.IsInvincible && hit.Steppable)
             {
+                // ジャスト回避（P3.5-09）：ステップ開始直後のタイト窓（CanJustEvade）で無敵回避したときは、JG と対称の報酬を与える。
+                // 攻撃者の体幹へ固定反射＋近接攻撃者へ強制ひるみ（反撃猶予）を付与し、専用フィードバック（JustEvade）を発行する。
+                // ガード不能は Guardable/JustGuardable=false・Steppable=true のため、この経路が「回避が正解」の報酬窓になる。
+                // 窓外（無敵だが窓を過ぎた）の回避は従来どおりダメージ 0 のみの通常回避（Evade）。
+                IJustEvadeState je = ResolveJustEvadeState();
+                if (je != null && je.CanJustEvade)
+                {
+                    ReflectPoiseCounter(hit, je.JustEvadeCounterPoise);
+                    je.NotifyJustEvadeSuccess();
+                    if (!hit.Reaction.IsProjectile && hit.Attacker is IForcedFlinchReceiver flinchTarget)
+                    {
+                        flinchTarget.ForceFlinch(ForcedFlinchSeconds);
+                    }
+
+                    Results.Publish(HitResult.JustEvade(hit.HitId, hit.Attacker, this, HitDamage.None, hit.HitPoint, hit.AttackDirection));
+                    return;
+                }
+
                 Results.Publish(HitResult.Evade(hit.HitId, hit.Attacker, this));
                 return;
             }

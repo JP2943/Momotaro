@@ -16,7 +16,7 @@ namespace Momotaro.Gameplay.Player
     /// 中断時 Hitbox 消去まで。HP/体幹/ひるみの実適用は対象外（対象側 <see cref="IDamageable"/> と後続 Task）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, ISpecialChargeCancel, IAttackThreatSource, IAttackSwingSource, IStepObserver
+    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, IJustEvadeState, ISpecialChargeCancel, IAttackThreatSource, IAttackSwingSource, IStepObserver
     {
         [SerializeField] private PlayerMotor _motor;
         [SerializeField] private PlayerFacing _facing;
@@ -31,6 +31,12 @@ namespace Momotaro.Gameplay.Player
 
         [Tooltip("ステップ回避のパラメータ（距離・移動/後硬直秒・無敵区間・消費・連続窓）。未割当なら既定値。P2-09。")]
         [SerializeField] private StepData _stepData;
+
+        [Tooltip("ジャスト回避の受付窓（秒）。ステップ開始からこの秒数以内かつ無敵中の被弾で成立（P3.5-09。JG の受付窓に相当）。")]
+        [SerializeField] private float _justEvadeWindowSeconds = 0.12f;
+
+        [Tooltip("ジャスト回避成立時に攻撃者の体幹（Poise）へ反射する固定ダメージ（P3.5-09。ガード不能にも成立するため回避側で持つ）。")]
+        [SerializeField] private float _justEvadeCounterPoise = 20f;
 
         [Tooltip("必殺技のパラメータ（チャージ2.0/保持0.75/7.0倍/防御無視/スタン1.5/ひるませ100/後隙）。未割当なら必殺技不可。P2-10。")]
         [SerializeField] private SpecialAttackData _specialData;
@@ -102,8 +108,14 @@ namespace Momotaro.Gameplay.Player
             : (_combo != null ? _combo.Stage : 0);
 
         /// <inheritdoc />
-        /// <remarks><see cref="PollHitbox"/> と同一の中心式（前方オフセット＋高さ）。剣閃の表示位置に用いる。</remarks>
-        public Vector3 SwingCenter => transform.position + Forward * _hitboxForwardOffset + Vector3.up * _hitboxHeight;
+        /// <remarks>
+        /// <see cref="PollHitbox"/> と同一の中心式（前方オフセット＋高さ）。剣閃の表示位置に用いる。必殺技の判定区間中は専用の
+        /// 射程（<see cref="Momotaro.Data.Combat.SpecialAttackData"/>）に合わせ、剣閃も前方へ出す（P3.5-09。判定と見た目を一致させる）。
+        /// 必殺技は Active 中に中心が前方へ進む（<see cref="SpecialHitboxCenter"/>）。剣閃 VFX はこの値を毎フレーム参照して追従する。
+        /// </remarks>
+        public Vector3 SwingCenter => _specialActiveRemaining > 0f && _specialData != null
+            ? SpecialHitboxCenter()
+            : transform.position + Forward * _hitboxForwardOffset + Vector3.up * _hitboxHeight;
 
         /// <inheritdoc />
         public Vector3 SwingHalfExtents => _hitboxHalfExtents;
@@ -153,6 +165,17 @@ namespace Momotaro.Gameplay.Player
         /// <summary>ステップ回避中か（検証表示用）。</summary>
         public bool IsStepping => _step != null && _step.IsActive;
 
+        // ---- IJustEvadeState（ジャスト回避。命中解決が参照。P3.5-09。ガード不能攻撃への「回避が正解」の報酬） ----
+
+        /// <inheritdoc />
+        public bool CanJustEvade => _step != null && _step.CanJustEvade;
+
+        /// <inheritdoc />
+        public float JustEvadeCounterPoise => _justEvadeCounterPoise;
+
+        /// <inheritdoc />
+        public void NotifyJustEvadeSuccess() => _step?.NotifyJustEvadeSuccess();
+
         // ---- 必殺技（Phase2 P2-10） ----
 
         /// <summary>必殺技チャージ中か。</summary>
@@ -160,6 +183,17 @@ namespace Momotaro.Gameplay.Player
 
         /// <summary>必殺技（発動・後隙）実行中か。</summary>
         public bool IsSpecialAttacking => _specialAttackRemaining > 0f;
+
+        /// <summary>
+        /// 必殺技の判定発生中（Active）か（P3.5-09）。この間は攻撃・ステップでキャンセルできない＝必ず出し切る
+        /// （判定を持続・前進させる仕様と整合させ、自分の一撃を誤って潰さない）。
+        /// </summary>
+        private bool IsSpecialActive => _specialActiveRemaining > 0f;
+
+        /// <summary>
+        /// 必殺技の後隙中（Active 後・実行中）か（P3.5-09）。爽快感重視で、この間は攻撃・ステップ入力でキャンセルできる。
+        /// </summary>
+        private bool IsSpecialRecovery => _specialAttackRemaining > 0f && _specialActiveRemaining <= 0f;
 
         // ---- IAttackThreatSource（敵の防御 AI が観測する「危険の質」。入力ではなく現在の攻撃状態から公開する。P3-11/P3-10） ----
         /// <summary>
@@ -361,8 +395,9 @@ namespace Momotaro.Gameplay.Player
             {
                 _step = _stepData != null
                     ? new StepState(_stepData.Distance, _stepData.MoveSeconds, _stepData.RecoverySeconds,
-                        _stepData.InvincibleStartSeconds, _stepData.InvincibleEndSeconds, _stepData.ChainBufferSeconds)
-                    : new StepState(3f);
+                        _stepData.InvincibleStartSeconds, _stepData.InvincibleEndSeconds, _stepData.ChainBufferSeconds,
+                        _justEvadeWindowSeconds)
+                    : new StepState(3f, justEvadeWindowSeconds: _justEvadeWindowSeconds);
             }
 
             if (_special == null && _specialData != null)
@@ -588,8 +623,9 @@ namespace Momotaro.Gameplay.Player
                 }
             }
 
-            // 新規開始（非ブレイク・GameMode 有効・押下）。
-            if (!broken && stepPressed && TryStartStep(isMoving))
+            // 新規開始（非ブレイク・GameMode 有効・押下）。必殺技の判定発生中（Active）はステップを開始しない＝一撃を出し切る（P3.5-09）。
+            // 後隙中は開始でき、TryStartStep が必殺技の後隙を打ち切る。
+            if (!broken && stepPressed && !IsSpecialActive && TryStartStep(isMoving))
             {
                 return true;
             }
@@ -622,6 +658,15 @@ namespace Momotaro.Gameplay.Player
             {
                 _special.Cancel();
                 _specialRequiresRelease = true;
+            }
+
+            // 必殺技の後隙中ならステップで打ち切る（P3.5-09 爽快感重視）。Active 中は呼び出し側（DriveStep）で弾かれるため、
+            // ここに来た時点で残っているのは後隙のみ。打ち切らないと _specialAttackRemaining が凍結しステップ後に後隙が再開してしまう。
+            if (IsSpecialRecovery)
+            {
+                _specialAttackRemaining = 0f;
+                _specialActiveRemaining = 0f;
+                _hitTracker.Clear();
             }
 
             _justGuard?.Reset();
@@ -701,11 +746,22 @@ namespace Momotaro.Gameplay.Player
                 _specialRequiresRelease = false;
             }
 
-            // 発動・後隙の実行フェーズ（この間はキャンセル不可）。
+            // 発動・後隙の実行フェーズ。判定発生中（Active）はキャンセル不可＝出し切る。後隙（Active 後）は攻撃でキャンセル可（P3.5-09）。
             if (_specialAttackRemaining > 0f)
             {
                 float dt = Time.deltaTime;
                 bool inActiveWindow = _specialActiveRemaining > 0f;
+
+                // 後隙中の攻撃先行入力でキャンセル：必殺技を打ち切り、同フレームで DriveCombo にバッファ攻撃を拾わせる（爽快感重視）。
+                // ステップによるキャンセルは DriveStep→TryStartStep 側で処理する（DriveStep が本メソッドより先に走るため）。
+                if (!inActiveWindow && _combo != null && _attackBuffer != null && _attackBuffer.HasBuffered)
+                {
+                    _specialAttackRemaining = 0f;
+                    _specialActiveRemaining = 0f;
+                    _hitTracker.Clear();
+                    return false; // 実行終了：この後 DriveCombo が動けるよう非ブロックに戻す。
+                }
+
                 _specialAttackRemaining -= dt;
                 if (_specialActiveRemaining > 0f)
                 {
@@ -793,6 +849,22 @@ namespace Momotaro.Gameplay.Player
             _hitTracker.Clear();
         }
 
+        /// <summary>
+        /// 必殺技の判定中心（P3.5-09：Active 中に前方へ進む「薙ぎ」）。発生時（残り＝ActiveSeconds）は
+        /// <see cref="Momotaro.Data.Combat.SpecialAttackData.HitboxForwardOffset"/>、Active 終了時は
+        /// ＋<see cref="Momotaro.Data.Combat.SpecialAttackData.HitboxTravelDistance"/> まで前方へ滑らせる。
+        /// 当たり判定（<see cref="PollSpecialHitbox"/>）と剣閃 VFX（<see cref="SwingCenter"/>）で同一式を用い、見た目と判定を一致させる。
+        /// 呼び出し側で <c>_specialData != null</c> を保証すること。
+        /// </summary>
+        private Vector3 SpecialHitboxCenter()
+        {
+            float active = _specialData.ActiveSeconds;
+            // Active 経過率 t（発生 0 → 終了 1）。DriveSpecial で dt 減算後に評価されるため、発生直後は概ね 0、終了直前で 1 に近づく。
+            float t = active > 0f ? Mathf.Clamp01(1f - _specialActiveRemaining / active) : 1f;
+            float offset = _specialData.HitboxForwardOffset + _specialData.HitboxTravelDistance * t;
+            return transform.position + Forward * offset + Vector3.up * _specialData.HitboxHeight;
+        }
+
         /// <summary>必殺技の判定（Active 中）。7.0 倍・防御一部無視・スタン固有 1.5・ひるませ 100。ガード/JG 不能（貫通）。</summary>
         private void PollSpecialHitbox()
         {
@@ -801,11 +873,12 @@ namespace Momotaro.Gameplay.Player
                 return;
             }
 
-            Vector3 center = transform.position + Forward * _hitboxForwardOffset + Vector3.up * _hitboxHeight;
+            // P3.5-09：必殺技は専用の射程（通常攻撃より前方・広範囲）を用い、Active 中は前方へ進む。通常攻撃の Hitbox 値は変えない。
+            Vector3 center = SpecialHitboxCenter();
             // Physics.autoSyncTransforms=0 のため、Update 中の問い合わせ前に明示同期する。これが無いと移動中の
             // 敵（動的 Rigidbody）が最後の物理ステップの古い位置で判定され、Hitbox が命中を取りこぼす。
             Physics.SyncTransforms();
-            int count = Physics.OverlapBoxNonAlloc(center, _hitboxHalfExtents, _overlapBuffer, Quaternion.identity, _targetMask, QueryTriggerInteraction.Collide);
+            int count = Physics.OverlapBoxNonAlloc(center, _specialData.HitboxHalfExtents, _overlapBuffer, Quaternion.identity, _targetMask, QueryTriggerInteraction.Collide);
             if (count == 0)
             {
                 return;

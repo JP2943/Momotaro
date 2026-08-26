@@ -20,10 +20,12 @@ namespace Momotaro.Gameplay.Player
         private readonly float _invincibleStartSeconds;
         private readonly float _invincibleEndSeconds;
         private readonly float _chainBufferSeconds;
+        private readonly float _justEvadeWindowSeconds;
 
         private Vector3 _direction;
         private float _elapsed;
         private bool _active;
+        private bool _justEvadeConsumed;
 
         public StepState(
             float distance,
@@ -31,7 +33,8 @@ namespace Momotaro.Gameplay.Player
             float recoverySeconds = 0.10f,
             float invincibleStartSeconds = 0.05f,
             float invincibleEndSeconds = 0.20f,
-            float chainBufferSeconds = 0.12f)
+            float chainBufferSeconds = 0.12f,
+            float justEvadeWindowSeconds = 0.12f)
         {
             _distance = distance < 0f ? 0f : distance;
             _moveSeconds = moveSeconds <= 0f ? 0.0001f : moveSeconds;
@@ -39,6 +42,7 @@ namespace Momotaro.Gameplay.Player
             _invincibleStartSeconds = invincibleStartSeconds < 0f ? 0f : invincibleStartSeconds;
             _invincibleEndSeconds = invincibleEndSeconds < 0f ? 0f : invincibleEndSeconds;
             _chainBufferSeconds = chainBufferSeconds < 0f ? 0f : chainBufferSeconds;
+            _justEvadeWindowSeconds = justEvadeWindowSeconds < 0f ? 0f : justEvadeWindowSeconds;
         }
 
         /// <summary>ステップの総時間（移動＋後硬直）。</summary>
@@ -52,6 +56,12 @@ namespace Momotaro.Gameplay.Player
 
         /// <summary>移動フェーズ中か（速度を適用する区間）。後硬直中は false。</summary>
         public bool IsMoving => _active && _elapsed < _moveSeconds;
+
+        /// <summary>
+        /// ジャスト回避の受付中か（P3.5-09。ステップ開始直後 <see cref="_justEvadeWindowSeconds"/> 秒のタイト窓・1 ステップ 1 回）。
+        /// 実際の成立は命中解決側が「無敵中（<see cref="IsInvincible"/>）かつ本窓」で判定する。<see cref="NotifyJustEvadeSuccess"/> で閉じる。
+        /// </summary>
+        public bool CanJustEvade => _active && !_justEvadeConsumed && _elapsed < _justEvadeWindowSeconds;
 
         /// <summary>確定したステップ方向（World XZ・正規化）。</summary>
         public Vector3 Direction => _direction;
@@ -77,6 +87,13 @@ namespace Momotaro.Gameplay.Player
             _direction = flat.normalized;
             _elapsed = 0f;
             _active = true;
+            _justEvadeConsumed = false; // 新しいステップごとにジャスト回避窓を開き直す。
+        }
+
+        /// <summary>ジャスト回避成立を通知し、当該ステップの受付窓を閉じる（P3.5-09。1 ステップ 1 回。多段化はしない）。</summary>
+        public void NotifyJustEvadeSuccess()
+        {
+            _justEvadeConsumed = true;
         }
 
         /// <summary>時間を進める。総時間に達したら終了する。</summary>
@@ -100,6 +117,7 @@ namespace Momotaro.Gameplay.Player
             _active = false;
             _elapsed = 0f;
             _direction = Vector3.zero;
+            _justEvadeConsumed = false;
         }
     }
 }

@@ -183,7 +183,9 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, InScene<HitStopController>(scene).Count, "HitStop は 1 つ。");
             Assert.AreEqual(1, InScene<HitFlashPresenter>(scene).Count, "HitFlash は 1 つ。");
             Assert.AreEqual(1, InScene<CameraShakePresenter>(scene).Count, "CameraShake は 1 つ。");
-            Assert.AreEqual(1, InScene<CombatSePlayer>(scene).Count, "SE は 1 つ。");
+            // SE プレイヤーは役割ごとに専用インスタンスを持つ（[DisallowMultipleComponent]）：結果SE/敵スイング/主人公ヒット/ステップ/主人公スイング。
+            // 単一前提だった当初から複数化したため、ここでは存在のみを確認し、結果SEの配線は下の coord.Se で確認する（P3.5-08C/09）。
+            Assert.GreaterOrEqual(InScene<CombatSePlayer>(scene).Count, 1, "SE プレイヤーが存在する（役割別に複数）。");
             Assert.AreEqual(1, InScene<EnemyDefeatFadePresenter>(scene).Count, "撃破Fade は 1 つ。");
 
             List<CombatFeedbackPresenter> coords = InScene<CombatFeedbackPresenter>(scene);
