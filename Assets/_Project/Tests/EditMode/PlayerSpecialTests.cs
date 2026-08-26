@@ -63,6 +63,18 @@ namespace Momotaro.Tests.EditMode
 
         private static void Tick(PlayerStateController c) => UpdateMethod.Invoke(c, null);
 
+        /// <summary>必殺技の判定発生中（Active）か（内部フィールド参照。P3.5-09 のキャンセル可否テスト用）。</summary>
+        private static bool InSpecialActive(PlayerStateController c) => (float)GetPrivate(c, "_specialActiveRemaining") > 0f;
+
+        /// <summary>Active を越えて後隙に入るまで進める（発動直後から呼ぶ）。</summary>
+        private static void AdvanceToRecovery(PlayerStateController c)
+        {
+            for (int i = 0; i < 60 && InSpecialActive(c); i++)
+            {
+                Tick(c);
+            }
+        }
+
         private SpecialAttackData MakeSpecialData(float charge = 2.0f, float hold = 0.75f)
         {
             var d = ScriptableObject.CreateInstance<SpecialAttackData>();
@@ -153,8 +165,9 @@ namespace Momotaro.Tests.EditMode
             Tick(c); // 自動発動
             Assert.IsTrue(c.IsSpecialAttacking);
 
-            // 発動＋後隙（既定 0.15+0.9=1.05 秒）を越えるまで、必殺技ボタンを押したまま更新。
-            for (int i = 0; i < 80; i++)
+            // 発動＋後隙（既定 0.35+0.9=1.25 秒。P3.5-09 で Active 延長）を越えるまで、必殺技ボタンを押したまま更新。
+            // 保持中は再発動しない設計のため、余裕を持った反復数でも「再発動しない」検証は成立する。
+            for (int i = 0; i < 150; i++)
             {
                 Tick(c);
             }
@@ -279,6 +292,118 @@ namespace Momotaro.Tests.EditMode
             }
 
             Assert.IsFalse(c.IsSpecialCharging, "ガードキャンセル後、押しっぱなしでは再チャージしない（要解除）。");
+        }
+
+        // === P3.5-09：必殺技の後隙キャンセル（爽快感重視。後隙はステップ／攻撃で中断可・Active 中は出し切る） ===
+
+        /// <summary>Active を短く・後隙を長くして、EditMode の可変 deltaTime でも「後隙の途中」を決定的に作る。</summary>
+        private static void ShortActiveLongRecovery(PlayerStateController c)
+        {
+            var data = (SpecialAttackData)GetPrivate(c, "_specialData");
+            SetPrivate(data, "_activeSeconds", 0.05f);
+            SetPrivate(data, "_recoverySeconds", 5.0f);
+        }
+
+        private AttackData MakeStage(float startup, float active, float recovery, float cancelStart)
+        {
+            var a = ScriptableObject.CreateInstance<AttackData>();
+            _spawned.Add(a);
+            SetPrivate(a, "_startupSeconds", startup);
+            SetPrivate(a, "_activeSeconds", active);
+            SetPrivate(a, "_recoverySeconds", recovery);
+            SetPrivate(a, "_cancelWindowStartSeconds", cancelStart);
+            return a;
+        }
+
+        /// <summary>1 段のみの通常コンボ Data（後隙キャンセル先。startup を長めにして 1 Tick で攻撃状態が続くようにする）。</summary>
+        private PlayerAttackComboData MakeCombo1()
+        {
+            var combo = ScriptableObject.CreateInstance<PlayerAttackComboData>();
+            _spawned.Add(combo);
+            SetPrivate(combo, "_stages", new[] { MakeStage(1.0f, 2.0f, 2.0f, 0f) });
+            SetPrivate(combo, "_bufferSeconds", 0.30f);
+            return combo;
+        }
+
+        [Test]
+        public void StepDuringSpecialActive_IsBlocked_HitCompletes()
+        {
+            var (c, _, _, input) = MakeController(charge: 0.001f, hold: 0.001f);
+            // Active を deltaTime より十分長くして、発動直後の 1 Tick が確実に「Active 中」になるようにする。
+            var data = (SpecialAttackData)GetPrivate(c, "_specialData");
+            SetPrivate(data, "_activeSeconds", 0.5f);
+            SetPrivate(data, "_recoverySeconds", 5.0f);
+
+            input.SetSpecialAttack(true);
+            Tick(c); // Begin
+            Tick(c); // 自動発動
+            input.SetSpecialAttack(false);
+            Assert.IsTrue(c.IsSpecialAttacking && InSpecialActive(c), "判定発生（Active）中。");
+
+            // 判定発生中のステップ入力は無視し、必殺技を出し切る。
+            input.SetStep(true);
+            Tick(c);
+
+            Assert.IsFalse(c.IsStepping, "Active 中はステップを開始しない（一撃を出し切る）。");
+            Assert.IsTrue(c.IsSpecialAttacking, "必殺技は継続する。");
+            Assert.IsTrue(InSpecialActive(c), "判定発生は継続する。");
+        }
+
+        [Test]
+        public void StepDuringSpecialRecovery_CancelsRecovery_NoResume()
+        {
+            var (c, _, _, input) = MakeController(charge: 0.001f, hold: 0.001f);
+            ShortActiveLongRecovery(c);
+
+            input.SetSpecialAttack(true);
+            Tick(c); // Begin
+            Tick(c); // 自動発動
+            input.SetSpecialAttack(false);
+            Assert.IsTrue(c.IsSpecialAttacking);
+
+            AdvanceToRecovery(c);
+            Assert.IsTrue(c.IsSpecialAttacking, "まだ後隙（実行中）。");
+            Assert.IsFalse(InSpecialActive(c), "判定発生（Active）は終了している。");
+
+            // 後隙中のステップで必殺技を打ち切る。
+            input.SetStep(true);
+            Tick(c);
+            Assert.IsFalse(c.IsSpecialAttacking, "ステップで後隙をキャンセル。");
+            Assert.IsTrue(c.IsStepping, "ステップが開始する。");
+            input.SetStep(false);
+
+            // 凍結バグ回帰防止：ステップ後に後隙が再開しない。
+            for (int i = 0; i < 60; i++)
+            {
+                Tick(c);
+            }
+
+            Assert.IsFalse(c.IsSpecialAttacking, "ステップ後に後隙は再開しない。");
+        }
+
+        [Test]
+        public void AttackDuringSpecialRecovery_CancelsIntoCombo()
+        {
+            var (c, _, _, input) = MakeController(charge: 0.001f, hold: 0.001f);
+            SetPrivate(c, "_attackCombo", MakeCombo1());
+            ShortActiveLongRecovery(c);
+
+            input.SetSpecialAttack(true);
+            Tick(c); // Begin（EnsureRuntime が _attackCombo から _combo を構築）
+            Tick(c); // 自動発動
+            input.SetSpecialAttack(false);
+            Assert.IsTrue(c.IsSpecialAttacking);
+
+            AdvanceToRecovery(c);
+            Assert.IsTrue(c.IsSpecialAttacking, "後隙中。");
+            Assert.IsFalse(InSpecialActive(c));
+
+            // 後隙中に攻撃入力 → 必殺技を打ち切り、同フレームで通常コンボへキャンセル。
+            input.SetAttack(true);
+            Tick(c);
+
+            Assert.IsFalse(c.IsSpecialAttacking, "攻撃で後隙をキャンセル。");
+            Assert.AreEqual(PlayerState.Attack, c.Current, "通常攻撃へ移行する。");
         }
     }
 }

@@ -34,6 +34,12 @@ namespace Momotaro.Data.Combat
         [Tooltip("ジャストガード成立時に攻撃者の体幹へ反射する固定ダメージ。仕様書 3.3（軽15/通常20/強30/ボス大技40）。")]
         [SerializeField] private float _justGuardPoiseDamage = 20f;
 
+        [Header("Reaction (Phase3.5 P3.5-08A)")]
+        [Tooltip("Damage 成立時に被弾者を AttackDirection へ押し出す距離（m）。0 で無効。仕様書 §7.4（Attack1=0.10/2=0.14/3=0.24 目安）。")]
+        [SerializeField] private float _hitbackDistance = 0.14f;
+        [Tooltip("ヒットバックの所要時間（秒）。0 で無効。仕様書 §7.4（Attack1=0.10/2=0.12/3=0.16 目安）。")]
+        [SerializeField] private float _hitbackSeconds = 0.12f;
+
         [Header("Defense / Telegraph")]
         [SerializeField] private bool _guardable = true;
         [SerializeField] private bool _justGuardable = true;
@@ -81,6 +87,12 @@ namespace Momotaro.Data.Combat
 
         /// <summary>ジャストガード成立時に攻撃者の体幹へ反射する固定ダメージ（仕様書 3.3）。</summary>
         public float JustGuardPoiseDamage => _justGuardPoiseDamage;
+
+        /// <summary>Damage 時ヒットバック距離（m。Phase3.5 §7.4）。被弾者を AttackDirection へ押し出す。</summary>
+        public float HitbackDistance => _hitbackDistance;
+
+        /// <summary>ヒットバック所要時間（秒。Phase3.5 §7.4）。</summary>
+        public float HitbackSeconds => _hitbackSeconds;
 
         /// <summary>予兆種別。</summary>
         public AttackTelegraph Telegraph => _telegraph;

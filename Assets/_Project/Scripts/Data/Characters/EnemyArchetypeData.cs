@@ -17,6 +17,9 @@ namespace Momotaro.Data.Characters
         [Tooltip("敵の役割（近接／遠距離／強敵）。")]
         [SerializeField] private EnemyRole _role = EnemyRole.Melee;
 
+        [Tooltip("敵剣閃VFXの素材選択に用いる敵タイプ鍵（近接骸骨=Small／侍骸骨=Medium 等。P3.5-05/06）。Presentation の剣閃素材テーブルの引き当てに用いる。")]
+        [SerializeField] private string _slashVfxKey = "Small";
+
         [Header("Poise / Flinch / Stun")]
         [SerializeField] private float _poiseMax = 100f;
         [Tooltip("体幹の回復開始遅延（秒）。")]
@@ -29,6 +32,8 @@ namespace Momotaro.Data.Characters
         [SerializeField] private float _stunSeconds = 3f;
         [Tooltip("ひるみ耐性値（この蓄積以上でひるみ）。標準 60。")]
         [SerializeField] private float _flinchResistance = 60f;
+        [Tooltip("ひるみ（やられ）状態の持続時間（秒）。この間は移動・攻撃とも行動不能（Stagger）。標準 0.8。")]
+        [SerializeField] private float _flinchSeconds = 0.8f;
 
         [Header("Movement (data only; logic in P3-03)")]
         [Tooltip("旋回速度（度/秒）。")]
@@ -105,6 +110,8 @@ namespace Momotaro.Data.Characters
         public float StunSeconds => _stunSeconds;
         /// <inheritdoc />
         public float FlinchResistance => _flinchResistance;
+        /// <inheritdoc />
+        public float FlinchSeconds => _flinchSeconds;
 
         // ---- Movement ----
         /// <summary>旋回速度（度/秒）。</summary>
@@ -149,6 +156,10 @@ namespace Momotaro.Data.Characters
         public int AttackCount => _attacks != null ? _attacks.Length : 0;
         /// <summary>指定 index の攻撃 Data。</summary>
         public EnemyAttackData Attack(int index) => _attacks[index];
+
+        // ---- VFX ----
+        /// <summary>敵剣閃VFXの素材選択に用いる敵タイプ鍵（Small/Medium 等。P3.5-05/06）。</summary>
+        public string SlashVfxKey => _slashVfxKey;
 
         // ---- Guard / Evade ----
         /// <summary>ガード能力を持つか。</summary>

@@ -4,7 +4,8 @@
     "references": [
         "Momotaro.Core",
         "Momotaro.Data",
-        "Momotaro.Gameplay"
+        "Momotaro.Gameplay",
+        "UnityEngine.UI"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

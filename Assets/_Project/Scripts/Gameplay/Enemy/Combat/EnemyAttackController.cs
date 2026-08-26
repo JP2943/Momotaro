@@ -22,10 +22,13 @@ namespace Momotaro.Gameplay.Enemy.Combat
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(EnemyActor))]
-    public sealed class EnemyAttackController : MonoBehaviour, ISlotOwner, IEnemyDefeatCleanup
+    public sealed class EnemyAttackController : MonoBehaviour, ISlotOwner, IEnemyDefeatCleanup, IAttackSwingSource, IEnemySlashVisual, IEnemyUnblockableWarningSource
     {
         [Tooltip("同点時の tie-break 乱数シード（0 で TickCount。EditMode 再現用に固定可）。")]
         [SerializeField] private int _seed;
+
+        [Tooltip("敵剣閃VFXの素材選択に用いる敵タイプ鍵（近接骸骨=Small／侍骸骨=Medium 等。P3.5-05）。")]
+        [SerializeField] private string _slashVfxKey = "Small";
 
         [Tooltip("Hitbox の対象レイヤー（既定は全レイヤー。IDamageable と Faction で絞る）。")]
         [SerializeField] private LayerMask _targetMask = ~0;
@@ -78,6 +81,74 @@ namespace Momotaro.Gameplay.Enemy.Combat
 
         /// <summary>現在の狙い方向（XZ 正規化。Debug/テスト用）。</summary>
         public Vector3 AimDirection => _aimDir;
+
+        // ---- IAttackSwingSource（近接攻撃 Active 区間の観測。敵剣閃VFX が参照。P3.5-05。読み取りのみ・挙動不変） ----
+
+        /// <inheritdoc />
+        /// <remarks>近接（Active）判定区間のみ true。Charge／Projectile は <see cref="SwingStage"/> が 0 になり剣閃は出ない。</remarks>
+        public bool IsSwingHitboxActive => _machine.IsAttacking && _machine.Current == EnemyAttackMachine.Phase.Active;
+
+        /// <inheritdoc />
+        /// <remarks>§7.2 の識別：通常／強／ガード不能を段値へ写像する。突進・投射は 0（剣閃なし）。</remarks>
+        public int SwingStage
+        {
+            get
+            {
+                if (!_machine.IsAttacking)
+                {
+                    return 0;
+                }
+
+                switch (_machine.Snapshot.AttackClass)
+                {
+                    case EnemyAttackClass.Normal: return AttackSwing.EnemyMeleeNormal;
+                    case EnemyAttackClass.Heavy: return AttackSwing.EnemyMeleeHeavy;
+                    case EnemyAttackClass.Unblockable: return AttackSwing.EnemyMeleeUnblockable;
+                    case EnemyAttackClass.Projectile: return AttackSwing.EnemyProjectile; // 弓発射 SE 用（P3.5-08C）。剣閃 VFX は非対象（下記 default 相当）。
+                    default: return 0; // Charge 等は剣閃・スイング SE を出さない。
+                }
+            }
+        }
+
+        /// <inheritdoc />
+        /// <remarks><see cref="PollHitbox"/> と同一の中心式（AimDir オフセット＋高さ）。攻撃中のみ Snapshot を参照する。</remarks>
+        public Vector3 SwingCenter => _actor == null
+            ? transform.position
+            : (_machine.IsAttacking
+                ? _actor.WorldPosition + _aimDir * _machine.Snapshot.HitboxForwardOffset + Vector3.up * _machine.Snapshot.HitboxHeight
+                : _actor.WorldPosition);
+
+        /// <inheritdoc />
+        public Vector3 SwingHalfExtents => _machine.IsAttacking ? _machine.Snapshot.HitboxHalfExtents : Vector3.zero;
+
+        /// <inheritdoc />
+        public Vector3 SwingForward => _aimDir;
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// §7.2 の敵タイプ鍵（Small/Medium 等）。Presentation が剣閃素材テーブルの引き当てに用いる。P3.5-06：鍵は archetype
+        /// （<see cref="EnemyArchetypeData.SlashVfxKey"/>）を優先し、未設定（null/空）のときのみ本コンポーネントの直列化値へフォールバックする。
+        /// 敵タイプごとの鍵をデータ（archetype）で一元管理するため（例：侍骸骨=Medium）。戦闘挙動には一切影響しない。
+        /// </remarks>
+        public string SlashVfxKey
+        {
+            get
+            {
+                string fromArchetype = _actor != null && _actor.Archetype != null ? _actor.Archetype.SlashVfxKey : null;
+                return string.IsNullOrEmpty(fromArchetype) ? _slashVfxKey : fromArchetype;
+            }
+        }
+
+        // ---- IEnemyUnblockableWarningSource（ガード不能予告の観測。P3.5-05。読み取りのみ・挙動不変） ----
+
+        /// <inheritdoc />
+        /// <remarks>ガード不能攻撃の予兆（Prepare）区間中か。Guard／JG 不可のため予告で Step 回避を促す。</remarks>
+        public bool IsUnblockableTelegraphing => _machine.IsAttacking
+            && _machine.Current == EnemyAttackMachine.Phase.Prepare
+            && _machine.Snapshot.AttackClass == EnemyAttackClass.Unblockable;
+
+        /// <inheritdoc />
+        public Vector3 WarningPosition => _actor != null ? _actor.WorldPosition : transform.position;
 
         /// <summary>攻撃中に固定された照準対象の ActorId（無ければ 0。req8 検証用）。攻撃終了まで変わらない。</summary>
         public int AttackTargetId => _attackTarget != null ? _attackTarget.ActorId : 0;
@@ -268,6 +339,13 @@ namespace Momotaro.Gameplay.Enemy.Combat
                 return false;
             }
 
+            // 対象喪失後は新規攻撃を開始しない（P3.5-02 受入修正。§4.1「新しい攻撃・追跡を開始しない」）。固定対象が非活動／Down なら不開始。
+            // 対象未指定（テスト用の対象なし攻撃）は従来どおり許可する。通常の探索は死亡プレイヤーを認識対象から外すため本経路には来ない。
+            if (target != null && (!target.IsActive || (target is IThreatTarget downTarget && downTarget.IsDown)))
+            {
+                return false;
+            }
+
             Vector3 targetPos = target != null && target.IsActive ? target.Position : fallbackTargetPos;
             Vector3 selfPos = _actor.WorldPosition;
             float distance = VisionCheck.PlanarDistance(selfPos, targetPos);
@@ -417,6 +495,16 @@ namespace Momotaro.Gameplay.Enemy.Combat
         {
             if (!_machine.IsAttacking)
             {
+                return;
+            }
+
+            // 対象喪失 Cleanup（P3.5-02 受入修正。§4.1）：開始時に固定した攻撃対象（_attackTarget）が非活動／Down になったら、
+            // 進行中攻撃を Prepare／Active／Recovery を問わず即座に安全終了する。既存 CancelAttack を再利用し、攻撃中断・Hitbox 無効化・
+            // _hitTracker クリア・Telegraph Cancel・Slot 解放・突進停止・_attackTarget 解除を同一経路で行う（別 Cleanup 経路を増やさない）。
+            // 対象未指定（テスト用の対象なし攻撃）は _attackTarget==null のため対象外。別対象へ途中で切り替えず、そのまま中断する。
+            if (_attackTarget != null && !IsAttackTargetTrackable())
+            {
+                CancelAttack();
                 return;
             }
 

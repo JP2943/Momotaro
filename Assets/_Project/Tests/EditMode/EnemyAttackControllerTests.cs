@@ -189,5 +189,40 @@ namespace Momotaro.Tests.EditMode
             Assert.IsFalse(c.TryApplyHit(player, new FakeActor { Faction = CombatFaction.Player }, Vector3.zero),
                 "中断後は判定が出ない（Cleanup）。");
         }
+
+        [Test]
+        public void JustGuardForcedFlinch_DuringActiveAttack_CancelsAttack_TelegraphAndHitbox_ViaUpdate()
+        {
+            // P3.5-08A 結合試験（GPT レビュー対応）：JG 強制ひるみ → 敵が Stagger → 実 Update 経路で進行中攻撃が中断され、
+            // Telegraph Cancel が出て判定（Hitbox）が消える（＝以後 TryApplyHit が通らない）ことを検証する。Slot 解放は CancelAttack
+            // 内部で行われ（AttackSlotCoordinator 統合テストで別途担保）、ここでは中断・予兆・判定停止を通しで確認する。
+            var c = MakeController();
+            var actor = c.GetComponent<EnemyActor>();
+            var spy = new TelegraphSpy();
+            c.Telegraph.AddListener(spy);
+
+            c.TryStartAttack(new Vector3(0, 0, 1.5f), Vector3.zero);
+            c.TickAttack(0.30f); // → Active（Hitbox 有効）
+            Assert.AreEqual(EnemyAttackMachine.Phase.Active, c.Phase);
+            Assert.IsTrue(c.IsAttacking);
+
+            // ジャストガード成立時に主人公被弾解決が呼ぶのと同じ経路（IForcedFlinchReceiver）で近接攻撃者へ強制ひるみを付与。
+            ((IForcedFlinchReceiver)actor).ForceFlinch(0.35f);
+            Assert.AreEqual(EnemyState.Stagger, actor.State, "強制ひるみで Stagger（AttackActive を上書き）。");
+            Assert.IsTrue(EnemyStatePriority.IsForcedByHit(actor.State), "Update が中断判定に用いる被弾由来状態になる。");
+
+            // 実 Update（被弾由来→CancelAttack）を決定的に駆動（EditMode は Update 非駆動のため明示呼び出し）。
+            MethodInfo update = typeof(EnemyAttackController).GetMethod("Update", BindingFlags.NonPublic | BindingFlags.Instance);
+            Assert.IsNotNull(update, "Update が見つからない。");
+            update.Invoke(c, null);
+
+            Assert.IsFalse(c.IsAttacking, "強制ひるみで進行中攻撃が中断される。");
+            Assert.Contains(EnemyTelegraphPhase.Cancel, spy.Phases, "予兆（Telegraph）が Cancel される。");
+
+            var player = new FakeDamageable();
+            Assert.IsFalse(c.TryApplyHit(player, new FakeActor { Faction = CombatFaction.Player }, Vector3.zero),
+                "中断後は Hitbox 判定が出ない（Cleanup 済み）。");
+            Assert.AreEqual(0, player.Received);
+        }
     }
 }

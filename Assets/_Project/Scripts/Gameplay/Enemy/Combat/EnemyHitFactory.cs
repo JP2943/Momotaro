@@ -1,3 +1,4 @@
+using Momotaro.Data.Combat;
 using Momotaro.Gameplay.Combat;
 using UnityEngine;
 
@@ -28,7 +29,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
             Vector3 hitPoint,
             HitId hitId)
         {
-            return new HitInfo(
+            var hit = new HitInfo(
                 attacker,
                 target,
                 attackDirection,
@@ -43,6 +44,15 @@ namespace Momotaro.Gameplay.Enemy.Combat
                 stunHpMultiplierOverride: 0f,
                 steppable: snapshot.Steppable,
                 hitId);
+
+            // P3.5-08A：移動リアクション（被弾者へのヒットバック／防御者へのガードバック）と飛び道具判別を載せる。
+            // 飛び道具（Projectile）の JG では射手本人をひるませないため IsProjectile を立てる（被弾側が近接のみひるませる）。
+            var reaction = new HitReaction(
+                snapshot.HitbackDistance,
+                snapshot.HitbackSeconds,
+                snapshot.GuardbackDistance,
+                snapshot.AttackClass == EnemyAttackClass.Projectile);
+            return hit.WithReaction(reaction);
         }
     }
 }

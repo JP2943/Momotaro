@@ -45,7 +45,7 @@ MonoBehaviour:
   _predictSeconds: 0.3
   _trackingAngularSpeed: 180
   _hitboxHalfExtents: {x: 0.6, y: 0.5, z: 0.6}
-  _hitboxForwardOffset: 0.9
+  _hitboxForwardOffset: 0.55
   _hitboxHeight: 0.5
   _telegraph: 0
   _presentationId: 
@@ -53,3 +53,6 @@ MonoBehaviour:
   _seId: SE_Enemy_Melee
   _hitStopSeconds: 0.05
   _requiresOffscreenWarning: 0
+  _hitbackDistance: 0.16
+  _hitbackSeconds: 0.12
+  _guardbackDistance: 0.12

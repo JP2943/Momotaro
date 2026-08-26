@@ -7,8 +7,8 @@ namespace Momotaro.Data.Combat
     public sealed class SpecialAttackData : GameDataAsset
     {
         [Header("Charge")]
-        [Tooltip("最大チャージ秒（ボタン長押し）。仕様書 3.6（2.0）。")]
-        [SerializeField] private float _chargeSeconds = 2.0f;
+        [Tooltip("チャージ（タメ）秒。短いほど使いやすい。P3.5-09 試遊調整で 2.0→1.0 に短縮。")]
+        [SerializeField] private float _chargeSeconds = 1.0f;
         [Tooltip("最大チャージ後に保持できる秒。超えると自動発動。仕様書 3.6（0.75）。")]
         [SerializeField] private float _maxHoldSeconds = 0.75f;
 
@@ -28,10 +28,21 @@ namespace Momotaro.Data.Combat
         [SerializeField] private float _knockback = 6f;
 
         [Header("Timing")]
-        [Tooltip("判定（Active）秒。")]
-        [SerializeField] private float _activeSeconds = 0.15f;
+        [Tooltip("判定（Active）秒。P3.5-09 拡張：判定を長めに持続させ、その間 Hitbox を前方へ滑らせる（0.15→0.35）。")]
+        [SerializeField] private float _activeSeconds = 0.35f;
         [Tooltip("発動後の後隙秒。仕様書 3.6（0.8〜1.0）。")]
         [SerializeField] private float _recoverySeconds = 0.9f;
+
+        [Header("Reach (射程・必殺技専用。P3.5-09 で通常攻撃より広く長く)")]
+        [Tooltip("判定中心の前方オフセット（m）。通常攻撃(0.8)より前へ。")]
+        [SerializeField] private float _hitboxForwardOffset = 1.2f;
+        [Tooltip("判定中心の高さ（m）。")]
+        [SerializeField] private float _hitboxHeight = 0.5f;
+        [Tooltip("判定の各軸 half extent（m）。通常攻撃(0.6,0.5,0.6)より広く・前方(Z)を長く。")]
+        [SerializeField] private Vector3 _hitboxHalfExtents = new Vector3(0.9f, 0.6f, 1.1f);
+        [Tooltip("判定中心が Active 中に前方へ進む距離（m）。P3.5-09：発生から Active 終了までに前方 offset を "
+            + "HitboxForwardOffset＋この値まで滑らせ、踏み込む「薙ぎ」の手応えを出す。0 で従来どおり固定。剣閃 VFX も同じ式で追従する。")]
+        [SerializeField] private float _hitboxTravelDistance = 1.2f;
 
         /// <summary>最大チャージ秒。</summary>
         public float ChargeSeconds => _chargeSeconds;
@@ -63,6 +74,18 @@ namespace Momotaro.Data.Combat
         /// <summary>発動後の後隙秒。</summary>
         public float RecoverySeconds => _recoverySeconds;
 
+        /// <summary>判定中心の前方オフセット（m。必殺技専用の射程。P3.5-09）。</summary>
+        public float HitboxForwardOffset => _hitboxForwardOffset;
+
+        /// <summary>判定中心の高さ（m）。</summary>
+        public float HitboxHeight => _hitboxHeight;
+
+        /// <summary>判定の各軸 half extent（m。必殺技専用の射程）。</summary>
+        public Vector3 HitboxHalfExtents => _hitboxHalfExtents;
+
+        /// <summary>判定中心が Active 中に前方へ進む距離（m。P3.5-09。0 で固定）。</summary>
+        public float HitboxTravelDistance => _hitboxTravelDistance;
+
         /// <inheritdoc />
         public override void Validate(DataValidationReport report)
         {
@@ -90,6 +113,16 @@ namespace Momotaro.Data.Combat
             if (_activeSeconds <= 0f || _recoverySeconds < 0f)
             {
                 report.Error(name + ": Active/Recovery seconds invalid.");
+            }
+
+            if (_hitboxHalfExtents.x <= 0f || _hitboxHalfExtents.y <= 0f || _hitboxHalfExtents.z <= 0f)
+            {
+                report.Error(name + ": HitboxHalfExtents must be > 0 on all axes.");
+            }
+
+            if (_hitboxTravelDistance < 0f)
+            {
+                report.Error(name + ": HitboxTravelDistance must be >= 0.");
             }
         }
     }

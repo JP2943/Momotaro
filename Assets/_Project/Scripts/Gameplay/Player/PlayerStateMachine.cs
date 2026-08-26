@@ -59,11 +59,39 @@ namespace Momotaro.Gameplay.Player
         /// <summary>
         /// 必殺技（チャージ・発動）を含めて状態を更新する。優先度は
         /// ガードブレイク ＞ ステップ ＞ 必殺技発動 ＞ 必殺技チャージ ＞ 攻撃 ＞ ガード ＞ 移動/Idle（仕様書 §3 / §3.6）。
+        /// 被弾（Hurt）を含まない従来オーバーロード。<see cref="Tick(bool,bool,bool,bool,bool,bool,bool,bool,bool)"/> へ hurt:false で委譲する。
         /// </summary>
         public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken, bool stepping, bool charging, bool specialAttacking)
         {
+            Tick(enabled, isMoving, guarding, attacking, guardBroken, stepping, charging, specialAttacking, hurt: false);
+        }
+
+        /// <summary>
+        /// 被弾（<paramref name="hurt"/>）を含めて状態を更新する（Phase3.5 P3.5-01）。死亡を含まない従来オーバーロード。
+        /// <see cref="Tick(bool,bool,bool,bool,bool,bool,bool,bool,bool,bool)"/> へ defeated:false で委譲する。
+        /// </summary>
+        public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken, bool stepping, bool charging, bool specialAttacking, bool hurt)
+        {
+            Tick(enabled, isMoving, guarding, attacking, guardBroken, stepping, charging, specialAttacking, hurt, defeated: false);
+        }
+
+        /// <summary>
+        /// 死亡（<paramref name="defeated"/>）を含めて状態を更新する（Phase3.5 P3.5-02）。優先度は
+        /// 死亡 ＞ 被弾 ＞ ガードブレイク ＞ ステップ ＞ 必殺技発動 ＞ 必殺技チャージ ＞ 攻撃 ＞ ガード ＞ 移動/Idle（仕様書 §3.1）。
+        /// Defeated は最上位で全状態へ割り込み、以後復帰しない（呼び出し側が恒久的に defeated を渡し続ける）。
+        /// </summary>
+        public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken, bool stepping, bool charging, bool specialAttacking, bool hurt, bool defeated)
+        {
             PlayerState next;
-            if (guardBroken)
+            if (defeated)
+            {
+                next = PlayerState.Defeated;
+            }
+            else if (hurt)
+            {
+                next = PlayerState.Hurt;
+            }
+            else if (guardBroken)
             {
                 next = PlayerState.GuardBreak;
             }

@@ -23,8 +23,16 @@ namespace Momotaro.Presentation.Player
         [SerializeField] private string _layerName = "Base Layer";
         [SerializeField] private int _layerIndex = 0;
 
+        [Tooltip("死亡（Defeated）仮表示の乗算色。彩度／明度を落とした暗い灰色（Phase3.5 P3.5-02 仮仕様）。完成版死亡演出は対象外。")]
+        [SerializeField] private Color _defeatedTint = new Color(0.45f, 0.45f, 0.5f, 1f);
+
         private string _currentClip;
         private readonly HashSet<string> _warnedMissingStates = new HashSet<string>();
+
+        private SpriteRenderer _renderer;
+        private bool _rendererResolved;
+        private Color _originalColor = Color.white;
+        private bool _defeatTintApplied;
 
         private void LateUpdate()
         {
@@ -32,6 +40,10 @@ namespace Momotaro.Presentation.Player
             {
                 return;
             }
+
+            // 死亡仮表示：現 Facing の Hurt クリップ（PlayerVisualNames が Defeated→Hurt へ写像）を再生し、非ループなので最終 Frame を
+            // 保持する。加えて Sprite を低彩度・低明度へ落とす（仕様書 §4.2）。色替えはクリップ変化の有無に依らず毎 LateUpdate で判定する。
+            ApplyDefeatTint(_state.Current == PlayerState.Defeated);
 
             string clip = PlayerVisualNames.ClipName(_state.Current, _facing.Current, _state.AttackStage);
             if (clip == _currentClip)
@@ -55,6 +67,44 @@ namespace Momotaro.Presentation.Player
                     $"[PlayerVisualAdapter] Animator の Layer '{_layerName}'(index {_layerIndex}) に State '{clip}' が無いため再生をスキップしました。" +
                     "Animator Controller に該当 State を追加してください。", this);
             }
+        }
+
+        /// <summary>
+        /// 死亡仮表示の低彩度化を適用／解除する（Presentation 専用）。Renderer が無ければ Gameplay を止めず黙って無視する
+        /// （警告連打しない）。適用前の色を保持し、非死亡へ戻る場合は元の色へ復元する（本 Phase では死亡は恒久だが、
+        /// テストや将来の復帰に備えて対称にする）。
+        /// </summary>
+        private void ApplyDefeatTint(bool defeated)
+        {
+            SpriteRenderer sr = ResolveRenderer();
+            if (sr == null)
+            {
+                return;
+            }
+
+            if (defeated && !_defeatTintApplied)
+            {
+                _originalColor = sr.color;
+                sr.color = _defeatedTint;
+                _defeatTintApplied = true;
+            }
+            else if (!defeated && _defeatTintApplied)
+            {
+                sr.color = _originalColor;
+                _defeatTintApplied = false;
+            }
+        }
+
+        private SpriteRenderer ResolveRenderer()
+        {
+            if (!_rendererResolved)
+            {
+                // Animator と同じ GameObject（Sprite ノード）に SpriteRenderer が同居する構成を前提に、追加の Inspector 配線なしで解決する。
+                _renderer = _animator != null ? _animator.GetComponent<SpriteRenderer>() : null;
+                _rendererResolved = true;
+            }
+
+            return _renderer;
         }
     }
 }

@@ -118,17 +118,20 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
-        public void HittingZeroHp_AppliesZero_ButStillDamageResult()
+        public void HittingDefeatedPlayer_ProducesNoResult()
         {
+            // P3.5-02（仕様書 §4.1）：致死で Defeated 確定後、追加 Damage は HP・結果・通知を重複発行しない。
+            // 旧仕様（P2-04）は HP0 への追撃でも applied 0 の Damage 結果を発行していたが、Defeated 導入で変更した。
             PlayerVitalsHolder holder = MakeHolder(5, 0f, out _);
-            holder.ReceiveHit(Hit(holder, 100f)); // 0 へ
+            holder.ReceiveHit(Hit(holder, 100f)); // 致死（HP0・Defeated 確定）
+            Assert.IsTrue(holder.IsDefeated, "致死で Defeated。");
 
             var recorder = new Recorder();
             holder.Results.AddListener(recorder);
-            holder.ReceiveHit(Hit(holder, 8f)); // HP0 への追撃
+            holder.ReceiveHit(Hit(holder, 8f)); // 死亡後の追撃
 
-            Assert.AreEqual(0f, recorder.Received[0].AppliedDamage.Hp);
-            Assert.AreEqual(HitResultKind.Damage, recorder.Received[0].Kind);
+            Assert.AreEqual(0, recorder.Received.Count, "死亡後の追撃は HitResult を出さない（§4.1）。");
+            Assert.AreEqual(0, holder.Vitals.Health.Current, "HP は 0 のまま。");
         }
 
         [Test]

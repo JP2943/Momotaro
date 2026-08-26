@@ -34,3 +34,5 @@ MonoBehaviour:
   _justGuardable: 1
   _stepAvoidable: 1
   _telegraph: 0
+  _hitbackDistance: 0.24
+  _hitbackSeconds: 0.16

@@ -59,9 +59,32 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
             transform.position = origin;
             _live = true;
 
+            // 生存中の敵 Projectile をレジストリへ登録（Phase3.5 P3.5-02）。プレイヤー死亡時に一括 Cleanup できるようにする。
+            EnemyProjectileRegistry.Register(this);
+
             // 発射方向を表示側へ即時通知（生成フレームの初期化順・既定値に依存せず 4 方向表示を確定させる）。
             var visual = GetComponentInChildren<IProjectileVisual>(true);
             visual?.OnProjectileLaunched(_state.Direction);
+        }
+
+        /// <summary>
+        /// 外部（プレイヤー死亡時の一括掃除）から安全に消滅させる（Phase3.5 P3.5-02）。既に非生存なら何もしない（冪等・二重解放安全）。
+        /// 命中／壁／寿命の通常消滅と同じ <see cref="DestroySelf"/> 経路を用い、別 Cleanup 系統を増やさない。
+        /// </summary>
+        public void Cleanup()
+        {
+            if (!_live)
+            {
+                return;
+            }
+
+            DestroySelf();
+        }
+
+        private void OnDestroy()
+        {
+            // Scene 再読込・Disable・破棄の取りこぼしでもレジストリに残さない（二重解除は List.Remove が安全に無視する）。
+            EnemyProjectileRegistry.Unregister(this);
         }
 
         private void FixedUpdate()
@@ -201,7 +224,18 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
         private void DestroySelf()
         {
             _live = false;
-            Destroy(gameObject);
+            EnemyProjectileRegistry.Unregister(this); // 生存レジストリから即時に外す（Destroy は遅延するため同期で数を整合させる）。
+
+            // Play 中は次フレーム破棄（Destroy）。EditMode テスト等の非 Play では即時破棄でないと
+            // 「Destroy may not be called from edit mode」で失敗するため DestroyImmediate を用いる。
+            if (Application.isPlaying)
+            {
+                Destroy(gameObject);
+            }
+            else
+            {
+                DestroyImmediate(gameObject);
+            }
         }
 
         private static bool IsGameplayActive()

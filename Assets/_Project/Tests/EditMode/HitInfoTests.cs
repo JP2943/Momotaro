@@ -106,5 +106,48 @@ namespace Momotaro.Tests.EditMode
             Assert.IsTrue(new HitId(1, 0) != new HitId(1, 1));
             Assert.AreEqual(new HitId(3, 4).GetHashCode(), new HitId(3, 4).GetHashCode());
         }
+
+        [Test]
+        public void HitInfo_Reaction_DefaultsToNone_WhenNotSpecified()
+        {
+            // P3.5-08A：既存の生成経路（reaction を渡さない）は HitReaction.None（全 0・IsProjectile=false）で後方互換。
+            var hit = new HitInfo(
+                new FakeActor(), new FakeTarget(), Vector3.forward, Vector3.zero,
+                HitDamage.None, true, true, HitId.Single(1));
+
+            Assert.AreEqual(0f, hit.Reaction.HitbackDistance);
+            Assert.AreEqual(0f, hit.Reaction.HitbackSeconds);
+            Assert.AreEqual(0f, hit.Reaction.GuardbackDistance);
+            Assert.IsFalse(hit.Reaction.IsProjectile);
+        }
+
+        [Test]
+        public void WithReaction_ReplacesReaction_KeepsOtherFields()
+        {
+            // P3.5-08A：WithReaction は Reaction のみ差し替え、他フィールドは不変を保つ。
+            var hitId = new HitId(7, 1);
+            var baseHit = new HitInfo(
+                new FakeActor(), new FakeTarget(), Vector3.forward, new Vector3(1f, 2f, 3f),
+                new HitDamage(9f, 8f, 7f), guardStaminaDamage: 5f, justGuardPoiseDamage: 6f,
+                guardable: true, justGuardable: false, isJustGuardCounter: false,
+                defenseIgnoreRatio: 0f, stunHpMultiplierOverride: 0f, steppable: true, hitId: hitId);
+
+            var reaction = new HitReaction(0.24f, 0.16f, 0.12f, isProjectile: true);
+            HitInfo hit = baseHit.WithReaction(reaction);
+
+            Assert.AreEqual(0.24f, hit.Reaction.HitbackDistance);
+            Assert.AreEqual(0.16f, hit.Reaction.HitbackSeconds);
+            Assert.AreEqual(0.12f, hit.Reaction.GuardbackDistance);
+            Assert.IsTrue(hit.Reaction.IsProjectile);
+
+            // 他フィールドは不変。
+            Assert.AreEqual(hitId, hit.HitId);
+            Assert.AreEqual(new Vector3(1f, 2f, 3f), hit.HitPoint);
+            Assert.AreEqual(9f, hit.Damage.Hp);
+            Assert.AreEqual(5f, hit.GuardStaminaDamage);
+            Assert.IsTrue(hit.Guardable);
+            Assert.IsFalse(hit.JustGuardable);
+            Assert.AreEqual(Vector3.forward, hit.AttackDirection);
+        }
     }
 }

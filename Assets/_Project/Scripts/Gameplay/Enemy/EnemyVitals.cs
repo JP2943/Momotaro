@@ -58,7 +58,9 @@ namespace Momotaro.Gameplay.Enemy
             }
 
             float resistance = config != null ? config.FlinchResistance : 1f;
-            _flinch = new FlinchState(resistance);
+            // ひるみ（やられ）持続時間は Data 由来（未設定・0 以下なら 0.8 秒へフォールバック。P3.5 調整）。この間は行動不能。
+            float flinchSeconds = config != null && config.FlinchSeconds > 0f ? config.FlinchSeconds : 0.8f;
+            _flinch = new FlinchState(resistance, flinchSeconds: flinchSeconds);
 
             _defense = config != null ? config.Defense : 0f;
             _targetPoiseMultiplier = config != null ? config.PoiseDamageMultiplier : 1f;

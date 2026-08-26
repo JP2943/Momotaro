@@ -63,6 +63,12 @@ namespace Momotaro.Gameplay.Combat
         /// <summary>命中の同一性（多重ヒット防止のキー）。</summary>
         public HitId HitId { get; }
 
+        /// <summary>
+        /// 移動リアクション指定（Phase3.5 P3.5-08A。ヒットバック／ガードバック距離・時間、飛び道具判別）。既定は <see cref="HitReaction.None"/>。
+        /// 判定・HP・状態の正本ではなく、被弾側の反応（押し出し・JG 近接ひるみ）の参照値。<see cref="WithReaction"/> で付与する。
+        /// </summary>
+        public HitReaction Reaction { get; }
+
         /// <summary>ガードスタミナ／JG 反射 0 で生成する（HP/体幹/ひるみのみの命中）。</summary>
         public HitInfo(
             ICombatActor attacker,
@@ -170,6 +176,32 @@ namespace Momotaro.Gameplay.Combat
             float stunHpMultiplierOverride,
             bool steppable,
             HitId hitId)
+            : this(attacker, target, attackDirection, hitPoint, damage, guardStaminaDamage, justGuardPoiseDamage,
+                   guardable, justGuardable, isJustGuardCounter, defenseIgnoreRatio, stunHpMultiplierOverride,
+                   steppable, hitId, HitReaction.None)
+        {
+        }
+
+        /// <summary>
+        /// 移動リアクション（<paramref name="reaction"/>）まで含めて指定して生成する最上位コンストラクタ（Phase3.5 P3.5-08A）。
+        /// 既存の生成経路は上のオーバーロードから <see cref="HitReaction.None"/> でここへ委譲する（後方互換）。
+        /// </summary>
+        public HitInfo(
+            ICombatActor attacker,
+            IDamageable target,
+            Vector3 attackDirection,
+            Vector3 hitPoint,
+            HitDamage damage,
+            float guardStaminaDamage,
+            float justGuardPoiseDamage,
+            bool guardable,
+            bool justGuardable,
+            bool isJustGuardCounter,
+            float defenseIgnoreRatio,
+            float stunHpMultiplierOverride,
+            bool steppable,
+            HitId hitId,
+            HitReaction reaction)
         {
             Attacker = attacker;
             Target = target;
@@ -185,6 +217,18 @@ namespace Momotaro.Gameplay.Combat
             StunHpMultiplierOverride = stunHpMultiplierOverride;
             Steppable = steppable;
             HitId = hitId;
+            Reaction = reaction;
+        }
+
+        /// <summary>
+        /// 移動リアクションだけを差し替えた複製を返す（Phase3.5 P3.5-08A）。他フィールドは不変のまま、<see cref="Reaction"/> を
+        /// <paramref name="reaction"/> に置き換える。攻撃側の生成経路（Player 攻撃・敵攻撃・Projectile）が命中生成直後に付与する。
+        /// </summary>
+        public HitInfo WithReaction(in HitReaction reaction)
+        {
+            return new HitInfo(Attacker, Target, AttackDirection, HitPoint, Damage, GuardStaminaDamage,
+                JustGuardPoiseDamage, Guardable, JustGuardable, IsJustGuardCounter, DefenseIgnoreRatio,
+                StunHpMultiplierOverride, Steppable, HitId, reaction);
         }
     }
 }

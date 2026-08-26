@@ -38,7 +38,16 @@ namespace Momotaro.Gameplay.Combat
         /// <summary>攻撃予兆種別。</summary>
         public AttackTelegraph Telegraph { get; }
 
-        /// <summary>各値を指定して生成する。</summary>
+        /// <summary>Damage 時ヒットバック距離（m。Phase3.5 §7.4）。攻撃開始時に固定し実行中は不変。</summary>
+        public float HitbackDistance { get; }
+
+        /// <summary>ヒットバック所要時間（秒。Phase3.5 §7.4）。攻撃開始時に固定し実行中は不変。</summary>
+        public float HitbackSeconds { get; }
+
+        /// <summary>
+        /// 各値を指定して生成する。<paramref name="hitbackDistance"/>／<paramref name="hitbackSeconds"/> は任意（既定 0）で、
+        /// 既存の生成箇所を壊さない（Phase3.5 P3.5-08A で追加）。
+        /// </summary>
         public AttackSnapshot(
             float hpMultiplier,
             float poiseDamage,
@@ -48,7 +57,9 @@ namespace Momotaro.Gameplay.Combat
             bool guardable,
             bool justGuardable,
             bool stepAvoidable,
-            AttackTelegraph telegraph)
+            AttackTelegraph telegraph,
+            float hitbackDistance = 0f,
+            float hitbackSeconds = 0f)
         {
             HpMultiplier = hpMultiplier;
             PoiseDamage = poiseDamage;
@@ -59,6 +70,8 @@ namespace Momotaro.Gameplay.Combat
             JustGuardable = justGuardable;
             StepAvoidable = stepAvoidable;
             Telegraph = telegraph;
+            HitbackDistance = hitbackDistance;
+            HitbackSeconds = hitbackSeconds;
         }
 
         /// <summary>
@@ -82,7 +95,9 @@ namespace Momotaro.Gameplay.Combat
                 data.Guardable,
                 data.JustGuardable,
                 data.StepAvoidable,
-                data.Telegraph);
+                data.Telegraph,
+                data.HitbackDistance,
+                data.HitbackSeconds);
         }
     }
 }

@@ -219,6 +219,8 @@ GameObject:
   - component: {fileID: 1122334455667788990}
   - component: {fileID: 3111111111111111111}
   - component: {fileID: 3111111111111111112}
+  - component: {fileID: 3111111111111111113}
+  - component: {fileID: 3111111111111111114}
   m_Layer: 0
   m_Name: PF_Player_Momotaro
   m_TagString: Untagged
@@ -518,3 +520,29 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Enemy.Perception.PerceptionTargetBinder
   _faction: 0
+--- !u!114 &3111111111111111113
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4981683825053767301}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d974de4088d11aa922dab29bccdeb50b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Player.PlayerHitReaction
+  _hurtSeconds: 0.3
+  _postHitInvincibleSeconds: 0.5
+--- !u!114 &3111111111111111114
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4981683825053767301}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 12a4281ced1a4424ee450b1dac803912, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Enemy.Combat.Projectile.EnemyProjectileDefeatCleanup

@@ -31,5 +31,8 @@ namespace Momotaro.Data.Characters
 
         /// <summary>ひるみ耐性値（この蓄積以上でひるみ）。</summary>
         float FlinchResistance { get; }
+
+        /// <summary>ひるみ（やられ）状態の持続時間（秒）。この間は移動・攻撃とも行動不能（Stagger）。</summary>
+        float FlinchSeconds { get; }
     }
 }

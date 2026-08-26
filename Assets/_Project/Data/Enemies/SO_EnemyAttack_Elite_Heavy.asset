@@ -45,7 +45,7 @@ MonoBehaviour:
   _predictSeconds: 0.3
   _trackingAngularSpeed: 120
   _hitboxHalfExtents: {x: 0.8, y: 0.6, z: 0.8}
-  _hitboxForwardOffset: 1
+  _hitboxForwardOffset: 0.6
   _hitboxHeight: 0.6
   _telegraph: 1
   _presentationId: 
@@ -53,3 +53,6 @@ MonoBehaviour:
   _seId: SE_Elite_Heavy
   _hitStopSeconds: 0.07
   _requiresOffscreenWarning: 0
+  _hitbackDistance: 0.25
+  _hitbackSeconds: 0.16
+  _guardbackDistance: 0.16

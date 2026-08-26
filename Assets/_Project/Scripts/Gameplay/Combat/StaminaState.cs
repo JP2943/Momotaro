@@ -139,6 +139,20 @@ namespace Momotaro.Gameplay.Combat
             }
         }
 
+        /// <summary>
+        /// ガードブレイクの残時間だけを破棄する（Phase3.5 P3.5-01。仕様書 §2.3/§3.3）。実 HP ダメージ被弾で Hurt へ
+        /// 遷移する際に呼び、Hurt 終了後に GuardBreak へ戻らないようにする。スタミナ現在値は保持し（回復は通常待機から再開）、
+        /// ブレイク中でなければ何もしない。ブレイク終了時の <see cref="_breakRestoreRatio"/> 回復は行わない（時間破棄のみ）。
+        /// </summary>
+        public void ClearBreak()
+        {
+            if (_breakRemaining > 0f)
+            {
+                _breakRemaining = 0f;
+                _regenDelayRemaining = _regenDelay;
+            }
+        }
+
         /// <summary>スタミナ・ブレイクを初期状態へ戻す。</summary>
         public void Reset()
         {

@@ -18,7 +18,7 @@ MonoBehaviour:
   _description:
   _version: 1
   _debugNote:
-  _chargeSeconds: 2
+  _chargeSeconds: 1
   _maxHoldSeconds: 0.75
   _hpMultiplier: 7
   _defenseIgnoreRatio: 0.5
@@ -26,5 +26,9 @@ MonoBehaviour:
   _poiseDamage: 30
   _flinchPower: 100
   _knockback: 6
-  _activeSeconds: 0.15
+  _activeSeconds: 0.35
   _recoverySeconds: 0.9
+  _hitboxForwardOffset: 1.2
+  _hitboxHeight: 0.5
+  _hitboxHalfExtents: {x: 0.9, y: 0.6, z: 1.1}
+  _hitboxTravelDistance: 1.2
