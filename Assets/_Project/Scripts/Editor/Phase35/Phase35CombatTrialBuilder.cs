@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using Momotaro.Gameplay.Player;
+using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Scenes;
 using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.SceneFlow;
@@ -281,6 +282,17 @@ namespace Momotaro.Editor.Phase35
             var sessionGo = new GameObject("CombatSession");
             sessionGo.transform.SetParent(systems.transform, false);
             var session = sessionGo.AddComponent<CombatSessionController>();
+
+            // 進行データ（徳・付与済み Reward）の保持先（P4-00）。Scene 常駐＝Retry（Scene 再読込）で破棄されリセットされる。
+            var progressGo = new GameObject("PlayerProgress");
+            progressGo.transform.SetParent(systems.transform, false);
+            var progress = progressGo.AddComponent<PlayerProgressHolder>();
+
+            // 撃破報酬の受け手（P4-00）。Session の EnemyDefeated を購読し徳を付与する（敵の探索・再スキャンはしない）。
+            var rewardGo = new GameObject("CombatRewardCollector");
+            rewardGo.transform.SetParent(systems.transform, false);
+            var rewardCollector = rewardGo.AddComponent<CombatRewardCollector>();
+            rewardCollector.Bind(session, progress);
 
             // 連続 Wave 進行（P3.5-07）。Session/Player 死亡購読は WaveRunner が Runtime に結線する。
             var waveGo = new GameObject("WaveRunner");

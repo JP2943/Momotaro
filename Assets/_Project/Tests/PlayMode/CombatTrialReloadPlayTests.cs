@@ -1,5 +1,6 @@
 using System.Collections;
 using Momotaro.Gameplay.Enemy.Combat.Projectile;
+using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Scenes;
 using Momotaro.Presentation.Hud;
@@ -19,6 +20,32 @@ namespace Momotaro.Tests.PlayMode
     public sealed class CombatTrialReloadPlayTests
     {
         private const string SceneName = "SCN_Phase35_CombatTrial";
+
+        /// <summary>
+        /// 読み込んだ試遊 Scene を後続テストへ持ち越さない（P4-00 追加）。本テストは Scene を Single で読み込んだまま終了するため、
+        /// 残留した Scene 常駐物が後続の PlayMode テストを壊す：Wave1 の敵が「Scene 全体の敵数」を数えるテストに混入し、
+        /// Floor/Wall の Collider が物理テストの移動体を拘束し、<c>GameplaySceneMode</c> が（GameModeProvider が null の間 Update で
+        /// 適用を再試行し続けるため）後続テストの差し込んだ GameMode サービスへ Exploration を上書きして Pause 判定を崩す。
+        /// ここで Scene のルートを破棄し、GameMode の提供点も初期化して、テスト間の独立性を回復する。
+        /// </summary>
+        [UnityTearDown]
+        public IEnumerator UnityTearDown()
+        {
+            Scene active = SceneManager.GetActiveScene();
+            if (active.IsValid() && active.isLoaded && active.name == SceneName)
+            {
+                foreach (GameObject root in active.GetRootGameObjects())
+                {
+                    if (root != null)
+                    {
+                        Object.DestroyImmediate(root); // 遅延破棄だと次テストの 1 フレーム目まで残るため即時。
+                    }
+                }
+            }
+
+            GameModeProvider.Current = null;
+            yield return null;
+        }
 
         [UnityTest]
         public IEnumerator Reload_Reinitializes_And_SurvivesRepeatedRetries()

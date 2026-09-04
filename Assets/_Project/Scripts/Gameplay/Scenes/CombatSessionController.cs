@@ -33,6 +33,12 @@ namespace Momotaro.Gameplay.Scenes
         /// <summary>Session 状態が変化した瞬間のみ発火（HUD 等が購読。P3.5-04）。</summary>
         public event Action<CombatSessionState> StateChanged;
 
+        /// <summary>
+        /// 敵撃破が初めて受理された瞬間に発火する（P4-00。撃破報酬の受け手が購読）。重複通知・未登録の敵では発火しない。
+        /// <see cref="AllEnemiesDefeated"/> より先に通知するため、報酬付与は生存数 0 到達（Victory 判定の入力）より前に確定する。
+        /// </summary>
+        public event Action<EnemyDefeatedEvent> EnemyDefeated;
+
         /// <summary>登録済み敵の生存数が &gt;0 から 0 へ落ちた瞬間に一度だけ発火（Wave 進行判断の入力。P3.5-07 が購読）。</summary>
         public event Action AllEnemiesDefeated;
 
@@ -185,6 +191,10 @@ namespace Momotaro.Gameplay.Scenes
             }
 
             _deadIds.Add(id);
+
+            // 初回撃破の受理直後に通知する（報酬付与を生存数・Victory 判定より先に確定させる。P4-00）。
+            EnemyDefeated?.Invoke(defeated);
+
             if (_alive > 0)
             {
                 _alive--;

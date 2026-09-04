@@ -49,4 +49,5 @@ MonoBehaviour:
   _guardCooldownSeconds: 3
   _canEvade: 0
   _evadeCooldownSeconds: 4
+  _reward: {fileID: 11400000, guid: 5d8fb816d7e880400dccefd0f1becb38, type: 2}
   _alwaysShowPoise: 0

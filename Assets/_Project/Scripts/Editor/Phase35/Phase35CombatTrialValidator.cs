@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Momotaro.Gameplay.Enemy;
 using Momotaro.Gameplay.Player;
+using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Scenes;
 using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.SceneFlow;
@@ -94,6 +95,8 @@ namespace Momotaro.Editor.Phase35
             RequireOne<CombatPlayHud>(scene, "試遊 HUD（CombatPlayHud）", errors);
             RequireOne<CombatFeedbackDispatcher>(scene, "フィードバック配信（CombatFeedbackDispatcher）", errors);
             RequireOne<CombatFeedbackPresenter>(scene, "フィードバック調停（CombatFeedbackPresenter）", errors);
+            RequireOne<PlayerProgressHolder>(scene, "進行データ（PlayerProgressHolder）", errors);
+            RequireOne<CombatRewardCollector>(scene, "撃破報酬の受け手（CombatRewardCollector）", errors);
             RequireOne<EnemyDefeatFadePresenter>(scene, "撃破フェード（EnemyDefeatFadePresenter）", errors);
 
             // --- 混入してはならないもの（P3.5-10 ②：重複 HUD/Session・デバッグ専用物の除去を回帰固定） ---
@@ -127,6 +130,7 @@ namespace Momotaro.Editor.Phase35
             ValidateCameraShake(scene, errors);
             ValidateVfxFrames(scene, errors, warnings);
             ValidateSceneHygiene(scene, errors);
+            ValidateReward(scene, errors);
         }
 
         private static void ValidateFeedbackWiring(Scene scene, List<string> errors)
@@ -292,6 +296,27 @@ namespace Momotaro.Editor.Phase35
         }
 
         private static bool HasFrames(Sprite[] frames) => frames != null && frames.Length > 0;
+
+        /// <summary>撃破報酬の受け手（P4-00）が Session・進行データへ配線されているか検査する（未配線なら徳が入らない）。</summary>
+        private static void ValidateReward(Scene scene, List<string> errors)
+        {
+            List<CombatRewardCollector> collectors = Components<CombatRewardCollector>(scene);
+            if (collectors.Count != 1)
+            {
+                return; // 単一性は RequireOne が報告済み。
+            }
+
+            CombatRewardCollector collector = collectors[0];
+            if (collector.Session == null)
+            {
+                errors.Add("CombatRewardCollector に 戦闘 Session（CombatSessionController）が未配線です。");
+            }
+
+            if (collector.Progress == null)
+            {
+                errors.Add("CombatRewardCollector に 進行データ（PlayerProgressHolder）が未配線です。");
+            }
+        }
 
         private static void ValidateSceneHygiene(Scene scene, List<string> errors)
         {

@@ -18,6 +18,12 @@ namespace Momotaro.Data.Progression
         /// <summary>一度だけ付与するか。</summary>
         public bool GrantOnce => _grantOnce;
 
+        /// <summary>
+        /// 付与するアイテムの安定 ID（空なら無し）。P4-00 時点でアイテム付与・Inventory は未実装で、受け手は
+        /// 非空の値を受け取った場合に未実装である旨を一度だけ警告する（付与は Phase 4 の後続 Task）。
+        /// </summary>
+        public StableId ItemId => _itemId;
+
         /// <inheritdoc />
         public override void Validate(DataValidationReport report)
         {
