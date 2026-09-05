@@ -34,6 +34,12 @@ namespace Momotaro.Data.Characters
         [Tooltip("移動しているのに近づけない状態がこの秒数続いたらワープする（経路失敗）。0 で無効。")]
         [SerializeField] private float _stuckSeconds = 1.5f;
 
+        [Header("Combat Targeting (索敵・対象選択。P4-03)")]
+        [Tooltip("新規に敵を捕捉できる距離（m）。0 で無制限。")]
+        [SerializeField] private float _targetAcquireRange = 8f;
+        [Tooltip("捕捉中の敵を維持できる距離（m）。捕捉距離以上にすること（境目での対象往復を防ぐ）。0 で無制限。")]
+        [SerializeField] private float _targetLoseRange = 12f;
+
         [Header("Guardian (守護／かばう。契約は P4-01、実装は P4-05)")]
         [Tooltip("守護の有効距離（m）。主人公からこの距離以内に居るときだけ肩代わりを引き受ける。")]
         [SerializeField] private float _guardianRange = 3f;
@@ -69,6 +75,12 @@ namespace Momotaro.Data.Characters
 
         /// <summary>経路失敗と判定するまでの停滞秒（0 で無効）。</summary>
         public float StuckSeconds => _stuckSeconds;
+
+        /// <summary>新規に敵を捕捉できる距離（m。0 で無制限）。</summary>
+        public float TargetAcquireRange => _targetAcquireRange;
+
+        /// <summary>捕捉中の敵を維持できる距離（m。0 で無制限）。</summary>
+        public float TargetLoseRange => _targetLoseRange;
 
         /// <summary>守護の有効距離（m）。</summary>
         public float GuardianRange => _guardianRange;
@@ -121,6 +133,17 @@ namespace Momotaro.Data.Characters
             if (_warpDistance > 0f && _warpDistance <= _followResumeDistance)
             {
                 report.Error(name + ": WarpDistance must be > FollowResumeDistance (or 0 to disable).");
+            }
+
+            if (_targetAcquireRange < 0f || _targetLoseRange < 0f)
+            {
+                report.Error(name + ": Target ranges must be >= 0.");
+            }
+
+            // 見失い距離が捕捉距離より短いと、捕捉した次の瞬間に見失う（対象が定まらない）。
+            if (_targetLoseRange > 0f && _targetLoseRange < _targetAcquireRange)
+            {
+                report.Error(name + ": TargetLoseRange must be >= TargetAcquireRange (or 0 for unlimited).");
             }
         }
     }
