@@ -297,9 +297,18 @@ namespace Momotaro.Editor.Phase35
 
         private static bool HasFrames(Sprite[] frames) => frames != null && frames.Length > 0;
 
-        /// <summary>撃破報酬の受け手（P4-00）が Session・進行データへ配線されているか検査する（未配線なら徳が入らない）。</summary>
+        /// <summary>
+        /// 撃破報酬の受け手（P4-00）が Session・進行データへ配線されているか、試遊 HUD が徳の表示元を持つかを検査する
+        /// （未配線なら徳が入らない／表示されない。Builder 再生成で配線が復元されることの回帰でもある）。
+        /// </summary>
         private static void ValidateReward(Scene scene, List<string> errors)
         {
+            List<CombatPlayHud> huds = Components<CombatPlayHud>(scene);
+            if (huds.Count == 1 && huds[0].ProgressSource == null)
+            {
+                errors.Add("試遊 HUD（CombatPlayHud）に 進行データ（PlayerProgressHolder）が未配線です（徳が表示されません）。");
+            }
+
             List<CombatRewardCollector> collectors = Components<CombatRewardCollector>(scene);
             if (collectors.Count != 1)
             {

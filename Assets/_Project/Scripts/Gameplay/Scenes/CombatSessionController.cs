@@ -35,7 +35,8 @@ namespace Momotaro.Gameplay.Scenes
 
         /// <summary>
         /// 敵撃破が初めて受理された瞬間に発火する（P4-00。撃破報酬の受け手が購読）。重複通知・未登録の敵では発火しない。
-        /// <see cref="AllEnemiesDefeated"/> より先に通知するため、報酬付与は生存数 0 到達（Victory 判定の入力）より前に確定する。
+        /// 発火時点で <see cref="AliveEnemyCount"/> は減算済み（購読側が読んでも最新値）。
+        /// <see cref="AllEnemiesDefeated"/> より先に通知するため、報酬付与は Victory 判定より前に確定する。
         /// </summary>
         public event Action<EnemyDefeatedEvent> EnemyDefeated;
 
@@ -192,17 +193,22 @@ namespace Momotaro.Gameplay.Scenes
 
             _deadIds.Add(id);
 
-            // 初回撃破の受理直後に通知する（報酬付与を生存数・Victory 判定より先に確定させる。P4-00）。
-            EnemyDefeated?.Invoke(defeated);
-
+            // 先に内部の生存数を確定させる（購読側が AliveEnemyCount を読んでも最新値になり、購読側の例外で
+            // 内部状態の更新が止まることもない。P4-00 受入指摘）。Victory 判定の発火は通知の後に行う。
+            bool cleared = false;
             if (_alive > 0)
             {
                 _alive--;
-                if (_alive == 0)
-                {
-                    // 生存 >0 → 0 の瞬間に一度だけ通知（0 体の一時状態では発火しない＝誤 Victory を作らない）。
-                    AllEnemiesDefeated?.Invoke();
-                }
+                cleared = _alive == 0;
+            }
+
+            // 撃破報酬の受け手へ通知する（報酬付与は Victory 判定より先に確定させる。P4-00）。
+            EnemyDefeated?.Invoke(defeated);
+
+            if (cleared)
+            {
+                // 生存 >0 → 0 の瞬間に一度だけ通知（0 体の一時状態では発火しない＝誤 Victory を作らない）。
+                AllEnemiesDefeated?.Invoke();
             }
         }
 

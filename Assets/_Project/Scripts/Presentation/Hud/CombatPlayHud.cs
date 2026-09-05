@@ -1,5 +1,6 @@
 using System.Text;
 using Momotaro.Gameplay.Player;
+using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Scenes;
 using UnityEngine;
 using UnityEngine.UI;
@@ -26,6 +27,7 @@ namespace Momotaro.Presentation.Hud
         [SerializeField] private CombatSessionController _session;
         [SerializeField] private WaveRunner _waves;
         [SerializeField] private CombatOutcomeController _outcome;
+        [SerializeField] private PlayerProgressHolder _progress;
 
         [Tooltip("未 Bind の間の自動探索間隔（秒）。毎フレーム FindObjects しないためのスロットル。")]
         [SerializeField] private float _autoLocateInterval = 0.5f;
@@ -45,10 +47,14 @@ namespace Momotaro.Presentation.Hud
         private Text _guardText;
         private Text _waveText;
         private Text _phaseText;
+        private Text _virtueText;
         private Font _font;
 
         /// <summary>集約 ViewModel（テスト・外部参照用）。</summary>
         public CombatHudViewModel ViewModel => _vm;
+
+        /// <summary>進行データ（徳）の供給元（配線確認・Validator・テスト用。P4-00）。</summary>
+        public PlayerProgressHolder ProgressSource => _progress;
 
         private void Awake()
         {
@@ -77,7 +83,8 @@ namespace Momotaro.Presentation.Hud
         {
             // Player／Session／PlayerState のいずれかが未解決の間だけ低頻度で探索（毎フレーム FindObjects しない）。
             // PlayerVitals だけ先に見つかっても、PlayerState を後から解決できるよう探索を継続する。
-            if (_player == null || _playerState == null || _session == null || _waves == null || _outcome == null)
+            if (_player == null || _playerState == null || _session == null || _waves == null || _outcome == null
+                || _progress == null)
             {
                 _locateTimer += Time.unscaledDeltaTime;
                 if (_locateTimer >= _autoLocateInterval)
@@ -114,6 +121,17 @@ namespace Momotaro.Presentation.Hud
             if (session != null)
             {
                 _session = session;
+            }
+
+            TryBindFromFields();
+        }
+
+        /// <summary>進行データ（徳）の供給元を注入する（Scene 構築・テストが接続。null は無視。P4-00）。</summary>
+        public void SetProgressSource(PlayerProgressHolder progress)
+        {
+            if (progress != null)
+            {
+                _progress = progress;
             }
 
             TryBindFromFields();
@@ -157,6 +175,11 @@ namespace Momotaro.Presentation.Hud
                 _outcome = FindFirstObjectByType<CombatOutcomeController>();
             }
 
+            if (_progress == null)
+            {
+                _progress = FindFirstObjectByType<PlayerProgressHolder>();
+            }
+
             TryBindFromFields();
         }
 
@@ -178,6 +201,11 @@ namespace Momotaro.Presentation.Hud
             if (_session != null)
             {
                 _vm.BindSession(_session);
+            }
+
+            if (_progress != null)
+            {
+                _vm.BindProgress(_progress);
             }
 
             BindWaves();
@@ -264,6 +292,11 @@ namespace Momotaro.Presentation.Hud
                 26, TextAnchor.MiddleCenter);
             _phaseText = NewText("PhaseText", root, new Vector2(0.5f, 1f), new Vector2(0f, -84f), new Vector2(700f, 56f),
                 34, TextAnchor.MiddleCenter);
+
+            // --- 左上：徳の累計（P4-00）。獲得ポップ・加算アニメーションは行わず現在値のみを出す。 ---
+            _virtueText = NewText("VirtueText", root, new Vector2(0f, 1f), new Vector2(24f, -40f), new Vector2(320f, 34f),
+                22, TextAnchor.MiddleLeft);
+            _virtueText.color = new Color(1f, 0.85f, 0.35f, 1f);
 
             // --- 右下：操作ガイド（入力設定の既定バインドに整合） ---
             Text guide = NewText("ControlGuide", root, new Vector2(1f, 0f), new Vector2(-24f, 24f), new Vector2(360f, 190f),
@@ -354,6 +387,11 @@ namespace Momotaro.Presentation.Hud
             if (_phaseText != null)
             {
                 _phaseText.text = ResolvePhaseLabel();
+            }
+
+            if (_virtueText != null)
+            {
+                _virtueText.text = "VIRTUE  " + _vm.Virtue;
             }
         }
 

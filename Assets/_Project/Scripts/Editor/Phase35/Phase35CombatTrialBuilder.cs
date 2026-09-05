@@ -333,7 +333,7 @@ namespace Momotaro.Editor.Phase35
             var hudGo = new GameObject("CombatTrialHud");
             hudGo.transform.SetParent(systems.transform, false);
             var hud = hudGo.AddComponent<CombatPlayHud>();
-            WireHud(hud, playerVitals, playerController, session, waveRunner, outcome);
+            WireHud(hud, playerVitals, playerController, session, waveRunner, outcome, progress);
 
             var toggleGo = new GameObject("EnemyDebugToggle");
             toggleGo.transform.SetParent(systems.transform, false);
@@ -354,10 +354,13 @@ namespace Momotaro.Editor.Phase35
             return go.transform;
         }
 
-        /// <summary>試遊 HUD の Serialized 参照（Player/PlayerState/Session/Wave/Outcome）を設定する（Runtime の自動探索より決定的）。</summary>
+        /// <summary>
+        /// 試遊 HUD の Serialized 参照（Player/PlayerState/Session/Wave/Outcome/Progress）を設定する（Runtime の自動探索より決定的）。
+        /// 進行データ（徳の表示元）も含めるため、Builder で再生成しても徳表示の配線が復元される（P4-00）。
+        /// </summary>
         private static void WireHud(CombatPlayHud hud, PlayerVitalsHolder playerVitals,
             PlayerStateController playerState, CombatSessionController session, WaveRunner waveRunner,
-            CombatOutcomeController outcome)
+            CombatOutcomeController outcome, PlayerProgressHolder progress)
         {
             var so = new SerializedObject(hud);
             SetRef(so, "_player", playerVitals);
@@ -365,6 +368,7 @@ namespace Momotaro.Editor.Phase35
             SetRef(so, "_session", session);
             SetRef(so, "_waves", waveRunner);
             SetRef(so, "_outcome", outcome);
+            SetRef(so, "_progress", progress);
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 

@@ -1,4 +1,5 @@
 using System;
+using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Scenes;
 using Momotaro.Gameplay.Vitals;
 
@@ -8,7 +9,8 @@ namespace Momotaro.Presentation.Hud
     /// 共同開発者向け試遊 HUD の表示値を束ねる ViewModel（Phase3.5 P3.5-04。仕様書 §6）。
     ///
     /// Player の HP／Stamina（<see cref="Vital"/> の型付き購読）、GuardBreak／Special（イベントの無い状態はポーリング）、
-    /// 戦闘 Session の状態（<see cref="CombatSessionController.StateChanged"/> の型付き購読）、Wave を集約し、
+    /// 戦闘 Session の状態（<see cref="CombatSessionController.StateChanged"/> の型付き購読）、Wave、徳の累計
+    /// （<see cref="PlayerProgressHolder.VirtueChanged"/> の型付き購読。P4-00）を集約し、
     /// いずれかの表示値が実際に変化した時だけ <see cref="Changed"/> を発火する。View（Canvas）とは分離し、
     /// UnityEngine.UI 非依存の純粋クラスとして EditMode で決定的にテストできる。
     ///
@@ -29,6 +31,10 @@ namespace Momotaro.Presentation.Hud
         // ---- Session 供給元 ----
         private CombatSessionController _session;
         private bool _hasSession;
+
+        // ---- 進行データ供給元（P4-00。徳の累計。獲得演出は持たず現在値のみ） ----
+        private PlayerProgressHolder _progress;
+        private bool _hasProgress;
 
         private int _wave = 1;
         private int _waveTotal;
@@ -74,6 +80,12 @@ namespace Momotaro.Presentation.Hud
 
         /// <summary>Session が Bind 済みか。</summary>
         public bool HasSession => _hasSession;
+
+        /// <summary>徳の累計（P4-00）。未 Bind 時は 0。</summary>
+        public int Virtue { get; private set; }
+
+        /// <summary>進行データが Bind 済みか。</summary>
+        public bool HasProgress => _hasProgress;
 
         /// <summary>いずれかの表示値が変化した瞬間のみ発火（View が購読して再描画する）。</summary>
         public event Action Changed;
@@ -172,6 +184,42 @@ namespace Momotaro.Presentation.Hud
             Recompute();
         }
 
+        /// <summary>
+        /// 進行データ（徳の累計）の供給元を注入し、型付き購読する（P4-00。遅延生成対応・重複購読なし）。
+        /// 同一参照の再 Bind は無視するため、Scene 再読込後の再 Bind でも購読が重複しない。
+        /// </summary>
+        public void BindProgress(PlayerProgressHolder progress)
+        {
+            if (ReferenceEquals(_progress, progress))
+            {
+                return;
+            }
+
+            UnbindProgress();
+
+            _progress = progress;
+            _hasProgress = progress != null;
+            if (_progress != null)
+            {
+                _progress.VirtueChanged += OnVirtueChanged;
+            }
+
+            Recompute();
+        }
+
+        /// <summary>進行データの購読を外す（破棄・Scene 離脱）。二重呼び出し安全。</summary>
+        public void UnbindProgress()
+        {
+            if (_progress != null)
+            {
+                _progress.VirtueChanged -= OnVirtueChanged;
+            }
+
+            _progress = null;
+            _hasProgress = false;
+            Recompute();
+        }
+
         /// <summary>Wave 番号を設定する（連続 Wave 進行 P3.5-07 が駆動。1 未満は 1 に丸め）。総数は据え置く。</summary>
         public void SetWave(int wave)
         {
@@ -206,6 +254,11 @@ namespace Momotaro.Presentation.Hud
             Recompute();
         }
 
+        private void OnVirtueChanged(int _)
+        {
+            Recompute();
+        }
+
         private void Recompute()
         {
             int hpC = _health != null ? _health.Current : 0;
@@ -220,12 +273,13 @@ namespace Momotaro.Presentation.Hud
             CombatSessionState ph = _session != null ? _session.State : CombatSessionState.Preparing;
             int wv = _wave < 1 ? 1 : _wave;
             int wt = _waveTotal < 0 ? 0 : _waveTotal;
+            int vt = _progress != null ? _progress.Virtue : 0;
 
             bool changed =
                 hpC != HpCurrent || hpM != HpMax || !Approximately(hpR, HpRatio) ||
                 stC != StaminaCurrent || stM != StaminaMax || !Approximately(stR, StaminaRatio) ||
                 gb != GuardBroken || sr != SpecialReady || sc != SpecialCharging ||
-                ph != Phase || wv != Wave || wt != WaveTotal;
+                ph != Phase || wv != Wave || wt != WaveTotal || vt != Virtue;
 
             if (!changed)
             {
@@ -244,6 +298,7 @@ namespace Momotaro.Presentation.Hud
             Phase = ph;
             Wave = wv;
             WaveTotal = wt;
+            Virtue = vt;
 
             Changed?.Invoke();
         }
@@ -259,6 +314,7 @@ namespace Momotaro.Presentation.Hud
         {
             UnbindPlayer();
             UnbindSession();
+            UnbindProgress();
             Changed = null;
         }
     }

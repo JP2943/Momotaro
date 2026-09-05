@@ -1,5 +1,6 @@
 using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
+using Momotaro.Gameplay.Combat.Guardian;
 using UnityEngine;
 
 namespace Momotaro.Gameplay.Player
@@ -43,6 +44,8 @@ namespace Momotaro.Gameplay.Player
         private bool _hurtReactionResolved;
         private IReactionMotor _reactionMotor;
         private bool _reactionMotorResolved;
+        private IGuardianResolver _guardianResolver;   // 守護／かばうの判断先（P4-01。未配線なら肩代わりは起きない）。
+        private bool _guardianResolverResolved;
 
         /// <summary>JG 成立時に近接攻撃者へ付与する強制ひるみ秒（Phase3.5 §7.5：0.30〜0.40 の中央）。</summary>
         private const float ForcedFlinchSeconds = 0.35f;
@@ -62,6 +65,13 @@ namespace Momotaro.Gameplay.Player
 
         /// <summary>プレイヤー死亡（致死確定）の型付き通知チャネル（Phase3.5 P3.5-02。Session/HUD が購読。1 回性）。</summary>
         public PlayerDefeatChannel Defeats { get; } = new PlayerDefeatChannel();
+
+        /// <summary>
+        /// 守護／「かばう」による肩代わり成立の型付き通知チャネル（P4-01）。既存の <see cref="Results"/> へ代用結果を
+        /// 流さない代わりに、専用イベントで肩代わりを伝える。Presentation は VFX／SE のみを再生し、HitStop は持たない
+        /// （肩代わり時の HitStop は守護者側の通常 Damage 由来の 1 回だけ）。
+        /// </summary>
+        public GuardianTransferChannel GuardianTransfers { get; } = new GuardianTransferChannel();
 
         /// <inheritdoc />
         /// <remarks>致死により死亡が確定したか。一度 true になったら復帰しない（Retry は Scene 再読込で初期化）。</remarks>
@@ -409,6 +419,14 @@ namespace Momotaro.Gameplay.Player
                 return;
             }
 
+            // 守護／「かばう」（P4-01）：回避・JG・ガードのいずれも成立しなかった攻撃だけを肩代わり対象とする。
+            // 守護者が未配線・不在・引き受け不可なら false が返り、以降の通常 Damage へそのままフォールバックする
+            // （＝守護を持たない現行 Scene の挙動は一切変わらない）。
+            if (TryTransferToGuardian(hit))
+            {
+                return;
+            }
+
             float defense = _data != null ? _data.Defense : 0f;
 
             // 貫通：ブレイク中は被 HP ダメージ倍率（×1.25 等）を掛ける。防御適用 → HP 減算 → 実減少量（Clamp 込み）。
@@ -443,6 +461,73 @@ namespace Momotaro.Gameplay.Player
             // （撃破フィードバック用）。以後の追撃は上の _defeated ガードで結果・通知を出さない。
             var applied = new HitDamage(appliedHp, 0f, 0f);
             Results.Publish(HitResult.Damage(hit.HitId, hit.Attacker, this, applied));
+        }
+
+        /// <summary>
+        /// 守護／「かばう」による肩代わりを試みる（P4-01）。成立時は主人公の HP・Hurt・ヒットバック・<see cref="Results"/> を
+        /// 一切変化させず、守護者向けへ再構築した命中（<see cref="GuardianHitTransfer"/>）を 1 回だけ渡し、
+        /// <see cref="GuardianTransfers"/> へ専用通知を 1 回発行する。守護者側の被害は通常の Damage 経路で解決されるため、
+        /// 肩代わり時のヒットストップは守護者側の 1 回だけになる。
+        ///
+        /// 守護者が未配線・不在・引き受け不可（Down／退場／無効）なら false を返し、呼び出し元は通常 Damage へフォールバックする。
+        /// 同一命中が判定から守護者へ直接も届く場合の二重被弾は、守護者側の被弾入口が持つ <see cref="ReceivedHitTracker"/> が
+        /// <see cref="HitId"/> 単位で弾く（攻撃側 <see cref="MultiHitTracker"/> は転送を経由しないため相乗りしない）。
+        /// </summary>
+        private bool TryTransferToGuardian(in HitInfo hit)
+        {
+            IGuardianResolver resolver = ResolveGuardianResolver();
+            if (resolver == null)
+            {
+                return false;
+            }
+
+            if (!resolver.TryResolveGuardian(hit, out IGuardianReceiver guardian) || !CanGuardianTakeOver(guardian))
+            {
+                return false;
+            }
+
+            HitInfo transferred = GuardianHitTransfer.Rebuild(hit, guardian);
+            guardian.ReceiveHit(transferred);
+            resolver.NotifyTransferred(transferred, guardian);
+            GuardianTransfers.Publish(new GuardianTransferEvent(
+                hit.HitId, hit.Attacker, this, guardian, transferred.HitPoint));
+            return true;
+        }
+
+        /// <summary>守護者が肩代わりを引き受けられるか（null・破棄済み・引き受け不可を弾く）。</summary>
+        private static bool CanGuardianTakeOver(IGuardianReceiver guardian)
+        {
+            if (guardian == null)
+            {
+                return false;
+            }
+
+            // interface 経由の参照は Unity の null 演算子が効かないため、破棄済み Object を明示的に弾く。
+            if (guardian is UnityEngine.Object unityObject && unityObject == null)
+            {
+                return false;
+            }
+
+            return guardian.CanTakeOver;
+        }
+
+        /// <summary>守護判断先を 1 回だけ解決する（動的生成でも遅延解決。未配線なら null のまま）。</summary>
+        private IGuardianResolver ResolveGuardianResolver()
+        {
+            if (!_guardianResolverResolved)
+            {
+                _guardianResolver = GetComponent<IGuardianResolver>();
+                _guardianResolverResolved = true;
+            }
+
+            return _guardianResolver;
+        }
+
+        /// <summary>守護判断先を明示注入する（Scene 構築・テスト。null 指定で解除し、次回の遅延解決も行わない）。</summary>
+        public void SetGuardianResolver(IGuardianResolver resolver)
+        {
+            _guardianResolver = resolver;
+            _guardianResolverResolved = true;
         }
 
         /// <summary>致死を一度だけ確定し、型付き死亡通知を 1 回発行する（冪等）。接地 Collider は維持し、被弾無効化は ReceiveHit 先頭で担保。</summary>

@@ -1,7 +1,9 @@
 using System.Collections;
+using Momotaro.Core.Identification;
 using Momotaro.Gameplay.Enemy.Combat.Projectile;
 using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Player;
+using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Scenes;
 using Momotaro.Presentation.Hud;
 using NUnit.Framework;
@@ -88,6 +90,23 @@ namespace Momotaro.Tests.PlayMode
 
                 Assert.AreEqual(0, EnemyProjectileRegistry.LiveCount,
                     "再読込直後に残留 Projectile なし（静的レジストリのリークなし）。");
+
+                // P4-00：進行データは Scene 常駐（DontDestroyOnLoad を使わない）ため、Retry＝Scene 再読込で
+                // 徳・GrantOnce の付与済み記録がともにリセットされる。2 周目以降の 0 検証が、前周で付与した徳が
+                // 消えていることの回帰になる。
+                var progress = Object.FindFirstObjectByType<PlayerProgressHolder>();
+                Assert.IsNotNull(progress, "再読込 " + pass + " 回目：進行データ（PlayerProgressHolder）が存在。");
+                Assert.AreEqual(0, progress.Virtue,
+                    "再読込 " + pass + " 回目：徳 0 から再開（前 Session の徳を持ち越さない）。");
+                Assert.AreEqual(0, progress.GrantedRewardCount,
+                    "再読込 " + pass + " 回目：GrantOnce の付与済み記録も持ち越さない。");
+
+                // 次周の 0 検証を意味あるものにするため、この Session で徳を付与しておく。
+                RewardGrantResult probe = progress.Grant(
+                    new RewardSnapshot(new StableId("reward_reload_probe"), 7, default, false), out int amount);
+                Assert.AreEqual(RewardGrantResult.Granted, probe);
+                Assert.AreEqual(7, amount);
+                Assert.AreEqual(7, progress.Virtue, "再読込 " + pass + " 回目：付与直後は 7（次周で 0 に戻る）。");
             }
         }
     }

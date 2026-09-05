@@ -1,5 +1,7 @@
 using System;
 using System.Reflection;
+using Momotaro.Core.Identification;
+using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Scenes;
 using Momotaro.Gameplay.Vitals;
 using Momotaro.Presentation.Hud;
@@ -15,6 +17,7 @@ namespace Momotaro.Tests.EditMode
     public sealed class CombatHudViewModelTests
     {
         private GameObject _sessionGo;
+        private GameObject _progressGo;
 
         [TearDown]
         public void TearDown()
@@ -24,6 +27,33 @@ namespace Momotaro.Tests.EditMode
                 UnityEngine.Object.DestroyImmediate(_sessionGo);
                 _sessionGo = null;
             }
+
+            if (_progressGo != null)
+            {
+                UnityEngine.Object.DestroyImmediate(_progressGo);
+                _progressGo = null;
+            }
+        }
+
+        private PlayerProgressHolder NewProgress()
+        {
+            _progressGo = new GameObject("PlayerProgress");
+            return _progressGo.AddComponent<PlayerProgressHolder>();
+        }
+
+        // PlayerProgressHolder.VirtueChanged（field-like event）の購読者数を反射で数え、購読の重複・残留を検証する。
+        private static int VirtueSubscriberCount(PlayerProgressHolder holder)
+        {
+            FieldInfo f = typeof(PlayerProgressHolder).GetField("VirtueChanged", BindingFlags.NonPublic | BindingFlags.Instance);
+            Assert.IsNotNull(f, "VirtueChanged の backing field が見つかりません。");
+            var d = f.GetValue(holder) as Delegate;
+            return d?.GetInvocationList().Length ?? 0;
+        }
+
+        private static int GrantVirtue(PlayerProgressHolder holder, int amount, string rewardId = "reward_test")
+        {
+            holder.Grant(new RewardSnapshot(new StableId(rewardId), amount, default, false), out int granted);
+            return granted;
         }
 
         private CombatSessionController NewSession()
@@ -229,6 +259,99 @@ namespace Momotaro.Tests.EditMode
             Assert.IsFalse(vm.HasPlayer);
             Assert.IsFalse(vm.HasSession);
             Assert.DoesNotThrow(() => s.StartWave(), "Dispose 後の Session 変化は安全。");
+        }
+
+        [Test]
+        public void Unbound_Virtue_IsZeroAndSafe()
+        {
+            var vm = new CombatHudViewModel();
+
+            Assert.IsFalse(vm.HasProgress);
+            Assert.AreEqual(0, vm.Virtue);
+        }
+
+        [Test]
+        public void BindProgress_LateBind_ReflectsVirtueImmediately()
+        {
+            var vm = new CombatHudViewModel();
+            PlayerProgressHolder progress = NewProgress();
+            Assert.AreEqual(10, GrantVirtue(progress, 10), "前提：Bind 前に徳を付与しておく。");
+
+            vm.BindProgress(progress);
+
+            Assert.IsTrue(vm.HasProgress);
+            Assert.AreEqual(10, vm.Virtue, "遅延 Bind でも現在値が即座に反映される。");
+        }
+
+        [Test]
+        public void VirtueChanged_UpdatesViewModel_AndFiresChangedOnce()
+        {
+            var vm = new CombatHudViewModel();
+            PlayerProgressHolder progress = NewProgress();
+            vm.BindProgress(progress);
+
+            int changed = 0;
+            vm.Changed += () => changed++;
+
+            GrantVirtue(progress, 12);
+
+            Assert.AreEqual(12, vm.Virtue);
+            Assert.AreEqual(1, changed, "徳が変化した瞬間だけ再描画を要求する。");
+
+            vm.Tick(); // 変化なしのポーリングでは再発火しない。
+            Assert.AreEqual(1, changed);
+        }
+
+        [Test]
+        public void BindProgress_SameReference_DoesNotDuplicateSubscription()
+        {
+            var vm = new CombatHudViewModel();
+            PlayerProgressHolder progress = NewProgress();
+
+            vm.BindProgress(progress);
+            vm.BindProgress(progress); // Scene 再読込後の再 Bind 相当。
+
+            Assert.AreEqual(1, VirtueSubscriberCount(progress), "同一参照の再 Bind で購読が重複しない。");
+
+            int changed = 0;
+            vm.Changed += () => changed++;
+            GrantVirtue(progress, 5);
+            Assert.AreEqual(1, changed);
+        }
+
+        [Test]
+        public void UnbindProgress_StopsUpdates_AndLeavesNoSubscription()
+        {
+            var vm = new CombatHudViewModel();
+            PlayerProgressHolder progress = NewProgress();
+            vm.BindProgress(progress);
+            GrantVirtue(progress, 10);
+            Assert.AreEqual(10, vm.Virtue);
+
+            vm.UnbindProgress();
+
+            Assert.AreEqual(0, VirtueSubscriberCount(progress), "購読解除で残留しない。");
+            Assert.IsFalse(vm.HasProgress);
+            Assert.AreEqual(0, vm.Virtue, "未 Bind は 0 表示へ戻す。");
+
+            int changed = 0;
+            vm.Changed += () => changed++;
+            GrantVirtue(progress, 7, "reward_test_2");
+            Assert.AreEqual(0, changed, "解除後の変化は届かない。");
+        }
+
+        [Test]
+        public void Dispose_RemovesProgressSubscription()
+        {
+            var vm = new CombatHudViewModel();
+            PlayerProgressHolder progress = NewProgress();
+            vm.BindProgress(progress);
+
+            vm.Dispose();
+
+            Assert.AreEqual(0, VirtueSubscriberCount(progress), "Dispose で進行データの購読も解除する。");
+            Assert.IsFalse(vm.HasProgress);
+            Assert.DoesNotThrow(() => GrantVirtue(progress, 3), "Dispose 後の付与は安全。");
         }
     }
 }

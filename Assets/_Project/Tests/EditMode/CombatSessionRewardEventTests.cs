@@ -144,6 +144,38 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
+        public void EnemyDefeated_SeesUpdatedAliveCount()
+        {
+            CombatSessionController c = MakeController();
+            var a = new FakeEnemy { DamageableId = 71 };
+            var b = new FakeEnemy { DamageableId = 72 };
+            c.RegisterEnemy(a);
+            c.RegisterEnemy(b);
+            Assert.AreEqual(2, c.AliveEnemyCount, "前提：2 体登録。");
+
+            var observed = new List<int>();
+            c.EnemyDefeated += _ => observed.Add(c.AliveEnemyCount);
+
+            a.Kill();
+            b.Kill();
+
+            Assert.AreEqual(new[] { 1, 0 }, observed.ToArray(),
+                "通知時点で生存数は減算済み（最終敵の撃破では 0）。");
+        }
+
+        [Test]
+        public void ThrowingSubscriber_DoesNotCorruptAliveCount()
+        {
+            CombatSessionController c = MakeController();
+            var enemy = new FakeEnemy { DamageableId = 81 };
+            c.RegisterEnemy(enemy);
+            c.EnemyDefeated += _ => throw new System.InvalidOperationException("subscriber failure");
+
+            Assert.Throws<System.InvalidOperationException>(() => enemy.Kill());
+            Assert.AreEqual(0, c.AliveEnemyCount, "購読側が例外を投げても内部の生存数は確定済み。");
+        }
+
+        [Test]
         public void EnemyDefeated_NotFired_AfterClearEnemies()
         {
             CombatSessionController c = MakeController();
