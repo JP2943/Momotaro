@@ -1,3 +1,4 @@
+using Momotaro.Data.Combat;
 using UnityEngine;
 
 namespace Momotaro.Data.Characters
@@ -5,7 +6,7 @@ namespace Momotaro.Data.Characters
     /// <summary>
     /// 仲間（犬・猿・雉）の基礎データ（仕様書 4 章 / 5 章。P4-01 で仲間共通契約に必要な値を確定）。
     /// 役割・ヘイト補正・守護（かばう）の距離とクールダウンはここが正本で、Gameplay 側は必ず本 Data を読む。
-    /// 追従・攻撃の数値は先回りせず、それぞれ P4-02／P4-03 で追加する。
+    /// 追従（P4-02）・索敵と通常攻撃（P4-03）の数値も本 Data に集約する。
     /// </summary>
     [CreateAssetMenu(fileName = "SO_Companion_New", menuName = "Momotaro/Data/Character/Companion Data", order = 1)]
     public sealed class CompanionData : CharacterData
@@ -39,6 +40,11 @@ namespace Momotaro.Data.Characters
         [SerializeField] private float _targetAcquireRange = 8f;
         [Tooltip("捕捉中の敵を維持できる距離（m）。捕捉距離以上にすること（境目での対象往復を防ぐ）。0 で無制限。")]
         [SerializeField] private float _targetLoseRange = 12f;
+
+        [Header("Combat Attack (通常攻撃。P4-03)")]
+        [Tooltip("通常攻撃のデータ（主人公・敵と共通の AttackData）。射程・角度・段の時間・数値・防御属性はここが正本。"
+            + "未割当の仲間は攻撃も接近もしない（間合いに入らず追従だけを続ける）。攻撃力は CharacterData の AttackPower。")]
+        [SerializeField] private AttackData _basicAttack;
 
         [Header("Guardian (守護／かばう。契約は P4-01、実装は P4-05)")]
         [Tooltip("守護の有効距離（m）。主人公からこの距離以内に居るときだけ肩代わりを引き受ける。")]
@@ -81,6 +87,12 @@ namespace Momotaro.Data.Characters
 
         /// <summary>捕捉中の敵を維持できる距離（m。0 で無制限）。</summary>
         public float TargetLoseRange => _targetLoseRange;
+
+        /// <summary>
+        /// 通常攻撃のデータ（未割当なら null＝攻撃しない）。仲間専用の攻撃 Data 型は作らず、主人公・敵と同じ
+        /// <see cref="AttackData"/> を正本にする（同じ語彙で数値・防御属性を扱えるようにするため）。
+        /// </summary>
+        public AttackData BasicAttack => _basicAttack;
 
         /// <summary>守護の有効距離（m）。</summary>
         public float GuardianRange => _guardianRange;
@@ -144,6 +156,12 @@ namespace Momotaro.Data.Characters
             if (_targetLoseRange > 0f && _targetLoseRange < _targetAcquireRange)
             {
                 report.Error(name + ": TargetLoseRange must be >= TargetAcquireRange (or 0 for unlimited).");
+            }
+
+            // 攻撃の射程が捕捉距離より遠いと、捕捉できない相手を攻撃できることになり間合いが破綻する。
+            if (_basicAttack != null && _targetAcquireRange > 0f && _basicAttack.UseRange > _targetAcquireRange)
+            {
+                report.Error(name + ": BasicAttack.UseRange must be <= TargetAcquireRange.");
             }
         }
     }

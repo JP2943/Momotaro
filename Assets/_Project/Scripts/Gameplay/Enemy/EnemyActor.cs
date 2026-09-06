@@ -1,6 +1,8 @@
 using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Enemy.Defense;
+using Momotaro.Gameplay.Enemy.Perception;
+using Momotaro.Gameplay.Enemy.Threat;
 using UnityEngine;
 
 namespace Momotaro.Gameplay.Enemy
@@ -11,9 +13,12 @@ namespace Momotaro.Gameplay.Enemy
     /// <see cref="EnemyVitals"/> で HP・体幹・ひるみ・スタン・Down を処理する。被弾由来の Stagger／Stunned／Down は
     /// <see cref="EnemyStateMachine"/> の優先度で適用し、型付き <see cref="EnemyStateChanged"/> を発行する。
     /// 認識・移動・敵攻撃は本 Task 対象外（EnemyBrain／Motor／CombatController が後続 Task で接続する）。
+    ///
+    /// P4-03：<see cref="IThreatTarget"/> を実装し、<see cref="PerceptionTargetRegistry"/> へ自己登録する。
+    /// 「狙われる側」として名乗るだけで、敵 AI の判断（認識・ヘイト・行動選択）は一切変更していない。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class EnemyActor : MonoBehaviour, ICombatActor, IDamageable, ICombatActivityState, IKnockbackReceiver, IForcedFlinchReceiver, IEnemyDefeatSource
+    public sealed class EnemyActor : MonoBehaviour, ICombatActor, IDamageable, ICombatActivityState, IKnockbackReceiver, IForcedFlinchReceiver, IEnemyDefeatSource, IThreatTarget
     {
         [Tooltip("敵アーキタイプ Data（HP／防御／体幹／ひるみ／スタン等の数値と役割）。")]
         [SerializeField] private EnemyArchetypeData _archetype;
@@ -122,11 +127,56 @@ namespace Momotaro.Gameplay.Enemy
             }
         }
 
+        // ---- IThreatTarget（P4-03：敵を『狙える対象』として名乗る） ----
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// Phase 3 までは「敵が主人公を見つける」方向しか必要が無かったため、<see cref="PerceptionTargetRegistry"/> へ
+        /// 登録していたのは主人公だけだった。仲間（P4-03）は逆向きに敵を探すため、敵が登録されていないと候補が
+        /// 常に 0 件になり、接近も攻撃も起きない。
+        ///
+        /// 登録は Identity である本コンポーネントが担う。別コンポーネント（Binder）へ切り出すと、位置・撃破・ダウンの
+        /// 判定を二重に持つうえ、敵 Prefab へ付け忘れたときに<b>無言で</b>「仲間が敵を狙わない」へ戻るため。
+        /// 敵同士は <c>PerceptionTargetRegistry.IsHostile</c> が Enemy↔Enemy を敵対と見なさないため互いの候補にならず、
+        /// 既存の敵側の問い合わせ（観測者＝Enemy）の結果も変わらない。
+        /// </remarks>
+        public int ActorId => GetInstanceID();
+
+        /// <inheritdoc />
+        public Vector3 Position => transform.position;
+
+        /// <inheritdoc />
+        /// <remarks>撃破・ダウン後は候補から外し、狙っていた側が即座に対象を手放して次を捕捉できるようにする。</remarks>
+        public bool IsActive => isActiveAndEnabled && !IsDefeated && !IsDown;
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// 敵を狙う側（仲間）は最寄り優先の単純選択で、敵に対するヘイト表を作らない。よって基礎ヘイトは 0 とする
+        /// （主人公の 50 と違い、下限として維持すべき値が無い）。将来ヘイトで敵を選ぶ側が現れたら Data へ移す。
+        /// </remarks>
+        public float BaseThreat => 0f;
+
+        /// <inheritdoc />
+        /// <remarks>同上の理由で等倍。</remarks>
+        public float AcquiredThreatMultiplier => 1f;
+
         private void Awake()
         {
             EnsureRuntime();
             // 敵は Enemy レイヤーへ（Player はすり抜け、壁で停止。§3.4 / P2-09）。
             CombatLayers.ConfigureEnemy(gameObject);
+        }
+
+        private void OnEnable()
+        {
+            // 「狙える対象」として自己登録する（P4-03）。
+            PerceptionTargetRegistry.Register(this);
+        }
+
+        private void OnDisable()
+        {
+            // 無効化・撃破後の破棄・Scene 離脱で登録を残さない（§2.3 後始末）。
+            PerceptionTargetRegistry.Unregister(this);
         }
 
         private void EnsureRuntime()

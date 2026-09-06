@@ -13,7 +13,10 @@ namespace Momotaro.Gameplay.Companion
     /// Down／Stagger／Away の間は追従を止め、判断もリセットする（復帰後に古い停滞時間や前回距離を引きずらない）。
     /// 停止は <see cref="Update"/> を待たず、状態遷移の通知（<see cref="CompanionStateChannel"/>）を購読して<b>その場で</b>行う。
     /// 物理ステップは Update とは独立に回るため、次の Update まで移動指示が残ると退場・ダウンの直後に数 cm 滑ってしまう。
-    /// 実際の戦闘参加・対象選択は P4-03 以降で別コンポーネントが担い、本コンポーネントは触らない。
+    ///
+    /// 戦闘中（<see cref="ICompanionEngagementSource.IsEngaged"/>）は移動を戦闘側へ譲り、本コンポーネントは
+    /// <see cref="CompanionMotor"/> へ一切指示しない（P4-03）。両方が毎フレーム移動先を書くと、隊列位置と敵の間で震える。
+    /// 誰を狙うか・どう攻撃するかは戦闘側の責務で、本コンポーネントは触らない。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class CompanionFollowController : MonoBehaviour, ICompanionStateListener
@@ -31,6 +34,7 @@ namespace Momotaro.Gameplay.Companion
         private ICombatActor _leaderActor;
         private bool _leaderActorResolved;
         private CompanionActor _subscribedActor; // 状態通知の購読先（対称管理・重複購読防止）。
+        private ICompanionEngagementSource _engagement; // 戦闘側（同一 GameObject。未装備なら null のまま）。
 
         /// <summary>判断モデル（テスト・Debug 用）。</summary>
         public CompanionFollowModel Model => _model;
@@ -40,6 +44,9 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>直近の判断（テスト・Debug 用）。</summary>
         public CompanionFollowDecision Decision => _model.Decision;
+
+        /// <summary>戦闘側へ移動を譲っているか（テスト・診断用）。</summary>
+        public bool IsYieldingToCombat => ResolveEngagement() != null && _engagement.IsEngaged;
 
         /// <summary>追従対象・Actor・Motor を注入する（Scene 構築・テスト。null は無視して既存を保つ）。</summary>
         public void Bind(Transform leader, CompanionActor actor = null, CompanionMotor motor = null)
@@ -143,6 +150,13 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
+            // 戦闘中は移動を戦闘側へ譲る（Motor へ触れない。停止も戦闘側が必要に応じて行う）。
+            if (IsYieldingToCombat)
+            {
+                _model.Reset(); // 復帰時に古い停滞時間・前回距離を引きずらない。
+                return;
+            }
+
             ApplyMoveSettings();
 
             var input = new CompanionFollowInput(
@@ -178,7 +192,7 @@ namespace Momotaro.Gameplay.Companion
             _motor.Configure(speed, stopRadius);
         }
 
-        /// <summary>追従中の状態へ入れる（既に Follow なら何もしない。Warp からの復帰もここを通る）。</summary>
+        /// <summary>追従中の状態へ入れる（既に Follow なら何もしない。Warp・戦闘からの復帰もここを通る）。</summary>
         private void EnterFollow()
         {
             if (_actor.State != CompanionState.Follow)
@@ -201,6 +215,26 @@ namespace Momotaro.Gameplay.Companion
             }
 
             return _leaderActor != null ? _leaderActor.Forward : _leader.forward;
+        }
+
+        /// <summary>
+        /// 戦闘側（同一 GameObject の <see cref="ICompanionEngagementSource"/>）を解決する。未装備の構成
+        /// （追従だけの仲間・テスト）では null のままで、その場合は従来どおり常に追従する。
+        /// interface 参照は Unity の null 演算子が効かないため、破棄済み Object を明示的に捨てて取り直す。
+        /// </summary>
+        private ICompanionEngagementSource ResolveEngagement()
+        {
+            if (_engagement is Object destroyed && destroyed == null)
+            {
+                _engagement = null;
+            }
+
+            if (_engagement == null)
+            {
+                _engagement = GetComponent<ICompanionEngagementSource>();
+            }
+
+            return _engagement;
         }
 
         private void ResolveComponents()

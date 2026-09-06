@@ -8,16 +8,20 @@ namespace Momotaro.Gameplay.Companion
     /// 仲間の Identity・所属・状態の窓口（P4-02）。<see cref="ICompanionActor"/> の実体で、<c>EnemyActor</c> と同じ形
     /// （Runtime 状態機の遅延生成、型付き通知、論理前方の保持、レイヤー方針の適用）を採る。
     ///
-    /// 本 Task では追従に必要な範囲だけを担う。被弾（<c>IDamageable</c>）・攻撃（<c>ICombatActor</c>）・ヘイト候補
-    /// （<c>IThreatTarget</c>）・肩代わり（<c>IGuardianReceiver</c>）は、それぞれ P4-03／P4-04／P4-05 で本コンポーネントか
+    /// P4-03 で <see cref="ICombatActor"/> も実装する。攻撃者の同定は主人公・敵と共通の契約で行い、仲間専用の
+    /// 攻撃者表現を作らない。これにより仲間の与ダメージが既存の <c>HitResult</c> 経路をそのまま流れ、敵側の
+    /// <c>EnemyThreatTracker</c>（<c>PerceptionTargetRegistry.TryResolveThreatTarget</c>）が同一ルートの
+    /// <see cref="CompanionThreatBinder"/> へ帰属させて獲得ヘイトに変換できる（敵 AI は書き換えない）。
+    ///
+    /// 被弾（<c>IDamageable</c>）・肩代わり（<c>IGuardianReceiver</c>）は、それぞれ P4-04／P4-05 で本コンポーネントか
     /// 併設コンポーネントが実装する。先回りして空実装を置かない。
     ///
     /// 向きはルート Transform を回さず論理値として保持する（敵と同じ理由：接地と Collider の安定のためルートは回さない）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class CompanionActor : MonoBehaviour, ICompanionActor
+    public sealed class CompanionActor : MonoBehaviour, ICompanionActor, ICombatActor
     {
-        [Tooltip("仲間の基礎データ（役割・ヘイト補正・追従・守護の数値）。未割当でも既定値で安全に動く。")]
+        [Tooltip("仲間の基礎データ（役割・ヘイト補正・追従・攻撃・守護の数値）。未割当でも既定値で安全に動く。")]
         [SerializeField] private CompanionData _data;
 
         [Tooltip("隊列番号（0 始まり）。0=後方やや左、1=後方やや右、2=さらに後方中央。")]
@@ -37,6 +41,10 @@ namespace Momotaro.Gameplay.Companion
 
         /// <inheritdoc />
         public CombatFaction Faction => CombatFaction.Ally;
+
+        /// <inheritdoc />
+        /// <remarks>フロア分離は未実装の拡張点（<see cref="ICombatActor.FloorId"/> の既定と同じく 0 を返す）。</remarks>
+        public int FloorId => 0;
 
         /// <inheritdoc />
         public CompanionRole Role => _data != null ? _data.Role : CompanionRole.Dog;
@@ -80,7 +88,7 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>
         /// 論理的な前方（XZ 平面）。ルート Transform は回さないため、向きはこの論理値で保持する
-        /// （表示の 4 方向・将来の攻撃照準が参照する）。既定は +Z。
+        /// （表示の 4 方向・攻撃の照準と判定方向が参照する）。既定は +Z。
         /// </summary>
         public Vector3 Forward => _facing.sqrMagnitude > 1e-6f ? _facing : Vector3.forward;
 

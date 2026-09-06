@@ -38,6 +38,17 @@ namespace Momotaro.Presentation.Diagnostics
                     overlays[i].Display = display;
                 }
             }
+
+            // ヘイト表示も同じスイッチでまとめて切り替える（別々に探して有効化する手間を無くす。P4-03 受入）。
+            EnemyThreatDebugView[] threatViews =
+                Object.FindObjectsByType<EnemyThreatDebugView>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < threatViews.Length; i++)
+            {
+                if (threatViews[i] != null)
+                {
+                    threatViews[i].Display = display;
+                }
+            }
         }
     }
 }

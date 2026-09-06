@@ -15,12 +15,12 @@ MonoBehaviour:
   _id:
     _value: companion_inumaru
   _displayName: "\u72AC\u4E38"
-  _description: 
+  _description:
   _version: 1
-  _debugNote: 
+  _debugNote:
   _maxHp: 100
   _moveSpeed: 5
-  _attackPower: 0
+  _attackPower: 60
   _defense: 0
   _role: 0
   _switchCooldownSeconds: 3
@@ -32,5 +32,8 @@ MonoBehaviour:
   _followResumeDistance: 0.8
   _warpDistance: 8
   _stuckSeconds: 1.5
+  _targetAcquireRange: 8
+  _targetLoseRange: 12
+  _basicAttack: {fileID: 11400000, guid: bae886c7f99adffc6411f6c2b17fb295, type: 2}
   _guardianRange: 3
   _guardianCooldownSeconds: 6
