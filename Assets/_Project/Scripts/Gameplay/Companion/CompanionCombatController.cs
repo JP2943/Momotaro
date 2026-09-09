@@ -59,6 +59,7 @@ namespace Momotaro.Gameplay.Companion
         private readonly MultiHitTracker _hitTracker = new MultiHitTracker();
         private readonly Collider[] _overlapBuffer = new Collider[16];
 
+        private ICompanionDefenseState _defense; // 防御中は攻撃を始めない（同一 GameObject。未装備なら null）。
         private CompanionActor _subscribedActor; // 状態通知の購読先（対称管理・重複購読防止）。
         private HitId _currentSwing;
         private AttackSnapshot _snapshot; // 攻撃開始時に確定する不変値（実行中に原本が変わっても揺れない）。
@@ -172,6 +173,15 @@ namespace Momotaro.Gameplay.Companion
                     FinishAttack(settings);
                 }
 
+                _wasEngaged = true;
+                return;
+            }
+
+            // 構え・回避の最中は攻撃を始めない。状態も奪わない（防御側が Guard／Evade 状態を持っている）。
+            if (IsDefending())
+            {
+                Decision = CompanionEngageDecision.Hold;
+                _motor?.Stop();
                 _wasEngaged = true;
                 return;
             }
@@ -519,6 +529,25 @@ namespace Momotaro.Gameplay.Companion
             _hitTracker.Clear();
             Decision = CompanionEngageDecision.Idle;
             _wasEngaged = false;
+        }
+
+        /// <summary>
+        /// 防御中（構え・回避の無敵中）か。防御と攻撃はどちらも同じ 1 体の行動なので、同時には成立させない。
+        /// 防御コンポーネントが付いていない構成では常に false（従来どおり攻撃する）。
+        /// </summary>
+        private bool IsDefending()
+        {
+            if (_defense is Object destroyed && destroyed == null)
+            {
+                _defense = null;
+            }
+
+            if (_defense == null)
+            {
+                _defense = GetComponent<ICompanionDefenseState>();
+            }
+
+            return _defense != null && (_defense.IsGuarding || _defense.IsEvadeInvulnerable);
         }
 
         private void SubscribeState()

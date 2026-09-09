@@ -68,3 +68,6 @@ sysinfo.txt
 # Claude 転送用の一時アーカイブ（リポジトリ対象外）
 _transfer/
 _to_delete/
+
+# Editor 常駐ブリッジの受け渡し（機械同士のポスト。履歴に残さない）
+_bridge/

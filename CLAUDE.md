@@ -1,0 +1,110 @@
+# 桃太郎プロジェクト — Claude 作業ルール
+
+このファイルは Claude が作業開始時に自動で読む。会話が長くなって前半が要約されても、ここに書いた前提は失われない。
+
+## 役割分担
+
+| 担当 | 範囲 |
+|---|---|
+| 猫噛ねず四郎（オーナー） | 判断・最終受入・native の git commit・数値バランスの決定 |
+| GPT | 仕様策定・レビュー |
+| Claude | 実装・テスト・静的検証 |
+
+数値（ダメージ・射程・秒数・ヘイト）は Data（ScriptableObject）が正本で、コードへ直書きしない。
+バランス調整は**オーナーの判断領域**なので、Claude は分析と選択肢を出して判断を仰ぐ。実装上の不整合
+（例：判定の届く距離 < 攻撃開始距離）はバランスではなく欠陥なので、Claude が直す。
+
+## 設計の約束（Phase 1〜3.5 で確定）
+
+- 層構造 `Core ← Data ← Gameplay ← Presentation`（+ Infrastructure / Editor / Tests）を asmdef で強制
+- Gameplay は Animator・Canvas・Scene API・Camera を直接触らない
+- static な万能マネージャを作らない。通知は型付きチャネル＋インタフェースで、購読は OnEnable/OnDisable 対称
+- **時間は外部注入する。** すべての駆動系は `Tick(float deltaTime)` を公開し、`Update()` は
+  `Tick(Time.deltaTime)` を呼ぶだけにする。EditMode テストが Editor の描画間隔に左右されないため
+- SO 原本は実行時に書き換えない。開始時に不変 Snapshot へ複製する
+- `Find*` を使わない。レジストリと使い回しバッファで集める
+- 未使用機能の実処理は先回りして作らない（語彙・契約だけ先に置くのは可）
+
+## テストの書き方（この方針は事故から学んだもの）
+
+**部品の単体テストが全部緑でも、繋ぎ目が切れていれば実機は動かない。** 実際に 2 回起きた。
+
+1. 敵が索敵レジストリへ未登録 → 仲間の候補が常に 0 件。仲間側テストは敵役を手で登録していたため検出できず
+2. 判定 Box の到達距離 < 攻撃開始距離 → 常に空振り。テストは `TryApplyHit` を直接呼び、物理判定を通していなかった
+
+したがって、**外部レジストリ・物理判定・実アセットを経由する機能は、本物同士を繋いだテストを必ず 1 本置く**。
+
+- レジストリ経由 → 本物のコンポーネントを生成して有効化しただけで繋がることを固定する
+- 物理判定 → 実際に Collider を置き、`Update`／`Tick` 経由で判定を出させる（ヘルパを直接呼ばない）
+- 実アセット → 出荷される SO・Prefab の配線を `AssetDatabase` で読んで検査する
+
+## Editor 常駐ブリッジ
+
+Claude が Unity Editor を直接動かすための仕組み。`Assets/_Project/Scripts/Editor/Bridge/`。
+
+- プロジェクト直下 `_bridge/` に `command.json` を置くと、開いたままの Editor が実行し `result.json` を書く
+- 使えるのは `ping` / `refresh` / `compile-status` / `run-tests` の 4 つだけ
+- 有効化はメニュー `Momotaro / Bridge / Enabled`（既定は無効）
+- 詰まった場合は `Momotaro / Bridge / Reset Busy Flag`
+
+### 実行時の作法
+
+- ブリッジから `run-op` で「ダイアログを出さない編集操作」を実行できる（`build-inumaru`＝犬丸 Prefab の再生成、
+  `validate-project-data`＝全 Data 検証）。**メニューを人が押すために作業が止まらないようにするための口**。
+  Scene を作り直す操作は載せていない（手で加えた変更を消すため）
+- 新しく Editor 操作を足すときは、`[MenuItem]` のラッパーにダイアログを閉じ込め、**実処理はダイアログを出さない
+  公開 static メソッド**に分ける。この形なら後からブリッジの許可リストに載せられる
+
+- **ファイルを書いたら必ず `compile-status` を挟んでから `run-tests` する。** Unity は外部からの変更を自動では
+  取り込まないため、挟まないと<b>古いアセンブリのまま</b>テストが走り、新しいテストが存在しないのに緑になる
+  （実際にやらかした。件数が想定と違うときはこれを疑う）
+
+- **既定は絞り込み実行**（例 `.*Companion.*`）。フル実行は Scene を触るテストを含むため事前に知らせる
+- EditMode のフル実行は `EditorSceneManager.NewScene(..., Single)` を含み、**開いている Scene の未保存編集を黙って破棄する**
+- **PlayMode テストは既定では許可を取ってから実行する。** ただし下記の常時許可がある場合は待たない
+
+### PlayMode テストを書くときの落とし穴（実際に踏んだもの）
+
+- **静的状態は前のテストから持ち越される。** 特に `GameModeProvider.Current` が Exploration／Combat 以外だと、
+  戦闘・被弾・防御の Update がまるごと止まり「索敵は動いているのに何もしない」という紛らわしい失敗になる。
+  PlayMode テストの SetUp で `GameModeProvider.Current = null` と `PerceptionTargetRegistry.Clear()` を必ず行う
+- **PlayMode では `AddComponent` の時点で `Awake` が走る**（EditMode では走らない）。リフレクションで Data を
+  差し込む構成は、GameObject を `SetActive(false)` で組み立ててから起こす。さもないと Runtime が既定値で確定する
+- **`Time.timeScale` で加速するときは、1 フレームの経過が判定時間（Active）を超えないこと。** 超えると判定段を
+  跨いでしまい、実機とは違う条件を検証することになる
+
+### PlayMode テストの常時許可
+
+オーナーが指示の冒頭で「PlayMode テストを許可なしで実行してよい」と明示した場合、その作業のあいだ
+Claude は**都度の確認を取らずに PlayMode テストを実行してよい**。離席中に作業を進めてもらうための取り決め。
+
+その場合も次は守る。
+
+- 実行したこと・結果・かかった時間は報告に必ず残す
+- 再生モードから戻れなくなる事故を防ぐため、ブリッジ側に 600 秒の上限と強制終了を実装済み
+- 許可が明示されていない指示では、従来どおり確認を取る
+
+## ファイル受け渡し
+
+Claude のクラウド環境と PC は別。`_transfer/` 経由で tar を渡し、`cp -f` で配置する。
+PC 側シェルはファイルを削除できないため、消す場合は `_to_delete/` へ移す。
+`_transfer/` `_to_delete/` `_bridge/` は `.gitignore` 済み。
+
+## git の見え方について（誤解しないための注記）
+
+PC 側シェル（Linux VM）の git には **git-lfs が入っていない**。本プロジェクトはバイナリ素材を LFS で
+追跡しているため、そこから `git status` を見ると **PNG などが軒並み `M`（変更あり）に見える**。
+これは実体との比較ではなく LFS ポインタとの比較によるもので、実際には変更されていない。
+Windows 側の git（LFS あり）では正常に clean と表示される。
+
+Claude が `git status` を見るときは、`Assets/_Project/Scripts` `Tests` `Data` `Prefabs` のように
+**コードとアセット定義のパスへ限定する**こと（全体を見ると時間もかかり、上記の誤解も招く）。
+
+## コミットメッセージ
+
+末尾に必ず付ける。
+
+```
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01MpBRWHryddmH7tXUPWq2s8
+```

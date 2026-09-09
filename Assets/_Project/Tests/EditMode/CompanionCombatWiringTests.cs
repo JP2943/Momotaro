@@ -97,5 +97,30 @@ namespace Momotaro.Tests.EditMode
             Assert.IsNotNull(prefab.GetComponent<CompanionTargetTracker>(), "索敵が付く。");
             Assert.IsNotNull(prefab.GetComponent<CompanionMotor>(), "移動実行が付く。");
         }
+
+        /// <summary>
+        /// P4-04／P4-05 で追加した部品が Prefab に載っているかを検査する。<b>これが赤のときは実装ではなく
+        /// Prefab の再生成が済んでいない</b>ことを意味する（Scene のインスタンスも Prefab から受け継ぐため、
+        /// 再生成しないと犬丸は殴られもせず庇いもしない）。
+        /// </summary>
+        [Test]
+        public void InumaruPrefab_HasDefenseAndGuardianWired()
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(Phase4CompanionBuilder.InumaruPrefabPath);
+            if (prefab == null)
+            {
+                Assert.Ignore("犬丸 Prefab が未生成のためスキップ。");
+            }
+
+            const string howTo = " 実装ではなく配線の問題です。"
+                + "メニュー「Momotaro / Phase 4 / Generate Inumaru Prefab」で Prefab を再生成してください。";
+
+            Assert.IsNotNull(prefab.GetComponent<CompanionHitReceiver>(),
+                "被弾の受け口が付いていない。敵の攻撃が犬丸をすり抜ける。" + howTo);
+            Assert.IsNotNull(prefab.GetComponent<CompanionDefenseController>(),
+                "ガード・回避の判断が付いていない。犬丸は棒立ちで殴られる。" + howTo);
+            Assert.IsNotNull(prefab.GetComponent<CompanionGuardianController>(),
+                "守護（かばう）が付いていない。主人公への命中を肩代わりしない。" + howTo);
+        }
     }
 }

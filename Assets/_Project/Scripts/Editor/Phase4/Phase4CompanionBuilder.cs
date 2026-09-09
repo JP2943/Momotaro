@@ -262,6 +262,15 @@ namespace Momotaro.Editor.Phase4
             // 戦闘（近づく・通常攻撃を出す）。戦闘中は追従が Motor を譲る。
             root.AddComponent<CompanionCombatController>().Bind(actor, motor, tracker);
 
+            // 被弾（IDamageable）。敵の攻撃判定はここを見つけて命中を渡す（P4-04）。
+            root.AddComponent<CompanionHitReceiver>().Bind(actor);
+
+            // ガード・回避の判断（観測した危険に反応する。P4-04b）。
+            root.AddComponent<CompanionDefenseController>().Bind(actor);
+
+            // 守護（かばう）。主人公への命中のうち防げなかったものを肩代わりする（P4-05）。
+            root.AddComponent<CompanionGuardianController>().Bind(actor);
+
             // --- 表示：本体は Billboard 配下（敵・主人公と同じ構成） ---
             var visualRoot = new GameObject("VisualRoot");
             visualRoot.transform.SetParent(root.transform, false);

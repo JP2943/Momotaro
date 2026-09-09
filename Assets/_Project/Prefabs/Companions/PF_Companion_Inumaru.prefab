@@ -199,6 +199,9 @@ GameObject:
   - component: {fileID: 4744945786104172995}
   - component: {fileID: 4951653755319054346}
   - component: {fileID: 6135423289732151795}
+  - component: {fileID: 4068055260935465597}
+  - component: {fileID: 2666371869986597577}
+  - component: {fileID: 2943489160290430191}
   - component: {fileID: 1363993172399077194}
   m_Layer: 0
   m_Name: PF_Companion_Inumaru
@@ -360,10 +363,55 @@ MonoBehaviour:
   _targetMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  _hitboxForwardOffset: 0.7
-  _hitboxHalfExtents: {x: 0.5, y: 0.5, z: 0.5}
+  _hitboxHalfWidth: 0.5
   _hitboxHeight: 0.6
+  _hitboxHalfHeight: 0.6
   _logDecision: 0
+--- !u!114 &4068055260935465597
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6682707809238753296}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1dfbd6e924ca309c60624599993a4ddb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Companion.CompanionHitReceiver
+  _actor: {fileID: 3282417446606875444}
+--- !u!114 &2666371869986597577
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6682707809238753296}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a54ca9bd8c11a6928101464df492732b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Companion.CompanionDefenseController
+  _actor: {fileID: 3282417446606875444}
+  _dangerRadius: 2.5
+  _dangerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+--- !u!114 &2943489160290430191
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6682707809238753296}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 06a16aa29dfcf38c2b2a4c9dc6f6a277, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Companion.CompanionGuardianController
+  _actor: {fileID: 3282417446606875444}
+  _receiver: {fileID: 0}
+  _protectedTarget: {fileID: 0}
 --- !u!114 &1363993172399077194
 MonoBehaviour:
   m_ObjectHideFlags: 0

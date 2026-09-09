@@ -80,6 +80,9 @@ namespace Momotaro.Gameplay.Player
         private HitId _specialSwing;
         private bool _specialRequiresRelease;
         private bool _prevGuardHeld;
+
+        // 現在フレームの経過秒。Update から Tick へ渡された値を、駆動メソッド群が参照する（P4 受入）。
+        private float _deltaTime;
         private IPlayerInput _input;
         private HitId _currentSwing;
         private PlayerVitalsHolder _vitals;
@@ -408,6 +411,21 @@ namespace Momotaro.Gameplay.Player
 
         private void Update()
         {
+            Tick(Time.deltaTime);
+        }
+
+        /// <summary>
+        /// 状態を 1 フレーム進める（P4 受入：時間を外部から注入できるようにした入口）。
+        ///
+        /// 本クラスだけが <see cref="Time.deltaTime"/> を内部で直接読んでおり、そのため EditMode テストの結果が
+        /// Editor の描画間隔に左右されていた（背景で走ると deltaTime が 0 になり、チャージも硬直も一切進まない）。
+        /// 敵・仲間・コンボ・ヘイトの各系と同じく<b>時間を注入する</b>形へ揃え、テストを決定的にする。
+        /// 実行時の挙動は変わらない（<see cref="Update"/> が <see cref="Time.deltaTime"/> を渡すだけ）。
+        /// </summary>
+        /// <param name="deltaTime">経過秒。負値は 0 として扱う。</param>
+        public void Tick(float deltaTime)
+        {
+            _deltaTime = deltaTime < 0f ? 0f : deltaTime;
             EnsureRuntime();
 
             if (_input == null)
@@ -507,7 +525,7 @@ namespace Momotaro.Gameplay.Player
                     _attackBuffer.Buffer();
                 }
 
-                _attackBuffer.Tick(Time.deltaTime);
+                _attackBuffer.Tick(_deltaTime);
             }
             else
             {
@@ -598,7 +616,7 @@ namespace Momotaro.Gameplay.Player
             }
 
             bool wasStepping = _step.IsActive;
-            _step.Tick(Time.deltaTime);
+            _step.Tick(_deltaTime);
 
             bool stepPressed = active && _input != null && _input.ConsumeStepPressed();
 
@@ -749,7 +767,7 @@ namespace Momotaro.Gameplay.Player
             // 発動・後隙の実行フェーズ。判定発生中（Active）はキャンセル不可＝出し切る。後隙（Active 後）は攻撃でキャンセル可（P3.5-09）。
             if (_specialAttackRemaining > 0f)
             {
-                float dt = Time.deltaTime;
+                float dt = _deltaTime;
                 bool inActiveWindow = _specialActiveRemaining > 0f;
 
                 // 後隙中の攻撃先行入力でキャンセル：必殺技を打ち切り、同フレームで DriveCombo にバッファ攻撃を拾わせる（爽快感重視）。
@@ -797,7 +815,7 @@ namespace Momotaro.Gameplay.Player
 
             if (_special.IsActive)
             {
-                _special.Tick(Time.deltaTime);
+                _special.Tick(_deltaTime);
 
                 if (_special.ShouldAutoFire)
                 {
@@ -933,7 +951,7 @@ namespace Momotaro.Gameplay.Player
                 return;
             }
 
-            _justGuard.Tick(Time.deltaTime);
+            _justGuard.Tick(_deltaTime);
 
             if (guardHeld && !_prevGuardHeld)
             {
@@ -954,7 +972,7 @@ namespace Momotaro.Gameplay.Player
                 return;
             }
 
-            _combo.Tick(Time.deltaTime);
+            _combo.Tick(_deltaTime);
 
             if (!active)
             {

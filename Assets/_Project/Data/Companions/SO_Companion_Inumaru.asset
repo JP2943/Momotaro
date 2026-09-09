@@ -35,5 +35,13 @@ MonoBehaviour:
   _targetAcquireRange: 8
   _targetLoseRange: 12
   _basicAttack: {fileID: 11400000, guid: bae886c7f99adffc6411f6c2b17fb295, type: 2}
+  _flinchResistance: 40
+  _flinchSeconds: 0.8
+  _postHitInvincibleSeconds: 0.5
+  _reviveHpRatio: 0.5
+  _canGuard: 1
+  _guardCooldownSeconds: 3
+  _canEvade: 1
+  _evadeCooldownSeconds: 4
   _guardianRange: 3
   _guardianCooldownSeconds: 6

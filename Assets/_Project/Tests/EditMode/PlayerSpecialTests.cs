@@ -15,8 +15,12 @@ namespace Momotaro.Tests.EditMode
     /// </summary>
     public sealed class PlayerSpecialTests
     {
-        private static readonly MethodInfo UpdateMethod =
-            typeof(PlayerStateController).GetMethod("Update", BindingFlags.NonPublic | BindingFlags.Instance);
+        /// <summary>
+        /// 1 フレームぶんの経過秒（60fps 相当）。Editor の描画間隔（背景では 0 になる）に結果を左右させないため、
+        /// 時間は必ず固定値で注入する。以前は Update をリフレクションで呼んで <c>Time.deltaTime</c> 任せにしており、
+        /// Test Runner ウィンドウを操作している間だけ通る、という状態だった。
+        /// </summary>
+        private const float FixedDeltaTime = 1f / 60f;
 
         private readonly List<Object> _spawned = new List<Object>();
 
@@ -61,7 +65,7 @@ namespace Momotaro.Tests.EditMode
             return fi.GetValue(t);
         }
 
-        private static void Tick(PlayerStateController c) => UpdateMethod.Invoke(c, null);
+        private static void Tick(PlayerStateController c) => c.Tick(FixedDeltaTime);
 
         /// <summary>必殺技の判定発生中（Active）か（内部フィールド参照。P3.5-09 のキャンセル可否テスト用）。</summary>
         private static bool InSpecialActive(PlayerStateController c) => (float)GetPrivate(c, "_specialActiveRemaining") > 0f;

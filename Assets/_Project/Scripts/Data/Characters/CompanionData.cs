@@ -46,6 +46,27 @@ namespace Momotaro.Data.Characters
             + "未割当の仲間は攻撃も接近もしない（間合いに入らず追従だけを続ける）。攻撃力は CharacterData の AttackPower。")]
         [SerializeField] private AttackData _basicAttack;
 
+        [Header("Vitals / Damage (被弾。P4-04)")]
+        [Tooltip("ひるみ耐性。ひるませ値の蓄積がこの値以上でひるむ（敵と同じ系統。仕様書 §3.12）。")]
+        [SerializeField] private float _flinchResistance = 40f;
+        [Tooltip("ひるみ時間（秒）。この間は行動できない。")]
+        [SerializeField] private float _flinchSeconds = 0.8f;
+        [Tooltip("被弾後の無敵時間（秒）。実ダメージが入ったときだけ開始する（主人公＝0.50）。")]
+        [SerializeField] private float _postHitInvincibleSeconds = 0.5f;
+        [Tooltip("ダウンから復帰するときの HP 割合（0〜1）。復帰までの秒数は LeaveRecoverySeconds を使う。")]
+        [Range(0f, 1f)]
+        [SerializeField] private float _reviveHpRatio = 0.5f;
+
+        [Header("Defense (ガード・回避。P4-04b)")]
+        [Tooltip("ガードを使えるか。観測した危険に対して構える。")]
+        [SerializeField] private bool _canGuard = true;
+        [Tooltip("再び構えるまでのクールダウン（秒）。")]
+        [SerializeField] private float _guardCooldownSeconds = 3f;
+        [Tooltip("回避を使えるか。ガード不能な危険に対して短い無敵で退避する。")]
+        [SerializeField] private bool _canEvade = true;
+        [Tooltip("再び回避するまでのクールダウン（秒）。連続回避を防ぐ。")]
+        [SerializeField] private float _evadeCooldownSeconds = 4f;
+
         [Header("Guardian (守護／かばう。契約は P4-01、実装は P4-05)")]
         [Tooltip("守護の有効距離（m）。主人公からこの距離以内に居るときだけ肩代わりを引き受ける。")]
         [SerializeField] private float _guardianRange = 3f;
@@ -93,6 +114,30 @@ namespace Momotaro.Data.Characters
         /// <see cref="AttackData"/> を正本にする（同じ語彙で数値・防御属性を扱えるようにするため）。
         /// </summary>
         public AttackData BasicAttack => _basicAttack;
+
+        /// <summary>ひるみ耐性（<c>FlinchState</c> へ供給する）。</summary>
+        public float FlinchResistance => _flinchResistance;
+
+        /// <summary>ひるみ時間（秒）。</summary>
+        public float FlinchSeconds => _flinchSeconds;
+
+        /// <summary>被弾後の無敵時間（秒）。</summary>
+        public float PostHitInvincibleSeconds => _postHitInvincibleSeconds;
+
+        /// <summary>ダウンからの復帰 HP 割合（0〜1）。</summary>
+        public float ReviveHpRatio => _reviveHpRatio;
+
+        /// <summary>ガードを使えるか。</summary>
+        public bool CanGuard => _canGuard;
+
+        /// <summary>ガードのクールダウン秒。</summary>
+        public float GuardCooldownSeconds => _guardCooldownSeconds;
+
+        /// <summary>回避を使えるか。</summary>
+        public bool CanEvade => _canEvade;
+
+        /// <summary>回避のクールダウン秒。</summary>
+        public float EvadeCooldownSeconds => _evadeCooldownSeconds;
 
         /// <summary>守護の有効距離（m）。</summary>
         public float GuardianRange => _guardianRange;
@@ -156,6 +201,22 @@ namespace Momotaro.Data.Characters
             if (_targetLoseRange > 0f && _targetLoseRange < _targetAcquireRange)
             {
                 report.Error(name + ": TargetLoseRange must be >= TargetAcquireRange (or 0 for unlimited).");
+            }
+
+            if (_guardCooldownSeconds < 0f || _evadeCooldownSeconds < 0f)
+            {
+                report.Error(name + ": Guard/Evade cooldowns must be >= 0.");
+            }
+
+            if (_flinchResistance < 0f || _flinchSeconds < 0f || _postHitInvincibleSeconds < 0f)
+            {
+                report.Error(name + ": Flinch/Invincible values must be >= 0.");
+            }
+
+            // 0 だと復帰した瞬間に HP0 で再びダウンし、復帰が成立しない。
+            if (_reviveHpRatio <= 0f || _reviveHpRatio > 1f)
+            {
+                report.Error(name + ": ReviveHpRatio must be > 0 and <= 1.");
             }
 
             // 攻撃の射程が捕捉距離より遠いと、捕捉できない相手を攻撃できることになり間合いが破綻する。

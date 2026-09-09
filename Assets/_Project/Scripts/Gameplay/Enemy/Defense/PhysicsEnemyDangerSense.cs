@@ -13,15 +13,22 @@ namespace Momotaro.Gameplay.Enemy.Defense
         private readonly float _radius;
         private readonly LayerMask _mask;
         private readonly Collider[] _buffer;
+        private readonly CombatFaction _dangerFaction;
 
         /// <param name="radius">危険を観測する半径（m）。</param>
         /// <param name="mask">観測対象レイヤー（既定は全レイヤー。Faction で Player に絞る）。</param>
         /// <param name="bufferSize">OverlapSphere の非確保バッファ数。</param>
-        public PhysicsEnemyDangerSense(float radius = 2.5f, int mask = ~0, int bufferSize = 16)
+        /// <param name="dangerFaction">
+        /// 危険源とみなす陣営。既定は <see cref="CombatFaction.Player"/>（敵から見た危険＝主人公）で、敵側の既存挙動は変わらない。
+        /// 仲間（P4-04b）は <see cref="CombatFaction.Enemy"/> を渡して同じ観測を再利用する。
+        /// </param>
+        public PhysicsEnemyDangerSense(
+            float radius = 2.5f, int mask = ~0, int bufferSize = 16, CombatFaction dangerFaction = CombatFaction.Player)
         {
             _radius = Mathf.Max(0.1f, radius);
             _mask = mask;
             _buffer = new Collider[Mathf.Max(1, bufferSize)];
+            _dangerFaction = dangerFaction;
         }
 
         /// <inheritdoc />
@@ -44,9 +51,9 @@ namespace Momotaro.Gameplay.Enemy.Defense
                 }
 
                 var actor = col.GetComponentInParent<ICombatActor>();
-                if (actor == null || actor.Faction != CombatFaction.Player)
+                if (actor == null || actor.Faction != _dangerFaction)
                 {
-                    continue; // 敵対（Player）のみ危険源とみなす。
+                    continue; // 指定した陣営のみ危険源とみなす（敵から見れば Player、仲間から見れば Enemy）。
                 }
 
                 // 観測可能な危険：まず攻撃の質を晒す契約（IAttackThreatSource）を読む。無ければ体幹補正状態で代替（Unblockable は不明→false）。
