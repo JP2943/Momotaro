@@ -31,7 +31,11 @@ namespace Momotaro.Tests.EditMode
             for (int i = 0; i < SceneManager.sceneCount; i++)
             {
                 Scene s = SceneManager.GetSceneAt(i);
-                if (s.isDirty || string.IsNullOrEmpty(s.path))
+                // 未保存の変更があるときだけ止める。以前は「無題 Scene（path が空）」でも止めていたが、
+                // Editor に空の無題 Scene が開いているのが常態のため、この種のテストが
+                // <b>一度も実行されないまま緑に見えていた</b>（実際に 13 件が長期間 Skip のままだった）。
+                // 無題でも未編集なら失われるものは無く、後始末は空の新規 Scene で足りる。
+                if (s.isDirty)
                 {
                     Assert.Ignore(
                         "Phase3 Scene生成テストは現在のSceneを置換するため、未保存または変更中のSceneがある場合は実行できません。"

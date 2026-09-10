@@ -51,6 +51,21 @@ namespace Momotaro.Gameplay.Companion
             }
         }
 
+        /// <summary>
+        /// 配線されている戦闘セッション（未配線なら null。Scene 検査・診断用）。
+        /// Scene を保存したあとに「繋がっているか」を外から読めないと、Validator が配線漏れを検出できない。
+        /// </summary>
+        public CombatSessionController Session => _session;
+
+        /// <summary>戦闘セッションを持たない区画だと宣言されているか（Scene 検査・診断用）。</summary>
+        public bool AreaWithoutEncounter => _noEncounterInThisArea;
+
+        /// <summary>
+        /// 供給元として成立しているか（セッションが繋がっている、または「無い区画」と宣言されている）。
+        /// どちらでもない場合、この Context は常に停止を返す＝仲間が一切動かない。
+        /// </summary>
+        public bool IsWired => _session != null || _noEncounterInThisArea;
+
         /// <summary>戦闘セッションを注入する（Scene 構築・テスト）。</summary>
         public void Bind(CombatSessionController session)
         {

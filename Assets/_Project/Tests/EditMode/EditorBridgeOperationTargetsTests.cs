@@ -58,6 +58,48 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
+        public void BuildCompanionField_TargetExists()
+        {
+            System.Type builder = typeof(Phase4CompanionFieldBuilder);
+
+            Assert.AreEqual("Momotaro.Editor.Phase4.Phase4CompanionFieldBuilder", builder.FullName,
+                "ブリッジは完全修飾名で型を探す。名前空間・型名を変えたらブリッジ側も直すこと。");
+
+            FieldInfo scenePath = builder.GetField("DefaultScenePath", BindingFlags.Public | BindingFlags.Static);
+            Assert.IsNotNull(scenePath, "出力先の定数 DefaultScenePath をブリッジが読む。");
+            Assert.IsTrue(scenePath.IsLiteral, "DefaultScenePath は const であること。");
+
+            MethodInfo build = builder.GetMethod(
+                "Build", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string) }, null);
+            Assert.IsNotNull(build, "Build(string) をブリッジが呼ぶ。");
+
+            System.Type resultType = typeof(Phase4CompanionFieldBuilder.BuildResult);
+            Assert.IsNotNull(resultType.GetProperty("Success", BindingFlags.Public | BindingFlags.Instance));
+            Assert.IsNotNull(resultType.GetProperty("Message", BindingFlags.Public | BindingFlags.Instance));
+        }
+
+        [Test]
+        public void ValidateCompanionField_TargetExists()
+        {
+            System.Type validator = typeof(Phase4CompanionFieldValidator);
+
+            Assert.AreEqual("Momotaro.Editor.Phase4.Phase4CompanionFieldValidator", validator.FullName);
+
+            MethodInfo validate = validator.GetMethod(
+                "Validate", BindingFlags.Public | BindingFlags.Static, null,
+                new[]
+                {
+                    typeof(UnityEngine.SceneManagement.Scene),
+                    typeof(System.Collections.Generic.List<string>),
+                    typeof(System.Collections.Generic.List<string>),
+                },
+                null);
+
+            Assert.IsNotNull(validate,
+                "Validate(Scene, List<string>, List<string>) をブリッジが呼ぶ。引数の形を変えたらブリッジ側も直すこと。");
+        }
+
+        [Test]
         public void BuildResult_ExposesSuccessAndMessage()
         {
             System.Type resultType = typeof(Phase4CompanionBuilder.BuildResult);

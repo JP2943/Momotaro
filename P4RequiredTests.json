@@ -1,10 +1,11 @@
 {
   "version": 1,
-  "note": "P4 の工程受入で Passed を要求するテストの正本。実行結果に現れる完全名で持つ。件数や正規表現では代替しない（必須が 1 本消えても総数が同じなら気付けないため）。テスト名を変えるときは、テストとこの一覧を同じ変更で更新し、requirementId の対応を残すこと。照合はブリッジの run-op verify-required-tests（stage と runIds を指定）で行う。",
+  "note": "P4 の工程受入で Passed を要求するテストの正本。実行結果に現れる完全名で持つ。件数や正規表現では代替しない（必須が 1 本消えても総数が同じなら気付けないため）。テスト名を変えるときは、テストとこの一覧を同じ変更で更新し、requirementId の対応を残すこと。照合はブリッジの run-op verify-required-tests（stage と runIds を指定）で行う。 allowedSkips は空にしてある（F01）。Phase3／Phase3.5 の Scene 生成・検査テスト 13 件は「無題 Scene が開いていると自ら Skip する」ガードのせいで長期間 1 度も実行されていなかった。ガードを「未保存の変更があるときだけ Skip」へ緩めた結果すべて実行・Passed になったため、以後の Skip は「その実行で検証できていない」を意味する。Skip が出たら Scene を保存して再実行すること。",
   "stages": [
     "P4-FIX-02A",
     "F02b",
     "F02c",
+    "F01",
     "P4-07A",
     "P4-07B",
     "P4-08R"
@@ -399,60 +400,187 @@
       "stage": "F02c",
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Staggered_DoesNotTakeOverANewHit"
+    },
+    {
+      "requirementId": "N37",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_ProducesDeterministicStructure"
+    },
+    {
+      "requirementId": "N38",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_WiresActivityContextToTheSessionInThisScene"
+    },
+    {
+      "requirementId": "N39",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_WiresCompanionFollowAndGuardianToThePlayer"
+    },
+    {
+      "requirementId": "N40",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_CompanionHasBothArbiters"
+    },
+    {
+      "requirementId": "N41",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Rebuild_SamePath_DoesNotDuplicate"
+    },
+    {
+      "requirementId": "N42",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_InvalidOutputPath_FailsWithoutSaving"
+    },
+    {
+      "requirementId": "N43",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.FreshlyBuiltField_HasNoErrors"
+    },
+    {
+      "requirementId": "N44",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.EmptyScene_ReportsMissingActivityContext"
+    },
+    {
+      "requirementId": "N45",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.MissingActivityContext_IsDetected"
+    },
+    {
+      "requirementId": "N46",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.UnwiredActivityContext_IsDetected"
+    },
+    {
+      "requirementId": "N47",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutStateArbiter_IsDetected"
+    },
+    {
+      "requirementId": "N48",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutMovementArbiter_IsDetected"
+    },
+    {
+      "requirementId": "N49",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutLeader_IsDetected"
+    },
+    {
+      "requirementId": "N50",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.FieldWithoutCompanion_IsDetected"
+    },
+    {
+      "requirementId": "N51",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.InitialEnemies_AreForbidden"
+    },
+    {
+      "requirementId": "N52",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_CameraShakeTargetsChildCamera"
+    },
+    {
+      "requirementId": "N53",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_InvalidOutputPath_FailsWithoutSaving"
+    },
+    {
+      "requirementId": "N54",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_ProducesDeterministicStructure"
+    },
+    {
+      "requirementId": "N55",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_WiresFeedbackSystems"
+    },
+    {
+      "requirementId": "N56",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_WiresVfxPresenters_WithRealFrames"
+    },
+    {
+      "requirementId": "N57",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Rebuild_SamePath_DoesNotDuplicate"
+    },
+    {
+      "requirementId": "N58",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.DebugHudPresent_IsForbidden"
+    },
+    {
+      "requirementId": "N59",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.DuplicateSession_IsDetected"
+    },
+    {
+      "requirementId": "N60",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.EmptyScene_ReportsMissingSystems"
+    },
+    {
+      "requirementId": "N61",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.FreshlyBuiltScene_HasNoErrors"
+    },
+    {
+      "requirementId": "N62",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Build_InvalidOutputPath_FailsWithoutSaving"
+    },
+    {
+      "requirementId": "N63",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Build_ProducesDeterministicStructure"
+    },
+    {
+      "requirementId": "N64",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Rebuild_SamePath_DoesNotDuplicate"
+    },
+    {
+      "requirementId": "N65",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.BuildCompanionField_TargetExists"
+    },
+    {
+      "requirementId": "N66",
+      "stage": "F01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.ValidateCompanionField_TargetExists"
     }
   ],
-  "allowedSkips": [
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_CameraShakeTargetsChildCamera",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    },
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_InvalidOutputPath_FailsWithoutSaving",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    },
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_ProducesDeterministicStructure",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    },
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_WiresFeedbackSystems",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    },
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_WiresVfxPresenters_WithRealFrames",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    },
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Rebuild_SamePath_DoesNotDuplicate",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    },
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.DebugHudPresent_IsForbidden",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    },
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.DuplicateSession_IsDetected",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    },
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.EmptyScene_ReportsMissingSystems",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    },
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.FreshlyBuiltScene_HasNoErrors",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    },
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Build_InvalidOutputPath_FailsWithoutSaving",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    },
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Build_ProducesDeterministicStructure",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    },
-    {
-      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Rebuild_SamePath_DoesNotDuplicate",
-      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
-    }
-  ]
+  "allowedSkips": []
 }

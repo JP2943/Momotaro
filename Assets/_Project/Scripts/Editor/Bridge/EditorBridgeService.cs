@@ -784,7 +784,7 @@ namespace Momotaro.EditorBridge
                 + "| `refresh` | AssetDatabase の更新 |\n"
                 + "| `compile-status` | 再コンパイルし、エラー・警告を返す（`force` で強制） |\n"
                 + "| `run-tests` | テスト実行（`mode` は EditMode / PlayMode、`filter` は正規表現、`minPassed` は成功件数の下限） |\n\n"
-                + "| `run-op` | 許可された編集操作を実行（`op` に操作名。build-inumaru / validate-project-data） |\n\n"
+                + "| `run-op` | 許可された編集操作を実行（`op` に操作名。build-inumaru / validate-project-data / verify-required-tests / build-companion-field） |\n\n"
                 + "同じ `id` は二度実行されません。実行できるのは上の 5 つだけで、任意コードの実行・\n"
                 + "ファイル削除・シェル起動はできません。\n\n"
                 + "## result.json の status\n\n"

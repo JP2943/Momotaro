@@ -37,8 +37,12 @@ namespace Momotaro.EditorBridge
         /// <summary>実行記録を必須テスト一覧と照合する（工程の受入判定）。</summary>
         public const string VerifyRequiredTests = "verify-required-tests";
 
+        /// <summary>仲間の検証 Scene を再生成し、そのまま検査する（P4-FIX F01）。</summary>
+        public const string BuildCompanionField = "build-companion-field";
+
         /// <summary>実行できる操作の一覧（エラーメッセージにそのまま出す）。</summary>
-        public static readonly string[] All = { BuildInumaru, ValidateProjectData, VerifyRequiredTests };
+        public static readonly string[] All =
+            { BuildInumaru, ValidateProjectData, VerifyRequiredTests, BuildCompanionField };
 
         /// <summary>実行結果。</summary>
         public readonly struct OperationResult
@@ -63,7 +67,8 @@ namespace Momotaro.EditorBridge
         /// <summary>既知の操作か。</summary>
         public static bool IsKnown(string op)
         {
-            return op == BuildInumaru || op == ValidateProjectData || op == VerifyRequiredTests;
+            return op == BuildInumaru || op == ValidateProjectData || op == VerifyRequiredTests
+                || op == BuildCompanionField;
         }
 
         /// <summary>操作を実行する。未知の操作・呼び出し失敗は <see cref="OperationResult.Success"/> false で返す。</summary>
@@ -83,6 +88,9 @@ namespace Momotaro.EditorBridge
 
                     case VerifyRequiredTests:
                         return RunVerifyRequiredTests(command);
+
+                    case BuildCompanionField:
+                        return RunBuildCompanionField();
 
                     default:
                         return new OperationResult(false,
@@ -232,6 +240,8 @@ namespace Momotaro.EditorBridge
 
         private const string CompanionBuilderType = "Momotaro.Editor.Phase4.Phase4CompanionBuilder";
         private const string ProjectValidatorType = "Momotaro.Editor.Validation.ProjectDataValidator";
+        private const string CompanionFieldBuilderType = "Momotaro.Editor.Phase4.Phase4CompanionFieldBuilder";
+        private const string CompanionFieldValidatorType = "Momotaro.Editor.Phase4.Phase4CompanionFieldValidator";
 
         private static OperationResult RunBuildInumaru()
         {
@@ -317,6 +327,112 @@ namespace Momotaro.EditorBridge
             return new OperationResult(
                 !hasErrors,
                 hasErrors ? "Data 検証でエラー " + details.Count + " 件。" : "Data 検証はすべて通りました。",
+                details);
+        }
+
+        /// <summary>
+        /// 仲間の検証 Scene を再生成し、続けて Validator にかける（P4-FIX F01）。
+        ///
+        /// <b>Scene を作り直す操作をブリッジへ載せるのは、これが初めて。</b>これまで載せなかったのは、
+        /// 手で加えた変更を黙って消してしまうため。ここでは<b>未保存の変更があるときは実行せず断る</b>ことで
+        /// その危険を無くしてある（オーナーが席を外していても、保存していない作業は壊れない）。
+        /// 生成は決定的なので、保存済みの状態から作り直すのは元へ戻すのと同じ意味しか持たない。
+        /// </summary>
+        private static OperationResult RunBuildCompanionField()
+        {
+            for (int i = 0; i < UnityEngine.SceneManagement.SceneManager.sceneCount; i++)
+            {
+                UnityEngine.SceneManagement.Scene open = UnityEngine.SceneManagement.SceneManager.GetSceneAt(i);
+                if (open.isDirty)
+                {
+                    return new OperationResult(false,
+                        "未保存の変更がある Scene が開いているため実行しません（"
+                        + (string.IsNullOrEmpty(open.path) ? "無題Scene" : open.path)
+                        + "）。保存してから再実行してください。");
+                }
+            }
+
+            Type builder = FindType(CompanionFieldBuilderType);
+            if (builder == null)
+            {
+                return new OperationResult(false, "型が見つかりません: " + CompanionFieldBuilderType);
+            }
+
+            string scenePath = ReadConstString(builder, "DefaultScenePath");
+            if (scenePath == null)
+            {
+                return new OperationResult(false, CompanionFieldBuilderType + ".DefaultScenePath が見つかりません。");
+            }
+
+            MethodInfo build = builder.GetMethod(
+                "Build", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string) }, null);
+            if (build == null)
+            {
+                return new OperationResult(false, CompanionFieldBuilderType + ".Build(string) が見つかりません。");
+            }
+
+            object result = build.Invoke(null, new object[] { scenePath });
+            if (result == null)
+            {
+                return new OperationResult(false, "Build の戻り値が空でした。");
+            }
+
+            Type resultType = result.GetType();
+            bool success = ReadProperty(resultType, result, "Success") is bool b && b;
+            string message = ReadProperty(resultType, result, "Message") as string ?? string.Empty;
+
+            var details = new List<string> { scenePath, message };
+            if (!success)
+            {
+                return new OperationResult(false, "仲間の検証 Scene の生成に失敗しました。", details);
+            }
+
+            // 生成しただけで終わらせない。出荷される Scene そのものを検査して、
+            // 「作った」と「正しい」を分けて報告する。
+            OperationResult validated = ValidateCompanionField(details);
+            return validated;
+        }
+
+        /// <summary>生成直後の Scene を <c>Phase4CompanionFieldValidator</c> にかける。</summary>
+        private static OperationResult ValidateCompanionField(List<string> details)
+        {
+            Type validator = FindType(CompanionFieldValidatorType);
+            if (validator == null)
+            {
+                return new OperationResult(false, "型が見つかりません: " + CompanionFieldValidatorType, details);
+            }
+
+            MethodInfo validate = validator.GetMethod(
+                "Validate", BindingFlags.Public | BindingFlags.Static, null,
+                new[] { typeof(UnityEngine.SceneManagement.Scene), typeof(List<string>), typeof(List<string>) }, null);
+            if (validate == null)
+            {
+                return new OperationResult(false,
+                    CompanionFieldValidatorType + ".Validate(Scene, List<string>, List<string>) が見つかりません。", details);
+            }
+
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            validate.Invoke(null, new object[]
+            {
+                UnityEngine.SceneManagement.SceneManager.GetActiveScene(), errors, warnings,
+            });
+
+            foreach (string w in warnings)
+            {
+                details.Add("[警告] " + w);
+            }
+
+            foreach (string e in errors)
+            {
+                details.Add("[エラー] " + e);
+            }
+
+            return new OperationResult(
+                errors.Count == 0,
+                errors.Count == 0
+                    ? "仲間の検証 Scene を生成し、検査も通りました（警告 " + warnings.Count + " 件）。"
+                    : "生成はしましたが検査でエラー " + errors.Count + " 件。",
                 details);
         }
 

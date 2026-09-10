@@ -43,15 +43,21 @@
 Claude が Unity Editor を直接動かすための仕組み。`Assets/_Project/Scripts/Editor/Bridge/`。
 
 - プロジェクト直下 `_bridge/` に `command.json` を置くと、開いたままの Editor が実行し `result.json` を書く
-- 使えるのは `ping` / `refresh` / `compile-status` / `run-tests` の 4 つだけ
+- 使えるのは `ping` / `refresh` / `compile-status` / `run-tests` / `run-op` の 5 つだけ
 - 有効化はメニュー `Momotaro / Bridge / Enabled`（既定は無効）
 - 詰まった場合は `Momotaro / Bridge / Reset Busy Flag`
 
 ### 実行時の作法
 
-- ブリッジから `run-op` で「ダイアログを出さない編集操作」を実行できる（`build-inumaru`＝犬丸 Prefab の再生成、
-  `validate-project-data`＝全 Data 検証）。**メニューを人が押すために作業が止まらないようにするための口**。
-  Scene を作り直す操作は載せていない（手で加えた変更を消すため）
+- ブリッジから `run-op` で「ダイアログを出さない編集操作」を実行できる。**メニューを人が押すために
+  作業が止まらないようにするための口**。
+  - `build-inumaru`＝犬丸 Prefab の再生成
+  - `validate-project-data`＝全 Data 検証
+  - `verify-required-tests`＝実行記録と必須テスト一覧の照合（工程の受入判定）
+  - `build-companion-field`＝仲間の検証 Scene（`SCN_Phase4_CompanionField`）の再生成と検査
+- **Scene を作り直す操作を載せてよいのは、未保存の変更があるとき自分で断る場合だけ。**
+  `build-companion-field` は開いている Scene に未保存の変更があれば実行せずエラーを返す。
+  この条件を満たさない Scene 操作は載せない（手で加えた変更を黙って消すため）
 - 新しく Editor 操作を足すときは、`[MenuItem]` のラッパーにダイアログを閉じ込め、**実処理はダイアログを出さない
   公開 static メソッド**に分ける。この形なら後からブリッジの許可リストに載せられる
 
@@ -93,6 +99,12 @@ Claude が Unity Editor を直接動かすための仕組み。`Assets/_Project/
   必須の欠落・必須の非 Passed・**許容一覧に無い Skip** を不合格にする
 - **Skip を件数で許容しない。** 説明済みの Skip は `allowedSkips` に実名と理由を書く。
   「以前と同数だから非必須だろう」は当てにならない（実際に、13 件の Skip の性質を取り違えて記録した）
+- **現在 `allowedSkips` は空**（F01 で撤回した）。Phase3／Phase3.5 の Scene 生成・検査テスト 13 件は
+  「無題 Scene が開いていると自ら Skip する」ガードのせいで長期間 1 度も走っていなかった。
+  ガードを**未保存の変更があるときだけ Skip** へ緩めた結果、全件が実行され Passed になった。
+  以後 Skip が出たら「その実行では検証できていない」を意味する。Scene を保存して再実行すること
+- **Scene を置換するテストのガードは「未保存の変更があるときだけ Skip」に揃える。**
+  無題 Scene というだけで止めると、Editor に空の無題 Scene が開いているのが常態なので永久に走らない
 - テストの実行と工程の受入判定は分ける。判定を実行中のテストの中でやると、自分の結果を見ることになって成立しない
 
 ### PC 側シェルが落ちているときのブリッジ操作
@@ -118,10 +130,14 @@ Claude が Unity Editor を直接動かすための仕組み。`Assets/_Project/
 - **`Time.timeScale` で加速するときは、1 フレームの経過が判定時間（Active）を超えないこと。** 超えると判定段を
   跨いでしまい、実機とは違う条件を検証することになる
 
-### PlayMode テストの常時許可
+### PlayMode テストと Scene 破壊の常時許可
 
 オーナーが指示の冒頭で「PlayMode テストを許可なしで実行してよい」と明示した場合、その作業のあいだ
 Claude は**都度の確認を取らずに PlayMode テストを実行してよい**。離席中に作業を進めてもらうための取り決め。
+
+**この許可が出ているあいだ、オーナーは Unity Editor を触らない**とオーナー本人が明言している。
+したがって同じあいだは、Scene を置換する実行（EditMode フル実行・Scene Builder）も
+**事前告知や確認を取らずに実行してよい**。実行したことは報告に残す。
 
 その場合も次は守る。
 
