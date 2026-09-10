@@ -4,7 +4,8 @@ namespace Momotaro.Gameplay.Companion
     /// 仲間状態の遷移優先度（P4-01）。純粋関数として順位を与え、割り込み可否を判定する。
     ///
     /// 基準順（高いほど優先）：Away &gt; Down &gt; Event &gt; Recovering &gt; Stagger &gt; Protect &gt;
-    /// AttackActive &gt; AttackPrepare &gt; AttackRecovery &gt; Guard/Evade &gt; Warp &gt; Chase &gt; Follow &gt; Idle。
+    /// AttackActive &gt; AttackPrepare &gt; AttackRecovery &gt; Guard/Evade &gt; Warp &gt; Chase &gt;
+    /// Investigate &gt; Follow &gt; Idle。
     ///
     /// 退場（Away）を最上位に置くのは、Scene 離脱・交代・イベントによる退場が、ダウン中でも必ず成立しなければ
     /// 残留（購読・対象参照・判定の置き去り）になるため。守護（Protect）を攻撃より上に置くのは、「かばう」が
@@ -30,6 +31,12 @@ namespace Momotaro.Gameplay.Companion
                 case CompanionState.Evade: return 45;
                 case CompanionState.Warp: return 40;
                 case CompanionState.Chase: return 30;
+
+                // 探索は追従より強く、戦闘より弱い（P4-07A）。
+                // 追従より上に置くのは、調べに行くあいだ隊列へ引き戻されないため。
+                // 戦闘より下に置くのは、敵が出たら調査を中断して戦うのが当然だから。
+                case CompanionState.Investigate: return 25;
+
                 case CompanionState.Follow: return 20;
                 case CompanionState.Idle: return 5;
                 default: return 0;

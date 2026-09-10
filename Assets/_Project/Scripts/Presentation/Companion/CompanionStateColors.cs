@@ -34,6 +34,7 @@ namespace Momotaro.Presentation.Companion
                 case CompanionState.Recovering: return new Color(0.70f, 0.70f, 0.55f, 0.85f); // 淡黄：復帰待ち
                 case CompanionState.Away: return Away;
                 case CompanionState.Event: return new Color(0.75f, 0.70f, 0.90f, 1f);  // 藤：イベント
+                case CompanionState.Investigate: return new Color(0.55f, 0.90f, 0.55f, 1f); // 緑：調査中（P4-07A）
                 default: return new Color(0.80f, 0.80f, 0.80f, 1f);
             }
         }

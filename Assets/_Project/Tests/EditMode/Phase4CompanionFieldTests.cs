@@ -161,7 +161,11 @@ namespace Momotaro.Tests.EditMode
             }
 
             CollectionAssert.AreEquivalent(
-                new[] { "Environment", "Player", "CameraRig", "Directional Light", "SceneMode", "SpawnCenter", "Phase4Systems", "Inumaru" },
+                new[]
+                {
+                    "Environment", "Player", "CameraRig", "Directional Light", "SceneMode",
+                    "SpawnCenter", "InvestigationPoints", "Phase4Systems", "Inumaru",
+                },
                 rootNames,
                 "ルートの構成は固定（生成し直せば必ず同じ形へ戻る）:\n- " + string.Join("\n- ", rootNames));
 
@@ -375,6 +379,65 @@ namespace Momotaro.Tests.EditMode
             List<string> errors = Errors(scene);
             Assert.IsTrue(errors.Exists(e => e.Contains("CompanionActor")),
                 "仲間が居ないことを検出する:\n- " + string.Join("\n- ", errors));
+        }
+
+        /// <summary>
+        /// 探索（P4-07A）が Scene として成立している：調査地点が置かれ、仲間に探索の駆動が載り、
+        /// 地点が主人公の紐の内側にある。どれか 1 つでも欠けると「探索は有効なのに一度も動かない」になる。
+        /// </summary>
+        [Test]
+        public void Build_PlacesInvestigationPointsWithinLeash()
+        {
+            Scene scene = BuildField();
+
+            List<CompanionInvestigationPoint> points = All<CompanionInvestigationPoint>(scene);
+            Assert.AreEqual(Phase4CompanionFieldBuilder.InvestigationPointPositions.Length, points.Count,
+                "調査地点を決められた数だけ置く。");
+
+            CompanionActor actor = All<CompanionActor>(scene)[0];
+            Assert.IsNotNull(actor.GetComponent<CompanionInvestigationController>(),
+                "仲間に探索の駆動が載っている（Data で探索できることになっている以上、必須）。");
+
+            Transform player = All<PlayerStateController>(scene)[0].transform;
+            float leash = actor.Data.InvestigateLeashDistance;
+            foreach (CompanionInvestigationPoint point in points)
+            {
+                float distance = FormationSlot.HorizontalDistance(player.position, point.transform.position);
+                Assert.LessOrEqual(distance, leash,
+                    point.name + " は主人公から紐（" + leash + "m）の内側にある。外だと一度も調べに行かない。");
+            }
+        }
+
+        /// <summary>調査地点が 1 つも無い Scene は、探索を試せないので検証 Scene として不合格。</summary>
+        [Test]
+        public void FieldWithoutInvestigationPoints_IsDetected()
+        {
+            Scene scene = BuildField();
+            Assert.AreEqual(0, Errors(scene).Count, "前提：生成直後はエラー 0。");
+
+            foreach (CompanionInvestigationPoint point in All<CompanionInvestigationPoint>(scene))
+            {
+                Object.DestroyImmediate(point.gameObject);
+            }
+
+            List<string> errors = Errors(scene);
+            Assert.IsTrue(errors.Exists(e => e.Contains("CompanionInvestigationPoint")),
+                "調査地点の欠落を検出する:\n- " + string.Join("\n- ", errors));
+        }
+
+        /// <summary>探索できる仲間から探索の駆動を外したら検出する（Data と実装の食い違い）。</summary>
+        [Test]
+        public void CompanionWithoutInvestigationController_IsDetected()
+        {
+            Scene scene = BuildField();
+            CompanionActor actor = All<CompanionActor>(scene)[0];
+            Assert.IsTrue(actor.Data.CanInvestigate, "前提：Data では探索できる。");
+
+            Object.DestroyImmediate(actor.GetComponent<CompanionInvestigationController>());
+
+            List<string> errors = Errors(scene);
+            Assert.IsTrue(errors.Exists(e => e.Contains("CompanionInvestigationController")),
+                "Data と実装の食い違いを検出する:\n- " + string.Join("\n- ", errors));
         }
 
         /// <summary>初期状態で敵が置かれていたら検出する（編成は Context Menu から出す約束）。</summary>

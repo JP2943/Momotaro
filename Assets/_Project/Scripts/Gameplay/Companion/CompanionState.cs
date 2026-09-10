@@ -54,5 +54,11 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>イベント強制（会話・演出）。</summary>
         Event = 14,
+
+        /// <summary>
+        /// 調査中（探索行動。P4-07A）。気になる地点まで行って調べている状態。
+        /// 追従より強く、戦闘より弱い（敵が出たら中断して戦う）。
+        /// </summary>
+        Investigate = 15,
     }
 }

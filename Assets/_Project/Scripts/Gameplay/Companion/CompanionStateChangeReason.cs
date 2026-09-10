@@ -56,5 +56,11 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>不正遷移として記録された（診断用。実際の適用は行われない）。</summary>
         IllegalTransition = 16,
+
+        /// <summary>調査を始めた（探索行動。P4-07A）。</summary>
+        InvestigationStarted = 17,
+
+        /// <summary>調査を終えた／打ち切った（P4-07A）。</summary>
+        InvestigationFinished = 18,
     }
 }

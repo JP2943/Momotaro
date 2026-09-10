@@ -50,6 +50,18 @@ namespace Momotaro.Editor.Phase4
         /// <summary>敵を湧かせる中心（Phase3 と同じく原点）。</summary>
         public static readonly Vector3 SpawnCenterPosition = Vector3.zero;
 
+        /// <summary>
+        /// 調査地点の位置（P4-07A）。主人公（Z=-6）の周囲に置く。
+        /// 犬丸の紐（既定 6m）の内側に収まる距離にしてあり、置いた瞬間から調べに行く様子が見える。
+        /// 遠すぎると「紐に弾かれて何もしない」に見え、探索が壊れているのか設定なのか判別できない。
+        /// </summary>
+        public static readonly Vector3[] InvestigationPointPositions =
+        {
+            new Vector3(-3f, 0f, -7f),
+            new Vector3(3f, 0f, -7f),
+            new Vector3(0f, 0f, -3f),
+        };
+
         /// <summary>生成結果。</summary>
         public readonly struct BuildResult
         {
@@ -163,7 +175,8 @@ namespace Momotaro.Editor.Phase4
             AssetDatabase.Refresh();
 
             return new BuildResult(true, outputPath,
-                "Environment/Player/Inumaru/CameraRig+Main Camera/Light/SceneMode/SpawnCenter/"
+                "Environment/Player/Inumaru/CameraRig+Main Camera/Light/SceneMode/SpawnCenter/InvestigationPoints(×"
+                + InvestigationPointPositions.Length + ")/"
                 + "Phase4Systems(CombatSession+CompanionActivityContext+EnemyTestField+EnemyDebugToggle+CombatFeedback)、初期敵 0 体。");
         }
 
@@ -216,6 +229,17 @@ namespace Momotaro.Editor.Phase4
             // SpawnCenter（敵を出す中心）。
             var spawnCenter = new GameObject("SpawnCenter");
             spawnCenter.transform.position = SpawnCenterPosition;
+
+            // 調査地点（P4-07A）。主人公の周りに置く。犬丸の紐（InvestigateLeashDistance）の内側に
+            // 収まる位置にしてあり、置いた瞬間から調べに行くところを目視できる。
+            var points = new GameObject("InvestigationPoints");
+            for (int i = 0; i < InvestigationPointPositions.Length; i++)
+            {
+                var pointGo = new GameObject("InvestigationPoint_" + i);
+                pointGo.transform.SetParent(points.transform, false);
+                pointGo.transform.position = InvestigationPointPositions[i];
+                pointGo.AddComponent<CompanionInvestigationPoint>();
+            }
 
             // Phase4Systems。
             var systems = new GameObject("Phase4Systems");

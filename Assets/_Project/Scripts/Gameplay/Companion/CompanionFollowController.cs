@@ -54,6 +54,13 @@ namespace Momotaro.Gameplay.Companion
         /// <summary>戦闘側へ移動を譲っているか（テスト・診断用）。</summary>
         public bool IsYieldingToCombat => ResolveEngagement() != null && _engagement.IsEngaged;
 
+        /// <summary>
+        /// 追従より強い持ち主が移動を握っているか（探索・防御など。テスト・診断用）。
+        /// 「誰が握っているか」は F02a の調停役が既に持っている。追従側で数え直さない。
+        /// </summary>
+        public bool IsYieldingToStrongerMovementOwner =>
+            _arbiter != null && _arbiter.Owner > CompanionMovementOwner.Follow;
+
         /// <summary>追従対象・Actor・Motor を注入する（Scene 構築・テスト。null は無視して既存を保つ）。</summary>
         public void Bind(Transform leader, CompanionActor actor = null, CompanionMotor motor = null)
         {
@@ -189,6 +196,17 @@ namespace Momotaro.Gameplay.Companion
             {
                 _model.Reset(); // 復帰時に古い停滞時間・前回距離を引きずらない。
                 ReleaseMovement(); // 所有権を返す。Motor そのものには触れない（戦闘側が握る）。
+                return;
+            }
+
+            // 追従より強い持ち主が移動を握っているなら、判断そのものを止める（P4-07A）。
+            //
+            // 意図を出しても調停役が捨ててくれるので「動いてしまう」ことは無いが、それだけでは足りない。
+            // 判断は走り続けるので、探索で隊列から離れているあいだに<b>距離超過のワープが成立</b>し、
+            // 調べに行った先から隊列へ引き戻される。譲るときは判断ごと止める。
+            if (IsYieldingToStrongerMovementOwner)
+            {
+                _model.Reset();
                 return;
             }
 

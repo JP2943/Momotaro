@@ -253,6 +253,89 @@ namespace Momotaro.Tests.EditMode
         }
 
         /// <summary>
+        /// <b>レビュー §5：探索中の行動競合表。</b>F02c では <see cref="CompanionState.Investigate"/> が
+        /// まだ無く書けなかった行。調査中は、戦う・構える・避ける・庇うのいずれも<b>中断</b>として通る。
+        /// 「許可」ではなく「中断」で通すのは、調査が途中で止められたことを状態の履歴に残すため。
+        /// </summary>
+        [Test]
+        public void InvestigationTable_EveryCombatActionInterrupts()
+        {
+            foreach (CompanionActionKind kind in new[]
+            {
+                CompanionActionKind.AutoAttack, CompanionActionKind.AutoGuard,
+                CompanionActionKind.AutoEvade, CompanionActionKind.GuardianTransfer,
+            })
+            {
+                Assert.AreEqual(CompanionActionVerdict.Interrupt,
+                    CompanionActionRules.Evaluate(kind, CompanionState.Investigate),
+                    kind + " は調査を中断して始められる（敵が出たら調べている場合ではない）。");
+            }
+
+            Assert.AreEqual(CompanionActionVerdict.Allowed,
+                CompanionActionRules.Evaluate(CompanionActionKind.Investigate, CompanionState.Investigate),
+                "同じ調査の継続は許可（始め直しではない）。");
+        }
+
+        /// <summary>
+        /// 探索は平常時からしか始めない。攻撃・防御・守護・ワープの最中に「調べに行く」ことはない。
+        /// 倒れている・ひるんでいるときも同じ（表より優先される規則）。
+        /// </summary>
+        [Test]
+        public void Investigate_StartsOnlyFromNeutralStates()
+        {
+            Assert.AreEqual(CompanionActionVerdict.Allowed,
+                CompanionActionRules.Evaluate(CompanionActionKind.Investigate, CompanionState.Follow));
+            Assert.AreEqual(CompanionActionVerdict.Allowed,
+                CompanionActionRules.Evaluate(CompanionActionKind.Investigate, CompanionState.Idle));
+            Assert.AreEqual(CompanionActionVerdict.Allowed,
+                CompanionActionRules.Evaluate(CompanionActionKind.Investigate, CompanionState.Chase),
+                "対象を見失った直後は Chase が 1 フレーム残る。ここで禁じると次の行動へ移れなくなる。");
+
+            foreach (CompanionState blocked in new[]
+            {
+                CompanionState.AttackPrepare, CompanionState.AttackActive, CompanionState.AttackRecovery,
+                CompanionState.Guard, CompanionState.Evade, CompanionState.Protect, CompanionState.Warp,
+                CompanionState.Down, CompanionState.Stagger, CompanionState.Away,
+                CompanionState.Recovering, CompanionState.Event,
+            })
+            {
+                Assert.AreEqual(CompanionActionVerdict.Denied,
+                    CompanionActionRules.Evaluate(CompanionActionKind.Investigate, blocked),
+                    blocked + " から調べに行き始めない。");
+            }
+        }
+
+        /// <summary>
+        /// 探索は追従より強く、戦闘より弱い。順位が逆だと、調べに行くそばから隊列へ引き戻されるか、
+        /// 敵が出ても調べ続けることになる。
+        /// </summary>
+        [Test]
+        public void InvestigateRanksBetweenFollowAndChase()
+        {
+            Assert.Greater(
+                CompanionStatePriority.Rank(CompanionState.Investigate),
+                CompanionStatePriority.Rank(CompanionState.Follow),
+                "追従より強い（調べに行くあいだ引き戻されない）。");
+            Assert.Less(
+                CompanionStatePriority.Rank(CompanionState.Investigate),
+                CompanionStatePriority.Rank(CompanionState.Chase),
+                "戦闘より弱い（敵が出たら中断する）。");
+
+            Assert.Greater(
+                (int)CompanionActionOwner.Investigate, (int)CompanionActionOwner.Follow,
+                "行動の持ち主としても追従より強い。");
+            Assert.Less(
+                (int)CompanionActionOwner.Investigate, (int)CompanionActionOwner.Combat,
+                "行動の持ち主としては戦闘より弱い。");
+            Assert.Greater(
+                (int)CompanionMovementOwner.Investigate, (int)CompanionMovementOwner.Follow,
+                "移動の持ち主としても追従より強い。");
+            Assert.Less(
+                (int)CompanionMovementOwner.Investigate, (int)CompanionMovementOwner.Combat,
+                "移動の持ち主としては戦闘より弱い。");
+        }
+
+        /// <summary>
         /// 守護は攻撃をどの段でも中断してよい（庇うほうが優先）。ただし回避中だけは不可。
         /// 回避は動作全体で 1 行動であり、途中で庇いに化けない。
         /// </summary>

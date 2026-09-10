@@ -15,17 +15,23 @@ namespace Momotaro.Gameplay.Companion
         /// <summary>追従（主人公について歩く・その場で向く）。</summary>
         Follow = 1,
 
+        /// <summary>
+        /// 探索（気になる地点を調べに行く。P4-07A）。追従より強く、戦闘より弱い。
+        /// 追従より強くしないと、調べに行くそばから隊列へ引き戻される。
+        /// </summary>
+        Investigate = 2,
+
         /// <summary>戦闘（接近・通常攻撃）。</summary>
-        Combat = 2,
+        Combat = 3,
 
         /// <summary>防御（構え・回避）。</summary>
-        Defense = 3,
+        Defense = 4,
 
         /// <summary>守護（かばう）。</summary>
-        Guardian = 4,
+        Guardian = 5,
 
         /// <summary>全体イベント・演出。</summary>
-        Event = 5,
+        Event = 6,
     }
 
     /// <summary>

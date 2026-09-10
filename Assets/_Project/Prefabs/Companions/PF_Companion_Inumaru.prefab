@@ -205,6 +205,7 @@ GameObject:
   - component: {fileID: 817271497036004597}
   - component: {fileID: 2666371869986597577}
   - component: {fileID: 2943489160290430191}
+  - component: {fileID: 8956724023715225480}
   - component: {fileID: 1363993172399077194}
   m_Layer: 0
   m_Name: PF_Companion_Inumaru
@@ -442,6 +443,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Companion.CompanionDefenseController
   _actor: {fileID: 3282417446606875444}
   _states: {fileID: 0}
+  _arbiter: {fileID: 0}
   _dangerRadius: 2.5
   _dangerMask:
     serializedVersion: 2
@@ -462,6 +464,22 @@ MonoBehaviour:
   _receiver: {fileID: 0}
   _protectedTarget: {fileID: 0}
   _states: {fileID: 0}
+--- !u!114 &8956724023715225480
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6682707809238753296}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c14bcc8bb58dfed3f117007664c459b4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Companion.CompanionInvestigationController
+  _actor: {fileID: 3282417446606875444}
+  _states: {fileID: 0}
+  _arbiter: {fileID: 0}
+  _follow: {fileID: 0}
 --- !u!114 &1363993172399077194
 MonoBehaviour:
   m_ObjectHideFlags: 0

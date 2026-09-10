@@ -93,6 +93,7 @@ namespace Momotaro.Editor.Phase4
 
             ValidateActivityContext(scene, errors);
             ValidateCompanions(scene, errors, warnings);
+            ValidateInvestigationPoints(scene, errors, warnings);
             ValidateInitialEnemies(scene, errors);
             ValidateCamera(scene, errors);
             ValidateSceneHygiene(scene, errors);
@@ -223,6 +224,81 @@ namespace Momotaro.Editor.Phase4
                 if (go.GetComponent<CompanionCombatController>() == null)
                 {
                     errors.Add(who + "：戦闘（CompanionCombatController）がありません。");
+                }
+
+                // --- 探索行動（P4-07A） ---
+                // Data で探索を切っている仲間（猿・雉の想定）には求めない。切っていないのに駆動が無いと、
+                // 「Data では探索できることになっているのに一生調べない」という食い違いになる。
+                if (actor != null && actor.Data != null && actor.Data.CanInvestigate
+                    && go.GetComponent<CompanionInvestigationController>() == null)
+                {
+                    errors.Add(who + "：探索（CompanionInvestigationController）がありません。"
+                        + "Data では探索できることになっているのに、調べに行く駆動が載っていません。");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 調査地点（P4-07A）を検査する。探索できる仲間が居るのに地点が 1 つも無ければ、
+        /// 探索は「動かない」のか「試せていない」のか区別が付かない。検証 Scene としては後者を許さない。
+        /// </summary>
+        private static void ValidateInvestigationPoints(Scene scene, List<string> errors, List<string> warnings)
+        {
+            bool anyInvestigator = false;
+            foreach (CompanionActor actor in Components<CompanionActor>(scene))
+            {
+                if (actor != null && actor.Data != null && actor.Data.CanInvestigate)
+                {
+                    anyInvestigator = true;
+                    break;
+                }
+            }
+
+            if (!anyInvestigator)
+            {
+                return;
+            }
+
+            List<CompanionInvestigationPoint> points = Components<CompanionInvestigationPoint>(scene);
+            if (points.Count == 0)
+            {
+                errors.Add("調査地点（CompanionInvestigationPoint）が 1 つもありません"
+                    + "（探索できる仲間が居るのに、調べに行く先が無く探索を試せません）。");
+                return;
+            }
+
+            List<PlayerStateController> players = Components<PlayerStateController>(scene);
+            if (players.Count != 1)
+            {
+                return; // 単一性は RequireOne が報告済み。紐の起点が定まらないので距離は見ない。
+            }
+
+            // 紐の外にしか地点が無いと、探索は有効なのに一度も動かない。
+            // 「壊れている」と「そういう配置」の区別が付かない止まり方なので、Scene の時点で気付けるようにする。
+            Vector3 leader = players[0].transform.position;
+            foreach (CompanionActor actor in Components<CompanionActor>(scene))
+            {
+                if (actor == null || actor.Data == null || !actor.Data.CanInvestigate)
+                {
+                    continue;
+                }
+
+                float leash = actor.Data.InvestigateLeashDistance;
+                bool anyReachable = false;
+                foreach (CompanionInvestigationPoint point in points)
+                {
+                    if (point != null
+                        && FormationSlot.HorizontalDistance(leader, point.transform.position) <= leash)
+                    {
+                        anyReachable = true;
+                        break;
+                    }
+                }
+
+                if (!anyReachable)
+                {
+                    warnings.Add(actor.gameObject.name + "：主人公から紐（" + leash.ToString("F1")
+                        + "m）の内側に調査地点がありません（探索は有効ですが一度も動きません）。");
                 }
             }
         }

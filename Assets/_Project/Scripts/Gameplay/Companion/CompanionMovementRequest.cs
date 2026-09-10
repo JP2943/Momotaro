@@ -32,18 +32,24 @@ namespace Momotaro.Gameplay.Companion
         /// <summary>追従（主人公について歩く）。</summary>
         Follow = 1,
 
+        /// <summary>
+        /// 探索（調査地点まで行って止まる。P4-07A）。追従より強い。
+        /// 弱いままだと、隊列から離れた瞬間に追従が引き戻して調査地点へ着けない。
+        /// </summary>
+        Investigate = 2,
+
         /// <summary>戦闘（対象へ寄る・攻撃中は止まる）。</summary>
-        Combat = 2,
+        Combat = 3,
 
         /// <summary>
         /// 防御（構え・回避）。戦闘より強い（F02c）。
         /// 構えている間に追従や戦闘が向きを書き換えると、<b>受けているはずの方向がずれてガードが素通りする</b>。
         /// ガード判定は <c>_actor.Forward</c> と命中方向の角度で決まるので、向きの所有権を防御が握る必要がある。
         /// </summary>
-        Defense = 3,
+        Defense = 4,
 
         /// <summary>強制停止（ひるみ・ダウン・退場・活動停止）。その 1 フレームは何にも譲らない。</summary>
-        Forced = 4,
+        Forced = 5,
     }
 
     /// <summary>

@@ -580,6 +580,132 @@
       "stage": "F01",
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.ValidateCompanionField_TargetExists"
+    },
+    {
+      "requirementId": "N67",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.FindsPointThroughRegistry_WalksThere_AndFinishes"
+    },
+    {
+      "requirementId": "N68",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.AfterFinishing_WaitsForCooldownBeforeNextPoint"
+    },
+    {
+      "requirementId": "N69",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.WithoutInvestigateAbility_NeverStarts"
+    },
+    {
+      "requirementId": "N70",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.PointBeyondLeashFromLeader_IsNotChosen"
+    },
+    {
+      "requirementId": "N71",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.PointBeyondOwnRange_IsNotChosen"
+    },
+    {
+      "requirementId": "N72",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.ChoosesNearestAvailablePoint"
+    },
+    {
+      "requirementId": "N73",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.DuringCombatActivity_DoesNotStart"
+    },
+    {
+      "requirementId": "N74",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.WhenCombatStarts_AbandonsAndReturnsToFollow"
+    },
+    {
+      "requirementId": "N75",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.DuringDialogue_DiscardsOngoingInvestigation"
+    },
+    {
+      "requirementId": "N76",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.DuringPause_FreezesWithoutLosingProgress"
+    },
+    {
+      "requirementId": "N77",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.WhileInvestigating_FollowDoesNotPullBack"
+    },
+    {
+      "requirementId": "N78",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.RealCombat_InterruptsInvestigation"
+    },
+    {
+      "requirementId": "N79",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.Disable_LeavesNoOwnership"
+    },
+    {
+      "requirementId": "N80",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.DisabledPoint_LeavesRegistry"
+    },
+    {
+      "requirementId": "N81",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.PointDisappearsMidway_ReturnsToFollow"
+    },
+    {
+      "requirementId": "N82",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.InvestigationTable_EveryCombatActionInterrupts"
+    },
+    {
+      "requirementId": "N83",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Investigate_StartsOnlyFromNeutralStates"
+    },
+    {
+      "requirementId": "N84",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.InvestigateRanksBetweenFollowAndChase"
+    },
+    {
+      "requirementId": "N85",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_PlacesInvestigationPointsWithinLeash"
+    },
+    {
+      "requirementId": "N86",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.FieldWithoutInvestigationPoints_IsDetected"
+    },
+    {
+      "requirementId": "N87",
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutInvestigationController_IsDetected"
     }
   ],
   "allowedSkips": []
