@@ -58,6 +58,20 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
+            // Pause 中は索敵し直さない（凍結。現在の対象は保持する）。
+            // 会話・イベントでは対象ごと手放す（復帰時に古い狙いを引きずらない）。P4-FIX F05。
+            CompanionActivity activity = CompanionActivityProvider.Activity;
+            if (!activity.ClocksRun)
+            {
+                if (activity.DiscardOngoing)
+                {
+                    _candidates.Clear();
+                    SetTarget(null);
+                }
+
+                return;
+            }
+
             CollectCandidates();
 
             float acquire = _actor.Data != null ? _actor.Data.TargetAcquireRange : DefaultAcquireRange;

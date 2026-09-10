@@ -34,6 +34,9 @@ namespace Momotaro.Gameplay.Companion
         [Tooltip("移動実行（未設定なら自動取得）。接近・停止に用いる。")]
         [SerializeField] private CompanionMotor _motor;
 
+        [Tooltip("移動と向きの書き手（未設定なら自動取得）。戦闘は意図を出すだけで、Motor へは直接書かない。")]
+        [SerializeField] private CompanionMovementArbiter _arbiter;
+
         [Tooltip("索敵（誰を狙うか。未設定なら自動取得）。")]
         [SerializeField] private CompanionTargetTracker _tracker;
 
@@ -146,6 +149,27 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
+            // 活動の許可を先に見る（P4-FIX F05）。停止の判断を Update 側だけに置くと、
+            // 別の駆動から TickCombat が呼ばれた瞬間に素通りしてしまう。入口で決める。
+            CompanionActivity activity = CompanionActivityProvider.Activity;
+
+            if (activity.DiscardOngoing)
+            {
+                // 会話・イベント：古い攻撃を捨てる。復帰時に途中の Active から再開させない。
+                CancelAttack();
+                Decision = CompanionEngageDecision.Idle;
+                _wasEngaged = false;
+                return;
+            }
+
+            if (!activity.ClocksRun)
+            {
+                // Pause：凍結する。段・HitId・既命中集合は保ったまま、時計も判定も進めない。
+                // dt=0 で呼ばれたときに「判定だけ出る」抜け道を作らないため、ここで丸ごと返す。
+                ForceStopMovement();
+                return;
+            }
+
             float dt = deltaTime < 0f ? 0f : deltaTime;
             if (_cooldownRemaining > 0f)
             {
@@ -190,7 +214,7 @@ namespace Momotaro.Gameplay.Companion
             if (IsDefending())
             {
                 Decision = CompanionEngageDecision.Hold;
-                _motor?.Stop();
+                SubmitStop();
                 _wasEngaged = true;
                 return;
             }
@@ -204,14 +228,16 @@ namespace Momotaro.Gameplay.Companion
 
             LastDistance = distance;
             LastAngle = angle;
-            Decision = CompanionEngagement.Decide(hasTarget, true, distance, angle, settings, _cooldownRemaining);
+            // 新しい行動を始めてよいかは活動 Context が決める（時計は動くが行動は始めない状況を表せるようにしておく）。
+            Decision = CompanionEngagement.Decide(
+                hasTarget, activity.CanAct, distance, angle, settings, _cooldownRemaining);
             LogDecision(settings, hasTarget, target);
 
             switch (Decision)
             {
                 case CompanionEngageDecision.Attack:
                     _actor.SetFacing(toTarget);
-                    _motor?.Stop();
+                    SubmitStop();
                     BeginAttack(settings);
                     break;
 
@@ -224,14 +250,15 @@ namespace Momotaro.Gameplay.Companion
                 case CompanionEngageDecision.Hold:
                     _actor.SetFacing(toTarget);
                     RequestChase();
-                    _motor?.Stop();
+                    SubmitStop();
                     break;
 
                 default:
-                    // 戦闘から抜けた瞬間だけ移動を手放す。以降は追従が Motor を握るため触らない。
+                    // 戦闘から抜けた瞬間だけ移動を手放す。以降は追従が握るため触らない。
                     if (_wasEngaged)
                     {
-                        _motor?.Stop();
+                        SubmitStop();
+                        ReleaseMovement();
                     }
 
                     break;
@@ -247,6 +274,12 @@ namespace Momotaro.Gameplay.Companion
         public bool TryApplyHit(IDamageable target, ICombatActor targetActor, Vector3 hitPoint)
         {
             if (target == null || !_attack.IsHitboxActive || _actor == null)
+            {
+                return false;
+            }
+
+            // 停止中は命中も出さない（P4-FIX F05）。Update を止めるだけでは、外から直接呼ばれたときに素通りする。
+            if (!CompanionActivityProvider.Activity.ClocksRun)
             {
                 return false;
             }
@@ -300,7 +333,10 @@ namespace Momotaro.Gameplay.Companion
             _attack.Cancel();
             _plan = CompanionAttackPlan.None;
             _hitTracker.Clear();
-            _motor?.Stop();
+
+            // 中断は「行動を奪われた」側なので強制停止で通す。同じフレームに追従が歩き出すのを防ぐ
+            // （1 フレームでも動くと、倒れたはずの仲間が滑る）。
+            ForceStopMovement();
         }
 
         /// <inheritdoc />
@@ -321,6 +357,69 @@ namespace Momotaro.Gameplay.Companion
         }
 
         // ---- 内部 ----
+
+        /// <summary>戦闘としての移動意図を出す（受理されるかは調停役が決める。P4-FIX F02a）。</summary>
+        private void SubmitMove(in CompanionMoveRequest request)
+        {
+            if (_arbiter != null)
+            {
+                _arbiter.Submit(CompanionMovementOwner.Combat, request);
+                return;
+            }
+
+            ApplyDirectly(request); // 調停役が無い構成（旧 Scene）でも動くようにする。
+        }
+
+        /// <summary>戦闘として止まる（所有権は握ったまま。追従に取り返させない）。</summary>
+        private void SubmitStop()
+        {
+            SubmitMove(CompanionMoveRequest.Stop());
+        }
+
+        /// <summary>
+        /// 強制的に止める（中断・活動停止）。所有権に関わらず通り、同じフレームの通常の移動決定より優先される。
+        /// </summary>
+        private void ForceStopMovement()
+        {
+            if (_arbiter != null)
+            {
+                _arbiter.ForceStop();
+                return;
+            }
+
+            _motor?.Stop(); // 調停役が無い構成（旧 Scene）でも止まるようにする。
+        }
+
+        /// <summary>戦闘の所有権を手放す（追従へ返す）。</summary>
+        private void ReleaseMovement()
+        {
+            _arbiter?.Release(CompanionMovementOwner.Combat);
+        }
+
+        /// <summary>調停役が居ない構成のための直接適用（移行期の保険。新しい Scene では通らない）。</summary>
+        private void ApplyDirectly(in CompanionMoveRequest request)
+        {
+            if (_motor == null)
+            {
+                return;
+            }
+
+            switch (request.Kind)
+            {
+                case CompanionMoveKind.Move:
+                    _motor.Configure(request.Speed, request.StopRadius);
+                    _motor.SetMoveTarget(request.Target);
+                    break;
+
+                case CompanionMoveKind.Warp:
+                    _motor.WarpTo(request.Target);
+                    break;
+
+                case CompanionMoveKind.Stop:
+                    _motor.Stop();
+                    break;
+            }
+        }
 
         private CompanionAttackSettings ResolveSettings()
         {
@@ -385,7 +484,7 @@ namespace Momotaro.Gameplay.Companion
 
                 case CompanionAttackPhase.Recovery:
                     _actor.RequestState(CompanionState.AttackRecovery, CompanionStateChangeReason.AttackAdvanced);
-                    _motor?.Stop();
+                    SubmitStop();
                     break;
             }
         }
@@ -401,15 +500,9 @@ namespace Momotaro.Gameplay.Companion
         /// <summary>対象の手前（停止距離）を目指して移動する。対象の位置そのものへ向かうと押し込みすぎる。</summary>
         private void MoveToward(Vector3 targetPosition, in CompanionAttackSettings settings)
         {
-            if (_motor == null)
-            {
-                return;
-            }
-
             float speed = _actor.Data != null ? _actor.Data.MoveSpeed : 4.5f;
             float stopRadius = settings.AttackStartDistance > 0f ? settings.AttackStartDistance : 0.35f;
-            _motor.Configure(speed, stopRadius);
-            _motor.SetMoveTarget(targetPosition);
+            SubmitMove(CompanionMoveRequest.Move(targetPosition, speed, stopRadius));
         }
 
         /// <summary>
@@ -530,11 +623,8 @@ namespace Momotaro.Gameplay.Companion
 
         private void Update()
         {
-            if (!IsGameplayActive())
-            {
-                return; // Pause／会話中は攻撃時間・クールダウンを進めない。
-            }
-
+            // 停止の判断は TickCombat の入口に移した（P4-FIX F05）。ここで返してしまうと、
+            // Pause 中の「凍結して Motor を止める」処理まで走らなくなる。
             TickCombat(Time.deltaTime);
         }
 
@@ -605,6 +695,11 @@ namespace Momotaro.Gameplay.Companion
                 _motor = GetComponent<CompanionMotor>();
             }
 
+            if (_arbiter == null)
+            {
+                _arbiter = GetComponent<CompanionMovementArbiter>();
+            }
+
             if (_tracker == null)
             {
                 _tracker = GetComponent<CompanionTargetTracker>();
@@ -617,16 +712,5 @@ namespace Momotaro.Gameplay.Companion
             }
         }
 
-        private static bool IsGameplayActive()
-        {
-            IGameModeService modes = GameModeProvider.Current;
-            if (modes == null)
-            {
-                return true; // 未初期化（単体テスト等）は許可。
-            }
-
-            GameMode mode = modes.Current;
-            return mode == GameMode.Exploration || mode == GameMode.Combat;
-        }
     }
 }

@@ -35,6 +35,7 @@ namespace Momotaro.EditorBridge
         private const string BusyExpectedKey = "Momotaro.EditorBridge.BusyExpected";
         private const string BusyMinPassedKey = "Momotaro.EditorBridge.BusyMinPassed";
         private const string BusyFilteredKey = "Momotaro.EditorBridge.BusyFiltered";
+        private const string BusyFilterKey = "Momotaro.EditorBridge.BusyFilter";
 
         private const string BusyCompile = "compile";
         private const string BusyTests = "tests";
@@ -137,6 +138,13 @@ namespace Momotaro.EditorBridge
         {
             get => EditorPrefs.GetBool(BusyFilteredKey, false);
             set => EditorPrefs.SetBool(BusyFilteredKey, value);
+        }
+
+        /// <summary>実行中のテストのフィルタ（実行記録へ残す。何を対象にした結果なのかが後から分かるように）。</summary>
+        private static string BusyFilter
+        {
+            get => EditorPrefs.GetString(BusyFilterKey, string.Empty);
+            set => EditorPrefs.SetString(BusyFilterKey, value ?? string.Empty);
         }
 
         /// <summary>実行中のテストに指定された成功件数の下限（0 は指定なし）。同上の理由で <see cref="EditorPrefs"/> に置く。</summary>
@@ -289,7 +297,7 @@ namespace Momotaro.EditorBridge
             }
 
             BridgeResult result = Begin(command);
-            EditorBridgeOperations.OperationResult operation = EditorBridgeOperations.Run(command.op);
+            EditorBridgeOperations.OperationResult operation = EditorBridgeOperations.Run(command);
 
             var details = new List<string>();
             for (int i = 0; i < operation.Details.Count && details.Count < DetailMaxCount; i++)
@@ -446,6 +454,100 @@ namespace Momotaro.EditorBridge
             WriteResult(result);
         }
 
+        /// <summary>
+        /// <c>result.json</c> に載せる詳細行を作る。失敗を先に、次に成功以外（Skip・Inconclusive）を出す。
+        /// Skip は<b>名前と理由</b>を出す。件数だけでは「以前と同数だから非必須だろう」という当てにならない
+        /// 判断しかできず、必須テストが静かに Skip へ化けても気付けない。
+        /// </summary>
+        private static List<string> BuildDetails(List<BridgeLeafResult> leaves)
+        {
+            var details = new List<string>();
+            if (leaves == null)
+            {
+                return details;
+            }
+
+            int omitted = 0;
+
+            for (int pass = 0; pass < 2; pass++)
+            {
+                foreach (BridgeLeafResult leaf in leaves)
+                {
+                    bool isFailure = leaf.status == "Failed";
+                    bool wanted = pass == 0 ? isFailure : leaf.status != "Passed" && !isFailure;
+                    if (!wanted)
+                    {
+                        continue;
+                    }
+
+                    if (details.Count >= DetailMaxCount)
+                    {
+                        omitted++;
+                        continue;
+                    }
+
+                    string line = "[" + leaf.status + "] " + leaf.fullName;
+                    if (!string.IsNullOrEmpty(leaf.message))
+                    {
+                        line += "\n  " + leaf.message;
+                    }
+
+                    details.Add(Trim(line));
+                }
+            }
+
+            if (omitted > 0)
+            {
+                details.Add("（ほか " + omitted + " 件は省略しました。全件は runLogPath のファイルを参照）");
+            }
+
+            return details;
+        }
+
+        /// <summary>
+        /// 実行ごとの完全な記録を <c>_bridge/runs/&lt;id&gt;.json</c> へ書き、その相対パスを返す。
+        /// <c>result.json</c> は次の実行で上書きされるため、それだけを証跡にすると
+        /// 「その結果がどの実行のものか」を後から追えない（受入記録の要件）。
+        /// </summary>
+        private static string WriteRunLog(
+            string commandId, string mode, string filter, string startedAt, string rootResultState,
+            string status, in BridgeRunSummary summary, List<BridgeLeafResult> leaves)
+        {
+            try
+            {
+                EditorBridgePaths.EnsureRunsFolder();
+
+                var log = new BridgeRunLog
+                {
+                    id = commandId,
+                    mode = string.IsNullOrEmpty(mode) ? "EditMode" : mode,
+                    filter = filter ?? string.Empty,
+                    startedAt = startedAt,
+                    finishedAt = NowIso(),
+                    unityVersion = Application.unityVersion,
+                    status = status,
+                    termination = summary.Termination.ToString().ToLowerInvariant(),
+                    rootResultState = rootResultState ?? string.Empty,
+                    expected = summary.Expected,
+                    passed = summary.Passed,
+                    failed = summary.Failed,
+                    skipped = summary.Skipped,
+                    inconclusive = summary.Inconclusive,
+                    leaves = leaves == null ? Array.Empty<BridgeLeafResult>() : leaves.ToArray(),
+                };
+
+                string path = EditorBridgePaths.RunLog(commandId);
+                File.WriteAllText(path, JsonUtility.ToJson(log, true));
+                return EditorBridgePaths.FolderName + "/runs/" + EditorBridgePaths.Sanitize(commandId) + ".json";
+            }
+            catch (Exception e)
+            {
+                // 記録に失敗しても実行結果そのものは返す（黙って落とさず、失敗したことを結果に残す）。
+                Debug.LogWarning("[EditorBridge] 実行記録を書けませんでした: " + e.Message);
+                return string.Empty;
+            }
+        }
+
         /// <summary>実行中の印を手で落とす（メニューからの緊急脱出用）。</summary>
         internal static void ResetBusy()
         {
@@ -466,6 +568,7 @@ namespace Momotaro.EditorBridge
             BusyMode = command.mode ?? string.Empty;
             BusyExpected = 0; // RunStarted で入る。届かないまま完了したら「不明」として完走判定に使わない。
             BusyFiltered = !string.IsNullOrEmpty(command.filter);
+            BusyFilter = command.filter;
             BusyMinPassed = command.minPassed < 0 ? 0 : command.minPassed;
 
             string error = EditorBridgeTestRun.Run(command.mode, command.filter);
@@ -490,8 +593,15 @@ namespace Momotaro.EditorBridge
             BusyExpected = BusyFiltered || expected < 0 ? 0 : expected;
         }
 
-        /// <summary>テスト実行の完了通知（<see cref="EditorBridgeTestRun"/> から呼ばれる）。</summary>
-        internal static void OnTestRunFinished(int passed, int failed, int skipped, List<string> failures, double seconds)
+        /// <summary>
+        /// テスト実行の完了通知（<see cref="EditorBridgeTestRun"/> から呼ばれる）。
+        /// <paramref name="root"/> が null のときは「結果が丸ごと届かなかった」として扱う。
+        /// </summary>
+        internal static void OnTestRunFinished(
+            UnityEditor.TestTools.TestRunner.Api.ITestResultAdaptor root,
+            List<BridgeLeafResult> leaves,
+            string rootResultState,
+            double seconds)
         {
             if (BusyKind != BusyTests || string.IsNullOrEmpty(BusyCommandId))
             {
@@ -499,39 +609,60 @@ namespace Momotaro.EditorBridge
             }
 
             // 印を落とす前に読む（ClearBusy がこれらも消すため）。
+            string commandId = BusyCommandId;
+            string mode = BusyMode;
+            string filter = BusyFilter;
             int expected = BusyExpected;
             int minPassed = BusyMinPassed;
+            string startedAt = BusyStartedUtc.ToString("o");
 
-            var details = new List<string>();
-            for (int i = 0; i < failures.Count && details.Count < DetailMaxCount; i++)
+            BridgeRunSummary summary;
+            if (root == null)
             {
-                details.Add(Trim(failures[i]));
+                summary = BridgeRunSummary.Missing(expected, minPassed);
+                leaves = new List<BridgeLeafResult>();
+            }
+            else
+            {
+                BridgeRunTermination termination = EditorBridgeTestRun.ResolveTermination(
+                    root.ResultState, root.TestStatus, root.FailCount);
+
+                summary = new BridgeRunSummary(
+                    root.PassCount, root.FailCount, root.SkipCount, root.InconclusiveCount,
+                    expected, minPassed,
+                    leaves == null ? -1 : leaves.Count,
+                    termination,
+                    string.IsNullOrEmpty(rootResultState) ? "全体結果 " + root.TestStatus : rootResultState);
             }
 
-            if (failures.Count > details.Count)
-            {
-                details.Add("（ほか " + (failures.Count - details.Count) + " 件の失敗は省略しました）");
-            }
+            // 「失敗 0 件」を成功と読み替えない。一致 0 件・全スキップ・中断・結果不明・集計の食い違いは、
+            // いずれも実装が検証されていないのに緑に見える。
+            BridgeTestOutcome.Outcome outcome = BridgeTestOutcome.Decide(summary);
 
-            // 「失敗 0 件」を成功と読み替えない。一致 0 件・全スキップ・中断は、実装が検証されていないのに緑に見える。
-            BridgeTestOutcome.Outcome outcome = BridgeTestOutcome.Decide(passed, failed, skipped, expected, minPassed);
+            List<string> details = BuildDetails(leaves);
+            string runLogPath = WriteRunLog(
+                commandId, mode, filter, startedAt, rootResultState, outcome.Status, summary, leaves);
 
-            string counts = "成功 " + passed + " / 失敗 " + failed + " / スキップ " + skipped
+            string counts = "成功 " + summary.Passed + " / 失敗 " + summary.Failed + " / スキップ " + summary.Skipped
+                + (summary.Inconclusive > 0 ? " / 不明 " + summary.Inconclusive : string.Empty)
                 + (expected > 0 ? " / 予定 " + expected : string.Empty)
                 + "（" + seconds.ToString("0.0") + " 秒）";
 
             var result = new BridgeResult
             {
-                id = BusyCommandId,
+                id = commandId,
                 command = EditorBridgeCommands.RunTests,
                 status = outcome.Status,
                 message = outcome.IsOk ? counts : outcome.Reason + " " + counts,
-                startedAt = BusyStartedUtc.ToString("o"),
+                startedAt = startedAt,
                 finishedAt = NowIso(),
-                passed = passed,
-                failed = failed,
-                skipped = skipped,
+                passed = summary.Passed,
+                failed = summary.Failed,
+                skipped = summary.Skipped,
+                inconclusive = summary.Inconclusive,
                 expected = expected,
+                termination = summary.Termination.ToString().ToLowerInvariant(),
+                runLogPath = runLogPath,
                 details = details.ToArray(),
             };
 
@@ -582,6 +713,7 @@ namespace Momotaro.EditorBridge
             BusyExpected = 0;
             BusyMinPassed = 0;
             BusyFiltered = false;
+            BusyFilter = string.Empty;
         }
 
         private static void WriteResult(BridgeResult result)
@@ -662,11 +794,16 @@ namespace Momotaro.EditorBridge
                 + "| `failed` | 実行は成立したが不合格（失敗あり・全スキップ・`minPassed` 割れ） | `details` を読んで直す |\n"
                 + "| `error` | 実行が成立していない（一致 0 件・中断・開始できず） | 合否は<b>不明</b>。原因を潰して再実行 |\n\n"
                 + "**失敗 0 件は成功と同じではありません。** フィルタの綴りが実装と食い違って 1 件も一致しない実行は\n"
-                + "`error` で返ります。件数が分かっている実行では `minPassed` に直近の実績を少し下回る値を入れておくと、\n"
-                + "テストが消えた・スキップに化けた実行を緑と読み違えずに済みます。\n\n"
+                + "`error` で返ります。中断・結果欠落・Inconclusive・集計と実結果の食い違いも `error` です。\n\n"
+                + "`minPassed`（成功件数の下限）は **不足の一部を検出する補助** です。件数が分かっている実行で\n"
+                + "直近の実績を入れておくと、テストが消えた・スキップに化けた実行に気付けます。ただし\n"
+                + "**下限は完走の証明にはなりません**（下限を超えた直後に中断しても件数は満たされる）。\n"
+                + "完走は全体の終端結果（`termination`）で、必須テストの実行は名前付きの必須一覧との照合で判定します。\n\n"
                 + "`expected`（予定件数）は **`filter` を付けない全件実行のときだけ** 記録されます。\n"
-                + "Unity が開始時に渡してくる件数は絞り込み後ではなくスイート全体のためです。\n"
-                + "絞り込み実行の中断検出は `minPassed` で行ってください。\n\n"
+                + "Unity が開始時に渡してくる件数は絞り込み後ではなくスイート全体のためです。\n\n"
+                + "## 実行ごとの記録\n\n"
+                + "`result.json` は次の実行で上書きされます。葉テスト全件の結果（名前・状態・Skip 理由）は\n"
+                + "`runs/<コマンド id>.json` に残り、上書きされません。`result.json` の `runLogPath` がその場所を指します。\n\n"
                 + "## 止め方\n\n"
                 + "メニュー `Momotaro / Bridge / Enabled` のチェックを外してください。無効化すると\n"
                 + "コマンドを受け付けなくなります（`status.json` の更新だけ続きます）。\n\n"
@@ -675,10 +812,8 @@ namespace Momotaro.EditorBridge
 
             try
             {
-                if (!File.Exists(EditorBridgePaths.Readme))
-                {
-                    File.WriteAllText(EditorBridgePaths.Readme, readme);
-                }
+                // 常に書き直す（生成物なので、規則が変わったのに古い説明が残り続けるほうが害が大きい）。
+                File.WriteAllText(EditorBridgePaths.Readme, readme);
             }
             catch (Exception)
             {

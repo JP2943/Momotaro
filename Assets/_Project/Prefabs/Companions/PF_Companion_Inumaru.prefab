@@ -194,12 +194,14 @@ GameObject:
   - component: {fileID: 82091177463702121}
   - component: {fileID: 3281646106384612933}
   - component: {fileID: 3282417446606875444}
+  - component: {fileID: 9145365362203940041}
   - component: {fileID: 3243437796602444174}
   - component: {fileID: 1418995858838390270}
   - component: {fileID: 4744945786104172995}
   - component: {fileID: 4951653755319054346}
   - component: {fileID: 6135423289732151795}
   - component: {fileID: 4068055260935465597}
+  - component: {fileID: 817271497036004597}
   - component: {fileID: 2666371869986597577}
   - component: {fileID: 2943489160290430191}
   - component: {fileID: 1363993172399077194}
@@ -292,6 +294,20 @@ MonoBehaviour:
   _data: {fileID: 11400000, guid: 42f35fa98194f0248a52f9d76c955f2e, type: 2}
   _slotIndex: 0
   _initialState: 1
+--- !u!114 &9145365362203940041
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6682707809238753296}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 72eb5c024afccff57f5ada885edb20e9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Companion.CompanionMovementArbiter
+  _motor: {fileID: 3243437796602444174}
+  _actor: {fileID: 3282417446606875444}
 --- !u!114 &3243437796602444174
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -319,6 +335,7 @@ MonoBehaviour:
   _leader: {fileID: 0}
   _actor: {fileID: 0}
   _motor: {fileID: 0}
+  _arbiter: {fileID: 0}
 --- !u!114 &4744945786104172995
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -359,6 +376,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Companion.CompanionCombatController
   _actor: {fileID: 3282417446606875444}
   _motor: {fileID: 3243437796602444174}
+  _arbiter: {fileID: 0}
   _tracker: {fileID: 4951653755319054346}
   _targetMask:
     serializedVersion: 2
@@ -380,6 +398,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Companion.CompanionHitReceiver
   _actor: {fileID: 3282417446606875444}
+--- !u!114 &817271497036004597
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6682707809238753296}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8e416a571b9ffe21a10ebaf92576e1db, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Companion.CompanionFeedbackBinder
+  _receiver: {fileID: 4068055260935465597}
 --- !u!114 &2666371869986597577
 MonoBehaviour:
   m_ObjectHideFlags: 0

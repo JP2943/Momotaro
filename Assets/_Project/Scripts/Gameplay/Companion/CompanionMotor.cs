@@ -12,6 +12,7 @@ namespace Momotaro.Gameplay.Companion
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(Rigidbody))]
+    [RequireComponent(typeof(CompanionMovementArbiter))]
     public sealed class CompanionMotor : MonoBehaviour
     {
         private const RigidbodyConstraints GroundedConstraints =
@@ -105,6 +106,16 @@ namespace Momotaro.Gameplay.Companion
             EnsureBody();
             if (_body == null)
             {
+                return;
+            }
+
+            // 活動停止中は物理でも動かさない（P4-FIX F05）。
+            // Pause は timeScale を 1 のまま行う場合があり、それだけでは Rigidbody は動き続ける。
+            // 移動指示（_hasMoveTarget）は消さずに速度だけゼロにするので、復帰時は同じ目標へ普通に歩き出す
+            // （速度を溜め込まないので、復帰の瞬間に飛び出すこともない）。
+            if (!CompanionActivityProvider.Activity.ClocksRun)
+            {
+                _body.linearVelocity = Vector3.zero;
                 return;
             }
 

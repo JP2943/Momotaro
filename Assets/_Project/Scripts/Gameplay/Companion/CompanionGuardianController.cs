@@ -83,6 +83,12 @@ namespace Momotaro.Gameplay.Companion
             guardian = null;
             EnsureRefs();
 
+            // 活動停止中（Pause・会話・イベント）は肩代わりしない。主人公の通常 Damage へ戻す（§8.5）。
+            if (!CompanionActivityProvider.Activity.CanAct)
+            {
+                return false;
+            }
+
             if (_receiver == null || _cooldownRemaining > 0f || !CanProtect())
             {
                 return false;
@@ -116,6 +122,13 @@ namespace Momotaro.Gameplay.Companion
         public void TickGuardian(float deltaTime)
         {
             if (_cooldownRemaining <= 0f)
+            {
+                return;
+            }
+
+            // Pause・会話中はクールダウンを進めない（P4-FIX F05。判断を Update 側に置くと、
+            // 外から直接 Tick された瞬間に素通りする）。
+            if (!CompanionActivityProvider.Activity.ClocksRun)
             {
                 return;
             }
@@ -230,11 +243,7 @@ namespace Momotaro.Gameplay.Companion
         {
             EnsureRefs();
 
-            if (!IsGameplayActive())
-            {
-                return; // Pause／会話中はクールダウンを進めない。
-            }
-
+            // 停止の判断は TickGuardian の入口へ移した（P4-FIX F05）。外から直接呼ばれる経路も塞ぐため。
             TickGuardian(Time.deltaTime);
         }
 
@@ -251,16 +260,5 @@ namespace Momotaro.Gameplay.Companion
             _cooldownRemaining = 0f;
         }
 
-        private static bool IsGameplayActive()
-        {
-            IGameModeService modes = GameModeProvider.Current;
-            if (modes == null)
-            {
-                return true; // 未初期化（単体テスト等）は許可。
-            }
-
-            GameMode mode = modes.Current;
-            return mode == GameMode.Exploration || mode == GameMode.Combat;
-        }
     }
 }

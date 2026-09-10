@@ -257,6 +257,12 @@ namespace Momotaro.Editor.Phase4
             actorSo.ApplyModifiedPropertiesWithoutUndo();
 
             var motor = root.AddComponent<CompanionMotor>();
+
+            // 移動と向きの唯一の書き手（P4-FIX F02a）。Motor の RequireComponent で自動的に付くが、
+            // 付いたことに依存せず明示的に取得して配線する（生成結果を読めば構成が分かるようにするため）。
+            CompanionMovementArbiter arbiter = root.GetComponent<CompanionMovementArbiter>()
+                ?? root.AddComponent<CompanionMovementArbiter>();
+            arbiter.Bind(motor, actor);
             root.AddComponent<CompanionFollowController>();
 
             // 敵の認識・ヘイト候補として登録する（敵 AI は書き換えない。P4-03）。
@@ -270,7 +276,12 @@ namespace Momotaro.Editor.Phase4
             root.AddComponent<CompanionCombatController>().Bind(actor, motor, tracker);
 
             // 被弾（IDamageable）。敵の攻撃判定はここを見つけて命中を渡す（P4-04）。
-            root.AddComponent<CompanionHitReceiver>().Bind(actor);
+            CompanionHitReceiver receiver = root.AddComponent<CompanionHitReceiver>();
+            receiver.Bind(actor);
+
+            // 被弾結果を演出へ繋ぐ登録役（P4-FIX F04）。Prefab に同居させることで、
+            // 動的に湧いた仲間でも有効化した瞬間から点滅・SE が出る（演出側が探し回らずに済む）。
+            root.AddComponent<CompanionFeedbackBinder>().Bind(receiver);
 
             // ガード・回避の判断（観測した危険に反応する。P4-04b）。
             root.AddComponent<CompanionDefenseController>().Bind(actor);

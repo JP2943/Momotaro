@@ -30,6 +30,9 @@ namespace Momotaro.Gameplay.Companion
         [Tooltip("同一 GameObject 上の移動実行（未設定なら自動取得）。")]
         [SerializeField] private CompanionMotor _motor;
 
+        [Tooltip("移動と向きの書き手（未設定なら自動取得）。追従は意図を出すだけで、Motor へは直接書かない。")]
+        [SerializeField] private CompanionMovementArbiter _arbiter;
+
         private readonly CompanionFollowModel _model = new CompanionFollowModel();
         private ICombatActor _leaderActor;
         private bool _leaderActorResolved;
@@ -83,7 +86,8 @@ namespace Momotaro.Gameplay.Companion
         private void OnDisable()
         {
             UnsubscribeState();
-            _motor?.Stop();
+            ForceStopMovement();
+            ReleaseMovement();
             _model.Reset();
         }
 
@@ -99,7 +103,8 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
-            _motor?.Stop();
+            ForceStopMovement();
+            ReleaseMovement();
             _model.Reset();
         }
 
@@ -129,6 +134,17 @@ namespace Momotaro.Gameplay.Companion
 
         private void Update()
         {
+            TickFollow(Time.deltaTime);
+        }
+
+        /// <summary>
+        /// 追従を 1 Tick 進める（Update から呼ばれるが、テストは決定的に直接呼べる）。
+        ///
+        /// <b>停止の判断はここに置く。</b>Update 側だけで返しても、別の駆動から直接呼ばれれば素通りしてしまう
+        /// （P4-FIX F05。追従にはそもそもゲートが無く、Pause 中も歩き続けていた）。
+        /// </summary>
+        public void TickFollow(float deltaTime)
+        {
             ResolveComponents();
 
             // 自動取得で Actor が後から解決された場合にも購読を張る（Bind 経由でない Scene 構成の保険）。
@@ -142,10 +158,25 @@ namespace Momotaro.Gameplay.Companion
                 return; // 未配線でも例外を出さずに何もしない。
             }
 
+            CompanionActivity activity = CompanionActivityProvider.Activity;
+            if (!activity.ClocksRun)
+            {
+                // Pause・会話・イベント中は歩かない。速度も残さない（timeScale に頼らない）。
+                ForceStopMovement();
+
+                if (activity.DiscardOngoing)
+                {
+                    _model.Reset(); // 復帰時に古い停滞時間・前回距離を引きずらない。
+                }
+
+                return;
+            }
+
             // 退場・ダウン・ひるみ中は追従しない（状態遷移の瞬間は通知で停止済み。ここは継続中の保険）。
             if (IsFollowSuspended(_actor.State))
             {
-                _motor.Stop();
+                ForceStopMovement();
+                ReleaseMovement();
                 _model.Reset();
                 return;
             }
@@ -154,42 +185,37 @@ namespace Momotaro.Gameplay.Companion
             if (IsYieldingToCombat)
             {
                 _model.Reset(); // 復帰時に古い停滞時間・前回距離を引きずらない。
+                ReleaseMovement(); // 所有権を返す。Motor そのものには触れない（戦闘側が握る）。
                 return;
             }
 
-            ApplyMoveSettings();
+            // Data 由来の移動値。Motor へは調停役が渡すので、ここでは意図に載せるだけ。
+            float speed = _actor.Data != null ? _actor.Data.MoveSpeed : 4.5f;
+            float stopRadius = _actor.Data != null ? _actor.Data.FollowStopDistance : 0.35f;
 
             var input = new CompanionFollowInput(
                 _leader.position, ResolveLeaderForward(), transform.position, _actor.SlotIndex);
             CompanionFollowSettings settings = CompanionFollowSettings.From(_actor.Data);
 
-            switch (_model.Tick(input, settings, Time.deltaTime))
+            switch (_model.Tick(input, settings, deltaTime))
             {
                 case CompanionFollowDecision.Move:
                     EnterFollow();
-                    _motor.SetMoveTarget(_model.SlotPosition);
-                    FaceTowards(_model.SlotPosition - transform.position);
+                    SubmitMove(CompanionMoveRequest.MoveFacing(
+                        _model.SlotPosition, speed, stopRadius, _model.SlotPosition - transform.position));
                     break;
 
                 case CompanionFollowDecision.Warp:
                     _actor.RequestState(CompanionState.Warp, CompanionStateChangeReason.Warped);
-                    _motor.WarpTo(_model.SlotPosition);
+                    SubmitMove(CompanionMoveRequest.Warp(_model.SlotPosition));
                     break;
 
                 default: // Hold
                     EnterFollow();
-                    _motor.Stop();
-                    FaceTowards(ResolveLeaderForward()); // 到着後は主人公と同じ向きを向く。
+                    // 到着後は主人公と同じ向きを向く。
+                    SubmitMove(CompanionMoveRequest.StopFacing(ResolveLeaderForward()));
                     break;
             }
-        }
-
-        /// <summary>Data の移動速度・停止距離を Motor へ反映する（原本が差し替わっても追従する）。</summary>
-        private void ApplyMoveSettings()
-        {
-            float speed = _actor.Data != null ? _actor.Data.MoveSpeed : 4.5f;
-            float stopRadius = _actor.Data != null ? _actor.Data.FollowStopDistance : 0.35f;
-            _motor.Configure(speed, stopRadius);
         }
 
         /// <summary>追従中の状態へ入れる（既に Follow なら何もしない。Warp・戦闘からの復帰もここを通る）。</summary>
@@ -199,11 +225,6 @@ namespace Momotaro.Gameplay.Companion
             {
                 _actor.RequestState(CompanionState.Follow, CompanionStateChangeReason.FollowResumed);
             }
-        }
-
-        private void FaceTowards(Vector3 direction)
-        {
-            _actor.SetFacing(direction);
         }
 
         private Vector3 ResolveLeaderForward()
@@ -248,6 +269,41 @@ namespace Momotaro.Gameplay.Companion
             {
                 _motor = GetComponent<CompanionMotor>();
             }
+
+            if (_arbiter == null)
+            {
+                _arbiter = GetComponent<CompanionMovementArbiter>();
+            }
+        }
+
+        /// <summary>追従としての移動意図を出す（受理されるかは調停役が決める。P4-FIX F02a）。</summary>
+        private void SubmitMove(in CompanionMoveRequest request)
+        {
+            ResolveComponents();
+            _arbiter?.Submit(CompanionMovementOwner.Follow, request);
+        }
+
+        /// <summary>
+        /// 強制的に止める（ひるみ・ダウン・退場・活動停止）。所有権に関わらず通り、同じフレームの
+        /// 通常の移動決定より優先される。Update を待つと、その間に回る物理ステップで滑る（実測で約 15mm／1 フレーム）。
+        /// </summary>
+        private void ForceStopMovement()
+        {
+            ResolveComponents();
+            if (_arbiter != null)
+            {
+                _arbiter.ForceStop();
+                return;
+            }
+
+            _motor?.Stop(); // 調停役が無い構成（旧 Scene）でも止まるようにする。
+        }
+
+        /// <summary>追従の所有権を手放す（既に戦闘へ移っていれば何も起きない）。</summary>
+        private void ReleaseMovement()
+        {
+            ResolveComponents();
+            _arbiter?.Release(CompanionMovementOwner.Follow);
         }
     }
 }

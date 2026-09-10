@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
+using UnityEngine;
 
 namespace Momotaro.EditorBridge
 {
@@ -32,8 +34,11 @@ namespace Momotaro.EditorBridge
         /// <summary>プロジェクト内の全 Data アセットを検証する。</summary>
         public const string ValidateProjectData = "validate-project-data";
 
+        /// <summary>実行記録を必須テスト一覧と照合する（工程の受入判定）。</summary>
+        public const string VerifyRequiredTests = "verify-required-tests";
+
         /// <summary>実行できる操作の一覧（エラーメッセージにそのまま出す）。</summary>
-        public static readonly string[] All = { BuildInumaru, ValidateProjectData };
+        public static readonly string[] All = { BuildInumaru, ValidateProjectData, VerifyRequiredTests };
 
         /// <summary>実行結果。</summary>
         public readonly struct OperationResult
@@ -58,12 +63,14 @@ namespace Momotaro.EditorBridge
         /// <summary>既知の操作か。</summary>
         public static bool IsKnown(string op)
         {
-            return op == BuildInumaru || op == ValidateProjectData;
+            return op == BuildInumaru || op == ValidateProjectData || op == VerifyRequiredTests;
         }
 
         /// <summary>操作を実行する。未知の操作・呼び出し失敗は <see cref="OperationResult.Success"/> false で返す。</summary>
-        public static OperationResult Run(string op)
+        public static OperationResult Run(BridgeCommand command)
         {
+            string op = command?.op;
+
             try
             {
                 switch (op)
@@ -73,6 +80,9 @@ namespace Momotaro.EditorBridge
 
                     case ValidateProjectData:
                         return RunValidateProjectData();
+
+                    case VerifyRequiredTests:
+                        return RunVerifyRequiredTests(command);
 
                     default:
                         return new OperationResult(false,
@@ -92,6 +102,133 @@ namespace Momotaro.EditorBridge
         }
 
         // ---- 個別の操作 ----
+
+        /// <summary>
+        /// 実行記録（<c>_bridge/runs/&lt;id&gt;.json</c>）を必須テスト一覧と照合する。
+        ///
+        /// テストの実行そのものと、工程の受入判定を分けている。判定を実行中のテストの中でやると、
+        /// 自分自身の結果を見ることになって成立しない。ここは実行が終わったあとに走る別の口。
+        /// </summary>
+        private static OperationResult RunVerifyRequiredTests(BridgeCommand command)
+        {
+            Phase4RequiredTests.Manifest manifest = Phase4RequiredTests.Load(out string loadError);
+            if (manifest == null)
+            {
+                return new OperationResult(false, loadError);
+            }
+
+            string[] runIds = SplitIds(command?.runIds);
+            if (runIds.Length == 0)
+            {
+                return new OperationResult(false,
+                    "照合する実行記録が指定されていません（runIds にコマンド id をカンマ区切りで指定してください）。");
+            }
+
+            var leaves = new List<Phase4RequiredTestGate.LeafOutcome>();
+            var sources = new List<string>();
+            var problems = new List<string>();
+
+            foreach (string runId in runIds)
+            {
+                string path = EditorBridgePaths.RunLog(runId);
+                if (!File.Exists(path))
+                {
+                    problems.Add("実行記録が見つかりません: " + runId);
+                    continue;
+                }
+
+                BridgeRunLog log;
+                try
+                {
+                    log = JsonUtility.FromJson<BridgeRunLog>(File.ReadAllText(path));
+                }
+                catch (Exception e)
+                {
+                    problems.Add("実行記録を読めません（" + runId + "）: " + e.Message);
+                    continue;
+                }
+
+                if (log == null)
+                {
+                    problems.Add("実行記録が空です: " + runId);
+                    continue;
+                }
+
+                // 実行自体が成立していない記録を、照合の材料にしない（欠落した結果は「Passed でない」ではなく「不明」）。
+                if (!string.Equals(log.termination, "completed", StringComparison.OrdinalIgnoreCase))
+                {
+                    problems.Add("実行が完走していない記録です（" + runId + "、termination=" + log.termination + "）。");
+                }
+
+                sources.Add(runId + "（" + log.mode + "、"
+                    + (string.IsNullOrEmpty(log.filter) ? "全件" : "filter=" + log.filter) + "、"
+                    + log.leaves.Length + " 件）");
+
+                foreach (BridgeLeafResult leaf in log.leaves)
+                {
+                    leaves.Add(new Phase4RequiredTestGate.LeafOutcome(leaf.fullName, leaf.status));
+                }
+            }
+
+            string stage = command?.stage;
+            List<string> required = manifest.RequiredFullNames(stage);
+            List<string> allowedSkips = manifest.AllowedSkipFullNames();
+
+            Phase4RequiredTestGate.GateReport report =
+                Phase4RequiredTestGate.Check(required, allowedSkips, leaves);
+
+            var details = new List<string>();
+            details.Add("工程: " + (string.IsNullOrEmpty(stage) ? "（全工程）" : stage));
+            foreach (string source in sources)
+            {
+                details.Add("実行記録: " + source);
+            }
+
+            foreach (string problem in problems)
+            {
+                details.Add("[問題] " + problem);
+            }
+
+            foreach (string missing in report.Missing)
+            {
+                details.Add("[欠落] " + missing);
+            }
+
+            foreach (string notPassed in report.NotPassed)
+            {
+                details.Add("[非 Passed] " + notPassed);
+            }
+
+            foreach (string skip in report.UnlistedSkips)
+            {
+                details.Add("[未説明の Skip] " + skip);
+            }
+
+            bool success = report.Passed && problems.Count == 0;
+            return new OperationResult(success, report.Summarize(), details);
+        }
+
+        /// <summary>カンマ区切りの id を分解する（空白は落とす）。</summary>
+        private static string[] SplitIds(string raw)
+        {
+            if (string.IsNullOrEmpty(raw))
+            {
+                return Array.Empty<string>();
+            }
+
+            string[] parts = raw.Split(',');
+            var ids = new List<string>();
+            foreach (string part in parts)
+            {
+                string trimmed = part.Trim();
+                if (trimmed.Length > 0)
+                {
+                    ids.Add(trimmed);
+                }
+            }
+
+            return ids.ToArray();
+        }
 
         private const string CompanionBuilderType = "Momotaro.Editor.Phase4.Phase4CompanionBuilder";
         private const string ProjectValidatorType = "Momotaro.Editor.Validation.ProjectDataValidator";

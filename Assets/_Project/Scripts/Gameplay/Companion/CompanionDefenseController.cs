@@ -98,6 +98,20 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
+            // 停止中は構えも回避も進めない（P4-FIX F05）。判断を Update 側だけに置くと、
+            // 外から直接 Tick された瞬間に素通りする。会話・イベントでは構えも解く。
+            CompanionActivity activity = CompanionActivityProvider.Activity;
+            if (!activity.ClocksRun)
+            {
+                if (activity.DiscardOngoing)
+                {
+                    ReleaseGuard();
+                    SawDanger = false;
+                }
+
+                return;
+            }
+
             float dt = deltaTime < 0f ? 0f : deltaTime;
             _guard.Tick(dt);
             _evade.Tick(dt);
@@ -192,11 +206,7 @@ namespace Momotaro.Gameplay.Companion
 
         private void Update()
         {
-            if (!IsGameplayActive())
-            {
-                return; // Pause／会話中は構え・クールダウンを進めない。
-            }
-
+            // 停止の判断は公開 Tick の入口へ移した（P4-FIX F05）。外から直接呼ばれる経路も塞ぐため。
             TickDefense(Time.deltaTime);
         }
 
@@ -216,16 +226,5 @@ namespace Momotaro.Gameplay.Companion
             SawDanger = false;
         }
 
-        private static bool IsGameplayActive()
-        {
-            IGameModeService modes = GameModeProvider.Current;
-            if (modes == null)
-            {
-                return true; // 未初期化（単体テスト等）は許可。
-            }
-
-            GameMode mode = modes.Current;
-            return mode == GameMode.Exploration || mode == GameMode.Combat;
-        }
     }
 }

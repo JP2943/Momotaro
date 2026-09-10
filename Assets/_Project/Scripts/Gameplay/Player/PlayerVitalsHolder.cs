@@ -47,6 +47,7 @@ namespace Momotaro.Gameplay.Player
         private IGuardianResolver _guardianResolver;   // 守護／かばうの判断先（P4-01。未配線なら肩代わりは起きない）。
         private bool _guardianResolverResolved;
         private bool _transferInProgress;              // 守護転送の再入ガード（P4 §8.5。1 回の転送で 1 回だけ成立させる）。
+        private HitId _transferHitId;                  // 進行中の転送の命中 id（同じ命中の再送と別命中の再入を区別する。レビュー §2.3）。
 
         /// <summary>JG 成立時に近接攻撃者へ付与する強制ひるみ秒（Phase3.5 §7.5：0.30〜0.40 の中央）。</summary>
         private const float ForcedFlinchSeconds = 0.35f;
@@ -347,6 +348,19 @@ namespace Momotaro.Gameplay.Player
                 return;
             }
 
+            // 守護転送の解決中に、いま転送しているのと同じ命中が主人公へ戻ってきた場合は、外側の処理に統合して無視する。
+            // 守護者の被弾処理は状態遷移・結果通知を伴うため、その途中で主人公の被弾入口へ再入し得る。
+            // ここで通してしまうと、外側が成立していれば主人公が二重に解決され、外側が拒否で戻る場合は
+            // 再入分と外側分で通常 Damage が 2 回入る。どちらも同じ 1 発の命中なので 1 回にまとめる（レビュー §2.3）。
+            //
+            // 判定は HitId の値比較。本プロジェクトの HitId に「無効値」の概念は無く（default は (0,0) という
+            // 正当な組）、既存契約どおり値が等しいものを同じ命中として扱う。別 HitId の再入はここを素通りし、
+            // 主人公の通常の無敵・防御・Damage 解決に従う（守護だけを TryTransferToGuardian で拒否する）。
+            if (_transferInProgress && hit.HitId == _transferHitId)
+            {
+                return;
+            }
+
             // 被弾後無敵（Hurt 由来 I-frame。既定 0.50 秒）は、ステップ無敵より前に評価し、通常 Damage を種別に依らず無効化する
             // （ガード不能・Steppable=false を含む。仕様書 §3.2 / Table3）。将来の明示的 InvincibilityBypass はここへ条件を足す拡張点。
             IPlayerHurtReaction reaction = ResolveHurtReaction();
@@ -476,9 +490,9 @@ namespace Momotaro.Gameplay.Player
         /// </summary>
         private bool TryTransferToGuardian(in HitInfo hit)
         {
-            // 取引ガード（§8.5）：転送の解決中に主人公へ別の命中が戻ってきても、二重に成立させない。
-            // 守護者の被弾処理は状態遷移・結果通知を伴うため、その途中で主人公の被弾入口へ再入し得る。
-            // 再入は肩代わりせず通常 Damage で解決する（1 回の転送で 1 回だけ成立させるための最小の栓）。
+            // 取引ガード（§8.5）：転送の解決中に主人公へ<b>別の</b>命中が届いても、それを肩代わりへ回さない。
+            // 同じ命中の再送は ReceiveHit の入口で外側へ統合済みなので、ここへ来るのは別 HitId だけ。
+            // その別命中は守護を経ずに主人公の通常の解決（無敵・防御・Damage）へ進む（レビュー §2.3）。
             if (_transferInProgress)
             {
                 return false;
@@ -498,6 +512,7 @@ namespace Momotaro.Gameplay.Player
             HitInfo transferred = GuardianHitTransfer.Rebuild(hit, guardian);
 
             _transferInProgress = true;
+            _transferHitId = hit.HitId; // 転送前の元 HitId。転送後も id は保たれるが、比較の基準は主人公が受けた命中に置く。
             try
             {
                 // 引き受け手が実際に受理したときだけ肩代わりが成立する。
@@ -518,6 +533,7 @@ namespace Momotaro.Gameplay.Player
             {
                 // 例外・早期 return のどちらでも必ず解く。解き忘れると以後の肩代わりが無言で止まる。
                 _transferInProgress = false;
+                _transferHitId = default;
             }
         }
 

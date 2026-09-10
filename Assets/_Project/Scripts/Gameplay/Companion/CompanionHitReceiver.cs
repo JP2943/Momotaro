@@ -177,6 +177,13 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
+            // Pause・会話・イベント中は無敵・ひるみ・復帰待ちを進めない（P4-FIX F05）。
+            // 判断を Update だけに置くと、外から直接 Tick された瞬間に素通りする。
+            if (!CompanionActivityProvider.Activity.ClocksRun)
+            {
+                return;
+            }
+
             bool revived = _vitals.Tick(deltaTime);
 
             if (revived)
@@ -204,11 +211,7 @@ namespace Momotaro.Gameplay.Companion
 
         private void Update()
         {
-            if (!IsGameplayActive())
-            {
-                return; // Pause／会話中は無敵・ひるみ・復帰待ちを進めない。
-            }
-
+            // 停止の判断は公開 Tick の入口へ移した（P4-FIX F05）。外から直接呼ばれる経路も塞ぐため。
             TickVitals(Time.deltaTime);
         }
 
@@ -252,16 +255,5 @@ namespace Momotaro.Gameplay.Companion
             return _defense;
         }
 
-        private static bool IsGameplayActive()
-        {
-            IGameModeService modes = GameModeProvider.Current;
-            if (modes == null)
-            {
-                return true; // 未初期化（単体テスト等）は許可。
-            }
-
-            GameMode mode = modes.Current;
-            return mode == GameMode.Exploration || mode == GameMode.Combat;
-        }
     }
 }

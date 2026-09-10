@@ -4,6 +4,7 @@ using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Enemy;
+using Momotaro.Presentation.Companion;
 using Momotaro.Gameplay.Player;
 using Momotaro.Presentation.Diagnostics;
 using NUnit.Framework;
@@ -24,6 +25,13 @@ namespace Momotaro.Tests.EditMode
 
         private readonly List<Object> _spawned = new List<Object>();
 
+        [SetUp]
+        public void SetUp()
+        {
+            // 仲間の登録所は static。前のテストの登録が残ると、購読件数がそのぶんずれる。
+            CompanionFeedbackRegistry.ClearAll();
+        }
+
         [TearDown]
         public void TearDown()
         {
@@ -36,6 +44,7 @@ namespace Momotaro.Tests.EditMode
             }
 
             _spawned.Clear();
+            CompanionFeedbackRegistry.ClearAll();
         }
 
         private static void SetField(object t, string n, object v)
@@ -394,6 +403,10 @@ namespace Momotaro.Tests.EditMode
         // 仲間は被弾側として物理にも解決順にも載っていたのに、結果チャネルだけがどこにも繋がっておらず、
         // 殴られても点滅も SE も出なかった。敵・ダミーとまったく同じ経路に載せる（仲間専用の演出は作らない）。
 
+        /// <summary>
+        /// 仲間を 1 体作る。演出への接続は <see cref="CompanionFeedbackBinder"/> が担うので、実機と同じく載せる。
+        /// EditMode では <c>OnEnable</c> が自動で走らないため、登録は明示的に呼ぶ。
+        /// </summary>
         private CompanionHitReceiver MakeCompanionReceiver()
         {
             var data = ScriptableObject.CreateInstance<CompanionData>();
@@ -408,7 +421,10 @@ namespace Momotaro.Tests.EditMode
             actor.SetData(data);
             var receiver = go.AddComponent<CompanionHitReceiver>();
             receiver.Bind(actor);
+            var binder = go.AddComponent<CompanionFeedbackBinder>();
+            binder.Bind(receiver);
             go.SetActive(true);
+            binder.Attach();
             return receiver;
         }
 
@@ -457,6 +473,12 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, fake.Count, "重複通知されない（1 回のみ）。");
         }
 
+        /// <summary>
+        /// <b>Dispatcher 自体</b>を止めたときに仲間購読も外れること。
+        /// （名前が示すのはこちら側。仲間自身の Disable は <c>CompanionFeedbackLifecycleTests</c> が見る。
+        /// レビュー §3.2 で「Dispatcher の OnDisable を呼んでいるのに仲間の Disable を検査したことにしていた」と
+        /// 指摘された箇所。必須テスト一覧に名前で載っているため、意味を明記して名前は維持する。）
+        /// </summary>
         [Test]
         public void CompanionOnDisable_Unsubscribes()
         {
@@ -467,7 +489,8 @@ namespace Momotaro.Tests.EditMode
 
             OnDisableMethod.Invoke(disp, null);
 
-            Assert.AreEqual(0, companion.Results.ListenerCount, "無効化で仲間購読も解除される。");
+            Assert.AreEqual(0, companion.Results.ListenerCount,
+                "Dispatcher の停止で仲間購読も解除される。");
         }
 
         [Test]

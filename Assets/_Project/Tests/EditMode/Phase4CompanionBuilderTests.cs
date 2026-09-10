@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using Momotaro.Data.Characters;
 using Momotaro.Data.Combat;
@@ -190,6 +192,84 @@ namespace Momotaro.Tests.EditMode
                 Assert.AreNotEqual(Phase4CompanionBuilder.InumaruPrefabPath, path,
                     "一時 Prefab が本番の Prefab を参照している。");
             }
+        }
+
+        /// <summary>
+        /// N11：本番アセットの<b>内容</b>が前後で変わらないことを直接見る。
+        ///
+        /// <see cref="Build_DoesNotReferenceProductionAssets"/> が見ているのは一時 Prefab の参照先であって、
+        /// 本番ファイルが書き換えられていないことの証明ではない。参照が正しくても、Builder が本番側を
+        /// 「開いて保存し直す」だけで GUID や serializedVersion は動き得る。テストが出荷物を触っていないことは、
+        /// 参照ではなくバイト列で確かめる。
+        ///
+        /// 本番が存在しない環境（クリーンチェックアウト直後など）では、テストの都合で新規生成していないことを見る。
+        /// </summary>
+        [Test]
+        public void Build_LeavesProductionAssetBytesUnchanged()
+        {
+            string[] productionPaths =
+            {
+                Phase4CompanionBuilder.InumaruPrefabPath,
+                Phase4CompanionBuilder.InumaruDataPath,
+                Phase4CompanionBuilder.InumaruAttackDataPath,
+            };
+
+            var before = new Dictionary<string, byte[]>();
+            foreach (string assetPath in productionPaths)
+            {
+                before[assetPath] = ReadIfExists(ToAbsolute(assetPath));
+                before[assetPath + ".meta"] = ReadIfExists(ToAbsolute(assetPath + ".meta"));
+            }
+
+            BuildTemp();
+            AssetDatabase.Refresh();
+
+            foreach (KeyValuePair<string, byte[]> entry in before)
+            {
+                byte[] after = ReadIfExists(ToAbsolute(entry.Key));
+
+                if (entry.Value == null)
+                {
+                    Assert.IsNull(after,
+                        "本番アセットが元から無い環境で、テストが勝手に作っている: " + entry.Key);
+                    continue;
+                }
+
+                Assert.IsNotNull(after, "本番アセットが消えている: " + entry.Key);
+                Assert.IsTrue(SameBytes(entry.Value, after),
+                    "本番アセットの内容が変わっている（テストは出荷物へ書いてはいけない）: " + entry.Key);
+            }
+        }
+
+        /// <summary>"Assets/..." 形式のアセットパスをファイルシステムの絶対パスへ直す。</summary>
+        private static string ToAbsolute(string assetPath)
+        {
+            string projectRoot = Directory.GetParent(Application.dataPath)?.FullName ?? Application.dataPath;
+            return Path.Combine(projectRoot, assetPath.Replace('/', Path.DirectorySeparatorChar));
+        }
+
+        /// <summary>存在すれば内容を、無ければ null を返す（「無い」という状態も比較対象にする）。</summary>
+        private static byte[] ReadIfExists(string absolutePath)
+        {
+            return File.Exists(absolutePath) ? File.ReadAllBytes(absolutePath) : null;
+        }
+
+        private static bool SameBytes(byte[] a, byte[] b)
+        {
+            if (a.Length != b.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>

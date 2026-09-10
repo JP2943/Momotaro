@@ -1,0 +1,350 @@
+{
+  "version": 1,
+  "note": "P4 の工程受入で Passed を要求するテストの正本。実行結果に現れる完全名で持つ。件数や正規表現では代替しない（必須が 1 本消えても総数が同じなら気付けないため）。テスト名を変えるときは、テストとこの一覧を同じ変更で更新し、requirementId の対応を残すこと。照合はブリッジの run-op verify-required-tests（stage と runIds を指定）で行う。",
+  "stages": [
+    "P4-FIX-02A",
+    "F02b",
+    "F02c",
+    "P4-07A",
+    "P4-07B",
+    "P4-08R"
+  ],
+  "tests": [
+    {
+      "requirementId": "R09",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.AllPassed_IsOk"
+    },
+    {
+      "requirementId": "R09",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.NoTestsMatched_IsError_NotOk"
+    },
+    {
+      "requirementId": "R09",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.AllSkipped_IsFailed_NotOk"
+    },
+    {
+      "requirementId": "R09",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.AnyFailure_IsFailed"
+    },
+    {
+      "requirementId": "R09",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.Incomplete_IsError_EvenWithoutFailures"
+    },
+    {
+      "requirementId": "R09",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.Complete_WithExpectedCount_IsOk"
+    },
+    {
+      "requirementId": "R09",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.Incomplete_WithFailures_ReportsFailedAndSaysSoInReason"
+    },
+    {
+      "requirementId": "R09",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.BelowMinPassed_IsFailed"
+    },
+    {
+      "requirementId": "R09",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.AtMinPassed_IsOk"
+    },
+    {
+      "requirementId": "R09",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.MinPassedZero_MeansUnspecified"
+    },
+    {
+      "requirementId": "R09",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.ExpectedZero_MeansUnknown_DoesNotBlock"
+    },
+    {
+      "requirementId": "R05",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.Rescan_SubscribesToCompanionResults"
+    },
+    {
+      "requirementId": "R05",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.CompanionHitResult_PublishesFeedbackCue"
+    },
+    {
+      "requirementId": "R05",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.RepeatedRescan_NoDuplicateCompanionNotification"
+    },
+    {
+      "requirementId": "R05",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.CompanionOnDisable_Unsubscribes"
+    },
+    {
+      "requirementId": "R05",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.CompanionDestroyed_Rescan_SafeUnsubscribe"
+    },
+    {
+      "requirementId": "R07",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionCombatControllerTests.MidAttackDataEdit_DoesNotChangeReach"
+    },
+    {
+      "requirementId": "R07",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionCombatControllerTests.MidAttackCooldownEdit_DoesNotChangeCooldownAtFinish"
+    },
+    {
+      "requirementId": "R07",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionCombatControllerTests.FinishedAttack_ClearsThePlan"
+    },
+    {
+      "requirementId": "R07",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionCombatControllerTests.CancelledAttack_ClearsThePlan"
+    },
+    {
+      "requirementId": "R03",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianControllerTests.DisablingAnOlderGuardian_KeepsTheCurrentRegistration"
+    },
+    {
+      "requirementId": "R03",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianControllerTests.DisablingTheCurrentGuardian_ClearsTheRegistration"
+    },
+    {
+      "requirementId": "R04",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianControllerTests.DroppedTransfer_ReportsNotAccepted"
+    },
+    {
+      "requirementId": "R04",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianControllerTests.TransferredHit_IsAcceptedOnlyOnce"
+    },
+    {
+      "requirementId": "R08",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Build_WritesAttackDataToGivenPath"
+    },
+    {
+      "requirementId": "R08",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Build_DoesNotReferenceProductionAssets"
+    },
+    {
+      "requirementId": "R08",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Build_RequiresAllOutputPathsExplicitly"
+    },
+    {
+      "requirementId": "R04",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.PlayerGuardianTransferTests.GuardianThatDropsTheHit_FallsBackToPlayerDamage"
+    },
+    {
+      "requirementId": "R04",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.PlayerGuardianTransferTests.ReentrantHitDuringTransfer_DoesNotTransferTwice"
+    },
+    {
+      "requirementId": "N01",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.PlayerGuardianTransferTests.SameHitReentry_DoesNotDamagePlayerTwice"
+    },
+    {
+      "requirementId": "N02",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.GuardianHitOrderTests.DirectThenTransfer_DamagesPlayerWithoutGuardianCooldown"
+    },
+    {
+      "requirementId": "N03",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.GuardianHitOrderTests.TransferThenDirect_DoesNotDamageCompanionTwice"
+    },
+    {
+      "requirementId": "N04",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.MissingRequiredTest_FailsGate"
+    },
+    {
+      "requirementId": "N05",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.RequiredSkip_FailsGateDespiteOtherPasses"
+    },
+    {
+      "requirementId": "N06",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.UnlistedSkip_FailsGate"
+    },
+    {
+      "requirementId": "N07",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeRunCompletionTests.CancelledFilteredRun_IsNotOkAfterMinPassed"
+    },
+    {
+      "requirementId": "N08",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.BridgeRunCompletionTests.InconclusiveOrMissingResult_IsNotOk"
+    },
+    {
+      "requirementId": "N09",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionFeedbackLifecycleTests.CompanionDisable_RemovesSubscription"
+    },
+    {
+      "requirementId": "N10",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionFeedbackLifecycleTests.CompanionDestroy_RemovesOldChannelSubscription"
+    },
+    {
+      "requirementId": "N11",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Build_LeavesProductionAssetBytesUnchanged"
+    },
+    {
+      "requirementId": "N12",
+      "stage": "P4-FIX-02A",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionFeedbackLifecyclePlayTests.EnabledCompanion_FirstHitReachesFeedbackOnce"
+    },
+    {
+      "requirementId": "N13",
+      "stage": "P4-FIX-02A",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityGatePlayTests.PauseAtTimeScaleOne_StopsBodyAndClocks"
+    },
+    {
+      "requirementId": "N14",
+      "stage": "P4-FIX-02A",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityGatePlayTests.Resume_KeepsSwingAndDoesNotHitAgain"
+    },
+    {
+      "requirementId": "N15",
+      "stage": "P4-FIX-02A",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityGatePlayTests.Dialogue_CancelsAttackAndDoesNotResumeOldActive"
+    },
+    {
+      "requirementId": "N16",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityContextTests.IntermissionAndPendingEncounter_DisallowInvestigation"
+    },
+    {
+      "requirementId": "N17",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityContextTests.MissingContext_DisallowsActions"
+    },
+    {
+      "requirementId": "N18",
+      "stage": "P4-FIX-02A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionMotorArbitrationTests.OnlyCurrentOwnerCanWriteMovement"
+    }
+  ],
+  "allowedSkips": [
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_CameraShakeTargetsChildCamera",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    },
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_InvalidOutputPath_FailsWithoutSaving",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    },
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_ProducesDeterministicStructure",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    },
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_WiresFeedbackSystems",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    },
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_WiresVfxPresenters_WithRealFrames",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    },
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Rebuild_SamePath_DoesNotDuplicate",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    },
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.DebugHudPresent_IsForbidden",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    },
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.DuplicateSession_IsDetected",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    },
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.EmptyScene_ReportsMissingSystems",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    },
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.FreshlyBuiltScene_HasNoErrors",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    },
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Build_InvalidOutputPath_FailsWithoutSaving",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    },
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Build_ProducesDeterministicStructure",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    },
+    {
+      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Rebuild_SamePath_DoesNotDuplicate",
+      "reason": "開いている Scene を置換するテスト。Editor に未保存の Scene があるとオーナーの作業を壊さないよう自ら Skip する（OneTimeSetUp の安全装置）。コードの欠陥ではなく実行環境の条件。Scene を保存した Editor では実行される。"
+    }
+  ]
+}

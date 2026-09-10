@@ -65,12 +65,16 @@ namespace Momotaro.Tests.EditMode
             /// <summary>受理の最中に主人公へ命中を打ち返す（転送処理中の再入を再現する）。</summary>
             public System.Action OnReceiving;
 
+            /// <summary>拒否して戻る前に主人公へ命中を打ち返す（拒否経路の再入を再現する）。</summary>
+            public System.Action OnRejecting;
+
             public void ReceiveHit(in HitInfo hit) => TryReceiveTransferredHit(hit);
 
             public bool TryReceiveTransferredHit(in HitInfo hit)
             {
                 if (!AcceptsTransfer)
                 {
+                    OnRejecting?.Invoke();
                     return false;
                 }
 
@@ -158,12 +162,18 @@ namespace Momotaro.Tests.EditMode
             return holder;
         }
 
+        /// <summary>
+        /// 命中を 1 つ作る。<paramref name="instanceId"/> を省略すると 1（既存テストが依存する既定値）。
+        /// <b>再入の検証では必ず明示する。</b>同じ既定値のまま「別の命中」と説明すると、
+        /// 実際には同一 HitId の再送を検証していることになる（レビュー §2.3 の指摘）。
+        /// </summary>
         private static HitInfo Hit(IDamageable target, ICombatActor attacker, float hp = 20f,
-            bool guardable = false, bool justGuardable = false, Vector3 direction = default)
+            bool guardable = false, bool justGuardable = false, Vector3 direction = default,
+            int instanceId = 1)
         {
             return new HitInfo(attacker, target,
                 direction == default ? Vector3.forward : direction,
-                Vector3.zero, new HitDamage(hp, 0f, 0f), guardable, justGuardable, HitId.Single(1));
+                Vector3.zero, new HitDamage(hp, 0f, 0f), guardable, justGuardable, HitId.Single(instanceId));
         }
 
         // ---- 未配線＝既存挙動が変わらない ----
@@ -242,7 +252,7 @@ namespace Momotaro.Tests.EditMode
 
         /// <summary>
         /// 守護者の被弾処理は状態遷移と結果通知を伴うため、その途中で主人公の被弾入口へ戻ってくることがある。
-        /// 転送 1 回につき成立は 1 回だけ。再入した命中は肩代わりせず、主人公が通常どおり被弾する（§8.5 の取引ガード）。
+        /// <b>別の攻撃</b>が届いた場合：守護の再入だけを拒否し、その命中は主人公の通常解決へ落とす（レビュー §2.3）。
         /// </summary>
         [Test]
         public void ReentrantHitDuringTransfer_DoesNotTransferTwice()
@@ -261,16 +271,87 @@ namespace Momotaro.Tests.EditMode
                 }
 
                 reentered = true;
-                player.ReceiveHit(Hit(player, null, hp: 5f)); // 転送の解決中に届いた別の命中。
+
+                // 別の攻撃発動＝別 HitId。ここを既定値のままにすると同一命中の再送になってしまう。
+                player.ReceiveHit(Hit(player, null, hp: 5f, instanceId: 2));
             };
 
-            player.ReceiveHit(Hit(player, null, hp: 20f));
+            player.ReceiveHit(Hit(player, null, hp: 20f, instanceId: 1));
 
-            Assert.IsTrue(reentered, "前提：転送の最中に主人公へ命中が戻っている。");
-            Assert.AreEqual(1, guardian.Received.Count, "再入した命中まで肩代わりしない。");
+            Assert.IsTrue(reentered, "前提：転送の最中に主人公へ別の命中が届いている。");
+            Assert.AreEqual(1, guardian.Received.Count, "再入した別命中まで肩代わりしない。");
             Assert.AreEqual(1, resolver.NotifyCalls, "成立通知は 1 回だけ（CD も 1 回だけ消費する）。");
             Assert.AreEqual(95, player.Vitals.Health.Current,
-                "再入した命中は主人公が通常どおり受ける（100 - 5。転送した 20 は犬丸が引き受けた）。");
+                "再入した別命中は主人公が通常どおり受ける（100 - 5。転送した 20 は犬丸が引き受けた）。");
+        }
+
+        /// <summary>
+        /// N01：<b>同じ命中</b>が転送処理中に主人公へ戻ってきた場合。これは 1 発の命中なので、外側の処理へ統合して無視する。
+        /// 主人公の通常 Damage へ落とすと、犬丸が肩代わりしたはずの一撃で主人公も削れる。
+        /// </summary>
+        [Test]
+        public void SameHitReentry_DoesNotDamagePlayerTwice()
+        {
+            PlayerVitalsHolder player = MakePlayer();
+            FakeResolver resolver = player.gameObject.AddComponent<FakeResolver>();
+            var guardian = new FakeGuardian();
+            resolver.Guardian = guardian;
+            var recorder = new HitRecorder();
+            player.Results.AddListener(recorder);
+
+            bool reentered = false;
+            guardian.OnReceiving = () =>
+            {
+                if (reentered)
+                {
+                    return;
+                }
+
+                reentered = true;
+                player.ReceiveHit(Hit(player, null, hp: 20f, instanceId: 7)); // 外側と同じ命中の再送。
+            };
+
+            player.ReceiveHit(Hit(player, null, hp: 20f, instanceId: 7));
+
+            Assert.IsTrue(reentered, "前提：同じ命中が転送中に戻っている。");
+            Assert.AreEqual(100, player.Vitals.Health.Current,
+                "同じ命中の再送で主人公は削れない（肩代わりされた一撃で主人公も被弾しては意味がない）。");
+            Assert.AreEqual(1, guardian.Received.Count, "犬丸の受理も 1 回だけ。");
+            Assert.AreEqual(1, resolver.NotifyCalls, "成立通知・CD 消費は 1 回だけ。");
+            Assert.AreEqual(0, recorder.Received.Count,
+                "主人公側の結果通知は出ない（肩代わりされたため）。");
+        }
+
+        /// <summary>
+        /// 外側の転送が拒否で戻る場合、主人公の通常 Damage は<b>一度だけ</b>。
+        /// 同じ命中の再入分を重ねると、拒否された 1 発で 2 回削れる。
+        /// </summary>
+        [Test]
+        public void SameHitReentry_DuringRejectedTransfer_DamagesPlayerOnce()
+        {
+            PlayerVitalsHolder player = MakePlayer();
+            FakeResolver resolver = player.gameObject.AddComponent<FakeResolver>();
+            var guardian = new FakeGuardian { CanTakeOver = true, AcceptsTransfer = false };
+            resolver.Guardian = guardian;
+
+            bool reentered = false;
+            guardian.OnRejecting = () =>
+            {
+                if (reentered)
+                {
+                    return;
+                }
+
+                reentered = true;
+                player.ReceiveHit(Hit(player, null, hp: 20f, instanceId: 9)); // 外側と同じ命中の再送。
+            };
+
+            player.ReceiveHit(Hit(player, null, hp: 20f, instanceId: 9));
+
+            Assert.IsTrue(reentered, "前提：拒否の最中に同じ命中が戻っている。");
+            Assert.AreEqual(0, resolver.NotifyCalls, "拒否なので成立通知も CD 消費も無い。");
+            Assert.AreEqual(80, player.Vitals.Health.Current,
+                "主人公の通常 Damage は 1 回だけ（100 - 20。再入分を重ねない）。");
         }
 
         // ---- 肩代わり成立 ----
