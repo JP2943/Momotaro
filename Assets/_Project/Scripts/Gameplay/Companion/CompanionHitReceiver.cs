@@ -96,28 +96,40 @@ namespace Momotaro.Gameplay.Companion
         /// <inheritdoc />
         public void ReceiveHit(in HitInfo hit)
         {
+            TryReceiveTransferredHit(hit);
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// 受理したか捨てたかを返す点だけが <see cref="ReceiveHit"/> と違う。判定から直接届く命中は結果を見ないので
+        /// <see cref="ReceiveHit"/> を通り、肩代わりの転送だけがここを直接呼んで戻り値を見る（P4-01 の転送の原子性）。
+        /// 「捨てた」のは冒頭 3 つの早期 return（退場・ダウン／二重受理）だけで、
+        /// 回避・ガード・ダメージはいずれも<b>処理した</b>＝受理である。
+        /// </remarks>
+        public bool TryReceiveTransferredHit(in HitInfo hit)
+        {
             EnsureRuntime();
             if (_actor == null || _vitals == null)
             {
-                return;
+                return false;
             }
 
             // 場に居ない（退場）・倒れている（ダウン）ときは受け付けない。結果も出さない。
             if (_actor.IsAway || _vitals.IsDown)
             {
-                return;
+                return false;
             }
 
             // 同一命中は 1 回だけ。直接命中と肩代わり転送の到達順に依存しない（P4-01）。
             if (!_received.TryAccept(hit.HitId))
             {
-                return;
+                return false;
             }
 
             if (_vitals.IsPostHitInvincible)
             {
                 Results.Publish(HitResult.Evade(hit.HitId, hit.Attacker, this, hit.HitPoint, hit.AttackDirection));
-                return;
+                return true;
             }
 
             ICompanionDefenseState defense = ResolveDefense();
@@ -125,7 +137,7 @@ namespace Momotaro.Gameplay.Companion
             if (defense != null && defense.IsEvadeInvulnerable && hit.Steppable)
             {
                 Results.Publish(HitResult.Evade(hit.HitId, hit.Attacker, this, hit.HitPoint, hit.AttackDirection));
-                return;
+                return true;
             }
 
             bool withinArc = GuardGeometry.IsWithinGuardArc(_actor.Forward, hit.AttackDirection);
@@ -133,7 +145,7 @@ namespace Momotaro.Gameplay.Companion
             if (GuardResolver.Resolve(guarding, hit.Guardable, withinArc) == GuardOutcome.Guarded)
             {
                 Results.Publish(HitResult.Guard(hit.HitId, hit.Attacker, this, HitDamage.None, hit.HitPoint, hit.AttackDirection));
-                return;
+                return true;
             }
 
             float defenseValue = _actor.Data != null ? _actor.Data.Defense : 0f;
@@ -150,6 +162,7 @@ namespace Momotaro.Gameplay.Companion
 
             Results.Publish(HitResult.Damage(
                 hit.HitId, hit.Attacker, this, applied.Applied, hit.HitPoint, hit.AttackDirection));
+            return true;
         }
 
         /// <summary>

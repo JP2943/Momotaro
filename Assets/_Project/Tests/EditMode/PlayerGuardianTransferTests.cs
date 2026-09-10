@@ -56,9 +56,28 @@ namespace Momotaro.Tests.EditMode
             public int DamageableId => 777;
             public Vector3 WorldPosition { get; set; } = new Vector3(2f, 0f, 0f);
             public bool CanTakeOver { get; set; } = true;
+
+            /// <summary>受け口が命中を捨てる状況（二重受理の排除など）を再現する。</summary>
+            public bool AcceptsTransfer { get; set; } = true;
+
             public readonly List<HitInfo> Received = new List<HitInfo>();
 
-            public void ReceiveHit(in HitInfo hit) => Received.Add(hit);
+            /// <summary>受理の最中に主人公へ命中を打ち返す（転送処理中の再入を再現する）。</summary>
+            public System.Action OnReceiving;
+
+            public void ReceiveHit(in HitInfo hit) => TryReceiveTransferredHit(hit);
+
+            public bool TryReceiveTransferredHit(in HitInfo hit)
+            {
+                if (!AcceptsTransfer)
+                {
+                    return false;
+                }
+
+                Received.Add(hit);
+                OnReceiving?.Invoke();
+                return true;
+            }
         }
 
         private sealed class FakeResolver : MonoBehaviour, IGuardianResolver
@@ -190,6 +209,68 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(0, guardian.Received.Count, "Down・退場中の守護者へは渡さない。");
             Assert.AreEqual(0, resolver.NotifyCalls);
             Assert.AreEqual(80, player.Vitals.Health.Current, "主人公が通常どおり被弾する。");
+        }
+
+        /// <summary>
+        /// 引き受け可（<c>CanTakeOver</c>）でも、受け口が命中を捨てることがある。最も起きやすいのは、
+        /// 敵の 1 振りが主人公と仲間の両方に重なり、仲間が判定から直接受けた後に<b>同一 HitId</b> の転送が届く場合で、
+        /// 受け口の二重受理排除が正しく捨てる。これを成立扱いにすると、主人公は自分に当たった命中を無傷でやり過ごす。
+        /// </summary>
+        [Test]
+        public void GuardianThatDropsTheHit_FallsBackToPlayerDamage()
+        {
+            PlayerVitalsHolder player = MakePlayer();
+            FakeResolver resolver = player.gameObject.AddComponent<FakeResolver>();
+            var guardian = new FakeGuardian { CanTakeOver = true, AcceptsTransfer = false };
+            resolver.Guardian = guardian;
+            var recorder = new HitRecorder();
+            player.Results.AddListener(recorder);
+            var transfers = new TransferRecorder();
+            player.GuardianTransfers.AddListener(transfers);
+
+            player.ReceiveHit(Hit(player, null));
+
+            Assert.AreEqual(0, guardian.Received.Count, "受け口が捨てたので誰も痛みを引き受けていない。");
+            Assert.AreEqual(0, resolver.NotifyCalls,
+                "成立していない肩代わりでクールダウンを消費しない。");
+            Assert.AreEqual(0, transfers.Received.Count, "成立していない肩代わりを通知しない。");
+            Assert.AreEqual(80, player.Vitals.Health.Current,
+                "肩代わりが成立しなければ主人公が通常どおり被弾する（命中が消えてはいけない）。");
+            Assert.AreEqual(1, recorder.Received.Count);
+            Assert.AreEqual(HitResultKind.Damage, recorder.Received[0].Kind);
+        }
+
+        /// <summary>
+        /// 守護者の被弾処理は状態遷移と結果通知を伴うため、その途中で主人公の被弾入口へ戻ってくることがある。
+        /// 転送 1 回につき成立は 1 回だけ。再入した命中は肩代わりせず、主人公が通常どおり被弾する（§8.5 の取引ガード）。
+        /// </summary>
+        [Test]
+        public void ReentrantHitDuringTransfer_DoesNotTransferTwice()
+        {
+            PlayerVitalsHolder player = MakePlayer();
+            FakeResolver resolver = player.gameObject.AddComponent<FakeResolver>();
+            var guardian = new FakeGuardian();
+            resolver.Guardian = guardian;
+
+            bool reentered = false;
+            guardian.OnReceiving = () =>
+            {
+                if (reentered)
+                {
+                    return;
+                }
+
+                reentered = true;
+                player.ReceiveHit(Hit(player, null, hp: 5f)); // 転送の解決中に届いた別の命中。
+            };
+
+            player.ReceiveHit(Hit(player, null, hp: 20f));
+
+            Assert.IsTrue(reentered, "前提：転送の最中に主人公へ命中が戻っている。");
+            Assert.AreEqual(1, guardian.Received.Count, "再入した命中まで肩代わりしない。");
+            Assert.AreEqual(1, resolver.NotifyCalls, "成立通知は 1 回だけ（CD も 1 回だけ消費する）。");
+            Assert.AreEqual(95, player.Vitals.Health.Current,
+                "再入した命中は主人公が通常どおり受ける（100 - 5。転送した 20 は犬丸が引き受けた）。");
         }
 
         // ---- 肩代わり成立 ----

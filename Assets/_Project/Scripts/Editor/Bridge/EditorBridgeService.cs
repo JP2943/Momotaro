@@ -32,6 +32,9 @@ namespace Momotaro.EditorBridge
         private const string BusyKindKey = "Momotaro.EditorBridge.BusyKind";
         private const string BusyStartedKey = "Momotaro.EditorBridge.BusyStartedIso";
         private const string BusyModeKey = "Momotaro.EditorBridge.BusyMode";
+        private const string BusyExpectedKey = "Momotaro.EditorBridge.BusyExpected";
+        private const string BusyMinPassedKey = "Momotaro.EditorBridge.BusyMinPassed";
+        private const string BusyFilteredKey = "Momotaro.EditorBridge.BusyFiltered";
 
         private const string BusyCompile = "compile";
         private const string BusyTests = "tests";
@@ -113,6 +116,34 @@ namespace Momotaro.EditorBridge
         {
             get => EditorPrefs.GetString(BusyKindKey, string.Empty);
             set => EditorPrefs.SetString(BusyKindKey, value ?? string.Empty);
+        }
+
+        /// <summary>
+        /// 実行中のテストの予定件数（<c>RunStarted</c> で分かる）。開始と完了のあいだに Editor の再読み込みが挟まるため、
+        /// static 変数では消える。<see cref="EditorPrefs"/> に預けて完了時に突き合わせる。0 は「不明」。
+        ///
+        /// <b>絞り込み実行では記録しない。</b><c>RunStarted</c> が渡してくるのは絞り込み後ではなく
+        /// <b>スイート全体</b>の件数で（0 件一致の実行でも全件数が来ることを実測で確認した）、
+        /// これを実行件数と比べると絞り込み実行が必ず「中断」に見えてしまう。
+        /// </summary>
+        private static int BusyExpected
+        {
+            get => EditorPrefs.GetInt(BusyExpectedKey, 0);
+            set => EditorPrefs.SetInt(BusyExpectedKey, value);
+        }
+
+        /// <summary>実行中のテストが絞り込み実行か（予定件数を完走判定に使えるかの分かれ目）。</summary>
+        private static bool BusyFiltered
+        {
+            get => EditorPrefs.GetBool(BusyFilteredKey, false);
+            set => EditorPrefs.SetBool(BusyFilteredKey, value);
+        }
+
+        /// <summary>実行中のテストに指定された成功件数の下限（0 は指定なし）。同上の理由で <see cref="EditorPrefs"/> に置く。</summary>
+        private static int BusyMinPassed
+        {
+            get => EditorPrefs.GetInt(BusyMinPassedKey, 0);
+            set => EditorPrefs.SetInt(BusyMinPassedKey, value);
         }
 
         private static DateTime BusyStartedUtc
@@ -433,6 +464,9 @@ namespace Momotaro.EditorBridge
 
             SetBusy(command.id, BusyTests);
             BusyMode = command.mode ?? string.Empty;
+            BusyExpected = 0; // RunStarted で入る。届かないまま完了したら「不明」として完走判定に使わない。
+            BusyFiltered = !string.IsNullOrEmpty(command.filter);
+            BusyMinPassed = command.minPassed < 0 ? 0 : command.minPassed;
 
             string error = EditorBridgeTestRun.Run(command.mode, command.filter);
             if (error == null)
@@ -444,6 +478,18 @@ namespace Momotaro.EditorBridge
             WriteResult(Error(command, "テストを開始できませんでした: " + error));
         }
 
+        /// <summary>テスト実行の開始通知（<see cref="EditorBridgeTestRun"/> から呼ばれる）。予定件数を控える。</summary>
+        internal static void OnTestRunStarted(int expected)
+        {
+            if (BusyKind != BusyTests || string.IsNullOrEmpty(BusyCommandId))
+            {
+                return; // ブリッジ経由でない実行には反応しない。
+            }
+
+            // 絞り込み実行では意味を持たない件数なので記録しない（上の BusyExpected の説明を参照）。
+            BusyExpected = BusyFiltered || expected < 0 ? 0 : expected;
+        }
+
         /// <summary>テスト実行の完了通知（<see cref="EditorBridgeTestRun"/> から呼ばれる）。</summary>
         internal static void OnTestRunFinished(int passed, int failed, int skipped, List<string> failures, double seconds)
         {
@@ -451,6 +497,10 @@ namespace Momotaro.EditorBridge
             {
                 return; // ブリッジ経由でない実行（Test Runner ウィンドウからの手動実行）には反応しない。
             }
+
+            // 印を落とす前に読む（ClearBusy がこれらも消すため）。
+            int expected = BusyExpected;
+            int minPassed = BusyMinPassed;
 
             var details = new List<string>();
             for (int i = 0; i < failures.Count && details.Count < DetailMaxCount; i++)
@@ -463,18 +513,25 @@ namespace Momotaro.EditorBridge
                 details.Add("（ほか " + (failures.Count - details.Count) + " 件の失敗は省略しました）");
             }
 
+            // 「失敗 0 件」を成功と読み替えない。一致 0 件・全スキップ・中断は、実装が検証されていないのに緑に見える。
+            BridgeTestOutcome.Outcome outcome = BridgeTestOutcome.Decide(passed, failed, skipped, expected, minPassed);
+
+            string counts = "成功 " + passed + " / 失敗 " + failed + " / スキップ " + skipped
+                + (expected > 0 ? " / 予定 " + expected : string.Empty)
+                + "（" + seconds.ToString("0.0") + " 秒）";
+
             var result = new BridgeResult
             {
                 id = BusyCommandId,
                 command = EditorBridgeCommands.RunTests,
-                status = failed > 0 ? "failed" : "ok",
-                message = "成功 " + passed + " / 失敗 " + failed + " / スキップ " + skipped
-                    + "（" + seconds.ToString("0.0") + " 秒）",
+                status = outcome.Status,
+                message = outcome.IsOk ? counts : outcome.Reason + " " + counts,
                 startedAt = BusyStartedUtc.ToString("o"),
                 finishedAt = NowIso(),
                 passed = passed,
                 failed = failed,
                 skipped = skipped,
+                expected = expected,
                 details = details.ToArray(),
             };
 
@@ -522,6 +579,9 @@ namespace Momotaro.EditorBridge
             BusyCommandId = string.Empty;
             BusyKind = string.Empty;
             BusyMode = string.Empty;
+            BusyExpected = 0;
+            BusyMinPassed = 0;
+            BusyFiltered = false;
         }
 
         private static void WriteResult(BridgeResult result)
@@ -591,10 +651,22 @@ namespace Momotaro.EditorBridge
                 + "| `ping` | 生存確認 |\n"
                 + "| `refresh` | AssetDatabase の更新 |\n"
                 + "| `compile-status` | 再コンパイルし、エラー・警告を返す（`force` で強制） |\n"
-                + "| `run-tests` | テスト実行（`mode` は EditMode / PlayMode、`filter` は正規表現） |\n\n"
+                + "| `run-tests` | テスト実行（`mode` は EditMode / PlayMode、`filter` は正規表現、`minPassed` は成功件数の下限） |\n\n"
                 + "| `run-op` | 許可された編集操作を実行（`op` に操作名。build-inumaru / validate-project-data） |\n\n"
                 + "同じ `id` は二度実行されません。実行できるのは上の 5 つだけで、任意コードの実行・\n"
                 + "ファイル削除・シェル起動はできません。\n\n"
+                + "## result.json の status\n\n"
+                + "| status | 意味 | 取るべき行動 |\n"
+                + "| --- | --- | --- |\n"
+                + "| `ok` | 実行が成立し、結果も合格 | 次へ進める |\n"
+                + "| `failed` | 実行は成立したが不合格（失敗あり・全スキップ・`minPassed` 割れ） | `details` を読んで直す |\n"
+                + "| `error` | 実行が成立していない（一致 0 件・中断・開始できず） | 合否は<b>不明</b>。原因を潰して再実行 |\n\n"
+                + "**失敗 0 件は成功と同じではありません。** フィルタの綴りが実装と食い違って 1 件も一致しない実行は\n"
+                + "`error` で返ります。件数が分かっている実行では `minPassed` に直近の実績を少し下回る値を入れておくと、\n"
+                + "テストが消えた・スキップに化けた実行を緑と読み違えずに済みます。\n\n"
+                + "`expected`（予定件数）は **`filter` を付けない全件実行のときだけ** 記録されます。\n"
+                + "Unity が開始時に渡してくる件数は絞り込み後ではなくスイート全体のためです。\n"
+                + "絞り込み実行の中断検出は `minPassed` で行ってください。\n\n"
                 + "## 止め方\n\n"
                 + "メニュー `Momotaro / Bridge / Enabled` のチェックを外してください。無効化すると\n"
                 + "コマンドを受け付けなくなります（`status.json` の更新だけ続きます）。\n\n"

@@ -27,7 +27,13 @@ namespace Momotaro.Tests.EditMode
             public bool CanTakeOver { get; set; } = true;
             public HitInfo? Received;
 
-            public void ReceiveHit(in HitInfo hit) => Received = hit;
+            public void ReceiveHit(in HitInfo hit) => TryReceiveTransferredHit(hit);
+
+            public bool TryReceiveTransferredHit(in HitInfo hit)
+            {
+                Received = hit;
+                return true;
+            }
         }
 
         private sealed class FakePlayer : IDamageable

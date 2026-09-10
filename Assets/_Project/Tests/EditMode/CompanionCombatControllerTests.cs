@@ -481,5 +481,70 @@ namespace Momotaro.Tests.EditMode
             Assert.IsFalse(companion.Combat.IsAttacking, "無効化・Scene 離脱で判定を残さない。");
             Assert.AreEqual(CompanionEngageDecision.Idle, companion.Combat.Decision);
         }
+
+        // ---- 攻撃中は Data を読み直さない（P4-FIX F06） ----
+        //
+        // 数値調整は Play 中に行うのが普通なので、振っている最中に Data を書き換えられることは前提として起きる。
+        // 毎 Tick で読み直していると、間合いや秒数やクールダウンが攻撃の途中で変わり、
+        // 「振り始めた条件と終わる条件が違う」再現できない挙動になる。開始時に写し取って以降は触らない。
+
+        [Test]
+        public void MidAttackDataEdit_DoesNotChangeReach()
+        {
+            AttackData attack = MakeAttack();
+            Companion companion = MakeCompanion(attack);
+            MakeEnemy(new Vector3(0f, 0f, 1f));
+
+            EnterActive(companion);
+            Assert.AreEqual(UseRange, companion.Combat.ActivePlan.Reach, 1e-4f, "前提：開始時の間合いで始まっている。");
+
+            SetPrivateField(attack, "_useRange", UseRange * 4f); // Inspector から間合いを伸ばした瞬間。
+            Tick(companion, 0f);
+
+            Assert.AreEqual(UseRange, companion.Combat.ActivePlan.Reach, 1e-4f,
+                "判定の届く距離は攻撃中に伸びない（開始時に確定した値のまま）。");
+        }
+
+        [Test]
+        public void MidAttackCooldownEdit_DoesNotChangeCooldownAtFinish()
+        {
+            AttackData attack = MakeAttack();
+            Companion companion = MakeCompanion(attack);
+            MakeEnemy(new Vector3(0f, 0f, 1f));
+
+            EnterActive(companion);
+            SetPrivateField(attack, "_cooldownSeconds", Cooldown * 10f);
+
+            Tick(companion, Active + Recovery); // 後隙まで進めて終了させる。
+
+            Assert.IsFalse(companion.Combat.IsAttacking, "前提：攻撃が終わっている。");
+            Assert.AreEqual(Cooldown, companion.Combat.CooldownRemaining, 1e-3f,
+                "終了時のクールダウンは開始時の値（後から書き換えた値ではない）。");
+        }
+
+        [Test]
+        public void FinishedAttack_ClearsThePlan()
+        {
+            Companion companion = MakeCompanion(MakeAttack());
+            MakeEnemy(new Vector3(0f, 0f, 1f));
+
+            EnterActive(companion);
+            Tick(companion, Active + Recovery);
+
+            Assert.IsFalse(companion.Combat.ActivePlan.HasAttack,
+                "攻撃していない間は確定値を持ち越さない（次の攻撃は必ず開始時に取り直す）。");
+        }
+
+        [Test]
+        public void CancelledAttack_ClearsThePlan()
+        {
+            Companion companion = MakeCompanion(MakeAttack());
+            MakeEnemy(new Vector3(0f, 0f, 1f));
+
+            EnterActive(companion);
+            companion.Combat.CancelAttack();
+
+            Assert.IsFalse(companion.Combat.ActivePlan.HasAttack, "中断でも確定値を残さない。");
+        }
     }
 }

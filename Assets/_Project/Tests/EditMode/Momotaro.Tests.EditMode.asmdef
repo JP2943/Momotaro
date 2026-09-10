@@ -10,6 +10,7 @@
         "Momotaro.Presentation",
         "Momotaro.Infrastructure",
         "Momotaro.Editor",
+        "Momotaro.EditorBridge",
         "Unity.InputSystem"
     ],
     "includePlatforms": [

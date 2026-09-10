@@ -69,7 +69,7 @@ namespace Momotaro.Editor.Phase4
         [MenuItem("Momotaro/Phase 4/Generate Inumaru Prefab")]
         private static void GenerateInteractive()
         {
-            BuildResult result = Build(InumaruPrefabPath, InumaruDataPath);
+            BuildResult result = Build(InumaruPrefabPath, InumaruDataPath, InumaruAttackDataPath);
             if (result.Success)
             {
                 Debug.Log("[Phase4] 犬丸 Prefab を生成しました: " + result.Message, result.Prefab);
@@ -89,8 +89,15 @@ namespace Momotaro.Editor.Phase4
         /// 犬丸の Data（無ければ新規作成）と Prefab を生成する。既存の Prefab は上書きする（再生成で必ず同じ構成へ戻る）。
         /// 通常攻撃 Data も同様に用意し、Data 側が未配線・攻撃力 0 のときだけ補う（手で調整した値は保つ）。
         /// 仮素材が見つからない場合は失敗として報告する（無言で素材無しの Prefab を作らない）。
+        ///
+        /// <b>3 つのパスはすべて呼び出し側が明示する。</b><paramref name="attackPath"/> に既定値を持たせていたときは、
+        /// 一時パスへ生成しているつもりのテストが<b>本番の攻撃 Data を触っていた</b>（生成・保存まで走る）。
+        /// 出力先を省略できると、省略した側は自分がどこへ書いているか気付けない。
         /// </summary>
-        public static BuildResult Build(string prefabPath, string dataPath, string attackPath = InumaruAttackDataPath)
+        /// <param name="prefabPath">Prefab の出力先。</param>
+        /// <param name="dataPath">仲間 Data の出力先。</param>
+        /// <param name="attackPath">通常攻撃 Data の出力先。テストは必ず一時パスを渡すこと。</param>
+        public static BuildResult Build(string prefabPath, string dataPath, string attackPath)
         {
             var errors = new List<string>();
 

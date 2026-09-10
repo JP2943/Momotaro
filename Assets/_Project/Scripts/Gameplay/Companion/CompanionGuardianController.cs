@@ -220,8 +220,9 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
-            // 自分が登録されている場合だけ解除する（他の守護者を巻き込まない）。
-            _host.SetGuardianResolver(null);
+            // 自分が登録されている場合だけ解除される（一致判定は登録先が行う）。
+            // 無条件に null を入れると、後から有効化された別の守護者の登録まで消してしまう。
+            _host.ClearGuardianResolver(this);
             _host = null;
         }
 

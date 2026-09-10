@@ -46,6 +46,7 @@ namespace Momotaro.Gameplay.Player
         private bool _reactionMotorResolved;
         private IGuardianResolver _guardianResolver;   // 守護／かばうの判断先（P4-01。未配線なら肩代わりは起きない）。
         private bool _guardianResolverResolved;
+        private bool _transferInProgress;              // 守護転送の再入ガード（P4 §8.5。1 回の転送で 1 回だけ成立させる）。
 
         /// <summary>JG 成立時に近接攻撃者へ付与する強制ひるみ秒（Phase3.5 §7.5：0.30〜0.40 の中央）。</summary>
         private const float ForcedFlinchSeconds = 0.35f;
@@ -475,6 +476,14 @@ namespace Momotaro.Gameplay.Player
         /// </summary>
         private bool TryTransferToGuardian(in HitInfo hit)
         {
+            // 取引ガード（§8.5）：転送の解決中に主人公へ別の命中が戻ってきても、二重に成立させない。
+            // 守護者の被弾処理は状態遷移・結果通知を伴うため、その途中で主人公の被弾入口へ再入し得る。
+            // 再入は肩代わりせず通常 Damage で解決する（1 回の転送で 1 回だけ成立させるための最小の栓）。
+            if (_transferInProgress)
+            {
+                return false;
+            }
+
             IGuardianResolver resolver = ResolveGuardianResolver();
             if (resolver == null)
             {
@@ -487,11 +496,29 @@ namespace Momotaro.Gameplay.Player
             }
 
             HitInfo transferred = GuardianHitTransfer.Rebuild(hit, guardian);
-            guardian.ReceiveHit(transferred);
-            resolver.NotifyTransferred(transferred, guardian);
-            GuardianTransfers.Publish(new GuardianTransferEvent(
-                hit.HitId, hit.Attacker, this, guardian, transferred.HitPoint));
-            return true;
+
+            _transferInProgress = true;
+            try
+            {
+                // 引き受け手が実際に受理したときだけ肩代わりが成立する。
+                // 受け口は CanTakeOver を通っても命中を捨てることがある（最も起きやすいのは、同じ 1 振りが
+                // 主人公と仲間の両方に重なり、仲間が判定から直接受けた後に同一 HitId の転送が届く場合）。
+                // これを成立扱いにすると主人公は自分に当たった命中を無傷でやり過ごし、守護の CD だけが減る。
+                if (!guardian.TryReceiveTransferredHit(transferred))
+                {
+                    return false; // 通常 Damage へフォールバックする。
+                }
+
+                resolver.NotifyTransferred(transferred, guardian);
+                GuardianTransfers.Publish(new GuardianTransferEvent(
+                    hit.HitId, hit.Attacker, this, guardian, transferred.HitPoint));
+                return true;
+            }
+            finally
+            {
+                // 例外・早期 return のどちらでも必ず解く。解き忘れると以後の肩代わりが無言で止まる。
+                _transferInProgress = false;
+            }
         }
 
         /// <summary>守護者が肩代わりを引き受けられるか（null・破棄済み・引き受け不可を弾く）。</summary>
@@ -527,6 +554,23 @@ namespace Momotaro.Gameplay.Player
         public void SetGuardianResolver(IGuardianResolver resolver)
         {
             _guardianResolver = resolver;
+            _guardianResolverResolved = true;
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// 登録者が一致するときだけ外す。仲間が複数居ると、後から有効化された守護者に登録が差し替わっている。
+        /// そこで先に退場した仲間が無条件に解除すると、生き残っている守護者の登録まで消えて<b>誰も庇わなくなる</b>。
+        /// 一致しない解除は「もう自分の登録ではない」として黙って無視するのが正しい（エラーではない）。
+        /// </remarks>
+        public void ClearGuardianResolver(IGuardianResolver expected)
+        {
+            if (expected == null || !ReferenceEquals(_guardianResolver, expected))
+            {
+                return;
+            }
+
+            _guardianResolver = null;
             _guardianResolverResolved = true;
         }
 

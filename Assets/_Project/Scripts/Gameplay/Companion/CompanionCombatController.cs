@@ -64,6 +64,7 @@ namespace Momotaro.Gameplay.Companion
         private HitId _currentSwing;
         private AttackSnapshot _snapshot; // 攻撃開始時に確定する不変値（実行中に原本が変わっても揺れない）。
         private float _attackPower;       // 同上（攻撃開始時の攻撃力を固定する）。
+        private CompanionAttackPlan _plan; // 同上（間合い・秒数・CD・判定寸法。攻撃中はこれしか読まない）。
         private float _cooldownRemaining;
         private bool _wasEngaged;
 
@@ -85,6 +86,12 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>クールダウンの残り秒（テスト・Debug 用）。</summary>
         public float CooldownRemaining => _cooldownRemaining;
+
+        /// <summary>
+        /// いま進行中の攻撃が開始時に確定した内容（攻撃していなければ <see cref="CompanionAttackPlan.None"/>。
+        /// テスト・診断用）。攻撃中に Data を書き換えてもここは変わらないことが F06 の受入条件。
+        /// </summary>
+        public CompanionAttackPlan ActivePlan => _plan;
 
         /// <summary>これまでに命中を与えた回数（テスト・診断用）。</summary>
         public int HitCount { get; private set; }
@@ -154,9 +161,9 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
-            CompanionAttackSettings settings = ResolveSettings();
-
             // 攻撃中は攻撃だけを進める（移動しない）。
+            // ここでは Data を読み直さず、開始時に確定した _plan だけを使う。攻撃の途中で間合い・秒数・
+            // 判定寸法が変わると、振り始めた条件と違う条件で終わることになる（F06）。
             if (_attack.IsAttacking)
             {
                 CompanionAttackPhase previous = _attack.Phase;
@@ -165,17 +172,19 @@ namespace Momotaro.Gameplay.Companion
 
                 if (_attack.IsHitboxActive)
                 {
-                    PollHitbox(settings);
+                    PollHitbox(_plan);
                 }
 
                 if (_attack.Finished)
                 {
-                    FinishAttack(settings);
+                    FinishAttack(_plan);
                 }
 
                 _wasEngaged = true;
                 return;
             }
+
+            CompanionAttackSettings settings = ResolveSettings();
 
             // 構え・回避の最中は攻撃を始めない。状態も奪わない（防御側が Guard／Evade 状態を持っている）。
             if (IsDefending())
@@ -289,6 +298,7 @@ namespace Momotaro.Gameplay.Companion
             }
 
             _attack.Cancel();
+            _plan = CompanionAttackPlan.None;
             _hitTracker.Clear();
             _motor?.Stop();
         }
@@ -325,11 +335,18 @@ namespace Momotaro.Gameplay.Companion
             // 攻撃開始時に数値を確定する（実行中に SO 原本が変わっても揺れない。§2.2）。
             _snapshot = AttackSnapshot.FromData(data);
             _attackPower = _actor.Data != null ? _actor.Data.AttackPower : 0f;
+
+            // 間合い・秒数・クールダウン・判定寸法も同じ瞬間に写し取る。以降この攻撃が終わるまで Data も
+            // Inspector も読み直さない（F06。読み直していたころは、Play 中の数値調整が振っている最中の
+            // 攻撃に割り込み、判定の届く距離だけが伸びるといった再現できない挙動になった）。
+            _plan = new CompanionAttackPlan(settings, _hitboxHalfWidth, _hitboxHeight, _hitboxHalfHeight);
+
             _currentSwing = _allocator.NextSingle();
             _hitTracker.Clear();
 
             if (!_attack.Begin(settings.StartupSeconds, settings.ActiveSeconds, settings.RecoverySeconds))
             {
+                _plan = CompanionAttackPlan.None;
                 return; // 長さゼロの攻撃は成立しない（Data の設定ミス。無言で判定を出さない）。
             }
 
@@ -340,13 +357,14 @@ namespace Momotaro.Gameplay.Companion
             ApplyPhaseState(CompanionAttackPhase.Startup, _attack.Phase);
             if (_attack.IsHitboxActive)
             {
-                PollHitbox(settings);
+                PollHitbox(_plan);
             }
         }
 
-        private void FinishAttack(in CompanionAttackSettings settings)
+        private void FinishAttack(in CompanionAttackPlan plan)
         {
-            _cooldownRemaining = settings.CooldownSeconds;
+            _cooldownRemaining = plan.CooldownSeconds;
+            _plan = CompanionAttackPlan.None;
             _hitTracker.Clear();
             _actor.RequestState(CompanionState.Chase, CompanionStateChangeReason.AttackFinished);
         }
@@ -401,24 +419,24 @@ namespace Momotaro.Gameplay.Companion
         /// 覆う。判定の届く距離を別の値で持つと、判断が「間合い」と言っている距離に判定が届かず、延々と空振りする
         /// （P4-03 受入で実際に起きた：開始 1.6m に対し判定 1.2m）。数値の正本は Data 側の 1 箇所だけにする。
         /// </summary>
-        private void ResolveHitbox(in CompanionAttackSettings settings, out Vector3 center, out Quaternion rotation,
+        private void ResolveHitbox(in CompanionAttackPlan plan, out Vector3 center, out Quaternion rotation,
             out Vector3 halfExtents)
         {
             Vector3 forward = _actor.Forward;
-            float reach = settings.UseRange;
-            center = _actor.WorldPosition + forward * (reach * 0.5f) + Vector3.up * _hitboxHeight;
+            float reach = plan.Reach;
+            center = _actor.WorldPosition + forward * (reach * 0.5f) + Vector3.up * plan.HitboxHeight;
             rotation = Quaternion.LookRotation(new Vector3(forward.x, 0f, forward.z), Vector3.up);
-            halfExtents = new Vector3(_hitboxHalfWidth, _hitboxHalfHeight, reach * 0.5f);
+            halfExtents = new Vector3(plan.HitboxHalfWidth, plan.HitboxHalfHeight, reach * 0.5f);
         }
 
-        private void PollHitbox(in CompanionAttackSettings settings)
+        private void PollHitbox(in CompanionAttackPlan plan)
         {
-            if (settings.UseRange <= 0f)
+            if (plan.Reach <= 0f)
             {
                 return;
             }
 
-            ResolveHitbox(settings, out Vector3 center, out Quaternion rotation, out Vector3 halfExtents);
+            ResolveHitbox(plan, out Vector3 center, out Quaternion rotation, out Vector3 halfExtents);
 
             // Physics.autoSyncTransforms=0 のため、問い合わせ前に明示同期する（移動中の敵を取りこぼさない）。
             Physics.SyncTransforms();
@@ -493,7 +511,13 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
-            ResolveHitbox(settings, out Vector3 center, out Quaternion rotation, out Vector3 halfExtents);
+            // 描画は「いま Data に入っている値」で見せる（調整中の値をその場で確認したいため）。
+            // 攻撃中に実際に使われるのは開始時に確定した _plan なので、振っている最中は両者がずれ得る。
+            CompanionAttackPlan preview = _attack.IsAttacking
+                ? _plan
+                : new CompanionAttackPlan(settings, _hitboxHalfWidth, _hitboxHeight, _hitboxHalfHeight);
+
+            ResolveHitbox(preview, out Vector3 center, out Quaternion rotation, out Vector3 halfExtents);
             Gizmos.color = _attack.IsHitboxActive ? new Color(1f, 0.2f, 0.1f, 0.9f) : new Color(1f, 1f, 1f, 0.25f);
             Gizmos.matrix = Matrix4x4.TRS(center, rotation, Vector3.one);
             Gizmos.DrawWireCube(Vector3.zero, halfExtents * 2f);
@@ -526,6 +550,7 @@ namespace Momotaro.Gameplay.Companion
             // 無効化・Scene 離脱で判定・購読・移動指示を残さない（§2.3 後始末）。
             UnsubscribeState();
             _attack.Cancel();
+            _plan = CompanionAttackPlan.None;
             _hitTracker.Clear();
             Decision = CompanionEngageDecision.Idle;
             _wasEngaged = false;

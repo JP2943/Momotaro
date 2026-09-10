@@ -36,6 +36,14 @@ namespace Momotaro.EditorBridge
 
         /// <summary>run-op：実行する操作名（許可された操作のみ）。</summary>
         public string op;
+
+        /// <summary>
+        /// run-tests：成功件数の下限（0 は指定なし）。ここを下回ったら <c>failed</c> で返す。
+        ///
+        /// 「1380 件通っていたはずの実行が、フィルタの綴り違いで 3 件だけ通って ok になる」事故を外から止めるための栓。
+        /// 件数が分かっている実行では、直前の実績を少し下回る値を入れておく。
+        /// </summary>
+        public int minPassed;
     }
 
     /// <summary>コマンドの実行結果。</summary>
@@ -68,6 +76,12 @@ namespace Momotaro.EditorBridge
 
         /// <summary>スキップ件数。</summary>
         public int skipped;
+
+        /// <summary>
+        /// run-tests：開始時に予定されていた件数（0 は不明）。実行件数がこれを下回るなら完走していない。
+        /// 「途中で止まったのに失敗 0 件だから緑」を外から見分けるために残す。
+        /// </summary>
+        public int expected;
 
         /// <summary>失敗したテストの詳細・コンパイルエラーの本文など。</summary>
         public string[] details = Array.Empty<string>();

@@ -63,6 +63,36 @@ Claude が Unity Editor を直接動かすための仕組み。`Assets/_Project/
 - EditMode のフル実行は `EditorSceneManager.NewScene(..., Single)` を含み、**開いている Scene の未保存編集を黙って破棄する**
 - **PlayMode テストは既定では許可を取ってから実行する。** ただし下記の常時許可がある場合は待たない
 
+### result.json の status を読み違えない
+
+**失敗 0 件は成功と同じではない。** フィルタの綴りが実装と食い違って 1 件も一致しなかった実行が
+「成功 0 / 失敗 0」で緑に見え、何も検証していないのに緑と報告した事故があった。ブリッジ側で塞いである。
+
+| status | 意味 | 取るべき行動 |
+|---|---|---|
+| `ok` | 実行が成立し、結果も合格 | 次へ進める |
+| `failed` | 実行は成立したが不合格（失敗あり・**全スキップ**・`minPassed` 割れ） | `details` を読んで直す |
+| `error` | 実行が成立していない（**一致 0 件**・中断・開始できず） | 合否は**不明**。原因を潰して再実行 |
+
+- `run-tests` に `minPassed`（成功件数の下限）を付けられる。件数が分かっている実行では直近の実績を入れる。
+  テストが消えた・スキップに化けた実行を緑と読み違えずに済む
+- `expected`（予定件数）は **`filter` を付けない全件実行のときだけ**入る。Unity が開始時に渡してくる件数は
+  絞り込み後ではなく**スイート全体**のため、絞り込み実行では完走判定に使えない（実測で確認済み）。
+  絞り込み実行の中断検出は `minPassed` で行う
+
+### PC 側シェルが落ちているときのブリッジ操作
+
+`device_bash` のマウントが落ちても（`no Plan9 drive shares mounted` エラー）、ブリッジは使える。
+`device_stage_files` / `device_commit_files` はマウントに依存しないため、次の手順に切り替える。
+
+1. `command.json` をクラウド側で書く → `SendUserFile` → `device_commit_files` で `_bridge/command.json` へ
+   （`force: true`。既存を上書きするため）
+2. クラウド側で `sleep` して待つ
+3. `device_stage_files` で `_bridge/result.json` を取り、読む
+
+`status.json` の `aliveAt` が現在時刻に近ければ Editor は生きている。マウントが落ちていても
+`device_list_dir` は動くので、まずそれで生存を確かめる。
+
 ### PlayMode テストを書くときの落とし穴（実際に踏んだもの）
 
 - **静的状態は前のテストから持ち越される。** 特に `GameModeProvider.Current` が Exploration／Combat 以外だと、
@@ -89,6 +119,12 @@ Claude は**都度の確認を取らずに PlayMode テストを実行してよ�
 Claude のクラウド環境と PC は別。`_transfer/` 経由で tar を渡し、`cp -f` で配置する。
 PC 側シェルはファイルを削除できないため、消す場合は `_to_delete/` へ移す。
 `_transfer/` `_to_delete/` `_bridge/` は `.gitignore` 済み。
+
+**PC 側シェルが落ちている場合**は tar が展開できないので、`device_commit_files` で
+**1 ファイルずつ最終パスへ直接置く**（`SendUserFile` で uuid を取ってから渡す）。既存ファイルには
+staging 時の `mtimeMs` を `expectedMtimeMs` に入れ、オーナーの編集を踏み潰さないようにする。
+新規 `.cs` には `.meta` も同時に置くこと（guid は `md5(アセットパス)`）。忘れると Unity が別 guid を振り、
+あとで Prefab の参照が切れる。
 
 ## git の見え方について（誤解しないための注記）
 

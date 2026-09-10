@@ -78,6 +78,17 @@ namespace Momotaro.Tests.EditMode
                 Resolver = resolver;
                 SetCount++;
             }
+
+            /// <summary>本物（<c>PlayerVitalsHolder</c>）と同じく、登録者が一致するときだけ外す。</summary>
+            public void ClearGuardianResolver(IGuardianResolver expected)
+            {
+                if (expected == null || !ReferenceEquals(Resolver, expected))
+                {
+                    return;
+                }
+
+                Resolver = null;
+            }
         }
 
         private sealed class FakeAttacker : MonoBehaviour, ICombatActor
@@ -156,6 +167,44 @@ namespace Momotaro.Tests.EditMode
             InvokePrivate(guardian, "OnDisable");
 
             Assert.IsNull(host.Resolver, "無効化・Scene 離脱で守護対象に参照を残さない。");
+        }
+
+        /// <summary>
+        /// 守護対象は判断先を 1 つしか持てないため、2 体目が有効化されると登録は 2 体目に差し替わる。
+        /// このとき 1 体目が退場して<b>無条件に</b>解除すると、生き残っている 2 体目の登録まで消えて誰も庇わなくなる。
+        /// 犬丸 1 体の現状では表に出ないが、猿若・雉代が加わった瞬間に無言で起きる（P4-FIX F03）。
+        /// </summary>
+        [Test]
+        public void DisablingAnOlderGuardian_KeepsTheCurrentRegistration()
+        {
+            FakeHost host = MakeHost(Vector3.zero);
+            (CompanionActor _, CompanionHitReceiver _, CompanionGuardianController first) =
+                MakeCompanion(Vector3.forward, host);
+            (CompanionActor _, CompanionHitReceiver _, CompanionGuardianController second) =
+                MakeCompanion(Vector3.back, host);
+
+            Assert.AreSame(second, host.Resolver, "後から有効化した守護者へ登録が移る（現状の 1 枠契約）。");
+
+            InvokePrivate(first, "OnDisable");
+
+            Assert.AreSame(second, host.Resolver,
+                "先に退場した守護者は、自分のものでない登録を外さない。");
+        }
+
+        [Test]
+        public void DisablingTheCurrentGuardian_ClearsTheRegistration()
+        {
+            FakeHost host = MakeHost(Vector3.zero);
+            (CompanionActor _, CompanionHitReceiver _, CompanionGuardianController first) =
+                MakeCompanion(Vector3.forward, host);
+            (CompanionActor _, CompanionHitReceiver _, CompanionGuardianController second) =
+                MakeCompanion(Vector3.back, host);
+
+            InvokePrivate(second, "OnDisable");
+
+            Assert.IsNull(host.Resolver,
+                "いま登録されている守護者が退場したら外れる（一致判定が「常に外さない」に倒れていない）。");
+            Assert.IsNotNull(first, "1 体目は生きているが、登録は戻らない（誰が庇うかの調停は P4-07）。");
         }
 
         // ---- 引き受けの判断 ----
@@ -313,6 +362,27 @@ namespace Momotaro.Tests.EditMode
 
             Assert.AreEqual(before - 20, receiver.CurrentHp,
                 "同一命中は 1 回だけ受理する（転送と直接命中がどちらの順で届いても二重に入らない）。");
+        }
+
+        /// <summary>
+        /// 二重受理を弾いたとき、受け口は「受理しなかった」と答えなければならない。
+        /// ここが true を返すと、主人公側は肩代わりが成立したと信じて自分の被弾を飛ばし、
+        /// <b>誰も痛みを引き受けないまま命中が消える</b>（P4-FIX F03 の転送の原子性）。
+        /// </summary>
+        [Test]
+        public void DroppedTransfer_ReportsNotAccepted()
+        {
+            FakeHost host = MakeHost(Vector3.zero);
+            (CompanionActor _, CompanionHitReceiver receiver, CompanionGuardianController guardian) =
+                MakeCompanion(Vector3.forward, host);
+
+            HitInfo original = MakeHit(null, null, hp: 20f);
+            guardian.TryResolveGuardian(original, out IGuardianReceiver resolved);
+            HitInfo transferred = GuardianHitTransfer.Rebuild(original, resolved);
+
+            Assert.IsTrue(resolved.TryReceiveTransferredHit(transferred), "1 回目は受理する。");
+            Assert.IsFalse(resolved.TryReceiveTransferredHit(transferred),
+                "同一命中の 2 回目は受理していない。呼び出し側は通常ダメージへ戻す必要がある。");
         }
     }
 }

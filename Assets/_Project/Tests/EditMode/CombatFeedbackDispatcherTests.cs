@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
+using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Enemy;
 using Momotaro.Gameplay.Player;
 using Momotaro.Presentation.Diagnostics;
@@ -386,6 +387,100 @@ namespace Momotaro.Tests.EditMode
             // Player 破棄後の再取得で購読状態がクリアされ、以後の Rescan でも例外なく安定する。
             Object.DestroyImmediate(player.gameObject);
             Assert.DoesNotThrow(() => { disp.Rescan(); disp.Rescan(); }, "Player 不在でも Rescan は安定する。");
+        }
+
+        // ---- P4-FIX F04：仲間（CompanionHitReceiver）購読 ----
+        //
+        // 仲間は被弾側として物理にも解決順にも載っていたのに、結果チャネルだけがどこにも繋がっておらず、
+        // 殴られても点滅も SE も出なかった。敵・ダミーとまったく同じ経路に載せる（仲間専用の演出は作らない）。
+
+        private CompanionHitReceiver MakeCompanionReceiver()
+        {
+            var data = ScriptableObject.CreateInstance<CompanionData>();
+            _spawned.Add(data);
+            SetField(data, "_maxHp", 80);
+            SetField(data, "_defense", 0f);
+
+            var go = new GameObject("Inumaru");
+            _spawned.Add(go);
+            go.SetActive(false); // Awake が Data 未設定で走らないよう、配線後に有効化する。
+            var actor = go.AddComponent<CompanionActor>();
+            actor.SetData(data);
+            var receiver = go.AddComponent<CompanionHitReceiver>();
+            receiver.Bind(actor);
+            go.SetActive(true);
+            return receiver;
+        }
+
+        [Test]
+        public void Rescan_SubscribesToCompanionResults()
+        {
+            CompanionHitReceiver companion = MakeCompanionReceiver();
+            var disp = MakeDispatcher();
+            disp.Rescan();
+
+            Assert.AreEqual(1, companion.Results.ListenerCount, "仲間の被弾結果を購読する。");
+        }
+
+        [Test]
+        public void CompanionHitResult_PublishesFeedbackCue()
+        {
+            CompanionHitReceiver companion = MakeCompanionReceiver();
+            var disp = MakeDispatcher();
+            disp.Rescan();
+            var fake = new FakeFeedback();
+            disp.Feedback.AddListener(fake);
+
+            companion.Results.Publish(DamageOn(companion, 41));
+
+            Assert.IsTrue(fake.Got, "仲間が殴られてもフィードバックが配信される。");
+            Assert.AreEqual(HitResultKind.Damage, fake.Last.Result.Kind);
+            Assert.AreEqual("SE_Hit_Normal", fake.Last.Cue.SeId,
+                "Cue の解決は既存のまま（仲間用の分岐を足していない）。");
+        }
+
+        [Test]
+        public void RepeatedRescan_NoDuplicateCompanionNotification()
+        {
+            CompanionHitReceiver companion = MakeCompanionReceiver();
+            var disp = MakeDispatcher();
+            disp.Rescan();
+            disp.Rescan();
+            disp.Rescan();
+
+            Assert.AreEqual(1, companion.Results.ListenerCount, "再取得で重複購読しない。");
+
+            var fake = new FakeFeedback();
+            disp.Feedback.AddListener(fake);
+            companion.Results.Publish(DamageOn(companion, 42));
+
+            Assert.AreEqual(1, fake.Count, "重複通知されない（1 回のみ）。");
+        }
+
+        [Test]
+        public void CompanionOnDisable_Unsubscribes()
+        {
+            CompanionHitReceiver companion = MakeCompanionReceiver();
+            var disp = MakeDispatcher();
+            disp.Rescan();
+            Assert.AreEqual(1, companion.Results.ListenerCount);
+
+            OnDisableMethod.Invoke(disp, null);
+
+            Assert.AreEqual(0, companion.Results.ListenerCount, "無効化で仲間購読も解除される。");
+        }
+
+        [Test]
+        public void CompanionDestroyed_Rescan_SafeUnsubscribe()
+        {
+            CompanionHitReceiver companion = MakeCompanionReceiver();
+            var disp = MakeDispatcher();
+            disp.Rescan();
+
+            Object.DestroyImmediate(companion.gameObject);
+
+            Assert.DoesNotThrow(() => { disp.Rescan(); disp.Rescan(); },
+                "破棄済みの仲間が居ても再取得は安定する。");
         }
 
         [Test]

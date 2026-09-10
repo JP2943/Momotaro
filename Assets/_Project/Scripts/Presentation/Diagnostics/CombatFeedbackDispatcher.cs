@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Momotaro.Gameplay.Combat;
+using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Enemy;
 using Momotaro.Gameplay.Player;
 using UnityEngine;
@@ -8,7 +9,8 @@ namespace Momotaro.Presentation.Diagnostics
 {
     /// <summary>
     /// 命中結果を仮フィードバック（VFX/SE ID・ヒットストップ要求）へ変換して配信する（Phase2 P2-11 / Phase3.5 P3.5-05B）。仕様書 §10.2 / §900。
-    /// 主人公（<see cref="PlayerVitalsHolder"/>）・<see cref="CombatDummy"/>・実戦の敵（<see cref="EnemyActor"/>）の結果チャネルを購読し、
+    /// 主人公（<see cref="PlayerVitalsHolder"/>）・<see cref="CombatDummy"/>・実戦の敵（<see cref="EnemyActor"/>）・
+    /// 仲間（<see cref="CompanionHitReceiver"/>。P4-FIX F04）の結果チャネルを購読し、
     /// <see cref="CombatFeedbackMap"/> で Cue を解決して <see cref="Feedback"/> へ配信する。これにより主人公→敵の命中でも敵側の点滅・ヒットストップ・
     /// カメラ揺れ・SE が発生する。Gameplay ロジックには一切干渉しない（読み取り専用）。無効化・破棄で確実に購読解除し、シーン再読込後は
     /// <see cref="Rescan"/>（OnEnable / 定期）で購読し直す。VFX/SE 実体・完成 HitStop は Presentation 側の担当。
@@ -21,6 +23,7 @@ namespace Momotaro.Presentation.Diagnostics
 
         private readonly List<CombatDummy> _dummies = new List<CombatDummy>();
         private readonly List<EnemyActor> _enemies = new List<EnemyActor>();
+        private readonly List<CompanionHitReceiver> _companions = new List<CompanionHitReceiver>();
         private PlayerVitalsHolder _playerVitals;
         private float _nextRefresh;
 
@@ -92,6 +95,24 @@ namespace Momotaro.Presentation.Diagnostics
             {
                 e.Results.AddListener(this);
             }
+
+            // 仲間（P4-FIX F04）：敵・ダミーと同型。仲間が被弾しても点滅も SE も出ていなかったのは、
+            // 被弾側として物理・解決順には載っていたのに、結果チャネルだけがどこにも繋がっていなかったため。
+            // 仲間専用の演出経路は作らず、既存の Cue 解決にそのまま載せる（HitStop も既存の 1 本のまま）。
+            foreach (CompanionHitReceiver c in _companions)
+            {
+                if (c != null)
+                {
+                    c.Results.RemoveListener(this);
+                }
+            }
+
+            _companions.Clear();
+            _companions.AddRange(FindObjectsByType<CompanionHitReceiver>(FindObjectsSortMode.None));
+            foreach (CompanionHitReceiver c in _companions)
+            {
+                c.Results.AddListener(this);
+            }
         }
 
         /// <inheritdoc />
@@ -123,6 +144,16 @@ namespace Momotaro.Presentation.Diagnostics
             }
 
             _enemies.Clear();
+
+            foreach (CompanionHitReceiver c in _companions)
+            {
+                if (c != null)
+                {
+                    c.Results.RemoveListener(this);
+                }
+            }
+
+            _companions.Clear();
 
             if (_playerVitals != null)
             {

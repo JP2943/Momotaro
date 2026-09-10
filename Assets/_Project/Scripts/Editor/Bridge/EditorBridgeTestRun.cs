@@ -73,6 +73,10 @@ namespace Momotaro.EditorBridge
             public void RunStarted(ITestAdaptor testsToRun)
             {
                 _startedAt = EditorApplication.timeSinceStartup;
+
+                // 予定件数を先に控える。完了時の件数と突き合わせれば「途中で止まった実行」を
+                // 「失敗 0 件だから緑」と取り違えずに済む（キャンセル・再生モードの異常終了で起きる）。
+                EditorBridgeService.OnTestRunStarted(testsToRun == null ? 0 : testsToRun.TestCaseCount);
             }
 
             public void RunFinished(ITestResultAdaptor result)
