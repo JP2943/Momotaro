@@ -778,6 +778,120 @@
       "stage": "P4-07B",
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_CompanionCarriesOrders_AndMissingOrdersIsDetected"
+    },
+    {
+      "requirementId": "N100",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_AddsTheCompanionLayerOnTopOfTheTrialScene"
+    },
+    {
+      "requirementId": "N101",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_WiresActivityContextToTheTrialSession"
+    },
+    {
+      "requirementId": "N102",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_WiresOrderInputToTheCompanion"
+    },
+    {
+      "requirementId": "N103",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_PlacesInvestigationPointsWithinLeash"
+    },
+    {
+      "requirementId": "N104",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Rebuild_SamePath_DoesNotDuplicate"
+    },
+    {
+      "requirementId": "N105",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_InvalidOutputPath_FailsWithoutSaving"
+    },
+    {
+      "requirementId": "N106",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.TrialScene_StillSatisfiesPhase35Acceptance"
+    },
+    {
+      "requirementId": "N107",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.FreshlyBuiltTrial_HasNoErrors"
+    },
+    {
+      "requirementId": "N108",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.MissingOrderInput_IsDetected"
+    },
+    {
+      "requirementId": "N109",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.OrderInputWithoutCompanions_IsDetected"
+    },
+    {
+      "requirementId": "N110",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.MissingActivityContext_IsDetected"
+    },
+    {
+      "requirementId": "N111",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderInputTests.ToggleAll_SwitchesEveryoneTogether"
+    },
+    {
+      "requirementId": "N112",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderInputTests.ToggleAll_WhenMixed_MakesEveryoneWait"
+    },
+    {
+      "requirementId": "N113",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderInputTests.SetAll_CountsOnlyRealChanges"
+    },
+    {
+      "requirementId": "N114",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderInputTests.Bind_IgnoresNullAndDuplicates"
+    },
+    {
+      "requirementId": "N115",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderInputTests.ToggleAll_WithoutCompanions_DoesNothing"
+    },
+    {
+      "requirementId": "N116",
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.BuildCompanionTrial_TargetExists"
+    },
+    {
+      "requirementId": "N117",
+      "stage": "P4-08R",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityFallbackPlayTests.WiredScene_NeverUsesTheTransitionalFallback"
+    },
+    {
+      "requirementId": "N118",
+      "stage": "P4-08R",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityFallbackPlayTests.WithoutContext_TheFallbackIsActuallyUsed"
     }
   ],
   "allowedSkips": []

@@ -20,7 +20,8 @@ namespace Momotaro.EditorBridge
     /// <list type="bullet">
     /// <item><description>呼べるのはここに書いた操作だけ。任意のメソッドは呼べない（引数も固定）。</description></item>
     /// <item><description>いずれもダイアログを出さず、何度実行しても同じ結果になる操作に限る。
-    /// Scene を作り直す操作（試遊 Scene の再生成）は<b>載せない</b>。手で加えた変更を消してしまうため。</description></item>
+    /// Scene を作り直す操作は、<b>未保存の変更があるとき自分で断る</b>ものだけ載せる
+    /// （<c>build-companion-field</c> / <c>build-companion-trial</c>）。断らない操作は手で加えた変更を消してしまう。</description></item>
     /// <item><description>参照は型名の文字列＋リフレクションで解決する。ブリッジが <c>Momotaro.Editor</c> を
     /// コンパイル時に参照すると、そちらが壊れたときブリッジごと動かなくなり、<b>コンパイルエラーを報告する手段が失われる</b>。
     /// 依存を持たないことでその事態を避ける。名前の綴りは EditMode テストが検査する。</description></item>
@@ -40,9 +41,12 @@ namespace Momotaro.EditorBridge
         /// <summary>仲間の検証 Scene を再生成し、そのまま検査する（P4-FIX F01）。</summary>
         public const string BuildCompanionField = "build-companion-field";
 
+        /// <summary>仲間試遊 Scene を再生成し、そのまま検査する（P4-08R）。</summary>
+        public const string BuildCompanionTrial = "build-companion-trial";
+
         /// <summary>実行できる操作の一覧（エラーメッセージにそのまま出す）。</summary>
         public static readonly string[] All =
-            { BuildInumaru, ValidateProjectData, VerifyRequiredTests, BuildCompanionField };
+            { BuildInumaru, ValidateProjectData, VerifyRequiredTests, BuildCompanionField, BuildCompanionTrial };
 
         /// <summary>実行結果。</summary>
         public readonly struct OperationResult
@@ -68,7 +72,7 @@ namespace Momotaro.EditorBridge
         public static bool IsKnown(string op)
         {
             return op == BuildInumaru || op == ValidateProjectData || op == VerifyRequiredTests
-                || op == BuildCompanionField;
+                || op == BuildCompanionField || op == BuildCompanionTrial;
         }
 
         /// <summary>操作を実行する。未知の操作・呼び出し失敗は <see cref="OperationResult.Success"/> false で返す。</summary>
@@ -91,6 +95,9 @@ namespace Momotaro.EditorBridge
 
                     case BuildCompanionField:
                         return RunBuildCompanionField();
+
+                    case BuildCompanionTrial:
+                        return RunBuildCompanionTrial();
 
                     default:
                         return new OperationResult(false,
@@ -242,6 +249,8 @@ namespace Momotaro.EditorBridge
         private const string ProjectValidatorType = "Momotaro.Editor.Validation.ProjectDataValidator";
         private const string CompanionFieldBuilderType = "Momotaro.Editor.Phase4.Phase4CompanionFieldBuilder";
         private const string CompanionFieldValidatorType = "Momotaro.Editor.Phase4.Phase4CompanionFieldValidator";
+        private const string CompanionTrialBuilderType = "Momotaro.Editor.Phase4.Phase4CompanionTrialBuilder";
+        private const string CompanionTrialValidatorType = "Momotaro.Editor.Phase4.Phase4CompanionTrialValidator";
 
         private static OperationResult RunBuildInumaru()
         {
@@ -338,7 +347,14 @@ namespace Momotaro.EditorBridge
         /// その危険を無くしてある（オーナーが席を外していても、保存していない作業は壊れない）。
         /// 生成は決定的なので、保存済みの状態から作り直すのは元へ戻すのと同じ意味しか持たない。
         /// </summary>
-        private static OperationResult RunBuildCompanionField()
+        private static OperationResult RunBuildCompanionField() =>
+            RunSceneBuild(CompanionFieldBuilderType, CompanionFieldValidatorType, "仲間の検証 Scene");
+
+        /// <summary>仲間試遊 Scene を再生成し、続けて Validator にかける（P4-08R）。条件は検証 Scene と同じ。</summary>
+        private static OperationResult RunBuildCompanionTrial() =>
+            RunSceneBuild(CompanionTrialBuilderType, CompanionTrialValidatorType, "仲間試遊 Scene");
+
+        private static OperationResult RunSceneBuild(string builderType, string validatorType, string label)
         {
             for (int i = 0; i < UnityEngine.SceneManagement.SceneManager.sceneCount; i++)
             {
@@ -352,23 +368,23 @@ namespace Momotaro.EditorBridge
                 }
             }
 
-            Type builder = FindType(CompanionFieldBuilderType);
+            Type builder = FindType(builderType);
             if (builder == null)
             {
-                return new OperationResult(false, "型が見つかりません: " + CompanionFieldBuilderType);
+                return new OperationResult(false, "型が見つかりません: " + builderType);
             }
 
             string scenePath = ReadConstString(builder, "DefaultScenePath");
             if (scenePath == null)
             {
-                return new OperationResult(false, CompanionFieldBuilderType + ".DefaultScenePath が見つかりません。");
+                return new OperationResult(false, builderType + ".DefaultScenePath が見つかりません。");
             }
 
             MethodInfo build = builder.GetMethod(
                 "Build", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(string) }, null);
             if (build == null)
             {
-                return new OperationResult(false, CompanionFieldBuilderType + ".Build(string) が見つかりません。");
+                return new OperationResult(false, builderType + ".Build(string) が見つかりません。");
             }
 
             object result = build.Invoke(null, new object[] { scenePath });
@@ -384,22 +400,21 @@ namespace Momotaro.EditorBridge
             var details = new List<string> { scenePath, message };
             if (!success)
             {
-                return new OperationResult(false, "仲間の検証 Scene の生成に失敗しました。", details);
+                return new OperationResult(false, label + "の生成に失敗しました。", details);
             }
 
             // 生成しただけで終わらせない。出荷される Scene そのものを検査して、
             // 「作った」と「正しい」を分けて報告する。
-            OperationResult validated = ValidateCompanionField(details);
-            return validated;
+            return ValidateBuiltScene(validatorType, label, details);
         }
 
-        /// <summary>生成直後の Scene を <c>Phase4CompanionFieldValidator</c> にかける。</summary>
-        private static OperationResult ValidateCompanionField(List<string> details)
+        /// <summary>生成直後の Scene を対応する Validator にかける。</summary>
+        private static OperationResult ValidateBuiltScene(string validatorType, string label, List<string> details)
         {
-            Type validator = FindType(CompanionFieldValidatorType);
+            Type validator = FindType(validatorType);
             if (validator == null)
             {
-                return new OperationResult(false, "型が見つかりません: " + CompanionFieldValidatorType, details);
+                return new OperationResult(false, "型が見つかりません: " + validatorType, details);
             }
 
             MethodInfo validate = validator.GetMethod(
@@ -408,7 +423,7 @@ namespace Momotaro.EditorBridge
             if (validate == null)
             {
                 return new OperationResult(false,
-                    CompanionFieldValidatorType + ".Validate(Scene, List<string>, List<string>) が見つかりません。", details);
+                    validatorType + ".Validate(Scene, List<string>, List<string>) が見つかりません。", details);
             }
 
             var errors = new List<string>();
@@ -431,8 +446,8 @@ namespace Momotaro.EditorBridge
             return new OperationResult(
                 errors.Count == 0,
                 errors.Count == 0
-                    ? "仲間の検証 Scene を生成し、検査も通りました（警告 " + warnings.Count + " 件）。"
-                    : "生成はしましたが検査でエラー " + errors.Count + " 件。",
+                    ? label + "を生成し、検査も通りました（警告 " + warnings.Count + " 件）。"
+                    : label + "は生成しましたが検査でエラー " + errors.Count + " 件。",
                 details);
         }
 

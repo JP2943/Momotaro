@@ -229,25 +229,13 @@ namespace Momotaro.Gameplay.Companion
         /// <summary>被弾由来の強制状態を確定する（調停役があればそこへ集約する。P4-FIX F02b）。</summary>
         private void ForceHitState(CompanionState state, CompanionStateChangeReason reason)
         {
-            if (_states != null)
-            {
-                _states.ForceHit(state, reason);
-                return;
-            }
-
-            _actor.ForceHitState(state, reason);
+            _states?.ForceHit(state, reason);
         }
 
         /// <summary>被弾からの復帰を確定する（同上）。</summary>
         private void ForceRecover(CompanionState state, CompanionStateChangeReason reason)
         {
-            if (_states != null)
-            {
-                _states.ForceRecover(state, reason);
-                return;
-            }
-
-            _actor.RequestState(state, reason);
+            _states?.ForceRecover(state, reason);
         }
 
         private void EnsureRuntime()

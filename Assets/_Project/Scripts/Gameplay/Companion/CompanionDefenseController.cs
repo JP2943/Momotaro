@@ -228,18 +228,10 @@ namespace Momotaro.Gameplay.Companion
         /// </summary>
         private bool BeginDefenseAction(CompanionActionKind kind, CompanionState state, Vector3 facing)
         {
-            if (_states != null)
+            if (_states == null || !_states.TryStartAction(
+                    CompanionActionOwner.Defense, kind, state,
+                    CompanionStateChangeReason.DefensiveAction, out _action))
             {
-                if (!_states.TryStartAction(
-                        CompanionActionOwner.Defense, kind, state,
-                        CompanionStateChangeReason.DefensiveAction, out _action))
-                {
-                    return false;
-                }
-            }
-            else if (!_actor.RequestState(state, CompanionStateChangeReason.DefensiveAction))
-            {
-                // 調停役が無い構成（旧 Scene）。状態機が拒めば防御も始めない。
                 return false;
             }
 
@@ -302,19 +294,9 @@ namespace Momotaro.Gameplay.Companion
         /// </summary>
         private void HoldDefensePose()
         {
-            if (_arbiter != null)
-            {
-                _arbiter.Submit(
-                    CompanionMovementOwner.Defense,
-                    _hasHoldFacing ? CompanionMoveRequest.StopFacing(_holdFacing) : CompanionMoveRequest.Stop());
-                return;
-            }
-
-            // 調停役が無い構成（旧 Scene）でも向きだけは合わせる。
-            if (_hasHoldFacing)
-            {
-                _actor.SetFacing(_holdFacing);
-            }
+            _arbiter?.Submit(
+                CompanionMovementOwner.Defense,
+                _hasHoldFacing ? CompanionMoveRequest.StopFacing(_holdFacing) : CompanionMoveRequest.Stop());
         }
 
         private void Build()

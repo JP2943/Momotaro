@@ -280,13 +280,7 @@ namespace Momotaro.Gameplay.Companion
         private void BeginFollowAction(CompanionState state, CompanionStateChangeReason reason)
         {
             ResolveComponents();
-            if (_states != null)
-            {
-                _states.TryBegin(CompanionActionOwner.Follow, state, reason, out _);
-                return;
-            }
-
-            _actor.RequestState(state, reason); // 調停役が無い構成（旧 Scene）でも動くようにする。
+            _states?.TryBegin(CompanionActionOwner.Follow, state, reason, out _);
         }
 
         private Vector3 ResolveLeaderForward()
@@ -362,13 +356,7 @@ namespace Momotaro.Gameplay.Companion
         private void ForceStopMovement()
         {
             ResolveComponents();
-            if (_arbiter != null)
-            {
-                _arbiter.ForceStop();
-                return;
-            }
-
-            _motor?.Stop(); // 調停役が無い構成（旧 Scene）でも止まるようにする。
+            _arbiter?.ForceStop();
         }
 
         /// <summary>追従の所有権を手放す（既に戦闘へ移っていれば何も起きない）。</summary>

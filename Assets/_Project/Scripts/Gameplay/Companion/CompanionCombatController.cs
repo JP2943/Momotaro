@@ -387,26 +387,14 @@ namespace Momotaro.Gameplay.Companion
         /// <summary>攻撃の段を進める（券が一致するときだけ。P4-FIX F02b）。</summary>
         private void AdvanceAction(CompanionState state)
         {
-            if (_states != null)
-            {
-                _states.TryAdvance(_action, state, CompanionStateChangeReason.AttackAdvanced);
-                return;
-            }
-
-            _actor.RequestState(state, CompanionStateChangeReason.AttackAdvanced);
+            _states?.TryAdvance(_action, state, CompanionStateChangeReason.AttackAdvanced);
         }
 
         /// <summary>行動を正常に終えて次の状態へ移る（券が一致するときだけ）。</summary>
         private void CompleteAction(CompanionState next, CompanionStateChangeReason reason)
         {
-            if (_states != null)
-            {
-                _states.TryComplete(_action, next, reason);
-                _action = default;
-                return;
-            }
-
-            _actor.RequestState(next, reason);
+            _states?.TryComplete(_action, next, reason);
+            _action = default;
         }
 
         /// <summary>行動の所有権だけ返す（状態は変えない）。</summary>
@@ -419,13 +407,7 @@ namespace Momotaro.Gameplay.Companion
         /// <summary>戦闘としての移動意図を出す（受理されるかは調停役が決める。P4-FIX F02a）。</summary>
         private void SubmitMove(in CompanionMoveRequest request)
         {
-            if (_arbiter != null)
-            {
-                _arbiter.Submit(CompanionMovementOwner.Combat, request);
-                return;
-            }
-
-            ApplyDirectly(request); // 調停役が無い構成（旧 Scene）でも動くようにする。
+            _arbiter?.Submit(CompanionMovementOwner.Combat, request);
         }
 
         /// <summary>戦闘として止まる（所有権は握ったまま。追従に取り返させない）。</summary>
@@ -439,44 +421,13 @@ namespace Momotaro.Gameplay.Companion
         /// </summary>
         private void ForceStopMovement()
         {
-            if (_arbiter != null)
-            {
-                _arbiter.ForceStop();
-                return;
-            }
-
-            _motor?.Stop(); // 調停役が無い構成（旧 Scene）でも止まるようにする。
+            _arbiter?.ForceStop();
         }
 
         /// <summary>戦闘の所有権を手放す（追従へ返す）。</summary>
         private void ReleaseMovement()
         {
             _arbiter?.Release(CompanionMovementOwner.Combat);
-        }
-
-        /// <summary>調停役が居ない構成のための直接適用（移行期の保険。新しい Scene では通らない）。</summary>
-        private void ApplyDirectly(in CompanionMoveRequest request)
-        {
-            if (_motor == null)
-            {
-                return;
-            }
-
-            switch (request.Kind)
-            {
-                case CompanionMoveKind.Move:
-                    _motor.Configure(request.Speed, request.StopRadius);
-                    _motor.SetMoveTarget(request.Target);
-                    break;
-
-                case CompanionMoveKind.Warp:
-                    _motor.WarpTo(request.Target);
-                    break;
-
-                case CompanionMoveKind.Stop:
-                    _motor.Stop();
-                    break;
-            }
         }
 
         private CompanionAttackSettings ResolveSettings()
@@ -504,19 +455,12 @@ namespace Momotaro.Gameplay.Companion
             // 先に行動の所有権を取る（F02b）。取れないなら攻撃そのものを始めない。
             // 「判定は動いているのに状態は別の行動のまま」という食い違いを作らないため。
             // 可否は許可表が決める（F02c）。構え・回避・守護・ワープの最中に殴り始めない。
-            if (_states != null)
+            if (_states == null || !_states.TryStartAction(
+                    CompanionActionOwner.Combat, CompanionActionKind.AutoAttack, CompanionState.AttackPrepare,
+                    CompanionStateChangeReason.AttackStarted, out _action))
             {
-                if (!_states.TryStartAction(
-                        CompanionActionOwner.Combat, CompanionActionKind.AutoAttack, CompanionState.AttackPrepare,
-                        CompanionStateChangeReason.AttackStarted, out _action))
-                {
-                    _plan = CompanionAttackPlan.None;
-                    return;
-                }
-            }
-            else
-            {
-                _actor.RequestState(CompanionState.AttackPrepare, CompanionStateChangeReason.AttackStarted);
+                _plan = CompanionAttackPlan.None;
+                return;
             }
 
             if (!_attack.Begin(settings.StartupSeconds, settings.ActiveSeconds, settings.RecoverySeconds))
@@ -575,15 +519,9 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
-            if (_states != null)
-            {
-                _states.TryBegin(
-                    CompanionActionOwner.Combat, CompanionState.Chase,
-                    CompanionStateChangeReason.EngagedTarget, out _action);
-                return;
-            }
-
-            _actor.RequestState(CompanionState.Chase, CompanionStateChangeReason.EngagedTarget);
+            _states?.TryBegin(
+                CompanionActionOwner.Combat, CompanionState.Chase,
+                CompanionStateChangeReason.EngagedTarget, out _action);
         }
 
         /// <summary>対象の手前（停止距離）を目指して移動する。対象の位置そのものへ向かうと押し込みすぎる。</summary>

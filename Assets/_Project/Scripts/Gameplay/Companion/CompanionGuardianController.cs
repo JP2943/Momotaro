@@ -124,16 +124,9 @@ namespace Momotaro.Gameplay.Companion
             // 受け口へ届いており、その一撃で倒れた・ひるんだ場合、ここへ来た時点で状態は Down／Stagger に
             // なっている。そこへ Protect を書くと、倒れているのに庇っている体勢という嘘の状態になる。
             // 判断は許可表が持つ（<see cref="CompanionActionRules"/>）ので、ここに条件式は置かない。
-            if (_states != null)
-            {
-                _states.TryStartAction(
-                    CompanionActionOwner.Guardian, CompanionActionKind.GuardianTransfer, CompanionState.Protect,
-                    CompanionStateChangeReason.Protected, out _);
-            }
-            else
-            {
-                _actor?.RequestState(CompanionState.Protect, CompanionStateChangeReason.Protected);
-            }
+            _states?.TryStartAction(
+                CompanionActionOwner.Guardian, CompanionActionKind.GuardianTransfer, CompanionState.Protect,
+                CompanionStateChangeReason.Protected, out _);
         }
 
         /// <summary>クールダウンを 1 Tick 進める（Update から呼ばれるが、テストは決定的に直接呼べる）。</summary>
