@@ -440,6 +440,28 @@ namespace Momotaro.Tests.EditMode
                 "Data と実装の食い違いを検出する:\n- " + string.Join("\n- ", errors));
         }
 
+        /// <summary>
+        /// 指示（P4-07B）が Scene として成立している：仲間が指示を保持でき、初期値は「ついて来い」。
+        /// 外すと検出される。無くても「常について来い」で動いてしまうので、静かに欠けやすい。
+        /// </summary>
+        [Test]
+        public void Build_CompanionCarriesOrders_AndMissingOrdersIsDetected()
+        {
+            Scene scene = BuildField();
+            CompanionActor actor = All<CompanionActor>(scene)[0];
+
+            var orders = actor.GetComponent<CompanionOrders>();
+            Assert.IsNotNull(orders, "仲間が指示を保持できる。");
+            Assert.AreEqual(CompanionOrder.Follow, orders.Current,
+                "Scene を開いた直後は「ついて来い」（待機のまま始まると壊れて見える）。");
+
+            Object.DestroyImmediate(orders);
+
+            List<string> errors = Errors(scene);
+            Assert.IsTrue(errors.Exists(e => e.Contains("CompanionOrders")),
+                "指示の欠落を検出する:\n- " + string.Join("\n- ", errors));
+        }
+
         /// <summary>初期状態で敵が置かれていたら検出する（編成は Context Menu から出す約束）。</summary>
         [Test]
         public void InitialEnemies_AreForbidden()

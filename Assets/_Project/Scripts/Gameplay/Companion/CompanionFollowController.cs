@@ -36,6 +36,9 @@ namespace Momotaro.Gameplay.Companion
         [Tooltip("状態要求の唯一の窓口（未設定なら自動取得）。Actor へは直接書かない。")]
         [SerializeField] private CompanionStateArbiter _states;
 
+        [Tooltip("プレイヤーの指示（未設定なら自動取得。無ければ常について来い扱い）。")]
+        [SerializeField] private CompanionOrders _orders;
+
         private readonly CompanionFollowModel _model = new CompanionFollowModel();
         private ICombatActor _leaderActor;
         private bool _leaderActorResolved;
@@ -60,6 +63,9 @@ namespace Momotaro.Gameplay.Companion
         /// </summary>
         public bool IsYieldingToStrongerMovementOwner =>
             _arbiter != null && _arbiter.Owner > CompanionMovementOwner.Follow;
+
+        /// <summary>「ここで待て」と命じられているか（P4-07B。テスト・診断用）。</summary>
+        public bool IsWaitingByOrder => _orders != null && !_orders.MayFollowLeader;
 
         /// <summary>追従対象・Actor・Motor を注入する（Scene 構築・テスト。null は無視して既存を保つ）。</summary>
         public void Bind(Transform leader, CompanionActor actor = null, CompanionMotor motor = null)
@@ -210,6 +216,19 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
+            // 「ここで待て」（P4-07B）。隊列へは戻らず、その場に留まる。
+            //
+            // <b>判断ごと止めるのが要点。</b>移動意図を出さないだけでは、判断モデルは距離を測り続け、
+            // 主人公が離れた時点で<b>距離超過のワープが成立</b>して隊列へ引き戻される。
+            // 「待てと言ったのに戻ってくる」になる。
+            if (IsWaitingByOrder)
+            {
+                _model.Reset();
+                EnterWait();
+                SubmitMove(CompanionMoveRequest.Stop()); // 向きは変えない（命じられた向きのまま待つ）。
+                return;
+            }
+
             // Data 由来の移動値。Motor へは調停役が渡すので、ここでは意図に載せるだけ。
             float speed = _actor.Data != null ? _actor.Data.MoveSpeed : 4.5f;
             float stopRadius = _actor.Data != null ? _actor.Data.FollowStopDistance : 0.35f;
@@ -236,6 +255,15 @@ namespace Momotaro.Gameplay.Companion
                     // 到着後は主人公と同じ向きを向く。
                     SubmitMove(CompanionMoveRequest.StopFacing(ResolveLeaderForward()));
                     break;
+            }
+        }
+
+        /// <summary>待機の状態へ入れる（既に Idle なら何もしない。P4-07B）。</summary>
+        private void EnterWait()
+        {
+            if (_actor.State != CompanionState.Idle)
+            {
+                BeginFollowAction(CompanionState.Idle, CompanionStateChangeReason.OrderedByPlayer);
             }
         }
 
@@ -312,6 +340,11 @@ namespace Momotaro.Gameplay.Companion
             if (_states == null)
             {
                 _states = GetComponent<CompanionStateArbiter>();
+            }
+
+            if (_orders == null)
+            {
+                _orders = GetComponent<CompanionOrders>();
             }
         }
 

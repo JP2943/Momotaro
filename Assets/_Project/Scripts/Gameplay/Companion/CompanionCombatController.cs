@@ -43,6 +43,9 @@ namespace Momotaro.Gameplay.Companion
         [Tooltip("索敵（誰を狙うか。未設定なら自動取得）。")]
         [SerializeField] private CompanionTargetTracker _tracker;
 
+        [Tooltip("プレイヤーの指示（未設定なら自動取得。無ければ常について来い扱い）。")]
+        [SerializeField] private CompanionOrders _orders;
+
         [Tooltip("Hitbox の対象レイヤー（既定は全レイヤー。IDamageable と Faction で絞る）。")]
         [SerializeField] private LayerMask _targetMask = ~0;
 
@@ -117,6 +120,12 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>現在の対象（索敵の結果。無ければ null）。</summary>
         public IPerceptionTarget CurrentTarget => _tracker != null ? _tracker.CurrentTarget : null;
+
+        /// <summary>
+        /// 指示として敵へ寄っていってよいか（指示コンポーネントが無ければ許可。P4-07B）。
+        /// 待機中でも<b>間合いに入ってきた敵は殴る</b>（自衛は指示で止めない）。
+        /// </summary>
+        public bool MayApproachByOrder => _orders == null || _orders.MayApproachEnemies;
 
         /// <summary>Actor・Motor・索敵を注入する（Prefab 構築・テスト。null は無視して既存を保つ）。</summary>
         public void Bind(CompanionActor actor, CompanionMotor motor = null, CompanionTargetTracker tracker = null)
@@ -233,8 +242,9 @@ namespace Momotaro.Gameplay.Companion
             LastDistance = distance;
             LastAngle = angle;
             // 新しい行動を始めてよいかは活動 Context が決める（時計は動くが行動は始めない状況を表せるようにしておく）。
+            // 敵へ寄っていってよいかは<b>指示</b>が決める（P4-07B）。待機中でも間合いの敵は殴る。
             Decision = CompanionEngagement.Decide(
-                hasTarget, activity.CanAct, distance, angle, settings, _cooldownRemaining);
+                hasTarget, activity.CanAct, distance, angle, settings, _cooldownRemaining, MayApproachByOrder);
             LogDecision(settings, hasTarget, target);
 
             switch (Decision)
@@ -787,6 +797,11 @@ namespace Momotaro.Gameplay.Companion
             if (_tracker == null)
             {
                 _tracker = GetComponent<CompanionTargetTracker>();
+            }
+
+            if (_orders == null)
+            {
+                _orders = GetComponent<CompanionOrders>();
             }
 
             // 自動取得で Actor が後から解決された場合にも購読を張る（Bind 経由でない Scene 構成の保険）。

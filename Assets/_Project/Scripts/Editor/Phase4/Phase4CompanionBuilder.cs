@@ -292,6 +292,9 @@ namespace Momotaro.Editor.Phase4
             // 探索行動（気になる地点を調べに行く。P4-07A）。暇なときだけ動き、戦闘・防御・守護には譲る。
             root.AddComponent<CompanionInvestigationController>().Bind(actor);
 
+            // プレイヤーの指示（ついて来い／ここで待て。P4-07B）。各駆動がここへ可否を尋ねる。
+            root.AddComponent<CompanionOrders>();
+
             // --- 表示：本体は Billboard 配下（敵・主人公と同じ構成） ---
             var visualRoot = new GameObject("VisualRoot");
             visualRoot.transform.SetParent(root.transform, false);

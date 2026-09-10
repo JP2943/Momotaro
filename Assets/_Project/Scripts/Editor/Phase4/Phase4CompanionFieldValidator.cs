@@ -226,6 +226,19 @@ namespace Momotaro.Editor.Phase4
                     errors.Add(who + "：戦闘（CompanionCombatController）がありません。");
                 }
 
+                // --- プレイヤーの指示（P4-07B） ---
+                // 無くても「常について来い」で動くが、それでは指示を試せない。検証 Scene としては必須にする。
+                CompanionOrders orders = go.GetComponent<CompanionOrders>();
+                if (orders == null)
+                {
+                    errors.Add(who + "：指示の保持（CompanionOrders）がありません（待機・追従を切り替えられません）。");
+                }
+                else if (orders.Current != CompanionOrder.Follow)
+                {
+                    warnings.Add(who + "：初期の指示が「" + orders.Current
+                        + "」になっています（Scene を開いた直後から待機したままになります）。");
+                }
+
                 // --- 探索行動（P4-07A） ---
                 // Data で探索を切っている仲間（猿・雉の想定）には求めない。切っていないのに駆動が無いと、
                 // 「Data では探索できることになっているのに一生調べない」という食い違いになる。

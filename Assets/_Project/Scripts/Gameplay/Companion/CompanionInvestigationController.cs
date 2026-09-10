@@ -38,6 +38,9 @@ namespace Momotaro.Gameplay.Companion
         [Tooltip("紐の起点（主人公）を知るための追従（未設定なら自動取得）。")]
         [SerializeField] private CompanionFollowController _follow;
 
+        [Tooltip("プレイヤーの指示（未設定なら自動取得。無ければ常について来い扱い）。")]
+        [SerializeField] private CompanionOrders _orders;
+
         private CompanionActionHandle _action;
         private IInvestigationPoint _target;
         private float _elapsed;      // 到着後に調べている秒数。
@@ -64,6 +67,9 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>これまでに中断された回数（テスト・診断用）。</summary>
         public int InterruptedCount { get; private set; }
+
+        /// <summary>指示として探索を許されているか（指示コンポーネントが無ければ許可。P4-07B）。</summary>
+        public bool MayInvestigateByOrder => _orders == null || _orders.MayInvestigate;
 
         /// <summary>Actor・追従を注入する（Prefab 構築・テスト。null は無視）。</summary>
         public void Bind(CompanionActor actor, CompanionFollowController follow = null)
@@ -117,9 +123,11 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
-            if (!activity.CanInvestigate)
+            // 探索してよいかは 2 つの別々の理由で決まる。
+            //   活動 Context：戦闘中か（Wave の幕間・開始待ちも含む。自分で数え直さない）。
+            //   指示：待機を命じられていないか（P4-07B。指示は自動判断より強い）。
+            if (!activity.CanInvestigate || !MayInvestigateByOrder)
             {
-                // 戦闘が始まった（Wave の幕間・開始待ちも含む）。調査は中断して戻る。
                 if (_action.IsValid)
                 {
                     InterruptedCount++;
@@ -300,6 +308,11 @@ namespace Momotaro.Gameplay.Companion
             if (_follow == null)
             {
                 _follow = GetComponent<CompanionFollowController>();
+            }
+
+            if (_orders == null)
+            {
+                _orders = GetComponent<CompanionOrders>();
             }
         }
 

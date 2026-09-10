@@ -206,6 +206,7 @@ GameObject:
   - component: {fileID: 2666371869986597577}
   - component: {fileID: 2943489160290430191}
   - component: {fileID: 8956724023715225480}
+  - component: {fileID: 4655340042160199126}
   - component: {fileID: 1363993172399077194}
   m_Layer: 0
   m_Name: PF_Companion_Inumaru
@@ -352,6 +353,7 @@ MonoBehaviour:
   _motor: {fileID: 0}
   _arbiter: {fileID: 0}
   _states: {fileID: 0}
+  _orders: {fileID: 0}
 --- !u!114 &4744945786104172995
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -395,6 +397,7 @@ MonoBehaviour:
   _arbiter: {fileID: 0}
   _states: {fileID: 0}
   _tracker: {fileID: 4951653755319054346}
+  _orders: {fileID: 0}
   _targetMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -480,6 +483,20 @@ MonoBehaviour:
   _states: {fileID: 0}
   _arbiter: {fileID: 0}
   _follow: {fileID: 0}
+  _orders: {fileID: 0}
+--- !u!114 &4655340042160199126
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6682707809238753296}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d15da8fd21591b3a6600f203dc523d35, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Companion.CompanionOrders
+  _order: 0
 --- !u!114 &1363993172399077194
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -706,6 +706,78 @@
       "stage": "P4-07A",
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutInvestigationController_IsDetected"
+    },
+    {
+      "requirementId": "N88",
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WaitOrder_StopsGoingSomewhere_ButNeverSelfDefence"
+    },
+    {
+      "requirementId": "N89",
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.FollowOrder_AllowsEverything"
+    },
+    {
+      "requirementId": "N90",
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.SetOrder_IsIdempotent"
+    },
+    {
+      "requirementId": "N91",
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.Engagement_WaitStopsOnlyTheApproach"
+    },
+    {
+      "requirementId": "N92",
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WaitOrder_DoesNotFollow_AndDoesNotWarpBack"
+    },
+    {
+      "requirementId": "N93",
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.FollowOrderAgain_ResumesFollowing"
+    },
+    {
+      "requirementId": "N94",
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WaitOrder_StopsInvestigation"
+    },
+    {
+      "requirementId": "N95",
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WaitOrder_DoesNotChaseDistantEnemy"
+    },
+    {
+      "requirementId": "N96",
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WaitOrder_StillFightsBackWhenEnemyComesClose"
+    },
+    {
+      "requirementId": "N97",
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WaitOrder_StillGuardsAgainstDanger"
+    },
+    {
+      "requirementId": "N98",
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WithoutOrdersComponent_BehavesAsFollow"
+    },
+    {
+      "requirementId": "N99",
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_CompanionCarriesOrders_AndMissingOrdersIsDetected"
     }
   ],
   "allowedSkips": []
