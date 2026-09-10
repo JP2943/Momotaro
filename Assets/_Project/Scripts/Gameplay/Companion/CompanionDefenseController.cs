@@ -16,6 +16,14 @@ namespace Momotaro.Gameplay.Companion
     /// <see cref="IEnemyDangerSense"/>）。これらは名前こそ Enemy だが中身に敵固有の要素は無く、保持時間・クールダウン・
     /// 無敵時間を秒で受け取るだけの純粋クラスなので、仲間用に写経せず<b>そのまま再利用する</b>。
     ///
+    /// <b>始めてよいかは自分で決めない</b>（P4-FIX F02c）。可否は許可表（<see cref="CompanionActionRules"/>）へ
+    /// 尋ね、能力（クールダウン）を消費する前に判定する。以前は <see cref="CanDefend"/>（倒れている・ひるみ・退場だけ）
+    /// しか見ておらず、<b>攻撃判定中でも構えを始められた</b>。条件式を駆動ごとに持つと必ずこうなる。
+    ///
+    /// 構え・回避のあいだは<b>移動と向きも握る</b>。ガードの成否は <c>Forward</c> と命中方向の角度で決まるので、
+    /// 追従が主人公の向きへ回してしまうと、構えているのに素通りする。動作が終わったら追従へ戻す
+    /// （戻さないと、許可表が次の行動を禁じたまま固まる）。
+    ///
     /// 被弾側（<see cref="CompanionHitReceiver"/>）は本コンポーネントを <see cref="ICompanionDefenseState"/> として読み、
     /// 無敵とガードを解決順に反映する。判断（ここ）と解決（受け口）を分けているのは主人公・敵と同じ形。
     /// </summary>
@@ -24,6 +32,12 @@ namespace Momotaro.Gameplay.Companion
     {
         [Tooltip("状態・Data の供給元（未設定なら自動取得）。")]
         [SerializeField] private CompanionActor _actor;
+
+        [Tooltip("状態要求の唯一の窓口（未設定なら自動取得）。Actor へは直接書かない。")]
+        [SerializeField] private CompanionStateArbiter _states;
+
+        [Tooltip("移動と向きの書き手（未設定なら自動取得）。防御は意図を出すだけで、Motor へは直接書かない。")]
+        [SerializeField] private CompanionMovementArbiter _arbiter;
 
         [Tooltip("危険を観測する半径（m）。")]
         [SerializeField] private float _dangerRadius = 2.5f;
@@ -37,6 +51,9 @@ namespace Momotaro.Gameplay.Companion
         private bool _canGuard;
         private bool _canEvade;
         private bool _built;
+        private CompanionActionHandle _action; // 構え・回避の引換券（F02b）。
+        private Vector3 _holdFacing;           // 防御中に固定する向き（F02c）。
+        private bool _hasHoldFacing;
 
         /// <inheritdoc />
         public bool IsGuarding => _canGuard && _guard != null && _guard.IsGuarding;
@@ -119,10 +136,18 @@ namespace Momotaro.Gameplay.Companion
             if (!CanDefend(_actor.State))
             {
                 // 倒れた・ひるんだ・退場した瞬間に構えを解く（構えたまま倒れない）。
+                // 行動を先に手放すのは、ここから Follow へ戻さないため。倒れている・退場しているときの
+                // 状態は被弾側・退場側が握っており、防御が勝手に復帰させてよい場面ではない。
+                AbandonDefenseAction();
                 ReleaseGuard();
                 SawDanger = false;
                 return;
             }
+
+            // 動作が終わっていれば、次の判断より<b>先に</b>行動を返す（F02c）。
+            // 後回しにすると、構えも回避もしていないのに状態だけ Guard／Evade のまま残る。
+            // その状態では許可表が攻撃も次の構えも禁じるため、仲間が永久に固まる。
+            SettleDefenseAction();
 
             EnemyDangerStimulus stimulus = _danger != null
                 ? _danger.Sense(_actor.WorldPosition, _actor.Forward, _actor.ActorId)
@@ -139,9 +164,15 @@ namespace Momotaro.Gameplay.Companion
             // ガード不能な危険は構えても意味が無いので回避を優先する（敵の防御 AI と同じ判断）。
             if (stimulus.Unblockable && _canEvade && _evade.IsReady)
             {
-                if (_evade.TryStart())
+                if (!BeginDefenseAction(CompanionActionKind.AutoEvade, CompanionState.Evade, _actor.Forward))
                 {
-                    _actor.RequestState(CompanionState.Evade, CompanionStateChangeReason.DefensiveAction);
+                    return; // 許可表が禁じた（判定中・守護中など）。能力の時計も進めない＝回避は起きなかった。
+                }
+
+                if (!_evade.TryStart())
+                {
+                    // 能力側が拒否した（クールダウン）。状態だけ先に変えてしまわないよう行動を返す。
+                    AbandonDefenseAction();
                 }
 
                 return;
@@ -149,10 +180,21 @@ namespace Momotaro.Gameplay.Companion
 
             if (_canGuard && _guard.IsReady && !_evade.IsEvading)
             {
-                if (_guard.TryStart())
+                // ガードは受ける向きが本体（判定は Forward と命中方向の角度で決まる）。危険源の方を向く。
+                if (!BeginDefenseAction(CompanionActionKind.AutoGuard, CompanionState.Guard, -stimulus.IncomingDirection))
                 {
-                    _actor.RequestState(CompanionState.Guard, CompanionStateChangeReason.DefensiveAction);
+                    return;
                 }
+
+                if (!_guard.TryStart())
+                {
+                    AbandonDefenseAction();
+                }
+            }
+
+            if (_action.IsValid)
+            {
+                HoldDefensePose(); // 構え・回避のあいだは位置と向きを他へ渡さない。
             }
         }
 
@@ -162,14 +204,116 @@ namespace Momotaro.Gameplay.Companion
             Build();
             _guard.Reset();
             _evade.Reset();
+            AbandonDefenseAction();
             SawDanger = false;
         }
 
         private void ReleaseGuard()
         {
-            if (_guard.IsGuarding)
+            if (_guard != null && _guard.IsGuarding)
             {
                 _guard.Release();
+            }
+
+            // 構えを解いても、回避モーションが残っていれば行動はまだ終わっていない。
+            // 終わっているかどうかの判断は 1 か所（SettleDefenseAction）に置く。
+            SettleDefenseAction();
+        }
+
+        /// <summary>
+        /// 防御としての行動を始める（P4-FIX F02b／F02c）。始められたら true。
+        ///
+        /// 可否は許可表（<see cref="CompanionActionRules"/>）が決める。<b>能力より先に</b>ここを通すのは、
+        /// 表に禁じられた場面でガード・回避のクールダウンだけ消費してしまわないため。
+        /// </summary>
+        private bool BeginDefenseAction(CompanionActionKind kind, CompanionState state, Vector3 facing)
+        {
+            if (_states != null)
+            {
+                if (!_states.TryStartAction(
+                        CompanionActionOwner.Defense, kind, state,
+                        CompanionStateChangeReason.DefensiveAction, out _action))
+                {
+                    return false;
+                }
+            }
+            else if (!_actor.RequestState(state, CompanionStateChangeReason.DefensiveAction))
+            {
+                // 調停役が無い構成（旧 Scene）。状態機が拒めば防御も始めない。
+                return false;
+            }
+
+            _holdFacing = facing;
+            _hasHoldFacing = facing.sqrMagnitude > 1e-6f;
+            HoldDefensePose();
+            return true;
+        }
+
+        /// <summary>
+        /// 構えも回避も終わっていれば行動を返し、追従へ戻す（F02c）。
+        ///
+        /// <b>この復帰は省略できない。</b>許可表は Guard／Evade からの自動攻撃も次の構えも禁じるので、
+        /// ここで戻さないと仲間はその状態のまま何もしなくなる。
+        /// </summary>
+        private void SettleDefenseAction()
+        {
+            if (!_action.IsValid)
+            {
+                return;
+            }
+
+            if ((_guard != null && _guard.IsGuarding) || (_evade != null && _evade.IsEvading))
+            {
+                return; // まだ動作中。
+            }
+
+            if (_states != null && _states.IsCurrent(_action))
+            {
+                _states.TryComplete(_action, CompanionState.Follow, CompanionStateChangeReason.FollowResumed);
+            }
+
+            ClearDefenseAction();
+        }
+
+        /// <summary>
+        /// 行動を打ち切る（状態は変えない）。倒れた・ひるんだ場合は被弾側が状態を握っているので、
+        /// ここから Follow へ戻そうとしてはいけない。
+        /// </summary>
+        private void AbandonDefenseAction()
+        {
+            if (_action.IsValid)
+            {
+                _states?.Release(_action);
+            }
+
+            ClearDefenseAction();
+        }
+
+        private void ClearDefenseAction()
+        {
+            _action = default;
+            _hasHoldFacing = false;
+            _arbiter?.Release(CompanionMovementOwner.Defense);
+        }
+
+        /// <summary>
+        /// 防御の姿勢（その場・向き固定）を移動の調停役へ出す（F02c）。
+        /// 追従が主人公の向きを、戦闘が対象の向きを書くと、受けているはずの方向がずれてガードが素通りする。
+        /// </summary>
+        private void HoldDefensePose()
+        {
+            if (_arbiter != null)
+            {
+                _arbiter.Submit(
+                    CompanionMovementOwner.Defense,
+                    _hasHoldFacing ? CompanionMoveRequest.StopFacing(_holdFacing) : CompanionMoveRequest.Stop());
+                return;
+            }
+
+            // 調停役が無い構成（旧 Scene）でも向きだけは合わせる。
+            if (_hasHoldFacing)
+            {
+                _actor.SetFacing(_holdFacing);
             }
         }
 
@@ -178,6 +322,16 @@ namespace Momotaro.Gameplay.Companion
             if (_actor == null)
             {
                 _actor = GetComponent<CompanionActor>();
+            }
+
+            if (_states == null)
+            {
+                _states = GetComponent<CompanionStateArbiter>();
+            }
+
+            if (_arbiter == null)
+            {
+                _arbiter = GetComponent<CompanionMovementArbiter>();
             }
 
             if (_built && _guard != null && _evade != null)
@@ -223,6 +377,7 @@ namespace Momotaro.Gameplay.Companion
                 _evade.Reset();
             }
 
+            AbandonDefenseAction(); // 行動と移動の所有権も残さない。
             SawDanger = false;
         }
 

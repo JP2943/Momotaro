@@ -291,6 +291,114 @@
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.CompanionMotorArbitrationTests.OnlyCurrentOwnerCanWriteMovement"
+    },
+    {
+      "requirementId": "N19",
+      "stage": "F02b",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.StaleCompletion_DoesNotOverwriteNewState"
+    },
+    {
+      "requirementId": "N20",
+      "stage": "F02b",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.NormalCompletion_AllowsDescentToLowerPriority"
+    },
+    {
+      "requirementId": "N21",
+      "stage": "F02b",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.WeakerOwner_CannotStealFromStrongerOwner"
+    },
+    {
+      "requirementId": "N22",
+      "stage": "F02b",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.ForcedHit_InvalidatesHandlesSynchronously"
+    },
+    {
+      "requirementId": "N23",
+      "stage": "F02b",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.CompanionPrefabHasSingleStateEntryPoint"
+    },
+    {
+      "requirementId": "N24",
+      "stage": "F02b",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionStateOwnershipIntegrationTests.StaggerDuringAttack_LaterFinishDoesNotRestoreChase"
+    },
+    {
+      "requirementId": "N25",
+      "stage": "F02c",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.OverridingStates_DenyEveryAction"
+    },
+    {
+      "requirementId": "N26",
+      "stage": "F02c",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.DefensiveActions_CannotInterruptTheActiveFrames"
+    },
+    {
+      "requirementId": "N27",
+      "stage": "F02c",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.AutoAttack_StartsOnlyFromNeutralStates"
+    },
+    {
+      "requirementId": "N28",
+      "stage": "F02c",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.GuardianTransfer_InterruptsAttacksButNotEvade"
+    },
+    {
+      "requirementId": "N29",
+      "stage": "F02c",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Arbiter_DeniedAction_ChangesNeitherStateNorOwnership"
+    },
+    {
+      "requirementId": "N30",
+      "stage": "F02c",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.RealAttackActive_DoesNotStartGuard"
+    },
+    {
+      "requirementId": "N31",
+      "stage": "F02c",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.GuardEnds_ReturnsToFollow_SoTheCompanionCanActAgain"
+    },
+    {
+      "requirementId": "N32",
+      "stage": "F02c",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Evade_HoldsTheActionForTheWholeMotion"
+    },
+    {
+      "requirementId": "N33",
+      "stage": "F02c",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.GuardFacing_IsNotOverwrittenByFollow"
+    },
+    {
+      "requirementId": "N34",
+      "stage": "F02c",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.CancelledAttack_StartsTheSnapshotCooldown"
+    },
+    {
+      "requirementId": "N35",
+      "stage": "F02c",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Protect_DoesNotOverwriteStaggerCausedByTheTransferredHit"
+    },
+    {
+      "requirementId": "N36",
+      "stage": "F02c",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Staggered_DoesNotTakeOverANewHit"
     }
   ],
   "allowedSkips": [

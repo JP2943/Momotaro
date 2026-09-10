@@ -33,6 +33,9 @@ namespace Momotaro.Gameplay.Companion
         [Tooltip("移動と向きの書き手（未設定なら自動取得）。追従は意図を出すだけで、Motor へは直接書かない。")]
         [SerializeField] private CompanionMovementArbiter _arbiter;
 
+        [Tooltip("状態要求の唯一の窓口（未設定なら自動取得）。Actor へは直接書かない。")]
+        [SerializeField] private CompanionStateArbiter _states;
+
         private readonly CompanionFollowModel _model = new CompanionFollowModel();
         private ICombatActor _leaderActor;
         private bool _leaderActorResolved;
@@ -206,7 +209,7 @@ namespace Momotaro.Gameplay.Companion
                     break;
 
                 case CompanionFollowDecision.Warp:
-                    _actor.RequestState(CompanionState.Warp, CompanionStateChangeReason.Warped);
+                    BeginFollowAction(CompanionState.Warp, CompanionStateChangeReason.Warped);
                     SubmitMove(CompanionMoveRequest.Warp(_model.SlotPosition));
                     break;
 
@@ -223,8 +226,21 @@ namespace Momotaro.Gameplay.Companion
         {
             if (_actor.State != CompanionState.Follow)
             {
-                _actor.RequestState(CompanionState.Follow, CompanionStateChangeReason.FollowResumed);
+                BeginFollowAction(CompanionState.Follow, CompanionStateChangeReason.FollowResumed);
             }
+        }
+
+        /// <summary>追従としての状態要求を出す（受理されるかは調停役が決める。P4-FIX F02b）。</summary>
+        private void BeginFollowAction(CompanionState state, CompanionStateChangeReason reason)
+        {
+            ResolveComponents();
+            if (_states != null)
+            {
+                _states.TryBegin(CompanionActionOwner.Follow, state, reason, out _);
+                return;
+            }
+
+            _actor.RequestState(state, reason); // 調停役が無い構成（旧 Scene）でも動くようにする。
         }
 
         private Vector3 ResolveLeaderForward()
@@ -273,6 +289,11 @@ namespace Momotaro.Gameplay.Companion
             if (_arbiter == null)
             {
                 _arbiter = GetComponent<CompanionMovementArbiter>();
+            }
+
+            if (_states == null)
+            {
+                _states = GetComponent<CompanionStateArbiter>();
             }
         }
 

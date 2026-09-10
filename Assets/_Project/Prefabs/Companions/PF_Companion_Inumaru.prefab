@@ -193,6 +193,7 @@ GameObject:
   - component: {fileID: 1401219822566873936}
   - component: {fileID: 82091177463702121}
   - component: {fileID: 3281646106384612933}
+  - component: {fileID: 9173853975666888690}
   - component: {fileID: 3282417446606875444}
   - component: {fileID: 9145365362203940041}
   - component: {fileID: 3243437796602444174}
@@ -279,6 +280,19 @@ CapsuleCollider:
   m_Height: 1.2
   m_Direction: 1
   m_Center: {x: 0, y: 0.6, z: 0}
+--- !u!114 &9173853975666888690
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6682707809238753296}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fbdb0a2434479b8bb1bf492095e07c19, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Companion.CompanionStateArbiter
+  _actor: {fileID: 0}
 --- !u!114 &3282417446606875444
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -336,6 +350,7 @@ MonoBehaviour:
   _actor: {fileID: 0}
   _motor: {fileID: 0}
   _arbiter: {fileID: 0}
+  _states: {fileID: 0}
 --- !u!114 &4744945786104172995
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -377,6 +392,7 @@ MonoBehaviour:
   _actor: {fileID: 3282417446606875444}
   _motor: {fileID: 3243437796602444174}
   _arbiter: {fileID: 0}
+  _states: {fileID: 0}
   _tracker: {fileID: 4951653755319054346}
   _targetMask:
     serializedVersion: 2
@@ -398,6 +414,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Companion.CompanionHitReceiver
   _actor: {fileID: 3282417446606875444}
+  _states: {fileID: 0}
 --- !u!114 &817271497036004597
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -424,6 +441,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Momotaro.Gameplay::Momotaro.Gameplay.Companion.CompanionDefenseController
   _actor: {fileID: 3282417446606875444}
+  _states: {fileID: 0}
   _dangerRadius: 2.5
   _dangerMask:
     serializedVersion: 2
@@ -443,6 +461,7 @@ MonoBehaviour:
   _actor: {fileID: 3282417446606875444}
   _receiver: {fileID: 0}
   _protectedTarget: {fileID: 0}
+  _states: {fileID: 0}
 --- !u!114 &1363993172399077194
 MonoBehaviour:
   m_ObjectHideFlags: 0

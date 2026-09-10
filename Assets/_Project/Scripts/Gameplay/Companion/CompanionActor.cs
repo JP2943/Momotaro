@@ -19,6 +19,7 @@ namespace Momotaro.Gameplay.Companion
     /// 向きはルート Transform を回さず論理値として保持する（敵と同じ理由：接地と Collider の安定のためルートは回さない）。
     /// </summary>
     [DisallowMultipleComponent]
+    [RequireComponent(typeof(CompanionStateArbiter))]
     public sealed class CompanionActor : MonoBehaviour, ICompanionActor, ICombatActor
     {
         [Tooltip("仲間の基礎データ（役割・ヘイト補正・追従・攻撃・守護の数値）。未割当でも既定値で安全に動く。")]
@@ -113,6 +114,9 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>
         /// AI・指示・イベント由来の状態遷移を要求する（優先度・不正判定は状態機に従う）。適用できたら true。
+        ///
+        /// <b>各駆動系はこれを直接呼ばない。</b>呼び口は <see cref="CompanionStateArbiter"/> ひとつに集約してある
+        /// （P4-FIX F02b）。直接呼ぶと「誰の行動か」が失われ、古い終了通知が新しい状態を壊すのを止められない。
         /// </summary>
         public bool RequestState(CompanionState state, CompanionStateChangeReason reason)
         {
@@ -120,7 +124,10 @@ namespace Momotaro.Gameplay.Companion
             return _machine.TryTransition(state, reason);
         }
 
-        /// <summary>被弾由来の強制状態（Stagger／Down）を割り込み適用する（P4-04／P4-06 が使う）。適用できたら true。</summary>
+        /// <summary>
+        /// 被弾由来の強制状態（Stagger／Down）を割り込み適用する。適用できたら true。
+        /// <b>呼び口は <see cref="CompanionStateArbiter.ForceHit"/> に集約してある</b>（P4-FIX F02b）。
+        /// </summary>
         public bool ForceHitState(CompanionState state, CompanionStateChangeReason reason)
         {
             EnsureRuntime();

@@ -37,6 +37,9 @@ namespace Momotaro.Gameplay.Companion
         [Tooltip("守護対象（主人公）。未設定なら追従の対象から解決する。")]
         [SerializeField] private Transform _protectedTarget;
 
+        [Tooltip("状態要求の唯一の窓口（未設定なら自動取得）。Actor へは直接書かない。")]
+        [SerializeField] private CompanionStateArbiter _states;
+
         private IGuardianHost _host;
         private CompanionFollowController _follow;
         private float _cooldownRemaining;
@@ -114,8 +117,23 @@ namespace Momotaro.Gameplay.Companion
             _cooldownRemaining = ResolveCooldownSeconds();
             TransferCount++;
 
-            // 庇った、という状態を明示する（表示・後続の判断が読む）。ひるみ・ダウンは被弾解決側が上書きする。
-            _actor?.RequestState(CompanionState.Protect, CompanionStateChangeReason.Protected);
+            // 庇った、という状態を明示する（表示・後続の判断が読む）。
+            // 進行中の行動（攻撃・構え）を止めて入るので「開始」ではなく「割込み」として通す（F02b）。
+            //
+            // ただし<b>ひるみ・ダウンは上書きしない</b>（F02c）。肩代わりの命中は本メソッドより先に
+            // 受け口へ届いており、その一撃で倒れた・ひるんだ場合、ここへ来た時点で状態は Down／Stagger に
+            // なっている。そこへ Protect を書くと、倒れているのに庇っている体勢という嘘の状態になる。
+            // 判断は許可表が持つ（<see cref="CompanionActionRules"/>）ので、ここに条件式は置かない。
+            if (_states != null)
+            {
+                _states.TryStartAction(
+                    CompanionActionOwner.Guardian, CompanionActionKind.GuardianTransfer, CompanionState.Protect,
+                    CompanionStateChangeReason.Protected, out _);
+            }
+            else
+            {
+                _actor?.RequestState(CompanionState.Protect, CompanionStateChangeReason.Protected);
+            }
         }
 
         /// <summary>クールダウンを 1 Tick 進める（Update から呼ばれるが、テストは決定的に直接呼べる）。</summary>
@@ -148,7 +166,11 @@ namespace Momotaro.Gameplay.Companion
 
         // ---- 内部 ----
 
-        /// <summary>この状態で庇えるか（倒れている・退場・ひるみ中は庇えない）。</summary>
+        /// <summary>
+        /// この状態で庇えるか。判断は許可表（<see cref="CompanionActionRules"/>）に委ねる（F02c）。
+        /// 倒れている・退場・復帰待ち・ひるみ中に加えて、<b>回避中も庇わない</b>（回避は動作全体で 1 行動で、
+        /// 途中で庇いに化けない）。ここに条件式を写すと、表と食い違ったときに黙って別々の答えを出す。
+        /// </summary>
         private bool CanProtect()
         {
             if (_actor == null)
@@ -156,11 +178,8 @@ namespace Momotaro.Gameplay.Companion
                 return false;
             }
 
-            CompanionState state = _actor.State;
-            return state != CompanionState.Away
-                && state != CompanionState.Down
-                && state != CompanionState.Recovering
-                && state != CompanionState.Stagger;
+            return CompanionActionRules.Evaluate(CompanionActionKind.GuardianTransfer, _actor.State)
+                != CompanionActionVerdict.Denied;
         }
 
         private bool WithinGuardianRange()
@@ -194,6 +213,11 @@ namespace Momotaro.Gameplay.Companion
             if (_receiver == null)
             {
                 _receiver = GetComponent<CompanionHitReceiver>();
+            }
+
+            if (_states == null)
+            {
+                _states = GetComponent<CompanionStateArbiter>();
             }
 
             if (_follow == null)

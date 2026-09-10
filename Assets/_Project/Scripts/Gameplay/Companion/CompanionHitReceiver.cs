@@ -32,6 +32,9 @@ namespace Momotaro.Gameplay.Companion
         [Tooltip("状態・Data の供給元（未設定なら自動取得）。")]
         [SerializeField] private CompanionActor _actor;
 
+        [Tooltip("状態要求の唯一の窓口（未設定なら自動取得）。Actor へは直接書かない。")]
+        [SerializeField] private CompanionStateArbiter _states;
+
         private CompanionVitals _vitals;
         private readonly ReceivedHitTracker _received = new ReceivedHitTracker();
         private ICompanionDefenseState _defense;
@@ -151,13 +154,15 @@ namespace Momotaro.Gameplay.Companion
             float defenseValue = _actor.Data != null ? _actor.Data.Defense : 0f;
             CompanionVitals.HitApplication applied = _vitals.ApplyHit(hit, defenseValue);
 
+            // 被弾由来の強制遷移は同期的に確定し、進行中の行動の引換券をその場で無効にする（F02b）。
+            // これをやらないと、中断された攻撃の「終了通知」が遅れて届いて Down／Stagger を書き換えてしまう。
             if (applied.NewlyDowned)
             {
-                _actor.ForceHitState(CompanionState.Down, CompanionStateChangeReason.Defeated);
+                ForceHitState(CompanionState.Down, CompanionStateChangeReason.Defeated);
             }
             else if (applied.NewlyFlinching)
             {
-                _actor.ForceHitState(CompanionState.Stagger, CompanionStateChangeReason.Staggered);
+                ForceHitState(CompanionState.Stagger, CompanionStateChangeReason.Staggered);
             }
 
             Results.Publish(HitResult.Damage(
@@ -189,7 +194,7 @@ namespace Momotaro.Gameplay.Companion
             if (revived)
             {
                 // ダウンからの復帰。追従へ戻し、以後は通常どおり戦闘に参加できる。
-                _actor.RequestState(CompanionState.Follow, CompanionStateChangeReason.Recovered);
+                ForceRecover(CompanionState.Follow, CompanionStateChangeReason.Recovered);
                 _received.Clear(); // 倒れている間に届いた命中の記録は持ち越さない。
                 return;
             }
@@ -197,7 +202,7 @@ namespace Momotaro.Gameplay.Companion
             // ひるみが明けたら追従へ戻す（Down 中はここへ来ない）。
             if (_actor.State == CompanionState.Stagger && !_vitals.IsFlinching)
             {
-                _actor.RequestState(CompanionState.Follow, CompanionStateChangeReason.Recovered);
+                ForceRecover(CompanionState.Follow, CompanionStateChangeReason.Recovered);
             }
         }
 
@@ -221,11 +226,40 @@ namespace Momotaro.Gameplay.Companion
             _received.Clear();
         }
 
+        /// <summary>被弾由来の強制状態を確定する（調停役があればそこへ集約する。P4-FIX F02b）。</summary>
+        private void ForceHitState(CompanionState state, CompanionStateChangeReason reason)
+        {
+            if (_states != null)
+            {
+                _states.ForceHit(state, reason);
+                return;
+            }
+
+            _actor.ForceHitState(state, reason);
+        }
+
+        /// <summary>被弾からの復帰を確定する（同上）。</summary>
+        private void ForceRecover(CompanionState state, CompanionStateChangeReason reason)
+        {
+            if (_states != null)
+            {
+                _states.ForceRecover(state, reason);
+                return;
+            }
+
+            _actor.RequestState(state, reason);
+        }
+
         private void EnsureRuntime()
         {
             if (_actor == null)
             {
                 _actor = GetComponent<CompanionActor>();
+            }
+
+            if (_states == null)
+            {
+                _states = GetComponent<CompanionStateArbiter>();
             }
 
             if (_vitals == null && _actor != null)

@@ -37,6 +37,9 @@ namespace Momotaro.Gameplay.Companion
         [Tooltip("移動と向きの書き手（未設定なら自動取得）。戦闘は意図を出すだけで、Motor へは直接書かない。")]
         [SerializeField] private CompanionMovementArbiter _arbiter;
 
+        [Tooltip("状態要求の唯一の窓口（未設定なら自動取得）。Actor へは直接書かない。")]
+        [SerializeField] private CompanionStateArbiter _states;
+
         [Tooltip("索敵（誰を狙うか。未設定なら自動取得）。")]
         [SerializeField] private CompanionTargetTracker _tracker;
 
@@ -68,6 +71,7 @@ namespace Momotaro.Gameplay.Companion
         private AttackSnapshot _snapshot; // 攻撃開始時に確定する不変値（実行中に原本が変わっても揺れない）。
         private float _attackPower;       // 同上（攻撃開始時の攻撃力を固定する）。
         private CompanionAttackPlan _plan; // 同上（間合い・秒数・CD・判定寸法。攻撃中はこれしか読まない）。
+        private CompanionActionHandle _action; // いま進行中の行動の引換券（攻撃・接近）。F02b。
         private float _cooldownRemaining;
         private bool _wasEngaged;
 
@@ -322,7 +326,14 @@ namespace Momotaro.Gameplay.Companion
             return true;
         }
 
-        /// <summary>攻撃を中断し、判定を消す（ひるみ・ダウン・退場・無効化・Scene 離脱で共通。冪等）。</summary>
+        /// <summary>
+        /// 攻撃を中断し、判定を消す（ひるみ・ダウン・退場・無効化・Scene 離脱で共通。冪等）。
+        ///
+        /// <b>中断でもクールダウンは始める</b>（P4-FIX F02c）。始めないと、ひるむたびに攻撃をやり直せてしまい、
+        /// 小突かれ続けている間だけ手数が増えるという逆さまな挙動になる。秒数は<b>開始時に確定した</b>
+        /// Snapshot のもの（<see cref="CompanionAttackPlan.CooldownSeconds"/>）を使う。中断の瞬間に Data を
+        /// 読み直すと、振り始めた条件と違う値で待たされる。
+        /// </summary>
         public void CancelAttack()
         {
             if (!_attack.IsAttacking)
@@ -331,12 +342,17 @@ namespace Momotaro.Gameplay.Companion
             }
 
             _attack.Cancel();
+
+            // 既に走っているクールダウンを短くしない（Max）。中断が救済にならないようにする。
+            _cooldownRemaining = Mathf.Max(_cooldownRemaining, _plan.CooldownSeconds);
+
             _plan = CompanionAttackPlan.None;
             _hitTracker.Clear();
 
             // 中断は「行動を奪われた」側なので強制停止で通す。同じフレームに追従が歩き出すのを防ぐ
             // （1 フレームでも動くと、倒れたはずの仲間が滑る）。
             ForceStopMovement();
+            ReleaseAction();
         }
 
         /// <inheritdoc />
@@ -357,6 +373,38 @@ namespace Momotaro.Gameplay.Companion
         }
 
         // ---- 内部 ----
+
+        /// <summary>攻撃の段を進める（券が一致するときだけ。P4-FIX F02b）。</summary>
+        private void AdvanceAction(CompanionState state)
+        {
+            if (_states != null)
+            {
+                _states.TryAdvance(_action, state, CompanionStateChangeReason.AttackAdvanced);
+                return;
+            }
+
+            _actor.RequestState(state, CompanionStateChangeReason.AttackAdvanced);
+        }
+
+        /// <summary>行動を正常に終えて次の状態へ移る（券が一致するときだけ）。</summary>
+        private void CompleteAction(CompanionState next, CompanionStateChangeReason reason)
+        {
+            if (_states != null)
+            {
+                _states.TryComplete(_action, next, reason);
+                _action = default;
+                return;
+            }
+
+            _actor.RequestState(next, reason);
+        }
+
+        /// <summary>行動の所有権だけ返す（状態は変えない）。</summary>
+        private void ReleaseAction()
+        {
+            _states?.Release(_action);
+            _action = default;
+        }
 
         /// <summary>戦闘としての移動意図を出す（受理されるかは調停役が決める。P4-FIX F02a）。</summary>
         private void SubmitMove(in CompanionMoveRequest request)
@@ -443,14 +491,32 @@ namespace Momotaro.Gameplay.Companion
             _currentSwing = _allocator.NextSingle();
             _hitTracker.Clear();
 
+            // 先に行動の所有権を取る（F02b）。取れないなら攻撃そのものを始めない。
+            // 「判定は動いているのに状態は別の行動のまま」という食い違いを作らないため。
+            // 可否は許可表が決める（F02c）。構え・回避・守護・ワープの最中に殴り始めない。
+            if (_states != null)
+            {
+                if (!_states.TryStartAction(
+                        CompanionActionOwner.Combat, CompanionActionKind.AutoAttack, CompanionState.AttackPrepare,
+                        CompanionStateChangeReason.AttackStarted, out _action))
+                {
+                    _plan = CompanionAttackPlan.None;
+                    return;
+                }
+            }
+            else
+            {
+                _actor.RequestState(CompanionState.AttackPrepare, CompanionStateChangeReason.AttackStarted);
+            }
+
             if (!_attack.Begin(settings.StartupSeconds, settings.ActiveSeconds, settings.RecoverySeconds))
             {
                 _plan = CompanionAttackPlan.None;
-                return; // 長さゼロの攻撃は成立しない（Data の設定ミス。無言で判定を出さない）。
+                ReleaseAction(); // 長さゼロの攻撃は成立しない。所有権を抱えたままにしない。
+                return; // （Data の設定ミス。無言で判定を出さない）
             }
 
             AttackCount++;
-            _actor.RequestState(CompanionState.AttackPrepare, CompanionStateChangeReason.AttackStarted);
 
             // 予兆 0 の攻撃は開始と同時に判定段へ入る。段に対応する状態をその場で合わせる。
             ApplyPhaseState(CompanionAttackPhase.Startup, _attack.Phase);
@@ -465,7 +531,10 @@ namespace Momotaro.Gameplay.Companion
             _cooldownRemaining = plan.CooldownSeconds;
             _plan = CompanionAttackPlan.None;
             _hitTracker.Clear();
-            _actor.RequestState(CompanionState.Chase, CompanionStateChangeReason.AttackFinished);
+
+            // 正常終了。券が今の行動と一致するときだけ通る。
+            // 中断されたあとに遅れて届いた終了通知は、ここで無視される（それが F02b の要点）。
+            CompleteAction(CompanionState.Chase, CompanionStateChangeReason.AttackFinished);
         }
 
         /// <summary>攻撃の段に対応する状態へ移す（段が変わったときだけ要求する）。</summary>
@@ -479,11 +548,11 @@ namespace Momotaro.Gameplay.Companion
             switch (current)
             {
                 case CompanionAttackPhase.Active:
-                    _actor.RequestState(CompanionState.AttackActive, CompanionStateChangeReason.AttackAdvanced);
+                    AdvanceAction(CompanionState.AttackActive);
                     break;
 
                 case CompanionAttackPhase.Recovery:
-                    _actor.RequestState(CompanionState.AttackRecovery, CompanionStateChangeReason.AttackAdvanced);
+                    AdvanceAction(CompanionState.AttackRecovery);
                     SubmitStop();
                     break;
             }
@@ -491,10 +560,20 @@ namespace Momotaro.Gameplay.Companion
 
         private void RequestChase()
         {
-            if (_actor.State != CompanionState.Chase)
+            if (_actor.State == CompanionState.Chase)
             {
-                _actor.RequestState(CompanionState.Chase, CompanionStateChangeReason.EngagedTarget);
+                return;
             }
+
+            if (_states != null)
+            {
+                _states.TryBegin(
+                    CompanionActionOwner.Combat, CompanionState.Chase,
+                    CompanionStateChangeReason.EngagedTarget, out _action);
+                return;
+            }
+
+            _actor.RequestState(CompanionState.Chase, CompanionStateChangeReason.EngagedTarget);
         }
 
         /// <summary>対象の手前（停止距離）を目指して移動する。対象の位置そのものへ向かうと押し込みすぎる。</summary>
@@ -698,6 +777,11 @@ namespace Momotaro.Gameplay.Companion
             if (_arbiter == null)
             {
                 _arbiter = GetComponent<CompanionMovementArbiter>();
+            }
+
+            if (_states == null)
+            {
+                _states = GetComponent<CompanionStateArbiter>();
             }
 
             if (_tracker == null)
