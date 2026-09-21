@@ -266,7 +266,7 @@ namespace Momotaro.Gameplay.Companion.Investigation
             }
 
             // 2. Scene 記録へ調査済みとして登録（同一地点の完了は 1 回だけ）。
-            if (_record == null || !_record.Record.TryMarkInvestigated(request.PointId))
+            if (_record == null || !_record.TryMarkInvestigated(request.PointId))
             {
                 failure = InvestigationInterruptReason.CompletionRejected;
                 return false;

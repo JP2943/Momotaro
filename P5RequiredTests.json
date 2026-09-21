@@ -22,7 +22,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.BoundProgress_PreservesIdentityVirtueAndGrantOnce",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E02",
@@ -30,7 +30,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.ProgressBind_IsIdempotentAndRejectsLateReplacement",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E03",
@@ -38,7 +38,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.LocalProgressFallback_RemainsIsolated",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E04",
@@ -46,7 +46,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.AreaRecords_SurviveRebindWithoutRepeatingCompletion",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E05",
@@ -54,7 +54,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.WorldRespawn_ResetsOnlyNormalEncounterRecords",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E06",

@@ -13,9 +13,11 @@ namespace Momotaro.Gameplay.Companion.Investigation
     /// <summary>
     /// 純粋 C# の Scene 単位の調査済み記録（P4-07A。v1.0 §10.3）。
     /// 地点の Disable／再 Enable では消えない。Scene 再読込（Retry）で新しく作られる＝初期化される。
-    /// P5 で外部の進行 State へ注入先を変えるときは、<see cref="IInvestigationRecord"/> の実装を差し替える。
+    /// P5-01 で <see cref="IInvestigationRecordSink"/>（狭い書込み契約）を実装した。Scene ローカルの既定実装として
+    /// 使い続ける一方、P5 の Area では <c>AreaRuntimeState</c> が持つ同型の記録を
+    /// <see cref="InvestigationRecordHolder.Bind"/> で差し替える（仕様書 v1.1 §4.3）。
     /// </summary>
-    public sealed class InvestigationRecord : IInvestigationRecord
+    public sealed class InvestigationRecord : IInvestigationRecordSink
     {
         private readonly HashSet<StableId> _investigated = new HashSet<StableId>();
 
