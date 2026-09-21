@@ -1,0 +1,725 @@
+{
+  "version": 2,
+  "phase": "P5",
+  "note": "P5 の工程受入で Passed を要求するテストの正本（仕様書 Momotaro_P5_Detailed_Spec_v1.1.md §15）。実行結果に現れる完全名で持ち、件数やクラス名の正規表現では代替しない。P4RequiredTests.json は維持する（本一覧で置換しない。§15.5）。【重要】登録時点では 54 件すべて未実装で、実装済みのものは無い。各 test の implemented は「テストが実在するか」の記録であり、これが false の要求は照合で不合格になるのが正しい。未実装を Skip 成功や allowedSkips に置き換えないこと（§14）。テスト名を変えるときは、テストと本一覧と仕様書 §15 の表を同じ変更で更新する。パラメータ化で完全名が変わる場合は展開後の葉テストを列挙する。照合はブリッジの run-op verify-required-tests（stage / runIds / manifest を指定）。manifest の明示選択は P5-09 で対応する（§16.1）。allowedSkips は空にしてある（P4 の F01 と同方針）。",
+  "stages": [
+    "P5-01",
+    "P5-02",
+    "P5-03a",
+    "P5-03b",
+    "P5-04",
+    "P5-05",
+    "P5-06",
+    "P5-07",
+    "P5-08",
+    "P5-09",
+    "P5-10"
+  ],
+  "tests": [
+    {
+      "requirementId": "P5-E01",
+      "stage": "P5-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.BoundProgress_PreservesIdentityVirtueAndGrantOnce",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E02",
+      "stage": "P5-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.ProgressBind_IsIdempotentAndRejectsLateReplacement",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E03",
+      "stage": "P5-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.LocalProgressFallback_RemainsIsolated",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E04",
+      "stage": "P5-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.AreaRecords_SurviveRebindWithoutRepeatingCompletion",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E05",
+      "stage": "P5-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.WorldRespawn_ResetsOnlyNormalEncounterRecords",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E06",
+      "stage": "P5-03a",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.TransferSnapshot_CapturesAfterCancellationAndRestoresVitals",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E07",
+      "stage": "P5-03a",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.LoadingGate_FreezesClocksAndStopsDirectTicks",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E08",
+      "stage": "P5-03b",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.AreaTransition_RejectsInvalidModesAndActions",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E09",
+      "stage": "P5-03b",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Transition_ReentryAndStaleCompletionCannotReleaseNewRun",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E10",
+      "stage": "P5-03b",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.TransitionFailure_HasBoundedRecoveryWithoutDuplicateLoads",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E11",
+      "stage": "P5-04",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Interaction_SelectsNearestThenStableId",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E12",
+      "stage": "P5-04",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Interaction_RejectsOccludedWrongAreaOrFloor",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E13",
+      "stage": "P5-04",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Interaction_ConsumesOneEdgeWithoutFallbackToSecondTarget",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E14",
+      "stage": "P5-04",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Lever_CommitsOnceAndRestoresDoorFromSameFlag",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E15",
+      "stage": "P5-07",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Encounter_StartGatePrecedesInvestigationCallbacks",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E16",
+      "stage": "P5-07",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Encounter_SpawnFailureDoesNotWinOrGrantRewards",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E17",
+      "stage": "P5-07",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Encounter_VictoryRequiresAllSpawnedAndPlayerAlive",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E18",
+      "stage": "P5-07",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Encounter_SameTickPlayerDeathWinsOverClear",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E19",
+      "stage": "P5-07",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.EnemyRewards_PrecedeVictoryAndRespectExistingGrantOnce",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E20",
+      "stage": "P5-08",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.CampaignRespawn_PreservesEarnedProgressAndResetsVitals",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E21",
+      "stage": "P5-08",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.RespawnRequest_IsOnceEvenWhenLoadingFails",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E22",
+      "stage": "P5-05",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.FollowPath_UsesOneMovementWriterAndBoundedRetries",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E23",
+      "stage": "P5-05",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.SafeWarp_RejectsClosedSideBlockedAndWrongFloor",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E24",
+      "stage": "P5-06",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.CameraBounds_HandlePitchAspectAndSmallRooms",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E25",
+      "stage": "P5-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.AreaCatalog_ResolvesEntriesAndRejectsUnsupportedFloor",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E26",
+      "stage": "P5-10",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.NewGame_ClearsSessionButAreaLoadDoesNot",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E27",
+      "stage": "P5-10",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Lifecycle_DisposeOnlyUnregistersOwnedProviders",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E28",
+      "stage": "P5-03a",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.TransferInventory_ClassifiesEveryMutableRuntimeField",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E29",
+      "stage": "P5-03a",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.CompanionRestore_ReconcilesDownAwayWithoutIllegalTransitions",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-E30",
+      "stage": "P5-04",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ContractTests.ExplicitInvestigation_RejectsImplicitSelectionAndKeepsChosenId",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P01",
+      "stage": "P5-03b",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.BootstrapAndDirectOpen_CreateOneReadySession",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P02",
+      "stage": "P5-03b",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.FirstRewardAfterLoad_ReachesInjectedStateAndHud",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P03",
+      "stage": "P5-03b",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.AreaRoundTrip_PreservesProgressVitalsAndDownTimers",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P04",
+      "stage": "P5-03b",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.HeldExitInput_DoesNotBounceBackOrStartEncounter",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P05",
+      "stage": "P5-07",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.FullRoute_InvestigateOpenTravelFightAndReturn",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P06",
+      "stage": "P5-05",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.MovementStepAndHitback_RespectWallsAndWaterBoundary",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P07",
+      "stage": "P5-05",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.PauseAndLoading_StopActorsAndResumeWithoutResidue",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P08",
+      "stage": "P5-07",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.SpawnAndCombatCleanup_LeaveNoProjectileOrBoundary",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P09",
+      "stage": "P5-08",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.DeathAfterOneKill_PreservesVirtueAndReopensNormalEncounter",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P10",
+      "stage": "P5-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.KeyboardAndGamepadInteract_ActOnceWithoutStep",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P11",
+      "stage": "P5-05",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.NavMeshFollow_DetoursAndUpdatesAfterDoorOpens",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P12",
+      "stage": "P5-03b",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.InvalidDestination_RecoversWithoutLosingSession",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P13",
+      "stage": "P5-03b",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.CompletionCallback_CanRequestTravelWithoutOldRunCorruption",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P14",
+      "stage": "P5-10",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RepeatedTravelAndRespawn_LeaveOneOwnerAndNoOldColliders",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P15",
+      "stage": "P5-08",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.NewGameAndLegacyTrial_UseCorrectProgressScope",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P16",
+      "stage": "P5-09",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RebuiltScenes_RunWithoutManualWiring",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P17",
+      "stage": "P5-06",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.CameraTransition_PreservesBoundsAndShakeBase",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P18",
+      "stage": "P5-08",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnSubmit_DoesNotBecomeArrivalInteract",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-P19",
+      "stage": "P5-10",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RegistryTeardown_LeavesZeroWithoutClearingBeforeAssertion",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-V01",
+      "stage": "P5-09",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ValidatorTests.GeneratedAreas_PassSceneDataAndAssetValidators",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-V02",
+      "stage": "P5-09",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ValidatorTests.BrokenFixtures_FailWithSpecificDiagnostics",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-V03",
+      "stage": "P5-09",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ValidatorTests.Rebuild_IsRepeatableAndDoesNotModifySharedAssets",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-V04",
+      "stage": "P5-09",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ValidatorTests.DirtyScene_BlocksDestructiveGeneration",
+      "requirementIds": [],
+      "implemented": false
+    },
+    {
+      "requirementId": "P5-V05",
+      "stage": "P5-09",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ValidatorTests.ProjectDataValidation_IncludesPhase5GeneratedFolder",
+      "requirementIds": [],
+      "implemented": false
+    }
+  ],
+  "allowedSkips": [],
+  "requirements": [
+    {
+      "id": "P5-E01",
+      "summary": "外部Stateの参照同一性、徳、GrantOnce記録を維持",
+      "stage": "P5-01"
+    },
+    {
+      "id": "P5-E02",
+      "summary": "同一参照は冪等、使用後の別参照と共有Resetを拒否",
+      "stage": "P5-01"
+    },
+    {
+      "id": "P5-E03",
+      "summary": "未注入Holderは互いに独立。共有Sessionへ誤付与しない",
+      "stage": "P5-01"
+    },
+    {
+      "id": "P5-E04",
+      "summary": "調査・開通・訪問の復元で成功イベントを再発行しない",
+      "stage": "P5-01"
+    },
+    {
+      "id": "P5-E05",
+      "summary": "全Areaの通常戦記録だけ初期化。徳・GrantOnce・調査・門・加入は不変",
+      "stage": "P5-01"
+    },
+    {
+      "id": "P5-E06",
+      "summary": "中断で開始したCD、HP、Down、短時間状態を値で復元。非初期値の往復",
+      "stage": "P5-03a"
+    },
+    {
+      "id": "P5-E07",
+      "summary": "直接Tickでも時計・Move・Warp・攻撃を進めない",
+      "stage": "P5-03a"
+    },
+    {
+      "id": "P5-E08",
+      "summary": "戦闘・Pause等、Playerの攻撃／防御／被弾中を§6.1の表どおり拒否",
+      "stage": "P5-03b"
+    },
+    {
+      "id": "P5-E09",
+      "summary": "二重要求・古い完了・通知再入・旧finallyから新世代を守る",
+      "stage": "P5-03b"
+    },
+    {
+      "id": "P5-E10",
+      "summary": "タイムアウト後も同じロード操作を保持・監視。遅延完了後に復旧1回",
+      "stage": "P5-03b"
+    },
+    {
+      "id": "P5-E11",
+      "summary": "対象と表示が一致、同距離も決定的",
+      "stage": "P5-04"
+    },
+    {
+      "id": "P5-E12",
+      "summary": "壁、距離境界、異なるArea／Floorを拒否",
+      "stage": "P5-04"
+    },
+    {
+      "id": "P5-E13",
+      "summary": "長押し・拒否・対象なしで次候補や次フレームへ入力を流さない",
+      "stage": "P5-04"
+    },
+    {
+      "id": "P5-E14",
+      "summary": "再入・再表示でも開通1回、門とレバーの正本が同じ",
+      "stage": "P5-04"
+    },
+    {
+      "id": "P5-E15",
+      "summary": "探索中断通知から再要求してもStartingを上書きしない",
+      "stage": "P5-07"
+    },
+    {
+      "id": "P5-E16",
+      "summary": "0体・部分生成・必須欠落で勝利しない。生成途中に敵が活動しない",
+      "stage": "P5-07"
+    },
+    {
+      "id": "P5-E17",
+      "summary": "予定生成完了・生存0・主人公生存の全条件",
+      "stage": "P5-07"
+    },
+    {
+      "id": "P5-E18",
+      "summary": "通知順の両方で死亡優先、勝利記録なし",
+      "stage": "P5-07"
+    },
+    {
+      "id": "P5-E19",
+      "summary": "敵ごとの重複排除、10＋12、RewardId単位の一度付与を維持",
+      "stage": "P5-07"
+    },
+    {
+      "id": "P5-E20",
+      "summary": "死亡後の徳保持、HP／CD初期化、加入済み犬丸復帰",
+      "stage": "P5-08"
+    },
+    {
+      "id": "P5-E21",
+      "summary": "連打・失敗再試行で再出現周期・通知を重複更新しない",
+      "stage": "P5-08"
+    },
+    {
+      "id": "P5-E22",
+      "summary": "Complete／Partial／Invalid、停止・再試行・所有権を検査",
+      "stage": "P5-05"
+    },
+    {
+      "id": "P5-E23",
+      "summary": "危険候補を拒否。候補なしで壁内Warpせず停止",
+      "stage": "P5-05"
+    },
+    {
+      "id": "P5-E24",
+      "summary": "斜め投影、16:9／4:3／21:9、小部屋、領域重複を検査",
+      "stage": "P5-06"
+    },
+    {
+      "id": "P5-E25",
+      "summary": "安定ID・入口・既定／復旧点の解決、Floor=0制限",
+      "stage": "P5-02"
+    },
+    {
+      "id": "P5-E26",
+      "summary": "Sessionの破棄権限と通常移動の違いを固定",
+      "stage": "P5-10"
+    },
+    {
+      "id": "P5-E27",
+      "summary": "後発破棄・旧Scene解除で新しい正本を消さない",
+      "stage": "P5-10"
+    },
+    {
+      "id": "P5-E28",
+      "summary": "対象型を反射で発見し台帳と双方向照合。未分類・Snapshot対応漏れを検出（裁定1）",
+      "stage": "P5-03a"
+    },
+    {
+      "id": "P5-E29",
+      "summary": "初期化復元で値・状態・表示が一致、IllegalTransitionCount=0、被弾演出やCD再設定なし（裁定5）",
+      "stage": "P5-03a"
+    },
+    {
+      "id": "P5-E30",
+      "summary": "P5の引数なし要求は拒否、前方順位とID順位が違っても表示対象へ依頼",
+      "stage": "P5-04"
+    },
+    {
+      "id": "P5-P01",
+      "summary": "統合起動・A直開き・B直開きで唯一の正本とReady後の活動",
+      "stage": "P5-03b"
+    },
+    {
+      "id": "P5-P02",
+      "summary": "到着直後の最初の報酬が注入先へ1回入り、HUDへ反映",
+      "stage": "P5-03b"
+    },
+    {
+      "id": "P5-P03",
+      "summary": "A→B→Aで同一Progressと開通・調査、負傷HP、Down残り・CDを保持",
+      "stage": "P5-03b"
+    },
+    {
+      "id": "P5-P04",
+      "summary": "方向押しっぱなし・入口滞在で即帰還／即戦闘しない",
+      "stage": "P5-03b"
+    },
+    {
+      "id": "P5-P05",
+      "summary": "実入力で調査→門→移動→実敵撃破→探索復帰、徳22、再訪敵0",
+      "stage": "P5-07"
+    },
+    {
+      "id": "P5-P06",
+      "summary": "実Colliderで通常移動・Step・押し出しを阻止、通れる床は通る",
+      "stage": "P5-05"
+    },
+    {
+      "id": "P5-P07",
+      "summary": "実行中の経路・探索・戦闘を停止／復帰。Loadingへ旧速度・Hitboxを残さない",
+      "stage": "P5-05"
+    },
+    {
+      "id": "P5-P08",
+      "summary": "敵生成失敗と勝利後に残留物なし。探索へ戻り犬丸が再活動",
+      "stage": "P5-07"
+    },
+    {
+      "id": "P5-P09",
+      "summary": "近接撃破で10取得→死亡再開で10維持→再戦全滅で32。門・調査は保持",
+      "stage": "P5-08"
+    },
+    {
+      "id": "P5-P10",
+      "summary": "EとゲームパッドSouthの実Action経路で各1回。長押し・複数対象でも二重なし",
+      "stage": "P5-04"
+    },
+    {
+      "id": "P5-P11",
+      "summary": "実L字通路を迂回。閉門を抜けず、開通後の経路更新で追従",
+      "stage": "P5-05"
+    },
+    {
+      "id": "P5-P12",
+      "summary": "存在しない入口等をテスト専用設定で注入。旧Area復旧とState保持",
+      "stage": "P5-03b"
+    },
+    {
+      "id": "P5-P13",
+      "summary": "Body／Proxy完了通知中の遷移、古い完了通知から新依頼を守る",
+      "stage": "P5-03b"
+    },
+    {
+      "id": "P5-P14",
+      "summary": "A↔B3往復＋死亡再開。旧Scene由来の登録0、新Sceneの登録維持、IllegalTransitionCount=0",
+      "stage": "P5-10"
+    },
+    {
+      "id": "P5-P15",
+      "summary": "P5新規開始0、P5往復保持、既存試遊への切替・Retryはローカル0",
+      "stage": "P5-08"
+    },
+    {
+      "id": "P5-P16",
+      "summary": "Builder出力から起動し、注入・HUD・調査・Encounterまで手動配線不要",
+      "stage": "P5-09"
+    },
+    {
+      "id": "P5-P17",
+      "summary": "領域移動・Scene到着・揺れ後に基準位置がずれず、Camera／Listener各1つ",
+      "stage": "P5-06"
+    },
+    {
+      "id": "P5-P18",
+      "summary": "実キー／ゲームパッドで再開を長押ししても到着後Interact／Stepは0",
+      "stage": "P5-08"
+    },
+    {
+      "id": "P5-P19",
+      "summary": "全Area／Actor破棄・unload完了後、対象static登録総数0をClear前に検査",
+      "stage": "P5-10"
+    },
+    {
+      "id": "P5-V01",
+      "summary": "全必須配線・ID・素材・Build Settings・NavMeshが揃う",
+      "stage": "P5-09"
+    },
+    {
+      "id": "P5-V02",
+      "summary": "重複ID、入口欠落、未配線Context、Floor不整合、空Encounter、入力二重を各検出",
+      "stage": "P5-09"
+    },
+    {
+      "id": "P5-V03",
+      "summary": "2回生成で重複なし、共有Player／敵／Reward／Attack原本の内容不変",
+      "stage": "P5-09"
+    },
+    {
+      "id": "P5-V04",
+      "summary": "未保存Sceneを保持して失敗。勝手に保存・破棄しない",
+      "stage": "P5-09"
+    },
+    {
+      "id": "P5-V05",
+      "summary": "Phase5生成先のGameDataAssetを実収集し、不正値をRunAllとBridge検証経路で検出（裁定3）",
+      "stage": "P5-09"
+    }
+  ]
+}

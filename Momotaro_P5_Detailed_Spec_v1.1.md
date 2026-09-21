@@ -1,6 +1,7 @@
-# 桃太郎プロジェクト P5 マップと探索基盤 詳細仕様書 v1.0
+# 桃太郎プロジェクト P5 マップと探索基盤 詳細仕様書 v1.1
 
 作成日：2026-09-21  
+改訂：v1.1 — Claudeの実装前照会への裁定を反映  
 宛先：Claude（実装・Unity自動検証担当）  
 対象：Unity 6000.3.20f1、URP Universal Renderer、XZ平面のPhysics 3D  
 目的：正式スプライトを待たず、2つの仮エリアを移動し、犬丸の調査・仕掛け・遭遇戦・探索復帰・死亡再開までを成立させる。
@@ -9,13 +10,16 @@
 
 ## 0. 基準と着手条件
 
-### 0.1 確認した現在地
+### 0.1 基準コミットと改訂時の確認
 
 - P4ブランチ：phase/4-companions-foundation
-- 確認コミット：a520a1c6d79f769dd67989fc960409bc1132edc4（P4統合）
-- 確認時点のmain：135f26d5ca6e0f91e146f362851277593a33c852（P4設計）。P4の実装先端とは異なる。
-- 前回レビュー：Momotaro_P4_Review_a520a1c.md。R3-01〜05の解消を、この時点では確認できていない。
+- v1.0の設計基準：a520a1c6d79f769dd67989fc960409bc1132edc4（P4統合）
+- v1.1の関連コード確認：4a7650b8b8be711b80d1447656654bf9bc6b4f1b（P4ブランチ）。Snapshot対象・状態調停・選択器・レジストリ・Data検証経路を照合。
+- v1.0作成時点のmain：135f26d5ca6e0f91e146f362851277593a33c852（P4設計）。P4の実装先端とは異なる。
+- 前回レビュー：Momotaro_P4_Review_a520a1c.md。今回のP4先端にはR3修正の受入記録が追記されている。本書の改訂はその全面再レビューではなく、P5の実装契約の補足である。
 - GPTは今回、仕様書・関連コードを確認した。P4のUnityテストを再実行したものではない。
+
+受入記録の最新値はEditMode 1624／1624、PlayMode 72／72、Skip 0。Claude側の記録値として確認したもので、GPTによるUnity再実行結果ではない。
 
 実装開始時に最新のブランチ・コミットを再確認する。本書の古いSHAへ作業ツリーを戻さない。
 
@@ -103,7 +107,7 @@ Cinemachine、複数Floor、完成版地図等を永続的に廃止する決定�
 | エリアA | SCN_Phase5_AreaA | area_p5_a |
 | エリアB | SCN_Phase5_AreaB | area_p5_b |
 
-EntryIdはarea_p5_a_start、area_p5_a_from_b、area_p5_b_from_aを使う。死亡再開点はAのarea_p5_a_start。P5では変更できない固定の試作再開点とし、お地蔵様の保存・休息機能を先行実装しない。
+EntryIdはarea_p5_a_start、area_p5_a_from_b、area_p5_b_from_aを使う。A直開きの既定入口はarea_p5_a_start、B直開きの既定入口はarea_p5_b_from_a。死亡再開点はAのarea_p5_a_start。P5では変更できない固定の試作再開点とし、お地蔵様の保存・休息機能を先行実装しない。
 
 各Entryは到着位置・4方向の向き・同Floorの代替配置候補を持つ。Actorは目的地Entryの向きを採用し、復旧時だけ採取した元の向きへ戻す。
 
@@ -157,6 +161,7 @@ P5では上下に重なるFloorを実装済みとは報告しない。非0の実
 | 攻撃中／探索中／防御中の行動所有権 | Scene内Controller | 同期中断し破棄 | 破棄 | 破棄 |
 | 攻撃判定・Projectile・ヘイト・攻撃スロット | Scene／Encounter | 破棄 | 破棄 | 破棄 |
 | GameObject、Transform、Coroutine、購読 | Scene | 破棄して再配線 | 同左 | 同左 |
+| staticレジストリのScene由来登録 | 登録元Actor／地点が所有 | 旧Scene分を解除し新Scene分だけ登録 | 同左 | 全終了後0 |
 
 Game Sessionは純粋な状態を保持する。Scene由来のActorやPresenterをDontDestroyOnLoadして運ばない。
 
@@ -203,6 +208,50 @@ AreaTransferSnapshot（名称は変更可）は、遷移中だけ使う不変の
 Export／Importは各Runtimeの明示APIで実装する。Reflectionによるprivate値の書換えを本番経路に使わない。Data未実装の仲間スタミナ等を新設しない。
 
 行動の中断によりCDが開始される場合は、**中断完了後の値**を採取する。ロード中は時計を停止し、残り時間から実ロード秒数を引かない。Import後にAwake／OnEnableの初期化で値が上書きされない構造にする。Snapshotの値範囲は検証し、不正値を黙って全回復に置換しない。
+
+### 4.5 Snapshotの単位と持ち越し台帳
+
+単位は「状態を所有するコンポーネントまたは純粋Runtimeクラス1つにつき、不変Snapshot structとExport／Import APIを1組」とする。Controllerが内部のRuntimeを所有する場合は、そのSnapshotを合成し、同じCDをControllerと能力の両方へ複製しない。名前は ExportTransferSnapshot／TryImportTransferSnapshot 等で統一する。
+
+P5-03開始時にP5_ActorTransferInventory.mdを作る。各項目を「所有型／実フィールドまたは値／Snapshot経路／Capture前処理／Import後の意味／テスト」に対応付ける。最低限の対象は次のとおり。
+
+| 所有単位 | 保持する値 | 終了・除外する値 |
+|---|---|---|
+| PlayerVitalsとHealth | 現在HP | 最大値等の固定設定はDataから構築 |
+| StaminaState | Current、回復待ち残り、BreakRemainingの整合 | 通常遷移ではBreak中を受付拒否。Capture時も0を要求し、制限を緩めない |
+| Playerの被弾反応Runtime | 被弾後無敵の残り時間 | Hurt等の行動中は受付拒否。終了済みの反応移動は再生しない |
+| CompanionVitals／内部FlinchState | HP、IsDown、RecoveryRemaining、被弾後無敵残り、ひるみ蓄積・残り時間 | Revive／Resetによる時間やHPの再初期化をしない |
+| CompanionGuardianController | 守護CD残り | 転送中フラグ、実行券、HitId再入情報 |
+| CompanionCombatController | 攻撃CD残り。中断で生じたCDを含む | 攻撃Plan、Startup／Active／Recovery進捗、標的、Hitbox |
+| CompanionDefenseController内のGuard能力 | 解除後のGuard CD残り | Guard中フラグ・保持経過。Release後に採取 |
+| 同Evade能力 | 中断後のEvade CD残り | 回避動作と回避由来無敵。既存Cancel相当で終了して採取 |
+| Actor／状態調停 | Away等の配置状態と§4.6の復元結果 | 旧Sceneの行動所有者、実行券、探索占有 |
+| その他の現在実装されている可変時間値 | 持ち越す理由があるものを台帳へ追加 | センサー再評価間隔等は理由付きで再初期化。黙って省略しない |
+
+「被弾後無敵」と「中断するEvade行動に付随する無敵」は別物。後者まで持ち越して回避終了後に無敵だけ復活させない。未実装の能力・CDをこのために作らない。
+
+Importは対象の初期化／停止期間だけ許可する。全Snapshotを先に検証してから適用し、NaN・Infinity・負の残り時間・HPとDownの矛盾等で部分適用したまま活動させない。失敗は§6.3へ戻す。Import自体から新しい被弾、回復、守護成立、報酬、SE／VFXを発行しない。表示の状態同期は許可する。
+
+**網羅性テストは台帳検査と挙動検査を組み合わせる。** E28で、対象Runtimeの可変フィールドが「保持」「Capture前に終了」「固定設定／参照」「再構築」に理由付きで分類済みかを照合する。入れ子の時間所有型も対象にする。テスト限定の型・フィールド列挙にReflectionを使ってよいが、private値の書換えで本番Importを代替しない。新しい可変フィールドが追加され分類されていなければ失敗させる。
+
+フィールド名のRemaining／Cooldown検索だけで網羅性を保証したとしない。分類表だけでは意味の誤りを検出できないため、E06で保持対象をそれぞれ異なる非初期値へ設定し、Export→別実体Import→同じdeltaTimeで進行させ、値・復帰時刻・使用可能時刻が連続することも確認する。0だけの往復では合格にしない。
+
+### 4.6 Down／Awayと状態機の復元
+
+値のImportだけでは復元完了としない。生存値・配置状態・CompanionState・表示・Collider・活動許可を、AreaReadyより前に一致させる。
+
+状態要求はCompanionStateArbiterを唯一の窓口とする。初期化中の専用Restore APIを追加してよい。Down／Staggerに既存ForceHitを利用する場合も、実被弾を偽造せず、HP・復帰時計・CDを変更しないことを確認する。AwayをForceHitへ渡す等、非対応の状態要求を行わない。
+
+| 復元する条件 | 到着後の状態 |
+|---|---|
+| Away | Awayを維持。通常表示・戦闘参加を有効化しない。HP／Down値は独立に保持 |
+| 非AwayでIsDown | Down。HP0、残り復帰時間を維持 |
+| 非Away・非Downでひるみ残りあり | Stagger。残り時間を維持 |
+| 上記以外 | Follow。旧攻撃・旧防御・旧探索を再開しない |
+
+P5の通常遷移ではPlayerの行動中状態を受理しないため、到着時に攻撃・Step等の途中へ復元しない。仲間は自然復帰の時刻が到着直後でも二重通知・二重表示を起こさない。
+
+E29とP03／P14で、到着した犬丸のIllegalTransitionCount == 0、行動所有者なし、生存値と状態の一致、HP・CDの意図しない変更なしを要求する。不正要求の後にResetState等で診断カウンタを消して合格にしない。到着直後の最初のTickまで観測する。
 
 ## 5. 起動とSceneの構成
 
@@ -280,7 +329,7 @@ Bootstrap重複を後発破棄しても、正本サービスの購読・Provider
 
 Runtimeの入口位置が塞がっている場合は、指定された同Floorの安全な代替入口候補だけを使う。すべて不適切なら遷移失敗。Vector3.zero、壁内、別Floorへ無条件に配置しない。
 
-ロード監視の初期値は30秒（unscaled）。非同期ロードが完了していない場合、Unityの処理をキャンセルできたと偽って排他を解除しない。タイムアウトは停止表示・診断とし、古い操作が終端するまで新たなロードを開始しない。復旧要求は古い操作の終端後に1回だけ実行する。正常系に固定の待ち時間を加えない。
+ロード監視の初期値は30秒（unscaled）。非同期ロードが完了していない場合、Unityの処理をキャンセルできたと偽って排他を解除しない。タイムアウトは停止表示・診断とし、古い操作が終端するまで新たなロードを開始しない。復旧要求は古い操作の終端後に1回だけ実行する。監視タイムアウト後も、常駐側が同じAsyncOperationとTransitionIdを保持してisDoneを観測し続ける。タイムアウトを理由にCoroutine／監視を捨てない。遅れてロード完了しても目的地を活動させず、保留した復旧だけを1回開始する。正常系に固定の待ち時間を加えない。
 
 暗転とError UIはunscaled時間で動かし、Gameplay時計・CDは進めない。Missing素材による無表示許容と、進行に必要な入口／State未配線の失敗を混同しない。
 
@@ -302,6 +351,10 @@ P4のInvestigationInteractInputはP4 Sceneで維持してよい。P5 Sceneでは
 InteractionRadius初期値は1.6。調査地点固有の受付距離がさらに短い場合は小さい方を用い、候補表示と受付が同じ値を参照する。向きの厳密な円錐条件はP5で追加しない。距離・遮蔽の境界条件をテストする。
 
 調査Adapterは選択されたPointIdを指定して依頼する。現在のCoordinator.TryRequest()が内部で最近傍を選び直す構造なら、指定地点を再検証する狭い入口を追加する。共通選択の後に別の地点へ依頼がすり替わる構造にしない。P4の引数なし入口は既存互換として残せる。
+
+P5 Sceneは指定地点モード（ExplicitTargetOnly等）で構成し、引数なしTryRequest()を呼ばない。P5 AdapterにはPointId指定の依頼だけを公開する狭いインターフェースを渡す。Coordinator具象を使う必要がある場合も、指定地点モードの引数なし入口は選択・開始を行わず、誤呼出を診断可能な結果で拒否する。
+
+Scene Validatorはモード・Adapter配線・旧入力仲介の不在を検査する。ValidatorがSceneを読むだけでC#の全呼出を解析できるとは扱わない。E30で引数なし入口の拒否と、距離同点・前方順位とID順位が逆転する配置でP5の表示PointIdと実依頼PointIdが一致することを検証する。P4では従来の距離→前方→ID規則と既存テストを維持する。
 
 対象の内部条件（既に調査済み、未加入、ロック中等）で拒否されても、同じ押下を次点の対象へ流さない。対象がなければ押下を捨てる。長押し、フレームをまたぐ古い入力、ゲームパッドSouthとの二重処理でStepを発動しない。
 
@@ -333,7 +386,7 @@ Triggerによる戦闘アリーナ封鎖と、恒久開通の門は別所有者�
 既存EncounterDataは雛形であり、EnemyIds、SpawnPointId、Boss指定を持つ。これを最小限拡張・公開し、新しい同義の戦闘Dataを並設しない。
 
 - EncounterDataのIDとEnemyIdsを正本にする。
-- EnemyId→既存Enemy Prefabの解決表、SpawnPointId→Scene内出現点集合を明示配線する。
+- EnemyId→既存Enemy Prefabの解決表、SpawnPointId→Scene内出現点集合は、Scene側EncounterBindingに明示配線する。Data側にはEnemyIdだけを置き、同じ対応表をDataカタログへ二重登録しない。
 - 出現点はEnemyIds順に対応させる。P5では敵数以上の安全な出現点を要求し、同じ点への重複生成をしない。
 - Arena、Trigger、戦闘復帰点はScene内のEncounterBindingに持つ。Transformを共有Dataや常駐Sessionへ保存しない。
 - P5の勝利条件はAllEnemiesDefeated、敗北条件はPlayerDefeated、逃走不可。Boss指定や未対応条件は専用Validatorで拒否する。
@@ -359,6 +412,8 @@ Area内のEncounter状態はDormant、Starting、Playing、Resolving、Cleared�
 初期生存数0だけで勝利にしない。必須Prefab・出現点欠落、部分生成失敗はFailedとし、生成済み敵を破棄、登録・境界・モードを元に戻す。報酬・クリア記録は付けない。失敗後はTrigger退出→再進入で再試行できる。
 
 RuntimeにSpawn失敗の可能性がある以上、Spawn中の敵が先に活動・死亡しないことを保証する。
+
+EnemyId→Prefab表はP5で新規に実装する。Inspector表示名やPrefab名で解決しない。ValidatorはIDの重複・未解決・nullと、Prefabに配線されたEnemyData.Idとの一致を検査する。実行時は明示表を参照し、全Prefabを検索して逆引きしない。EnemyIds内に同じ種類の敵が複数あることは許可し、解決表側の重複キーとは区別する。
 
 ### 8.3 調停の優先順位
 
@@ -419,6 +474,8 @@ PlayerのDefeatedをArea単位で購読する。CombatSessionがPreparing／未�
 6. Playerと加入済み犬丸を全回復・CD解除・短時間状態解除して再配置する。
 7. 徳、GrantOnce記録、調査済み、門開通、訪問済み、加入を復元して探索を再開する。
 
+Submit受理時、Action Map切替時、到着時に旧Submit／Interactのエッジ・ラッチを破棄する。さらに再開に使った物理ボタンが一度離されるまで、到着先のGameplay操作へ再利用しない。単にラッチを1回消すだけで、Map再Enable時の押下中入力を新しい押下と解釈しないこと。キーボードとゲームパッドの両方を検査する。
+
 再出現周期の更新は再開要求IDにつき一度とし、読込失敗やボタン連打で何度も更新しない。失敗時は再開画面から再試行可能にする。
 
 P5には通常Encounterしか配置しない。将来のボス撃破・一度限りイベント完了をこのリセットに混ぜない。通常敵の再出現記録と恒久進行のコンテナを区別する。
@@ -435,7 +492,9 @@ P5のデータはPlay終了／アプリ終了で失われる。SaveData、Player
 
 導入済みcom.unity.ai.navigation 2.0.13を使う。P5のためにUnityやPackageのバージョンを変更しない。
 
-NavMeshは長距離Followの次の移動目標を供給するだけ。位置・速度・向きの実書込みはCompanionMovementArbiter→CompanionMotorを維持する。NavMeshAgentとRigidbodyを両方の書き手にしない。
+NavMeshは長距離Followの次の移動目標を供給するだけ。位置・速度・向きの実書込みはCompanionMovementArbiter→CompanionMotorを維持する。P5の長距離Follow経路にはNavMeshAgentコンポーネントを置かない。updatePosition=false／updateRotation=falseで共存させる案も採用しない。NavMesh.CalculatePathとNavMeshPathで経路を取得し、既存Motorへ移動意図を渡す。NavMeshSurface／門のNavMeshObstacle等はこの禁止の対象外。
+
+Gameplay側にIPathProvider等の狭い問い合わせ契約を置き、InfrastructureのNavMesh AdapterをCompanionFollowController.BindPathProvider(...)等で明示注入する。GetComponentだけに依存せず、テストはFakeを注入できること。P5で未注入なら経路追従を停止・診断し、Validatorを不合格とする。既存P4のNavMeshなし追従は明示的な従来モードとして維持する。
 
 - 直線で通れる近距離は既存追従を使える。
 - 壁に遮られた追従は経路のCornerへ移動要求を出す。
@@ -455,7 +514,7 @@ NavMeshは長距離Followの次の移動目標を供給するだけ。位置・�
 - ワープ候補は主人公と同じ通行可能側に置く。主人公への短い接続経路も検査する。
 - 攻撃Active・防御行動・被弾・Down・Away・探索占有中の通常Follow Warpを禁止する。
 - 安全候補がない場合は停止し、間隔を空けて再評価する。壁内へ強制ワープしない。
-- Scene遷移時の再配置は通常Follow Warpとは別の初期化処理。Down／Away等の状態を保持したまま安全な入口へ配置する。
+- Scene遷移時およびEncounter開始時の再配置は、通常Follow Warpとは別の配置処理。開始調停が旧探索・行動を同期解放し、活動を停止した期間だけ行う。Down／Awayを含むHP・復帰残り・CD・表示資格を維持したまま、入口または安全なアリーナ内部候補へ配置する。Awayを出撃扱いに変えない。内部候補がなければEncounter開始を失敗とし、境界外にDownの本体を置き去りにしない。
 
 NavMeshはBuilderでベイク・保存し、プレイ開始時の毎回ベイクを前提にしない。門の通行状態変更をNavigationへ反映し、更新後の通行可否を実経路テストで確認する。
 
@@ -483,7 +542,7 @@ CameraRegionはXZの軸平行矩形、RegionId、優先度を持つ。主人公�
 | Core | 既存StableId、狭い値・契約。Scene APIを入れない |
 | Data | Area定義、入口参照定義、Interaction設定、EncounterDataの最小拡張 |
 | Gameplay | Session／Areaの純粋State、遷移要求と結果の契約、Interact選択、Encounter調停、Actor値Export／Import |
-| Infrastructure | Bootstrap注入、SceneFlow、入力仲介、UnityロードAdapter、NavMeshへのAdapter |
+| Infrastructure | Bootstrap注入、SceneFlow、入力仲介、UnityロードAdapter、明示注入するNavMesh問い合わせAdapter |
 | Presentation | Camera境界・追従、暗転、HUD、候補・拒否・結果表示 |
 | Editor | 専用Builder、Data／Scene／Asset検証、Bridge公開操作 |
 | Tests | 純粋ロジック、ライフサイクル、実Scene・実入力・実経路・回帰 |
@@ -556,12 +615,23 @@ Scene ValidatorにAssetDatabase依存を混ぜない。P3.5の既存Validatorの
 - P5で非0のFloor、未対応Boss、空の敵構成を通さない。
 - P5 AreaにGameplaySceneModeの自動Exploration適用、TrialStageController、P4入力仲介、旧試遊Retryの誤配線がない。
 - 入力のInteract消費者が1つ、進行の書込先が1つ、活動Contextが1つ。
+- P5の調査が指定地点モードで、AdapterがPointId指定の入口へ接続される。引数なし入口の実行時拒否はE30で検査。
+- P5の仲間経路にNavMeshAgentがなく、IPathProvider相当が明示配線されている。
+- EncounterBindingのEnemyId→Prefab表が重複なく解決でき、各PrefabのEnemyData.Idと一致する。
 - 入口・復帰点・Actor生成点にColliderの重なりがなく、到着が即Encounter／即再遷移を発生させない。
 - Arena境界の有効化後も内部の安全配置が可能。
 - L字通路・開通門のNavMeshが存在し、到達可否が配置と一致する。
 - P5の全報酬が意図した既存Rewardを参照し、初回Encounter報酬合計が22。
 
 検査のうち動的なNavMesh更新・Scene往復・物理挙動は、静的Validatorだけで保証したと扱わずPlayModeで補う。
+
+### 13.4 validate-project-dataの対象範囲
+
+4a7650b時点のProjectDataValidator.CollectAllDataAssets()は、検索フォルダを限定せずAssetDatabase.FindAssets("t:" + nameof(GameDataAsset))で収集し、RunAll()から検証している。Bridgeのvalidate-project-dataもこのRunAllを呼ぶ。したがって、Assets/_Project/Data/Tests/Phase5/内でも、GameDataAsset派生のメインAssetなら既存検査の対象に入る。
+
+Plain ScriptableObject、Scene内のEntry／Binding、NavMesh、その他GameDataAsset以外のオブジェクトはこの事実だけでは検査されない。P5専用Validatorが責任を持つ。今回の生成DataはGameDataAsset派生のメインAssetとして作り、SubAssetだけに隠して既存収集へ依存しない。
+
+V05で実際の生成先へテスト専用GameDataAssetを作り、CollectAllDataAssetsの収集、RunAllの不正値検出、Bridgeの同じ検証経路への接続を確認する。不正Fixtureはfinallyで除去し、正規P5 Dataの全件合格も確認する。Testsフォルダを丸ごと検証対象外にして通さない。
 
 ## 14. Claudeの実装工程
 
@@ -570,14 +640,15 @@ Scene ValidatorにAssetDatabase依存を混ぜない。P3.5の既存Validatorの
 | P5-00 | P4残件照合、正本・ブランチ・変更対象・テスト一覧の登録 | R3修正は別コミットで追跡。未解消を隠さない |
 | P5-01 | Session／Area State、Holder／Record注入、ローカル互換 | E01〜E05。徳の二重保持なし |
 | P5-02 | 仮地形、Area／Entryカタログ、最小Builder | E25、V01〜V02の該当部分。A／Bを単独検査可能 |
-| P5-03 | SceneFlow拡張、Actor値引渡し、Ready・復旧 | P4 R3解消後。E06〜E10、P01〜P04、P12〜P13 |
-| P5-04 | Interact単一選択、調査Adapter、扉・レバー | E11〜E14、P05の探索部分、P10 |
+| P5-03a | 全Runtimeの持ち越し台帳、Snapshot／Import、Down／Away復元 | P4 R3解消後。E06〜E07、E28〜E29。大きな独立工程として見積もる |
+| P5-03b | SceneFlow拡張、明示注入、Ready・世代付き復旧 | 03a後。E08〜E10、P01〜P04、P12〜P13。Actor値の復元を結合検証 |
+| P5-04 | Interact単一選択、調査Adapter、扉・レバー | E11〜E14・E30、P05の探索部分、P10 |
 | P5-05 | NavMesh Follow、門更新、安全Warp | E22〜E23、P06〜P07、P11 |
 | P5-06 | カメラ境界・Rig／Shake分離・仮UI | E24、P17 |
 | P5-07 | Encounter開始・登録・勝敗・報酬・探索復帰 | E15〜E19、P05・P08 |
-| P5-08 | 本編型死亡再開、New Game、試遊との分離 | E20〜E21、P09・P15 |
-| P5-09 | Builder／Validator／Bridge公開操作を統合 | V01〜V04、再生成で全配線復元 |
-| P5-10 | 全件回帰、連続往復、README、受入記録 | E26〜E27、P14・P16と全必須、最後に人間試遊 |
+| P5-08 | 本編型死亡再開、New Game、試遊との分離 | E20〜E21、P09・P15・P18 |
+| P5-09 | Builder／Validator／Bridge公開操作を統合 | V01〜V05、再生成で全配線復元 |
+| P5-10 | 全件回帰、連続往復、README、受入記録 | E26〜E27、P14・P16・P19と全必須、最後に人間試遊 |
 
 表のE／P／V番号は§15のP5番号。複数工程にまたがる通しテストは必要な実装が揃った時点で実行し、それまでは未実施と記録する。未実施をSkip成功に置き換えない。工程順は依存を満たせば一部前後してよい。各工程で関連するコンパイル・絞込みテストを通して連続実装し、人間のメニュー操作待ちを工程ごとに挟まない。
 
@@ -611,7 +682,7 @@ Scene ValidatorにAssetDatabase依存を混ぜない。P3.5の既存Validatorの
 | E07 | LoadingGate_FreezesClocksAndStopsDirectTicks | 直接Tickでも時計・Move・Warp・攻撃を進めない |
 | E08 | AreaTransition_RejectsInvalidModesAndActions | 戦闘・Pause等、Playerの攻撃／防御／被弾中を表どおり拒否 |
 | E09 | Transition_ReentryAndStaleCompletionCannotReleaseNewRun | 二重要求・古い完了・通知再入・旧finallyから新世代を守る |
-| E10 | TransitionFailure_HasBoundedRecoveryWithoutDuplicateLoads | 事前不備・ロード後不備・タイムアウトを区別。未完了中の重複ロードなし |
+| E10 | TransitionFailure_HasBoundedRecoveryWithoutDuplicateLoads | タイムアウト後も同じロード操作を保持・監視。遅延完了後に復旧1回、未完了中の再ロード・活動再開なし |
 | E11 | Interaction_SelectsNearestThenStableId | 対象と表示が一致、同距離も決定的 |
 | E12 | Interaction_RejectsOccludedWrongAreaOrFloor | 壁、距離境界、異なるArea／Floorを拒否 |
 | E13 | Interaction_ConsumesOneEdgeWithoutFallbackToSecondTarget | 長押し・拒否・対象なしで次候補や次フレームへ入力を流さない |
@@ -629,6 +700,9 @@ Scene ValidatorにAssetDatabase依存を混ぜない。P3.5の既存Validatorの
 | E25 | AreaCatalog_ResolvesEntriesAndRejectsUnsupportedFloor | 安定ID・入口・既定／復旧点の解決、Floor=0制限 |
 | E26 | NewGame_ClearsSessionButAreaLoadDoesNot | Sessionの破棄権限と通常移動の違いを固定 |
 | E27 | Lifecycle_DisposeOnlyUnregistersOwnedProviders | 後発破棄・旧Scene解除で新しい正本を消さない |
+| E28 | TransferInventory_ClassifiesEveryMutableRuntimeField | 対象型・入れ子の可変フィールドと台帳を照合し、未分類・Snapshot対応漏れを検出 |
+| E29 | CompanionRestore_ReconcilesDownAwayWithoutIllegalTransitions | 初期化復元で値・状態・表示が一致、IllegalTransitionCount=0、被弾演出やCD再設定なし |
+| E30 | ExplicitInvestigation_RejectsImplicitSelectionAndKeepsChosenId | P5の引数なし要求は拒否、前方順位とID順位が違っても表示対象へ依頼 |
 
 ### 15.3 PlayMode
 
@@ -649,10 +723,12 @@ Scene ValidatorにAssetDatabase依存を混ぜない。P3.5の既存Validatorの
 | P11 | NavMeshFollow_DetoursAndUpdatesAfterDoorOpens | 実L字通路を迂回。閉門を抜けず、開通後の経路更新で追従 |
 | P12 | InvalidDestination_RecoversWithoutLosingSession | 存在しない入口等をテスト専用設定で注入。旧Area復旧とState保持 |
 | P13 | CompletionCallback_CanRequestTravelWithoutOldRunCorruption | Body／Proxy完了通知中の遷移、古い完了通知から新依頼を守る |
-| P14 | RepeatedTravelAndRespawn_LeaveOneOwnerAndNoOldColliders | A↔Bを3往復＋死亡再開。旧Scene、Collider、Context、購読、Actorが残らない |
+| P14 | RepeatedTravelAndRespawn_LeaveOneOwnerAndNoOldColliders | A↔Bを3往復＋死亡再開。旧Scene由来の登録0、新Sceneの正規登録を維持、Collider等の残留なし、IllegalTransitionCount=0 |
 | P15 | NewGameAndLegacyTrial_UseCorrectProgressScope | P5新規開始0、P5往復保持、既存試遊への切替・Retryはローカル0 |
 | P16 | RebuiltScenes_RunWithoutManualWiring | Builder出力から起動し、注入・HUD・調査・Encounterまで手動配線不要 |
 | P17 | CameraTransition_PreservesBoundsAndShakeBase | 領域移動・Scene到着・揺れ後に基準位置がずれず、Camera／Listener各1つ |
+| P18 | RespawnSubmit_DoesNotBecomeArrivalInteract | 実キー／ゲームパッドで再開を長押ししても到着後Interact／Stepは0。離して新たに押すとInteract1回 |
+| P19 | RegistryTeardown_LeavesZeroWithoutClearingBeforeAssertion | 全Area／Actor破棄・unload完了後、対象static登録総数0をClear前に検査 |
 
 P03はロード中に時計が進まないことを、ロード前後の残り値と許容するGameplay tick数で検査する。現実のロード時間そのものを厳密な秒数でAssertしない。
 
@@ -668,8 +744,9 @@ P14ではDestroy予定になっただけで成功とせず、Scene unload完了�
 | V02 | BrokenFixtures_FailWithSpecificDiagnostics | 重複ID、入口欠落、未配線Context、Floor不整合、空Encounter、入力二重を各検出 |
 | V03 | Rebuild_IsRepeatableAndDoesNotModifySharedAssets | 2回生成で重複なし、共有Player／敵／Reward／Attack原本の内容不変 |
 | V04 | DirtyScene_BlocksDestructiveGeneration | 未保存Sceneを保持して失敗。勝手に保存・破棄しない |
+| V05 | ProjectDataValidation_IncludesPhase5GeneratedFolder | Phase5生成先のGameDataAssetを実収集し、不正値をRunAllとBridge検証経路で検出 |
 
-予定必須数はEditMode 27＋Validator 4＋PlayMode 17＝48件。これは48件あれば合格という下限判定ではなく、名前付き要求の開始一覧である。
+予定必須数はEditMode 30＋Validator 5＋PlayMode 19＝54件。これは54件あれば合格という下限判定ではなく、名前付き要求の開始一覧である。v1.1ではE28〜E30、P18〜P19、V05を追加した。
 
 ### 15.5 既存回帰と実行記録
 
@@ -679,12 +756,20 @@ P14ではDestroy予定になっただけで成功とせず、Scene unload完了�
 - 最終ゲートはEditMode／PlayMode全件、Data／Scene／Asset検証、P4／P5必須照合。
 - 必須の欠落、非Passed、Skipは不合格。一致0件、中断、完走不明は合否不明であり成功ではない。
 - 完走はtermination=completedと葉結果の整合で確認する。minPassedだけで代替しない。
-- 全件の件数は実装後に記録する。以前の1614／71等を期待値として固定しない。
+- 全件の件数は実装後に記録する。現在の受入記録値1624／72も将来の期待件数として固定しない。
 - 記録には対象コミットまたは検証対象ファイルの内容ハッシュ、runId、mode、filter、成功・失敗・Skip、終端結果、必須照合結果を残す。
 - Sceneやコードを再生成・変更した後は、その変更に必要な検証を更新する。古いSceneの成功を最新版の証拠として扱わない。
 - 最終検証後にisPlaying=falseを確認する。
 
-すべてのSceneテストはfinally／TearDownでロードしたScene、常駐Session、Inputデバイス、Provider、購読、NavMesh登録、timeScaleを復元・解放する。失敗したテストでも後続を汚さない。
+すべてのSceneテストはfinally／TearDownでロードしたScene、常駐Session、Inputデバイス、Provider、購読、NavMesh登録、static登録、timeScaleを復元・解放する。失敗したテストでも後続を汚さない。
+
+**static登録の観測点を区別する。**
+
+- P14：新Areaが活動中なら、旧Scene由来の登録は0、新Sceneの必要な登録は存在することを検査する。全体Count=0を要求しない。
+- P19：管理対象の全Area・Actorを破棄し、unload完了後、PerceptionTargetRegistry／InvestigationPointRegistry等の登録総数0を検査する。Assert前にClearして残留を隠さない。テスト失敗後の隔離用Clearはfinallyで許可する。
+- 通常のScene遷移では各所有者がUnregisterする。無条件なstatic Clearで新Sceneの登録まで消す実装は禁止。
+- 対象は上記に加え、P5が使うProjectile／Feedback等のstatic登録。外部Fixtureの登録があるテストでは基準集合を明示し、無関係な登録を消さない。P19の独立Fixtureでは全所有物を片付けて総数0にする。
+- 現在のThreatTargetRegistryTestsはPerceptionTargetRegistryを検証している。別のThreatTargetRegistryという実体を前提に追加実装しない。脅威対象の解決結果も検査し、古い参照を解決できないことを確認する。将来別実体を作った場合は対象一覧へ追加する。
 
 ## 16. Bridge運用と人間受入
 
@@ -720,7 +805,7 @@ Claudeは次の成果物を揃える。
 - P5_統合受入結果.md：実装工程、対象コミット、実行結果、手動受入の未実施／実施済み、既知残件。
 - P5_後続課題.md：P6以降へ渡す限定事項。実装済みと未実装を明記。
 
-P5終了条件は、§1.1の一周、通常往復での進行・Actor値保持、死亡時の進行保持とActor再初期化、P3.5／P4互換、48件の要求と既存回帰の合格、再生成可能性、人間による短い試遊受入が揃うこと。
+P5終了条件は、§1.1の一周、通常往復での進行・Actor値保持、死亡時の進行保持とActor再初期化、P3.5／P4互換、54件の要求と既存回帰の合格、再生成可能性、人間による短い試遊受入が揃うこと。
 
 ### 後続へ残す事項
 
@@ -751,3 +836,28 @@ P5終了条件は、§1.1の一周、通常往復での進行・Actor値保持�
 - [Packages manifest](https://github.com/JP2943/Momotaro/blob/a520a1c6d79f769dd67989fc960409bc1132edc4/Packages/manifest.json)：AI Navigation導入済み、Cinemachine未導入。
 - Momotaro_P4_Review_a520a1c.md：直前のレビュー文書。P4 R3-01〜05の前提条件。
 
+
+## 19. v1.1改訂記録とClaude照会への回答
+
+| 照会 | 裁定と反映 |
+|---|---|
+| 1 Export／Importの量 | 採用。状態所有単位のSnapshot＋明示API、持ち越し台帳、構造網羅性と非初期値の挙動テスト。P5-03を03a／03bへ分割 |
+| 2 Down／Awayの状態復元 | 採用。Arbiter経由の初期化復元、被弾の偽造なし、IllegalTransitionCount=0を要求 |
+| 3 Encounter再配置 | 採用。通常Follow Warpと区別し、Scene遷移・Encounter開始の双方へ限定した配置処理を許可 |
+| 4 選択規則 | P4の距離→前方→ID、P5の距離→IDを維持。指定地点API、引数なし入口の拒否、配線Validator＋E30で保証 |
+| 5 static後始末 | 採用。ただし活動中は旧Scene登録0、全終了後は総数0。Clearで問題を隠さない |
+| 6 NavMeshAgent | 採用。Agentを置かずCalculatePathをAdapter経由で使用。Followへ明示注入 |
+| 7 敵ID解決 | 採用。SceneのEncounterBindingにだけ対応表を置き、PrefabのEnemyData.Idとの一致を検査 |
+| 8 テスト件数 | 記録の1624／72へ更新。期待件数として固定しない |
+| 8 B直開き | area_p5_b_from_aを明示 |
+| 8 再開入力 | Submitの持ち越しとMap再Enable時の押下再評価を防ぎ、P18を追加 |
+| 8 ロード監視 | タイムアウト後も同一AsyncOperationを保持し、終端後の復旧1回をE10へ追加 |
+| 8 Data検査範囲 | 現行収集はフォルダ非限定。GameDataAsset派生メインAssetは対象。非対象型はP5 Validatorで補完、V05で実経路を検査 |
+
+改訂時の確認先（4a7650bに固定）：
+
+- [ProjectDataValidator](https://github.com/JP2943/Momotaro/blob/4a7650b8b8be711b80d1447656654bf9bc6b4f1b/Assets/_Project/Scripts/Editor/Validation/ProjectDataValidator.cs)
+- [EditorBridgeOperations](https://github.com/JP2943/Momotaro/blob/4a7650b8b8be711b80d1447656654bf9bc6b4f1b/Assets/_Project/Scripts/Editor/Bridge/EditorBridgeOperations.cs)
+- [InvestigationTargetSelector](https://github.com/JP2943/Momotaro/blob/4a7650b8b8be711b80d1447656654bf9bc6b4f1b/Assets/_Project/Scripts/Gameplay/Companion/Investigation/InvestigationTargetSelector.cs)
+- [CompanionStateArbiter](https://github.com/JP2943/Momotaro/blob/4a7650b8b8be711b80d1447656654bf9bc6b4f1b/Assets/_Project/Scripts/Gameplay/Companion/CompanionStateArbiter.cs)
+- [ThreatTargetRegistryTests](https://github.com/JP2943/Momotaro/blob/4a7650b8b8be711b80d1447656654bf9bc6b4f1b/Assets/_Project/Tests/EditMode/ThreatTargetRegistryTests.cs)

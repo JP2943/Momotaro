@@ -248,9 +248,21 @@ Claude が `git status` を見るときは、`Assets/_Project/Scripts` `Tests` `
 
 ## コミットメッセージ
 
-末尾に必ず付ける。
+末尾に必ず付ける。**2 行とも、そのスレッドの実際の値に置き換えること**（下は書式の例であり、固定値ではない）。
 
 ```
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01MpBRWHryddmH7tXUPWq2s8
+Co-Authored-By: Claude <モデル名> <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_<そのスレッドのセッション ID>
+```
+
+- `<モデル名>` は**その作業を行っているモデルの表示名**。過去のコミットに合わせて古いモデル名を書かない
+  （P4 までは `Claude Fable 5.1`、P5 着手時点は `Claude Opus 5`）。
+- `Claude-Session:` は**そのスレッドのセッション URL**。前スレッドの URL を引き継がない。
+  スレッドを切り替えたら Claude が新しい URL に差し替える。値はセッション開始時に Claude 側へ渡される。
+
+P5 着手時点（2026-09-21、スレッド 2 本目）の実値：
+
+```
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01UzhKiBSFP45B6JTvYhy3cV
 ```
