@@ -67,6 +67,10 @@ namespace Momotaro.Gameplay.Enemy.Perception
         /// <inheritdoc />
         public float AcquiredThreatMultiplier => _acquiredThreatMultiplier;
 
+        /// <inheritdoc />
+        /// <remarks>主人公は無制限（0）。天井を持つのは仲間だけで、主人公が狙いを取り戻せなくなる事態を作らない。</remarks>
+        public float MaxAcquiredThreat => 0f;
+
         private void OnEnable() => PerceptionTargetRegistry.Register(this);
         private void OnDisable() => PerceptionTargetRegistry.Unregister(this);
     }

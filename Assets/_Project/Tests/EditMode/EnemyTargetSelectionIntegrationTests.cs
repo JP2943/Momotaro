@@ -240,8 +240,14 @@ namespace Momotaro.Tests.EditMode
             var result = HitResult.Damage(default(HitId), attacker, enemyActor, applied);
             tracker.OnHitResult(result);
 
-            Assert.AreEqual(10f, tracker.Table.GetAcquired(playerBinder.ActorId), 1e-4f, "攻撃者本人（主人公）へ加算。");
+            // この命中は戦闘の口火でもあるので、HP 由来（10）に「口火を切った一撃」が上乗せされる
+            // （試遊フィードバック 2026-09-21。倍率は主人公なので等倍）。帰属先が変わらないことが本テストの主旨で、
+            // 量は帰属が正しいことの裏付けとして厳密に見る。
+            float expected = 10f + ThreatSettings.Default.FirstStrikeThreat;
+            Assert.AreEqual(expected, tracker.Table.GetAcquired(playerBinder.ActorId), 1e-4f,
+                "攻撃者本人（主人公）へ加算（HP 由来 10 ＋ 口火 " + ThreatSettings.Default.FirstStrikeThreat + "）。");
             Assert.AreEqual(0f, tracker.Table.GetAcquired(allyBinder.ActorId), 1e-4f, "近接する仲間へは加算されない（req9）。");
+            Assert.IsTrue(tracker.Table.FirstStrikeConsumed, "口火は 1 戦闘 1 回。");
         }
     }
 }

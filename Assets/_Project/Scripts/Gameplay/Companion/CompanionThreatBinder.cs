@@ -78,6 +78,17 @@ namespace Momotaro.Gameplay.Companion
             }
         }
 
+        /// <inheritdoc />
+        /// <remarks>Data 未割当なら無制限（0）。仲間の天井は Data（<see cref="CompanionData.MaxAcquiredThreat"/>）が正本。</remarks>
+        public float MaxAcquiredThreat
+        {
+            get
+            {
+                CompanionActor actor = ResolveActor();
+                return actor != null && actor.Data != null ? actor.Data.MaxAcquiredThreat : 0f;
+            }
+        }
+
         /// <summary>脅威プロファイルの供給元を注入する（Prefab 構築・テスト。null は無視）。</summary>
         public void Bind(CompanionActor actor)
         {

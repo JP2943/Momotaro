@@ -8,7 +8,9 @@
         "Momotaro.Data",
         "Momotaro.Gameplay",
         "Momotaro.Presentation",
-        "Momotaro.Infrastructure"
+        "Momotaro.Infrastructure",
+        "Momotaro.Tests.Support",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

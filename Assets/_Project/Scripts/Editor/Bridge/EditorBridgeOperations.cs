@@ -219,8 +219,22 @@ namespace Momotaro.EditorBridge
                 details.Add("[未説明の Skip] " + skip);
             }
 
-            bool success = report.Passed && problems.Count == 0;
-            return new OperationResult(success, report.Summarize(), details);
+            // 合意済み要求（E／P／R）に対応するテストが一覧に無ければ、テストが全部 Passed でも受入ではない（レビュー R2-10）。
+            // 「テストが緑」と「要求が押さえられている」を別々に検査する。
+            List<Phase4RequiredTests.RequirementEntry> unmet = manifest.UnmetRequirements(stage);
+            foreach (Phase4RequiredTests.RequirementEntry requirement in unmet)
+            {
+                details.Add("[未対応要求] " + requirement.id + ": " + requirement.summary);
+            }
+
+            bool success = report.Passed && problems.Count == 0 && unmet.Count == 0;
+            string summary = report.Summarize();
+            if (unmet.Count > 0)
+            {
+                summary += " 未対応の要求 " + unmet.Count + " 件。";
+            }
+
+            return new OperationResult(success, summary, details);
         }
 
         /// <summary>カンマ区切りの id を分解する（空白は落とす）。</summary>

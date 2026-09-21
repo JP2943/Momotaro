@@ -9,6 +9,7 @@ using Momotaro.Gameplay.Enemy;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Threat;
 using Momotaro.Gameplay.Modes;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -28,7 +29,7 @@ namespace Momotaro.Tests.PlayMode
     /// どちらも「実際に Update を回し、実際に Collider を置き、実際に OverlapBox を通す」ことでしか検出できない。
     /// 本テストはその経路だけを見る（間合いや秒数の境界は EditMode 側で固定済み）。
     /// </summary>
-    public sealed class CompanionCombatIntegrationPlayTests
+    public sealed class CompanionCombatIntegrationPlayTests : CompanionActivityFixture
     {
         private readonly List<Object> _spawned = new List<Object>();
         private float _originalTimeScale;

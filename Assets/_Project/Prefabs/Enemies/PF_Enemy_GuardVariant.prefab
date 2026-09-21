@@ -446,6 +446,7 @@ MonoBehaviour:
     _dogTauntThreat: 100
     _supportSkillThreat: 20
     _debuffSkillThreat: 40
+    _firstStrikeThreat: 50
     _reevaluateInterval: 1
     _switchThresholdRatio: 1.25
     _decayDelaySeconds: 3

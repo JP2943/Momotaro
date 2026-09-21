@@ -27,5 +27,12 @@ namespace Momotaro.Gameplay.Enemy.Threat
 
         /// <summary>将来：敵弱体術 +40（§7.1。Phase 4 拡張点。本 Phase では発行しない）。</summary>
         DebuffSkill = 6,
+
+        /// <summary>
+        /// 戦闘の口火を切った一撃（試遊フィードバック 2026-09-21）。まだ誰とも交戦していない敵が受けた
+        /// <b>最初のダメージ</b>の攻撃者へ、1 戦闘につき 1 回だけ加算する。先制した側が狙われるようにするための由来で、
+        /// 「犬丸が先に殴ったのに敵が主人公へ向かう」を解消する。量は <see cref="ThreatSettings.FirstStrikeThreat"/>。
+        /// </summary>
+        FirstStrike = 7,
     }
 }

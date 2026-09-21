@@ -19,14 +19,16 @@ namespace Momotaro.Gameplay.Companion
     /// 移動は戦闘中だけ本コンポーネントが握り、追従（<see cref="CompanionFollowController"/>）は
     /// <see cref="ICompanionEngagementSource.IsEngaged"/> を見て譲る。攻撃中は移動しない（振り向きだけ行う）。
     ///
-    /// 中断は 2 経路で行う。状態遷移の通知（ひるみ・ダウン・退場）を購読して<b>その場で</b>判定を消し、
+    /// 中断は 3 経路で行う。状態遷移の通知（ひるみ・ダウン・退場）を購読して<b>その場で</b>判定を消し、
+    /// 行動の持ち主として調停役に登録して<b>奪われた瞬間</b>にも消し（守護の成立・探索への引き渡し。P4-FIX-R2）、
     /// 継続中の保険として毎 Tick も確認する。判定が 1 フレーム残ると、倒れたはずの犬丸が敵を殴ってしまう。
     /// Pause／会話中（<see cref="GameMode"/>）は時間を進めない。
     ///
     /// 被弾側（<see cref="IDamageable"/>）・ガード／回避の判断は本 Task の対象外（P4-04 以降）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class CompanionCombatController : MonoBehaviour, ICompanionEngagementSource, ICompanionStateListener
+    public sealed class CompanionCombatController : MonoBehaviour, ICompanionEngagementSource, ICompanionStateListener,
+        ICompanionActionParticipant
     {
         [Tooltip("状態・Data の供給元（未設定なら自動取得）。")]
         [SerializeField] private CompanionActor _actor;
@@ -42,9 +44,6 @@ namespace Momotaro.Gameplay.Companion
 
         [Tooltip("索敵（誰を狙うか。未設定なら自動取得）。")]
         [SerializeField] private CompanionTargetTracker _tracker;
-
-        [Tooltip("プレイヤーの指示（未設定なら自動取得。無ければ常について来い扱い）。")]
-        [SerializeField] private CompanionOrders _orders;
 
         [Tooltip("Hitbox の対象レイヤー（既定は全レイヤー。IDamageable と Faction で絞る）。")]
         [SerializeField] private LayerMask _targetMask = ~0;
@@ -120,12 +119,6 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>現在の対象（索敵の結果。無ければ null）。</summary>
         public IPerceptionTarget CurrentTarget => _tracker != null ? _tracker.CurrentTarget : null;
-
-        /// <summary>
-        /// 指示として敵へ寄っていってよいか（指示コンポーネントが無ければ許可。P4-07B）。
-        /// 待機中でも<b>間合いに入ってきた敵は殴る</b>（自衛は指示で止めない）。
-        /// </summary>
-        public bool MayApproachByOrder => _orders == null || _orders.MayApproachEnemies;
 
         /// <summary>Actor・Motor・索敵を注入する（Prefab 構築・テスト。null は無視して既存を保つ）。</summary>
         public void Bind(CompanionActor actor, CompanionMotor motor = null, CompanionTargetTracker tracker = null)
@@ -223,6 +216,16 @@ namespace Momotaro.Gameplay.Companion
 
             CompanionAttackSettings settings = ResolveSettings();
 
+            // 探索中は接近も攻撃も始めない（c8c0ddf §5：探索中の自動 Follow／Chase／Attack は拒否）。
+            // 判断そのものを止める。RequestChase は許可表を通らない開始（TryBegin）なので、ここで止めないと
+            // 索敵が敵を拾った瞬間に探索から所有権を奪ってしまう。実命中・戦闘開始が探索を解放してから再判断する。
+            if (_actor.State == CompanionState.Investigate)
+            {
+                Decision = CompanionEngageDecision.Idle;
+                _wasEngaged = false;
+                return;
+            }
+
             // 構え・回避の最中は攻撃を始めない。状態も奪わない（防御側が Guard／Evade 状態を持っている）。
             if (IsDefending())
             {
@@ -242,9 +245,8 @@ namespace Momotaro.Gameplay.Companion
             LastDistance = distance;
             LastAngle = angle;
             // 新しい行動を始めてよいかは活動 Context が決める（時計は動くが行動は始めない状況を表せるようにしておく）。
-            // 敵へ寄っていってよいかは<b>指示</b>が決める（P4-07B）。待機中でも間合いの敵は殴る。
             Decision = CompanionEngagement.Decide(
-                hasTarget, activity.CanAct, distance, angle, settings, _cooldownRemaining, MayApproachByOrder);
+                hasTarget, activity.CanAct, distance, angle, settings, _cooldownRemaining);
             LogDecision(settings, hasTarget, target);
 
             switch (Decision)
@@ -378,6 +380,39 @@ namespace Momotaro.Gameplay.Companion
             }
 
             CancelAttack();
+            Decision = CompanionEngageDecision.Idle;
+            _wasEngaged = false;
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// 行動を奪われた（守護の成立・防御の割込み・探索への引き渡し・被弾・退場）。<b>同じ呼び出しの中で</b>
+        /// 判定・既命中集合・移動指示を消し、開始時 Snapshot のクールダウンを始める。状態は奪った側のもので、
+        /// ここでは触らない（P4-FIX-R2。c8c0ddf §2.4）。奪われたのが接近（Chase）なら消す判定は無く、移動だけ手放す。
+        /// </remarks>
+        public void OnActionInterrupted(in CompanionActionHandle lost)
+        {
+            if (!lost.IsValid || lost.Owner != CompanionActionOwner.Combat)
+            {
+                return;
+            }
+
+            if (_action.IsValid && lost.RunId != _action.RunId)
+            {
+                return; // 既に次の行動へ移っている（古い券の通知）。今の行動を消さない。
+            }
+
+            if (_attack.IsAttacking)
+            {
+                CancelAttack();
+            }
+            else
+            {
+                ForceStopMovement();
+                ReleaseMovement();
+                _action = default;
+            }
+
             Decision = CompanionEngageDecision.Idle;
             _wasEngaged = false;
         }
@@ -659,12 +694,14 @@ namespace Momotaro.Gameplay.Companion
         {
             ResolveComponents();
             SubscribeState();
+            _states?.RegisterParticipant(CompanionActionOwner.Combat, this);
             _cooldownRemaining = 0f;
         }
 
         private void OnDisable()
         {
             // 無効化・Scene 離脱で判定・購読・移動指示を残さない（§2.3 後始末）。
+            _states?.UnregisterParticipant(this);
             UnsubscribeState();
             _attack.Cancel();
             _plan = CompanionAttackPlan.None;
@@ -737,15 +774,16 @@ namespace Momotaro.Gameplay.Companion
                 _tracker = GetComponent<CompanionTargetTracker>();
             }
 
-            if (_orders == null)
-            {
-                _orders = GetComponent<CompanionOrders>();
-            }
-
             // 自動取得で Actor が後から解決された場合にも購読を張る（Bind 経由でない Scene 構成の保険）。
             if (isActiveAndEnabled && !ReferenceEquals(_subscribedActor, _actor))
             {
                 SubscribeState();
+            }
+
+            // 持ち主としての登録も同じ保険（EditMode は OnEnable を呼ばない。登録は冪等）。
+            if (isActiveAndEnabled)
+            {
+                _states?.RegisterParticipant(CompanionActionOwner.Combat, this);
             }
         }
 

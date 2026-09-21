@@ -11,7 +11,8 @@
         "Momotaro.Infrastructure",
         "Momotaro.Editor",
         "Momotaro.EditorBridge",
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "Momotaro.Tests.Support"
     ],
     "includePlatforms": [
         "Editor"

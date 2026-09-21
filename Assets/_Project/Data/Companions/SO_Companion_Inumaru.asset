@@ -27,6 +27,7 @@ MonoBehaviour:
   _leaveRecoverySeconds: 5
   _baseThreat: 0
   _acquiredThreatMultiplier: 1.5
+  _maxAcquiredThreat: 75
   _followSpacing: 1.6
   _followStopDistance: 0.35
   _followResumeDistance: 0.8

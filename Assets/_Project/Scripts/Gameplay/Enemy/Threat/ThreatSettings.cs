@@ -32,6 +32,9 @@ namespace Momotaro.Gameplay.Enemy.Threat
         [Tooltip("将来：敵弱体術の脅威（§7.1: +40。本 Phase では未発行）。")]
         [SerializeField] private float _debuffSkillThreat;
 
+        [Tooltip("戦闘の口火を切った一撃に加算する脅威（試遊フィードバック 2026-09-21）。まだ誰とも交戦していない敵が受けた最初のダメージの攻撃者へ 1 戦闘 1 回だけ乗る。対象の獲得倍率が別途掛かる。0 で無効。")]
+        [SerializeField] private float _firstStrikeThreat;
+
         [Tooltip("ターゲット再評価の間隔（秒）。§7.2: 1 秒ごと。")]
         [SerializeField] private float _reevaluateInterval;
 
@@ -58,6 +61,12 @@ namespace Momotaro.Gameplay.Enemy.Threat
         public float SupportSkillThreat => _supportSkillThreat;
         /// <summary>将来：弱体術の脅威（§7.1: +40）。</summary>
         public float DebuffSkillThreat => _debuffSkillThreat;
+        /// <summary>
+        /// 口火を切った一撃の脅威。<b>主人公の基礎ヘイト（50）× 切替比率（1.25）＝ 62.5 を、対象の獲得倍率込みで超える値</b>に
+        /// しないと、先制しても狙いは移らない（犬丸は倍率 1.5 なので 41.7 以上で足りる）。0 なら本機能は無効。
+        /// </summary>
+        public float FirstStrikeThreat => _firstStrikeThreat;
+
         /// <summary>再評価間隔（秒。§7.2: 1）。</summary>
         public float ReevaluateInterval => _reevaluateInterval;
         /// <summary>切替閾値比率（§7.2: 1.25）。</summary>
@@ -71,8 +80,10 @@ namespace Momotaro.Gameplay.Enemy.Threat
         public ThreatSettings(
             float hpDamageWeight, float poiseDamageWeight, float flinchThreat, float justGuardThreat,
             float dogTauntThreat, float supportSkillThreat, float debuffSkillThreat,
-            float reevaluateInterval, float switchThresholdRatio, float decayDelaySeconds, float decayRatePerSecond)
+            float reevaluateInterval, float switchThresholdRatio, float decayDelaySeconds, float decayRatePerSecond,
+            float firstStrikeThreat = 0f)
         {
+            _firstStrikeThreat = firstStrikeThreat;
             _hpDamageWeight = hpDamageWeight;
             _poiseDamageWeight = poiseDamageWeight;
             _flinchThreat = flinchThreat;
@@ -98,7 +109,10 @@ namespace Momotaro.Gameplay.Enemy.Threat
             reevaluateInterval: 1f,
             switchThresholdRatio: 1.25f,
             decayDelaySeconds: 3f,
-            decayRatePerSecond: 0.20f);
+            decayRatePerSecond: 0.20f,
+            // 口火を切った一撃（試遊フィードバック 2026-09-21）。犬丸（獲得倍率 1.5）なら 75 相当になり、
+            // 主人公の基礎 50 × 切替比率 1.25 ＝ 62.5 を初撃で超える。主人公が殴り返して取り戻すには 5 発ほど要る。
+            firstStrikeThreat: 50f);
 
         /// <summary>由来種別に対応する 1 回あたりの基礎重みを返す（HP／体幹は「1 あたり」の係数）。</summary>
         public float WeightFor(ThreatSource source)
@@ -112,6 +126,7 @@ namespace Momotaro.Gameplay.Enemy.Threat
                 case ThreatSource.DogTaunt: return _dogTauntThreat;
                 case ThreatSource.SupportSkill: return _supportSkillThreat;
                 case ThreatSource.DebuffSkill: return _debuffSkillThreat;
+                case ThreatSource.FirstStrike: return _firstStrikeThreat;
                 default: return 0f;
             }
         }

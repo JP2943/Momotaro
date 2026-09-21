@@ -1,7 +1,10 @@
 using System.Collections.Generic;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Player;
+using Momotaro.Infrastructure.Input;
 using Momotaro.Presentation.Companion;
+using Momotaro.Presentation.Hud;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -35,6 +38,7 @@ namespace Momotaro.Editor.Phase4
             ValidateActivityContext(scene, errors);
             ValidateCompanions(scene, errors, warnings);
             ValidateInvestigationPoints(scene, errors, warnings);
+            ValidateInvestigationPresentation(scene, errors, warnings);
         }
 
         /// <summary>
@@ -164,92 +168,293 @@ namespace Momotaro.Editor.Phase4
                     errors.Add(who + "：戦闘（CompanionCombatController）がありません。");
                 }
 
-                // --- プレイヤーの指示（P4-07B） ---
-                // 無くても「常について来い」で動くが、それでは指示を試せない。検証 Scene としては必須にする。
-                CompanionOrders orders = go.GetComponent<CompanionOrders>();
-                if (orders == null)
+                // --- 探索（P4-07A） ---
+                // 依頼を受ける駆動。無いと、調停役が地点の RequiredCompanion に一致する駆動を見つけられず、
+                // 「加入済みなのに調べに行かない」という止まり方をする。
+                if (go.GetComponent<CompanionInvestigationController>() == null)
                 {
-                    errors.Add(who + "：指示の保持（CompanionOrders）がありません（待機・追従を切り替えられません）。");
-                }
-                else if (orders.Current != CompanionOrder.Follow)
-                {
-                    warnings.Add(who + "：初期の指示が「" + orders.Current
-                        + "」になっています（Scene を開いた直後から待機したままになります）。");
+                    errors.Add(who + "：探索（CompanionInvestigationController）がありません。");
                 }
 
-                // --- 探索行動（P4-07A） ---
-                // Data で探索を切っている仲間（猿・雉の想定）には求めない。切っていないのに駆動が無いと、
-                // 「Data では探索できることになっているのに一生調べない」という食い違いになる。
-                if (actor != null && actor.Data != null && actor.Data.CanInvestigate
-                    && go.GetComponent<CompanionInvestigationController>() == null)
+                // 同一 Body を指す探索の駆動が 2 つ（暗黙の二重 Tick。E24）。
+                // 同じ GameObject への 2 個目は DisallowMultipleComponent が AddComponent でも拒むが、
+                // 別 GameObject に置いた駆動が _actor でこの Body を指す配線は防げないので、Scene 全体で Body ごとに数える。
+                if (actor != null && CountInvestigationDrivers(scene, actor) > 1)
                 {
-                    errors.Add(who + "：探索（CompanionInvestigationController）がありません。"
-                        + "Data では探索できることになっているのに、調べに行く駆動が載っていません。");
+                    errors.Add(who + "：探索の駆動（CompanionInvestigationController）が重複しています（同じ Body を 2 つ以上の駆動が動かす＝二重 Tick）。");
+                }
+
+                // --- 探索の表示代理（P4-07B。v1.0 §5.2・§11「必須の仮本体・方向表示・テキスト参照は厳格検査」） ---
+                CompanionInvestigationProxyPresenter proxy = go.GetComponentInChildren<CompanionInvestigationProxyPresenter>(true);
+                if (proxy == null)
+                {
+                    errors.Add(who + "：探索の表示代理（CompanionInvestigationProxyPresenter）がありません"
+                        + "（Down／退場中の調査が見えず、通常表示の抑制もされません）。");
+                }
+                else
+                {
+                    if (proxy.Driver == null)
+                    {
+                        errors.Add(who + "：表示代理に探索の駆動が配線されていません。");
+                    }
+
+                    if (proxy.Normal == null)
+                    {
+                        errors.Add(who + "：表示代理に通常表示（CompanionPlaceholderPresenter）が配線されていません（表示が二重になります）。");
+                    }
+
+                    if (proxy.ProxyBody == null || proxy.ProxyBody.sprite == null)
+                    {
+                        errors.Add(who + "：表示代理の本体（SpriteRenderer と仮素材）が未設定です。");
+                    }
+
+                    if (proxy.ProxyArrow == null || proxy.ProxyArrow.sprite == null)
+                    {
+                        errors.Add(who + "：表示代理の方向インジケータ（SpriteRenderer と仮素材）が未設定です。");
+                    }
+
+                    if (proxy.Label == null)
+                    {
+                        errors.Add(who + "：表示代理の進行ラベル（TextMesh）が未設定です（移動／調査中／帰還を文字で示せません）。");
+                    }
+                    else if (proxy.Label.font == null)
+                    {
+                        errors.Add(who + "：表示代理の進行ラベルにフォントが未設定です（文字が描かれません）。");
+                    }
+                }
+
+                if (go.GetComponents<CompanionCombatController>().Length > 1
+                    || go.GetComponents<CompanionFollowController>().Length > 1
+                    || go.GetComponents<CompanionDefenseController>().Length > 1
+                    || go.GetComponents<CompanionGuardianController>().Length > 1)
+                {
+                    errors.Add(who + "：同じ駆動が重複しています（追従・戦闘・防御・守護のいずれか。二重 Tick）。");
                 }
             }
         }
 
         /// <summary>
-        /// 調査地点（P4-07A）を検査する。探索できる仲間が居るのに地点が 1 つも無ければ、
-        /// 探索は「動かない」のか「試せていない」のか区別が付かない。検証 Scene としては後者を許さない。
+        /// 探索の配線（P4-07A。v1.0 §13.2「加入供給元・活動 Context・地点・参照一致・地点 ID 重複」）を検査する。
+        /// 調停役・加入供給元・記録は Scene に 1 つずつ。地点は 1 つ以上で、PointId が有効かつ重複せず、
+        /// 設定 Data と要求仲間が入っていること。犬丸 0 体のままでは合格しない（駆動の一致検査）。
         /// </summary>
         private static void ValidateInvestigationPoints(Scene scene, List<string> errors, List<string> warnings)
         {
-            bool anyInvestigator = false;
-            foreach (CompanionActor actor in Components<CompanionActor>(scene))
-            {
-                if (actor != null && actor.Data != null && actor.Data.CanInvestigate)
-                {
-                    anyInvestigator = true;
-                    break;
-                }
-            }
+            RequireOne<InvestigationCoordinator>(scene, "探索の調停役（InvestigationCoordinator）", errors);
+            RequireOne<CompanionRosterContext>(scene, "加入資格の供給元（CompanionRosterContext）", errors);
+            RequireOne<InvestigationRecordHolder>(scene, "調査記録（InvestigationRecordHolder）", errors);
 
-            if (!anyInvestigator)
+            List<InvestigationCoordinator> coordinators = Components<InvestigationCoordinator>(scene);
+            List<CompanionInvestigationController> drivers = Components<CompanionInvestigationController>(scene);
+            List<CompanionRosterContext> rosters = Components<CompanionRosterContext>(scene);
+
+            if (coordinators.Count == 1)
             {
-                return;
+                InvestigationCoordinator c = coordinators[0];
+                if (c.Player == null)
+                {
+                    errors.Add("InvestigationCoordinator：主人公が配線されていません。");
+                }
+
+                if (c.Roster == null)
+                {
+                    errors.Add("InvestigationCoordinator：加入資格の供給元が配線されていません。");
+                }
+
+                if (c.RecordHolder == null)
+                {
+                    errors.Add("InvestigationCoordinator：調査記録が配線されていません。");
+                }
+
+                if (c.Companions == null || c.Companions.Count == 0)
+                {
+                    errors.Add("InvestigationCoordinator：探索の駆動が 1 つも配線されていません（犬丸 0 体のままでは合格しない）。");
+                }
+                else
+                {
+                    foreach (CompanionInvestigationController driver in drivers)
+                    {
+                        bool wired = false;
+                        for (int i = 0; i < c.Companions.Count; i++)
+                        {
+                            if (ReferenceEquals(c.Companions[i], driver))
+                            {
+                                wired = true;
+                                break;
+                            }
+                        }
+
+                        if (!wired)
+                        {
+                            errors.Add(driver.gameObject.name + "：探索の駆動が InvestigationCoordinator に配線されていません（参照不一致）。");
+                        }
+                    }
+                }
             }
 
             List<CompanionInvestigationPoint> points = Components<CompanionInvestigationPoint>(scene);
             if (points.Count == 0)
             {
-                errors.Add("調査地点（CompanionInvestigationPoint）が 1 つもありません"
-                    + "（探索できる仲間が居るのに、調べに行く先が無く探索を試せません）。");
+                errors.Add("調査地点（CompanionInvestigationPoint）が 1 つもありません（探索を試せません）。");
                 return;
             }
 
-            List<PlayerStateController> players = Components<PlayerStateController>(scene);
-            if (players.Count != 1)
+            var seenIds = new Dictionary<string, string>();
+            foreach (CompanionInvestigationPoint point in points)
             {
-                return; // 単一性は RequireOne が報告済み。紐の起点が定まらないので距離は見ない。
-            }
-
-            // 紐の外にしか地点が無いと、探索は有効なのに一度も動かない。
-            // 「壊れている」と「そういう配置」の区別が付かない止まり方なので、Scene の時点で気付けるようにする。
-            Vector3 leader = players[0].transform.position;
-            foreach (CompanionActor actor in Components<CompanionActor>(scene))
-            {
-                if (actor == null || actor.Data == null || !actor.Data.CanInvestigate)
+                string who = point.gameObject.name;
+                if (!point.PointId.IsValid)
                 {
-                    continue;
+                    errors.Add(who + "：PointId が無効です（小文字 snake_case の StableId が必要。GetInstanceID で代用しない）。");
+                }
+                else if (seenIds.TryGetValue(point.PointId.Value, out string other))
+                {
+                    errors.Add(who + "：PointId '" + point.PointId.Value + "' が " + other + " と重複しています。");
+                }
+                else
+                {
+                    seenIds.Add(point.PointId.Value, who);
                 }
 
-                float leash = actor.Data.InvestigateLeashDistance;
-                bool anyReachable = false;
-                foreach (CompanionInvestigationPoint point in points)
+                if (point.SettingsData == null)
                 {
-                    if (point != null
-                        && FormationSlot.HorizontalDistance(leader, point.transform.position) <= leash)
+                    errors.Add(who + "：探索設定 Data（InvestigationSettingsData）が未設定です。");
+                }
+
+                if (!point.RequiredCompanion.IsValid)
+                {
+                    errors.Add(who + "：RequiredCompanion（仲間の StableId）が無効です。");
+                }
+                else
+                {
+                    bool anyDriver = false;
+                    foreach (CompanionInvestigationController driver in drivers)
                     {
-                        anyReachable = true;
-                        break;
+                        if (driver != null && driver.CompanionId.Equals(point.RequiredCompanion))
+                        {
+                            anyDriver = true;
+                            break;
+                        }
+                    }
+
+                    // 未加入の検証経路（Roster に無いが駆動は居る）は許す。駆動そのものが Scene に無いのは配線漏れ。
+                    if (!anyDriver)
+                    {
+                        warnings.Add(who + "：RequiredCompanion '" + point.RequiredCompanion.Value
+                            + "' に一致する探索の駆動が Scene にありません（未加入の検証地点なら意図どおり）。");
                     }
                 }
 
-                if (!anyReachable)
+                if (!point.DiscoveryId.IsValid)
                 {
-                    warnings.Add(actor.gameObject.name + "：主人公から紐（" + leash.ToString("F1")
-                        + "m）の内側に調査地点がありません（探索は有効ですが一度も動きません）。");
+                    warnings.Add(who + "：DiscoveryId が無効です（発見通知の識別子が空のまま届きます）。");
+                }
+            }
+
+            if (rosters.Count == 1 && rosters[0].Count == 0)
+            {
+                warnings.Add("CompanionRosterContext：加入済みの仲間が 0 体です（すべての地点が未加入ヒントになります）。");
+            }
+        }
+
+        /// <summary>
+        /// 探索の入力・表示の配線（P4-07B。v1.0 §12「入力仲介は Infrastructure」「表示代理・UI は Presentation」、§13.2「入力、UI」）を検査する。
+        /// 入力仲介と短文 UI は Scene に 1 つずつで、同じ調停役を指す。地点にはマーカー（輪と文字）が 1 つずつ付き、UI がそれらを知っている。
+        /// </summary>
+        private static void ValidateInvestigationPresentation(Scene scene, List<string> errors, List<string> warnings)
+        {
+            RequireOne<InvestigationInteractInput>(scene, "探索の入力仲介（InvestigationInteractInput）", errors);
+            RequireOne<InvestigationPromptHud>(scene, "探索の短文 UI（InvestigationPromptHud）", errors);
+
+            List<InvestigationCoordinator> coordinators = Components<InvestigationCoordinator>(scene);
+            InvestigationCoordinator coordinator = coordinators.Count == 1 ? coordinators[0] : null;
+
+            List<InvestigationInteractInput> inputs = Components<InvestigationInteractInput>(scene);
+            if (inputs.Count == 1)
+            {
+                if (inputs[0].Coordinator == null)
+                {
+                    errors.Add("InvestigationInteractInput：調停役が配線されていません（Interact を押しても依頼が出ません）。");
+                }
+                else if (coordinator != null && !ReferenceEquals(inputs[0].Coordinator, coordinator))
+                {
+                    errors.Add("InvestigationInteractInput：この Scene の調停役ではないものを指しています（参照不一致）。");
+                }
+            }
+
+            List<CompanionInvestigationPoint> points = Components<CompanionInvestigationPoint>(scene);
+            List<InvestigationPointMarker> markers = Components<InvestigationPointMarker>(scene);
+            var markerByPoint = new Dictionary<CompanionInvestigationPoint, InvestigationPointMarker>();
+            foreach (InvestigationPointMarker marker in markers)
+            {
+                string who = marker.gameObject.name;
+                if (marker.Point == null)
+                {
+                    errors.Add(who + "：マーカーに地点が配線されていません。");
+                    continue;
+                }
+
+                if (markerByPoint.ContainsKey(marker.Point))
+                {
+                    errors.Add(who + "：同じ地点にマーカーが 2 つ付いています（表示が二重になります）。");
+                }
+                else
+                {
+                    markerByPoint.Add(marker.Point, marker);
+                }
+
+                if (marker.Ring == null || marker.Ring.sprite == null)
+                {
+                    errors.Add(who + "：マーカーの輪（SpriteRenderer と Sprite）が未設定です（Gizmos を切ると地点が見えません）。");
+                }
+
+                if (marker.Label == null)
+                {
+                    errors.Add(who + "：マーカーの文字（TextMesh）が未設定です（済／調べる／理由を文字で示せません）。");
+                }
+                else if (marker.Label.font == null)
+                {
+                    errors.Add(who + "：マーカーの文字にフォントが未設定です（文字が描かれません）。");
+                }
+            }
+
+            foreach (CompanionInvestigationPoint point in points)
+            {
+                if (!markerByPoint.ContainsKey(point))
+                {
+                    errors.Add(point.gameObject.name + "：地点にマーカー（InvestigationPointMarker）がありません（通常の Game 表示で識別できません）。");
+                }
+            }
+
+            List<InvestigationPromptHud> huds = Components<InvestigationPromptHud>(scene);
+            if (huds.Count == 1)
+            {
+                InvestigationPromptHud hud = huds[0];
+                if (hud.Coordinator == null)
+                {
+                    errors.Add("InvestigationPromptHud：調停役が配線されていません（案内・通知が出ません）。");
+                }
+                else if (coordinator != null && !ReferenceEquals(hud.Coordinator, coordinator))
+                {
+                    errors.Add("InvestigationPromptHud：この Scene の調停役ではないものを指しています（参照不一致）。");
+                }
+
+                foreach (InvestigationPointMarker marker in markers)
+                {
+                    bool known = false;
+                    for (int i = 0; i < hud.Markers.Count; i++)
+                    {
+                        if (ReferenceEquals(hud.Markers[i], marker))
+                        {
+                            known = true;
+                            break;
+                        }
+                    }
+
+                    if (!known)
+                    {
+                        errors.Add(marker.gameObject.name + "：マーカーが InvestigationPromptHud に配線されていません（候補の案内がその地点に出ません）。");
+                    }
                 }
             }
         }
@@ -279,8 +484,24 @@ namespace Momotaro.Editor.Phase4
             Collect<CompanionFollowController>();
             Collect<CompanionCombatController>();
             Collect<CompanionHitReceiver>();
+            Collect<CompanionInvestigationController>();
 
             return list;
+        }
+
+        /// <summary>Scene 内で <paramref name="actor"/> を Body として動かす探索の駆動の数（別 GameObject の駆動も含む。E24）。</summary>
+        private static int CountInvestigationDrivers(Scene scene, CompanionActor actor)
+        {
+            int n = 0;
+            foreach (CompanionInvestigationController driver in Components<CompanionInvestigationController>(scene))
+            {
+                if (driver != null && driver.BoundActor == actor)
+                {
+                    n++;
+                }
+            }
+
+            return n;
         }
 
         // ---- 走査ヘルパ（AssetDatabase 非依存） ----

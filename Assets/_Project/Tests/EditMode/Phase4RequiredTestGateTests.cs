@@ -194,6 +194,77 @@ namespace Momotaro.Tests.EditMode
         }
 
         /// <summary>
+        /// 合意済み要求（E／P／R）の一覧そのものが壊れていないこと。ID が重複していたり工程名が未知だと、
+        /// 未対応の要求が永久に問われなくなる（レビュー R2-10）。
+        /// </summary>
+        [Test]
+        public void Manifest_RequirementsAreWellFormed()
+        {
+            Phase4RequiredTests.Manifest manifest = Phase4RequiredTests.Load(out string error);
+            Assert.IsNotNull(manifest, error);
+            Assert.AreEqual(45, manifest.requirements.Length, "E01〜E24・P01〜P11・R01〜R10 の 45 件を列挙している。");
+
+            var seen = new HashSet<string>();
+            foreach (Phase4RequiredTests.RequirementEntry requirement in manifest.requirements)
+            {
+                Assert.IsNotNull(requirement);
+                Assert.IsNotEmpty(requirement.id);
+                Assert.IsNotEmpty(requirement.summary, "何を確かめる要求か書く: " + requirement.id);
+                Assert.IsTrue(seen.Add(requirement.id), "要求 ID が重複している: " + requirement.id);
+                Assert.AreNotEqual(int.MaxValue, manifest.StageIndex(requirement.stage),
+                    "stages に無い工程名を使っている（未知の工程は永久に問われない）: " + requirement.stage);
+            }
+
+            // テスト側が名乗る要求 ID は、必ず一覧に存在するものでなければならない（綴り違いで対応した気にならない）。
+            foreach (Phase4RequiredTests.RequiredEntry entry in manifest.tests)
+            {
+                foreach (string id in entry.RequirementIds())
+                {
+                    if (id.StartsWith("N", System.StringComparison.Ordinal))
+                    {
+                        continue; // N 系列は工程内の通し番号で、合意済み要求ではない。
+                    }
+
+                    Assert.IsTrue(seen.Contains(id), "一覧に無い要求 ID を名乗っている: " + id + " (" + entry.fullName + ")");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 対応テストが 1 本も無い要求は「未対応」として検出される。実行結果が全部 Passed でも、
+        /// 要求に対応するテストが無ければ合格にしない。
+        /// </summary>
+        [Test]
+        public void UnmetRequirements_ReportsRequirementWithoutAnyTest()
+        {
+            var manifest = new Phase4RequiredTests.Manifest
+            {
+                stages = new[] { "S1", "S2" },
+                requirements = new[]
+                {
+                    new Phase4RequiredTests.RequirementEntry { id = "E01", summary = "a", stage = "S1" },
+                    new Phase4RequiredTests.RequirementEntry { id = "E02", summary = "b", stage = "S1" },
+                    new Phase4RequiredTests.RequirementEntry { id = "P01", summary = "c", stage = "S2" },
+                },
+                tests = new[]
+                {
+                    new Phase4RequiredTests.RequiredEntry
+                    {
+                        requirementId = "N01", requirementIds = new[] { "E01" }, stage = "S1", mode = "EditMode",
+                        fullName = "Momotaro.Tests.EditMode.X.A",
+                    },
+                },
+            };
+
+            List<Phase4RequiredTests.RequirementEntry> unmetS1 = manifest.UnmetRequirements("S1");
+            Assert.AreEqual(1, unmetS1.Count);
+            Assert.AreEqual("E02", unmetS1[0].id, "追加 ID（requirementIds）でも対応と数える。");
+
+            List<Phase4RequiredTests.RequirementEntry> unmetAll = manifest.UnmetRequirements(string.Empty);
+            Assert.AreEqual(2, unmetAll.Count, "全工程では後続工程の未対応も数える。");
+        }
+
+        /// <summary>
         /// 許容 Skip には必ず理由を書く。理由の無い許容は「件数で許した」のと変わらない。
         /// </summary>
         [Test]

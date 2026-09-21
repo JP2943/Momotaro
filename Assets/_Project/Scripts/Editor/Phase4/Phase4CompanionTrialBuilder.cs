@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.IO;
 using Momotaro.Editor.Phase35;
+using Momotaro.Core.Identification;
+using Momotaro.Data.Exploration;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Scenes;
@@ -26,7 +28,7 @@ namespace Momotaro.Editor.Phase4
     /// <item><description>活動 Context（試遊 Scene の <see cref="CombatSessionController"/> へ配線。
     /// これが無いと Pause・会話・Wave 幕間の区別ができない）</description></item>
     /// <item><description>調査地点（P4-07A を実機で試せるように）</description></item>
-    /// <item><description>指示の入力（P4-07B。<see cref="CompanionOrderInput"/>。試遊で待機／追従を切り替える）</description></item>
+    /// <item><description>探索の層（P4-07A／P4-08R。地点・加入供給元・記録・調停役・試遊段階。起動直後は自由探索）</description></item>
     /// </list>
     ///
     /// <b>検証フィールド（F01）との違い。</b>あちらは仲間の駆動を落ち着いて確かめるための場で、
@@ -38,17 +40,9 @@ namespace Momotaro.Editor.Phase4
         /// <summary>既定の生成先。</summary>
         public const string DefaultScenePath = "Assets/_Project/Scenes/Tests/SCN_Phase4_CompanionTrial.unity";
 
-        /// <summary>
-        /// 調査地点の位置（P4-07A）。3.5 の試遊 Scene は主人公が (0,0,-6)、敵の湧きが +Z 側なので、
-        /// 地点は主人公の周りかつ敵の湧き位置から離れた側へ置く。
-        /// 犬丸の紐（既定 6m）の内側に収める（外だと探索は有効なのに一度も動かず、壊れて見える）。
-        /// </summary>
-        public static readonly Vector3[] InvestigationPointPositions =
-        {
-            new Vector3(-3.5f, 0f, -8f),
-            new Vector3(3.5f, 0f, -8f),
-            new Vector3(0f, 0f, -10f),
-        };
+        /// <summary>調査地点の数（標準配置：正常 ×2、壁 ×1、未加入 ×1。v1.0 §13.1）。</summary>
+        public static int InvestigationPointCount =>
+            Phase4InvestigationLayerBuilder.StandardPoints(default).Length;
 
         /// <summary>生成結果。</summary>
         public readonly struct BuildResult
@@ -159,10 +153,57 @@ namespace Momotaro.Editor.Phase4
 
             AssetDatabase.Refresh();
 
+            // 出荷パスだけ Build Settings へ登録する（Retry の Scene 再読込と PlayMode の実 Scene 検証に必要。
+            // テストの一時パスは登録しない＝本番設定を汚さない）。
+            string registered = string.Empty;
+            if (outputPath == DefaultScenePath && EnsureRegisteredInBuildSettings(outputPath))
+            {
+                AssetDatabase.SaveAssets(); // ProjectSettings/EditorBuildSettings.asset へ書き出す（コミット対象）。
+                registered = " Build Settings へ登録しました。";
+            }
+
             return new BuildResult(true, outputPath,
-                "Phase3.5 試遊 Scene ＋ Inumaru／CompanionActivityContext／InvestigationPoints(×"
-                + InvestigationPointPositions.Length + ")／CompanionOrderInput。"
-                + "Play すると Wave1 から始まり、犬丸が同行します。");
+                "Phase3.5 試遊 Scene ＋ Inumaru／CompanionActivityContext／Investigation(地点×"
+                + InvestigationPointCount + "・加入供給元・記録・調停役・試遊段階・入力仲介・マーカー・短文UI・開始入力)。"
+                + "Play すると敵の居ない自由探索から始まり、E／南ボタンで調査、Enter／Start で Wave1 が起動します。" + registered);
+        }
+
+        /// <summary>Scene が Build Settings に有効な状態で登録されているか。</summary>
+        public static bool IsRegisteredInBuildSettings(string scenePath)
+        {
+            foreach (EditorBuildSettingsScene s in EditorBuildSettings.scenes)
+            {
+                if (s.path == scenePath)
+                {
+                    return s.enabled;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>Scene を Build Settings に登録（無効なら有効化）する。変更したら true。</summary>
+        public static bool EnsureRegisteredInBuildSettings(string scenePath)
+        {
+            var scenes = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
+            for (int i = 0; i < scenes.Count; i++)
+            {
+                if (scenes[i].path == scenePath)
+                {
+                    if (scenes[i].enabled)
+                    {
+                        return false;
+                    }
+
+                    scenes[i] = new EditorBuildSettingsScene(scenePath, true);
+                    EditorBuildSettings.scenes = scenes.ToArray();
+                    return true;
+                }
+            }
+
+            scenes.Add(new EditorBuildSettingsScene(scenePath, true));
+            EditorBuildSettings.scenes = scenes.ToArray();
+            return true;
         }
 
         /// <summary>3.5 の試遊 Scene へ仲間の層を足す（保存はしない）。</summary>
@@ -170,38 +211,38 @@ namespace Momotaro.Editor.Phase4
         {
             PlayerStateController player = FindSingle<PlayerStateController>(scene, "主人公（PlayerStateController）");
             CombatSessionController session = FindSingle<CombatSessionController>(scene, "戦闘 Session（CombatSessionController）");
+            WaveRunner waves = FindSingle<WaveRunner>(scene, "Wave（WaveRunner）");
+
+            InvestigationSettingsData settings = Phase4InvestigationLayerBuilder.LoadSettings();
+            if (settings == null)
+            {
+                throw new System.InvalidOperationException(
+                    "探索設定 Data が見つかりません: " + Phase4InvestigationLayerBuilder.SettingsAssetPath);
+            }
 
             var layer = new GameObject("Phase4CompanionLayer");
 
-            // 活動 Context：Pause・会話・Wave 幕間の区別の正本。ここが抜けると仲間は
-            // 移行期フォールバック（常に自由行動）で動き、会話中に歩き回る。
+            // 活動 Context：Pause・会話・Wave 幕間の区別の正本。無いと仲間は停止する（供給元が無ければ止まる）。
             var activityGo = new GameObject("CompanionActivityContext");
             activityGo.transform.SetParent(layer.transform, false);
-            activityGo.AddComponent<CompanionActivityContext>().Bind(session);
-
-            // 調査地点（P4-07A）。
-            var points = new GameObject("InvestigationPoints");
-            points.transform.SetParent(layer.transform, false);
-            for (int i = 0; i < InvestigationPointPositions.Length; i++)
-            {
-                var pointGo = new GameObject("InvestigationPoint_" + i);
-                pointGo.transform.SetParent(points.transform, false);
-                pointGo.transform.position = InvestigationPointPositions[i];
-                pointGo.AddComponent<CompanionInvestigationPoint>();
-            }
+            var context = activityGo.AddComponent<CompanionActivityContext>();
+            context.Bind(session);
 
             // 犬丸。
-            CompanionOrders orders = PlaceCompanion(companionPrefab, player.transform);
+            CompanionActor inumaru = PlaceCompanion(companionPrefab, player.transform);
+            StableId inumaruId = inumaru != null && inumaru.Data != null ? inumaru.Data.Id : default;
 
-            // 指示の入力（P4-07B）。相手は Scene 構築時に注入する（Find* で探し回らない）。
-            var orderInputGo = new GameObject("CompanionOrderInput");
-            orderInputGo.transform.SetParent(layer.transform, false);
-            var orderInput = orderInputGo.AddComponent<CompanionOrderInput>();
-            orderInput.Bind(orders);
+            // P4 側だけ明示開始にする（P3.5 の既定の自動開始は変えない。v1.0 §13.1）。
+            Phase4InvestigationLayerBuilder.DisableAutoStart(waves);
+
+            // 探索の層（地点・加入供給元・記録・調停役・試遊段階）。
+            Phase4InvestigationLayerBuilder.Build(
+                layer.transform, player, new[] { inumaru }, new[] { inumaruId },
+                Phase4InvestigationLayerBuilder.StandardPoints(inumaruId), settings, context, waves);
         }
 
-        /// <summary>犬丸を隊列位置へ置き、追従・守護の相手を主人公へ固定する。指示コンポーネントを返す。</summary>
-        private static CompanionOrders PlaceCompanion(GameObject companionPrefab, Transform player)
+        /// <summary>犬丸を隊列位置へ置き、追従・守護の相手を主人公へ固定する。置いた本体を返す。</summary>
+        private static CompanionActor PlaceCompanion(GameObject companionPrefab, Transform player)
         {
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(companionPrefab);
             instance.name = "Inumaru";
@@ -216,14 +257,13 @@ namespace Momotaro.Editor.Phase4
             CompanionHitReceiver receiver = instance.GetComponent<CompanionHitReceiver>();
             instance.GetComponent<CompanionGuardianController>()?.Bind(actor, receiver, player);
 
-            CompanionOrders orders = instance.GetComponent<CompanionOrders>();
-            if (orders == null)
+            if (instance.GetComponent<CompanionInvestigationController>() == null)
             {
                 throw new System.InvalidOperationException(
-                    "犬丸 Prefab に CompanionOrders がありません（Prefab を再生成してください）。");
+                    "犬丸 Prefab に CompanionInvestigationController がありません（Prefab を再生成してください）。");
             }
 
-            return orders;
+            return actor;
         }
 
         private static T FindSingle<T>(Scene scene, string label) where T : Component

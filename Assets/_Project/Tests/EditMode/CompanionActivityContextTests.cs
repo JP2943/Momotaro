@@ -3,6 +3,7 @@ using System.Reflection;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Scenes;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -19,7 +20,7 @@ namespace Momotaro.Tests.EditMode
     /// もう 1 つは <b>未配線を黙って通すこと</b>。「分からないから許可」にすると、配線漏れが実機でしか露見しない。
     /// 停止していればすぐ気付く（N17）。
     /// </summary>
-    public sealed class CompanionActivityContextTests
+    public sealed class CompanionActivityContextTests : CompanionActivityFixture
     {
         private readonly List<Object> _spawned = new List<Object>();
         private IGameModeService _originalModes;
@@ -131,7 +132,45 @@ namespace Momotaro.Tests.EditMode
             {
                 CompanionActivity activity = CompanionActivityResolver.Resolve(GameMode.Exploration, state);
                 Assert.IsFalse(activity.EncounterActive, state + " は戦闘継続中ではない。");
+                Assert.IsFalse(activity.CanInvestigate, state + " は結果画面（入力不可）なので探索も受け付けない（v1.0 §7.1）。");
+                Assert.IsTrue(activity.ClocksRun, state + " でも時計は止めない（Pause ではない）。");
             }
+        }
+
+        /// <summary>
+        /// 明示開始の門（P4-08R）：要求前の Preparing は「開始待ちの Encounter」ではなく自由探索として供給する。
+        /// 要求後の Preparing は従来どおり戦闘中。門が無い Scene（3.5 の自動開始）は従来どおり。
+        /// </summary>
+        [Test]
+        public void StartGate_MakesPreparingFreeRoam_UntilCombatIsRequested()
+        {
+            GameModeProvider.Current = new FakeModes { Current = GameMode.Exploration };
+
+            var sessionGo = new GameObject("Session");
+            _spawned.Add(sessionGo);
+            var session = sessionGo.AddComponent<CombatSessionController>();
+            Assert.AreEqual(CombatSessionState.Preparing, session.State, "前提：Session は Preparing から始まる。");
+
+            var go = new GameObject("ActivityContext");
+            _spawned.Add(go);
+            var context = go.AddComponent<CompanionActivityContext>();
+            context.Bind(session);
+
+            Assert.IsFalse(context.Current.CanInvestigate, "門が無ければ Preparing は開始待ちの Encounter＝戦闘中。");
+
+            var gate = new FakeGate { EncounterRequested = false };
+            context.SetEncounterStartGate(gate);
+            Assert.IsTrue(context.Current.CanInvestigate, "要求前は自由探索。");
+            Assert.IsFalse(context.Current.EncounterActive);
+
+            gate.EncounterRequested = true;
+            Assert.IsFalse(context.Current.CanInvestigate, "要求後の Preparing は戦闘中（開始待ち）。");
+            Assert.IsTrue(context.Current.EncounterActive);
+        }
+
+        private sealed class FakeGate : IEncounterStartGate
+        {
+            public bool EncounterRequested { get; set; }
         }
 
         [Test]
@@ -227,26 +266,71 @@ namespace Momotaro.Tests.EditMode
         }
 
         /// <summary>
-        /// 供給元が居ないあいだは、これまでどおり <see cref="GameModeProvider"/> だけで判断する（移行期の措置）。
-        /// ここをいきなり停止側へ倒すと、まだ活動 Context を置いていない既存 Scene で仲間が固まる。
-        /// P4-08R の Scene Validator が「Context が置かれていること」を必須にした時点でこの穴を閉じる。
+        /// 供給元が居なければ<b>停止</b>（P4-FIX-R2。v1.0 §7.2）。以前はここに GameMode だけを見る許可側の
+        /// フォールバックがあり、Context の欠落・無効化・Scene 切替の瞬間に仲間が動き出す穴だった（レビュー R2-08）。
+        /// GameMode が何であっても、供給元が無い＝分からない＝何も許さない。
         /// </summary>
         [Test]
-        public void NoProviderSource_FallsBackToGameModeOnly()
+        public void NoProviderSource_IsStopped_RegardlessOfGameMode()
         {
             CompanionActivityProvider.Current = null;
 
             GameModeProvider.Current = null;
-            Assert.IsTrue(CompanionActivityProvider.Activity.ClocksRun,
-                "未初期化（単体テスト等）は従来どおり許可する。");
-
-            GameModeProvider.Current = new FakeModes { Current = GameMode.Paused };
-            Assert.IsFalse(CompanionActivityProvider.Activity.ClocksRun, "Pause は従来どおり止める。");
+            AssertStopped(CompanionActivityProvider.Activity, "モードの正本も無い");
 
             GameModeProvider.Current = new FakeModes { Current = GameMode.Exploration };
-            Assert.IsTrue(CompanionActivityProvider.Activity.ClocksRun);
-            Assert.IsFalse(CompanionActivityProvider.Activity.EncounterActive,
-                "供給元が無いとセッションを知らないので、戦闘継続中とは主張しない。");
+            AssertStopped(CompanionActivityProvider.Activity, "Exploration でも供給元が無ければ");
+
+            GameModeProvider.Current = new FakeModes { Current = GameMode.Combat };
+            AssertStopped(CompanionActivityProvider.Activity, "Combat でも供給元が無ければ");
+
+            Assert.IsFalse(CompanionActivityProvider.HasSource);
+        }
+
+        /// <summary>
+        /// 実 Context を無効化・破棄すると供給元が外れ、その瞬間から停止になる（許可側へ戻らない）。
+        /// 別の Context へ差し替わっていた場合は、古い Context の無効化で新しい供給元を外さない（再配線）。
+        /// </summary>
+        [Test]
+        public void ContextDisableAndDestroy_LeaveTheRuntimeStopped()
+        {
+            GameModeProvider.Current = new FakeModes { Current = GameMode.Exploration };
+
+            var go = new GameObject("ActivityContext");
+            _spawned.Add(go);
+            var context = go.AddComponent<CompanionActivityContext>();
+            context.MarkAreaWithoutEncounter();
+            InvokePrivate(context, "OnEnable");
+            Assert.IsTrue(CompanionActivityProvider.Activity.CanAct, "前提：配線済みの Context は許可を返す。");
+
+            InvokePrivate(context, "OnDisable");
+            AssertStopped(CompanionActivityProvider.Activity, "Context を無効化した直後");
+
+            InvokePrivate(context, "OnEnable");
+            Assert.IsTrue(CompanionActivityProvider.Activity.CanAct, "再有効化で戻る。");
+
+            // 再配線：新しい Context へ差し替わったあと、古い Context の無効化は新しい供給元に触らない。
+            var go2 = new GameObject("ActivityContext2");
+            _spawned.Add(go2);
+            var context2 = go2.AddComponent<CompanionActivityContext>();
+            context2.MarkAreaWithoutEncounter();
+            InvokePrivate(context2, "OnEnable");
+            Assert.AreSame(context2, CompanionActivityProvider.Current);
+
+            InvokePrivate(context, "OnDisable");
+            Assert.AreSame(context2, CompanionActivityProvider.Current, "古い Context の無効化で新しい供給元を外さない。");
+
+            InvokePrivate(context2, "OnDisable"); // 破棄は OnDisable を伴う（EditMode では手で呼ぶ）。
+            Object.DestroyImmediate(go2);
+            AssertStopped(CompanionActivityProvider.Activity, "唯一の Context を破棄した直後");
+        }
+
+        private static void AssertStopped(CompanionActivity activity, string when)
+        {
+            Assert.IsFalse(activity.CanAct, when + "：行動を許さない。");
+            Assert.IsFalse(activity.ClocksRun, when + "：時計を進めない。");
+            Assert.IsFalse(activity.CanInvestigate, when + "：探索を受け付けない。");
+            Assert.IsFalse(activity.DiscardOngoing, when + "：破棄でもない（何も分からないので凍結）。");
         }
     }
 }

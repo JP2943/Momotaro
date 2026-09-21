@@ -6,6 +6,7 @@ using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Threat;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -22,7 +23,7 @@ namespace Momotaro.Tests.EditMode
     /// 併せて「予兆のあいだに対象が離れても、判定が届く距離までなら当たる」ことも固定する。攻撃開始距離と判定到達距離の
     /// 差はそのための余裕であり、両者を同じにしてはならない。
     /// </summary>
-    public sealed class CompanionHitboxReachTests
+    public sealed class CompanionHitboxReachTests : CompanionActivityFixture
     {
         private const float UseRange = 2f;      // 判定が届く距離。
         private const float Startup = 0.25f;

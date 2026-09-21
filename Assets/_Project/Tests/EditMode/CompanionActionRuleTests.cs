@@ -9,6 +9,7 @@ using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Threat;
 using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Player;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -25,7 +26,7 @@ namespace Momotaro.Tests.EditMode
     /// 表そのもの（純粋関数）と、表が実際に駆動へ効いていること（実物同士を繋いだ検証）を分けて置く。
     /// 表だけ緑でも、駆動が表を通っていなければ実機は何も変わらない（CLAUDE.md の「繋ぎ目」）。
     /// </summary>
-    public sealed class CompanionActionRuleTests
+    public sealed class CompanionActionRuleTests : CompanionActivityFixture
     {
         private const float GuardCooldown = 3f;
         private const float EvadeCooldown = 4f;
@@ -46,7 +47,7 @@ namespace Momotaro.Tests.EditMode
         public void SetUp()
         {
             // 静的な供給元は前のテストから持ち越される（PlayMode で実際に踏んだ事故）。毎回外す。
-            CompanionActivityProvider.Current = null;
+            CompanionActivityTestSource.InstallFreeRoam(); // 明示 Fake（P4-FIX-R2。供給元が無いと停止する）
             GameModeProvider.Current = null;
             PerceptionTargetRegistry.Clear();
         }
@@ -253,27 +254,25 @@ namespace Momotaro.Tests.EditMode
         }
 
         /// <summary>
-        /// <b>レビュー §5：探索中の行動競合表。</b>F02c では <see cref="CompanionState.Investigate"/> が
-        /// まだ無く書けなかった行。調査中は、戦う・構える・避ける・庇うのいずれも<b>中断</b>として通る。
-        /// 「許可」ではなく「中断」で通すのは、調査が途中で止められたことを状態の履歴に残すため。
+        /// <b>c8c0ddf §5：探索中の行動競合表。</b>調査中（Moving／Investigating）は健康な犬丸も通常 AI の行動所有権を
+        /// 探索へ渡している。自動攻撃・自動 Guard／Evade・守護要求は<b>拒否</b>で、危険候補だけでは探索を解かない。
+        /// 探索を解くのは実命中・明示の戦闘開始・会話／イベント・退場で、それぞれ同期的に所有権を解放してから元の処理へ進む
+        /// （受け口・守護・活動 Context・駆動の入口がそれぞれ担う。R2-05）。同じ調査の継続も「開始」ではないので不可。
         /// </summary>
         [Test]
-        public void InvestigationTable_EveryCombatActionInterrupts()
+        public void InvestigationTable_EveryAutomaticActionIsDenied()
         {
             foreach (CompanionActionKind kind in new[]
             {
                 CompanionActionKind.AutoAttack, CompanionActionKind.AutoGuard,
                 CompanionActionKind.AutoEvade, CompanionActionKind.GuardianTransfer,
+                CompanionActionKind.Investigate,
             })
             {
-                Assert.AreEqual(CompanionActionVerdict.Interrupt,
+                Assert.AreEqual(CompanionActionVerdict.Denied,
                     CompanionActionRules.Evaluate(kind, CompanionState.Investigate),
-                    kind + " は調査を中断して始められる（敵が出たら調べている場合ではない）。");
+                    kind + " は調査中に始めない（危険候補だけでは探索を解かない。解くのは実命中・戦闘開始）。");
             }
-
-            Assert.AreEqual(CompanionActionVerdict.Allowed,
-                CompanionActionRules.Evaluate(CompanionActionKind.Investigate, CompanionState.Investigate),
-                "同じ調査の継続は許可（始め直しではない）。");
         }
 
         /// <summary>
@@ -289,7 +288,7 @@ namespace Momotaro.Tests.EditMode
                 CompanionActionRules.Evaluate(CompanionActionKind.Investigate, CompanionState.Idle));
             Assert.AreEqual(CompanionActionVerdict.Allowed,
                 CompanionActionRules.Evaluate(CompanionActionKind.Investigate, CompanionState.Chase),
-                "対象を見失った直後は Chase が 1 フレーム残る。ここで禁じると次の行動へ移れなくなる。");
+                "Chase は平常時に含める（戦闘中かどうかは活動 Context が別に見る）。");
 
             foreach (CompanionState blocked in new[]
             {

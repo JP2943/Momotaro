@@ -5,6 +5,7 @@ using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Enemy;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Threat;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -21,7 +22,11 @@ namespace Momotaro.Tests.EditMode
     /// いたため、この登録漏れを検出できなかった（アルゴリズムは通るが、実際の敵とは繋がっていなかった）。同じ穴を
     /// 再び開けないよう、ここでは「敵を作って有効化しただけで、仲間が捕捉できる」ことを固定する。
     /// </summary>
-    public sealed class EnemyIsTargetableTests
+    /// <remarks>
+    /// 仲間の索敵は活動 Context（<see cref="CompanionActivityProvider"/>）が無いと停止する（P4-FIX-R2：未注入は許可側へ戻さない）。
+    /// 仲間側の検証は <see cref="CompanionActivityFixture"/> で自由探索の供給元を差してから行う。
+    /// </remarks>
+    public sealed class EnemyIsTargetableTests : CompanionActivityFixture
     {
         private readonly List<Object> _spawned = new List<Object>();
 

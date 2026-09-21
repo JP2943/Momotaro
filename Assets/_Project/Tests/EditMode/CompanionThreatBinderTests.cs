@@ -4,6 +4,7 @@ using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Enemy.Perception;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -14,7 +15,7 @@ namespace Momotaro.Tests.EditMode
     /// <see cref="CompanionTargetTracker"/>）を検証する。<b>敵 AI を書き換えずに</b>候補へ追加できること、
     /// ダウン・退場で即座に脅威 0 になること、無効化で登録・対象参照を残さないことを固定する。
     /// </summary>
-    public sealed class CompanionThreatBinderTests
+    public sealed class CompanionThreatBinderTests : CompanionActivityFixture
     {
         private readonly List<Object> _spawned = new List<Object>();
 

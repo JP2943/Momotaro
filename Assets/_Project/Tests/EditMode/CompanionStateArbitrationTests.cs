@@ -4,6 +4,7 @@ using Momotaro.Data.Characters;
 using Momotaro.Data.Combat;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -27,7 +28,7 @@ namespace Momotaro.Tests.EditMode
     /// <b>順位で正常終了を拒否してはいけない</b>点にも注意がいる（攻撃終了→Chase、ひるみ明け→Follow は
     /// いずれも下位状態への復帰で、これを塞ぐと「終わったのに終われない」状態になる）。
     /// </summary>
-    public sealed class CompanionStateArbitrationTests
+    public sealed class CompanionStateArbitrationTests : CompanionActivityFixture
     {
         private readonly List<Object> _spawned = new List<Object>();
 
@@ -347,7 +348,7 @@ namespace Momotaro.Tests.EditMode
     /// ここでは実 <see cref="CompanionCombatController"/> と実 <see cref="CompanionHitReceiver"/> を繋ぎ、
     /// 攻撃の最中に倒れたあと、その後の Tick で状態が Chase へ戻らないことを確かめる。
     /// </summary>
-    public sealed class CompanionStateOwnershipIntegrationTests
+    public sealed class CompanionStateOwnershipIntegrationTests : CompanionActivityFixture
     {
         private const int MaxHp = 10;
 

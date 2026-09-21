@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using Momotaro.Editor.Phase4;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Scenes;
 using NUnit.Framework;
@@ -164,7 +165,7 @@ namespace Momotaro.Tests.EditMode
                 new[]
                 {
                     "Environment", "Player", "CameraRig", "Directional Light", "SceneMode",
-                    "SpawnCenter", "InvestigationPoints", "Phase4Systems", "Inumaru",
+                    "SpawnCenter", "Phase4Systems", "Inumaru",
                 },
                 rootNames,
                 "ルートの構成は固定（生成し直せば必ず同じ形へ戻る）:\n- " + string.Join("\n- ", rootNames));
@@ -382,30 +383,105 @@ namespace Momotaro.Tests.EditMode
         }
 
         /// <summary>
-        /// 探索（P4-07A）が Scene として成立している：調査地点が置かれ、仲間に探索の駆動が載り、
-        /// 地点が主人公の紐の内側にある。どれか 1 つでも欠けると「探索は有効なのに一度も動かない」になる。
+        /// 探索（P4-07A）が Scene として成立している：地点（正常・壁・未加入）が置かれ、PointId が有効で重複せず、
+        /// 設定 Data が入り、加入供給元・記録・調停役が犬丸の駆動へ配線されている（v1.0 §13.2）。
         /// </summary>
         [Test]
-        public void Build_PlacesInvestigationPointsWithinLeash()
+        public void Build_PlacesTheInvestigationLayer()
         {
             Scene scene = BuildField();
 
             List<CompanionInvestigationPoint> points = All<CompanionInvestigationPoint>(scene);
-            Assert.AreEqual(Phase4CompanionFieldBuilder.InvestigationPointPositions.Length, points.Count,
-                "調査地点を決められた数だけ置く。");
+            Assert.AreEqual(Phase4CompanionFieldBuilder.InvestigationPointCount, points.Count, "調査地点を決められた数だけ置く。");
 
-            CompanionActor actor = All<CompanionActor>(scene)[0];
-            Assert.IsNotNull(actor.GetComponent<CompanionInvestigationController>(),
-                "仲間に探索の駆動が載っている（Data で探索できることになっている以上、必須）。");
-
-            Transform player = All<PlayerStateController>(scene)[0].transform;
-            float leash = actor.Data.InvestigateLeashDistance;
+            var ids = new HashSet<string>();
             foreach (CompanionInvestigationPoint point in points)
             {
-                float distance = FormationSlot.HorizontalDistance(player.position, point.transform.position);
-                Assert.LessOrEqual(distance, leash,
-                    point.name + " は主人公から紐（" + leash + "m）の内側にある。外だと一度も調べに行かない。");
+                Assert.IsTrue(point.PointId.IsValid, point.name + "：PointId は配置固有の StableId。");
+                Assert.IsTrue(ids.Add(point.PointId.Value), point.name + "：PointId が重複しない。");
+                Assert.IsNotNull(point.SettingsData, point.name + "：設定 Data が入っている。");
+                Assert.IsTrue(point.Settings.IsUsable, point.name + "：設定が使える値。");
             }
+
+            CompanionActor actor = All<CompanionActor>(scene)[0];
+            CompanionInvestigationController driver = actor.GetComponent<CompanionInvestigationController>();
+            Assert.IsNotNull(driver, "仲間に探索の駆動が載っている。");
+
+            InvestigationCoordinator coordinator = All<InvestigationCoordinator>(scene)[0];
+            Assert.IsTrue(coordinator.IsWired, "調停役の供給元が揃っている。");
+            Assert.AreSame(All<PlayerStateController>(scene)[0], coordinator.Player);
+            Assert.AreEqual(1, coordinator.Companions.Count);
+            Assert.AreSame(driver, coordinator.Companions[0], "調停役が犬丸の駆動を指している。");
+            Assert.IsTrue(coordinator.Roster.IsRecruited(actor.Data.Id), "犬丸は加入済みとして注入されている。");
+            Assert.IsFalse(coordinator.Roster.IsRecruited(Phase4InvestigationLayerBuilder.UnrecruitedCompanionId),
+                "未加入の検証用 ID は加入していない。");
+
+            int unrecruitedPoints = points.FindAll(
+                pt => pt.RequiredCompanion.Equals(Phase4InvestigationLayerBuilder.UnrecruitedCompanionId)).Count;
+            Assert.AreEqual(1, unrecruitedPoints, "未加入条件を確認できる地点が 1 つある。");
+        }
+
+        /// <summary>同じ PointId が 2 つあれば検出する（§10.1「Scene 内に同じ ID が 2 つあれば Validator でエラー」。E23）。</summary>
+        [Test]
+        public void DuplicatePointId_IsDetected()
+        {
+            Scene scene = BuildField();
+            Assert.AreEqual(0, Errors(scene).Count, "前提：生成直後はエラー 0。");
+
+            List<CompanionInvestigationPoint> points = All<CompanionInvestigationPoint>(scene);
+            points[1].Configure(points[0].PointId, points[1].RequiredCompanion, points[1].DiscoveryId, points[1].SettingsData);
+
+            List<string> errors = Errors(scene);
+            Assert.IsTrue(errors.Exists(e => e.Contains("重複")), "PointId の重複を検出する:\n- " + string.Join("\n- ", errors));
+        }
+
+        /// <summary>設定 Data の欠落・無効な PointId を検出する（E23）。</summary>
+        [Test]
+        public void PointWithoutSettingsOrId_IsDetected()
+        {
+            Scene scene = BuildField();
+            CompanionInvestigationPoint point = All<CompanionInvestigationPoint>(scene)[0];
+            point.Configure(default, point.RequiredCompanion, point.DiscoveryId, null);
+
+            List<string> errors = Errors(scene);
+            Assert.IsTrue(errors.Exists(e => e.Contains("PointId")), "無効な PointId を検出する:\n- " + string.Join("\n- ", errors));
+            Assert.IsTrue(errors.Exists(e => e.Contains("InvestigationSettingsData")), "設定 Data の欠落を検出する。");
+        }
+
+        /// <summary>調停役・加入供給元・記録のどれが欠けても検出する（未配線は拒否され、Validator が出す。§5.1）。</summary>
+        [Test]
+        public void MissingInvestigationSystems_AreDetected()
+        {
+            Scene scene = BuildField();
+            Object.DestroyImmediate(All<CompanionRosterContext>(scene)[0].gameObject);
+            Object.DestroyImmediate(All<InvestigationRecordHolder>(scene)[0].gameObject);
+
+            List<string> errors = Errors(scene);
+            Assert.IsTrue(errors.Exists(e => e.Contains("CompanionRosterContext")), "加入供給元の欠落:\n- " + string.Join("\n- ", errors));
+            Assert.IsTrue(errors.Exists(e => e.Contains("InvestigationRecordHolder")), "記録の欠落。");
+        }
+
+        /// <summary>
+        /// 同一 Body を 2 つの駆動が動かす配線を検出する（E24。暗黙の二重 Tick）。
+        /// 同じ GameObject への 2 個目は <see cref="DisallowMultipleComponent"/> が AddComponent でも拒むので、
+        /// 実際に起こり得る形＝別 GameObject の駆動が同じ Body を指す配線で検査する。
+        /// </summary>
+        [Test]
+        public void DuplicateDriverOnOneBody_IsDetected()
+        {
+            Assert.IsTrue(
+                System.Attribute.IsDefined(typeof(CompanionInvestigationController), typeof(DisallowMultipleComponent)),
+                "同じ GameObject への 2 個目は DisallowMultipleComponent で拒む。");
+
+            Scene scene = BuildField();
+            CompanionActor actor = All<CompanionActor>(scene)[0];
+            var stray = new GameObject("StrayInvestigationDriver");
+            SceneManager.MoveGameObjectToScene(stray, scene);
+            stray.AddComponent<CompanionInvestigationController>().Bind(actor);
+
+            List<string> errors = Errors(scene);
+            Assert.IsTrue(errors.Exists(e => e.Contains("重複") && e.Contains("CompanionInvestigationController")),
+                "駆動の重複を検出する:\n- " + string.Join("\n- ", errors));
         }
 
         /// <summary>調査地点が 1 つも無い Scene は、探索を試せないので検証 Scene として不合格。</summary>
@@ -431,35 +507,12 @@ namespace Momotaro.Tests.EditMode
         {
             Scene scene = BuildField();
             CompanionActor actor = All<CompanionActor>(scene)[0];
-            Assert.IsTrue(actor.Data.CanInvestigate, "前提：Data では探索できる。");
 
             Object.DestroyImmediate(actor.GetComponent<CompanionInvestigationController>());
 
             List<string> errors = Errors(scene);
             Assert.IsTrue(errors.Exists(e => e.Contains("CompanionInvestigationController")),
                 "Data と実装の食い違いを検出する:\n- " + string.Join("\n- ", errors));
-        }
-
-        /// <summary>
-        /// 指示（P4-07B）が Scene として成立している：仲間が指示を保持でき、初期値は「ついて来い」。
-        /// 外すと検出される。無くても「常について来い」で動いてしまうので、静かに欠けやすい。
-        /// </summary>
-        [Test]
-        public void Build_CompanionCarriesOrders_AndMissingOrdersIsDetected()
-        {
-            Scene scene = BuildField();
-            CompanionActor actor = All<CompanionActor>(scene)[0];
-
-            var orders = actor.GetComponent<CompanionOrders>();
-            Assert.IsNotNull(orders, "仲間が指示を保持できる。");
-            Assert.AreEqual(CompanionOrder.Follow, orders.Current,
-                "Scene を開いた直後は「ついて来い」（待機のまま始まると壊れて見える）。");
-
-            Object.DestroyImmediate(orders);
-
-            List<string> errors = Errors(scene);
-            Assert.IsTrue(errors.Exists(e => e.Contains("CompanionOrders")),
-                "指示の欠落を検出する:\n- " + string.Join("\n- ", errors));
         }
 
         /// <summary>初期状態で敵が置かれていたら検出する（編成は Context Menu から出す約束）。</summary>

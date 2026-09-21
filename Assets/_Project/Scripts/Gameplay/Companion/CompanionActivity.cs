@@ -57,6 +57,13 @@ namespace Momotaro.Gameplay.Companion
         public static CompanionActivity Fighting =>
             new CompanionActivity(true, true, false, true, false);
 
+        /// <summary>
+        /// 戦闘の終端（勝敗の結果画面・再読込待ち）。Encounter は終わっているが、結果画面は入力不可なので
+        /// 探索も受け付けない（v1.0 §7.1「結果画面は戦闘終端でも入力不可なので調査不可」）。
+        /// </summary>
+        public static CompanionActivity Concluded =>
+            new CompanionActivity(true, true, false, false, false);
+
         /// <summary>Pause：凍結する。<b>進行中の行動は捨てない</b>（復帰時に同じ段から続ける）。</summary>
         public static CompanionActivity Paused(bool encounterActive) =>
             new CompanionActivity(false, false, false, encounterActive, false);

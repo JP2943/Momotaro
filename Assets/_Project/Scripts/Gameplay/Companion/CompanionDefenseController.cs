@@ -26,9 +26,14 @@ namespace Momotaro.Gameplay.Companion
     ///
     /// 被弾側（<see cref="CompanionHitReceiver"/>）は本コンポーネントを <see cref="ICompanionDefenseState"/> として読み、
     /// 無敵とガードを解決順に反映する。判断（ここ）と解決（受け口）を分けているのは主人公・敵と同じ形。
+    ///
+    /// <b>行動を奪われたら能力も同時に手放す</b>（P4-FIX-R2）。守護の成立で Protect に変わったあとも
+    /// ガード能力が残っていると、受け口は「状態」ではなく「能力」を読むので、解除されたはずの旧ガードが
+    /// 転送された命中を防いでしまう（レビュー R2-06）。持ち主として調停役に登録し、奪われた瞬間に解く。
+    /// ガード中にガード不能な危険が来て回避へ移るときも、<b>旧ガードを解いてから</b>回避を始める（R2-07）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class CompanionDefenseController : MonoBehaviour, ICompanionDefenseState
+    public sealed class CompanionDefenseController : MonoBehaviour, ICompanionDefenseState, ICompanionActionParticipant
     {
         [Tooltip("状態・Data の供給元（未設定なら自動取得）。")]
         [SerializeField] private CompanionActor _actor;
@@ -110,6 +115,7 @@ namespace Momotaro.Gameplay.Companion
         public void TickDefense(float deltaTime)
         {
             Build();
+            EnsureRegistered();
             if (_actor == null)
             {
                 return;
@@ -169,6 +175,14 @@ namespace Momotaro.Gameplay.Companion
                     return; // 許可表が禁じた（判定中・守護中など）。能力の時計も進めない＝回避は起きなかった。
                 }
 
+                // ガード中からの切り替え（表：Guard 中の自動 Evade は「ガード解除して可」）。
+                // 行動の所有権を取ってから旧ガードを解く（取れなかったときにガードを失わないため）。
+                // 解かずに回避へ入ると IsGuarding と IsEvading が同時に立ち、無敵の切れ目に旧ガードが働く（R2-07）。
+                if (_guard.IsGuarding)
+                {
+                    _guard.Release();
+                }
+
                 if (!_evade.TryStart())
                 {
                     // 能力側が拒否した（クールダウン）。状態だけ先に変えてしまわないよう行動を返す。
@@ -196,6 +210,41 @@ namespace Momotaro.Gameplay.Companion
             {
                 HoldDefensePose(); // 構え・回避のあいだは位置と向きを他へ渡さない。
             }
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// 行動を奪われた（守護の成立・被弾・退場・探索への引き渡し）。<b>同じ呼び出しの中で</b>ガード能力を解き、
+        /// 回避を打ち切り、向きの固定を手放す。状態は奪った側のもので、ここでは触らない。
+        /// 守護の成立では、このあと同じ呼び出しの中で転送された命中が解決される。ここで解いておかないと、
+        /// 解除されたはずの旧ガードが転送を防ぐ（R2-06 影響 A）。
+        /// </remarks>
+        public void OnActionInterrupted(in CompanionActionHandle lost)
+        {
+            if (!lost.IsValid || lost.Owner != CompanionActionOwner.Defense)
+            {
+                return;
+            }
+
+            if (_action.IsValid && lost.RunId != _action.RunId)
+            {
+                return; // 古い券の通知。今の行動には触らない。
+            }
+
+            Build();
+            if (_guard != null && _guard.IsGuarding)
+            {
+                _guard.Release();
+            }
+
+            if (_evade != null && _evade.IsEvading)
+            {
+                // 回避は動作全体で 1 行動（§8.4）。奪われたら残りの無敵ごと打ち切り、クールダウンへ入れる
+                // （Reset だと連続回避が可能になる）。
+                _evade.Interrupt();
+            }
+
+            ClearDefenseAction();
         }
 
         /// <summary>構え・回避を初期化する（加入・Retry・無効化）。</summary>
@@ -340,15 +389,31 @@ namespace Momotaro.Gameplay.Companion
             _built = true;
         }
 
+        /// <summary>持ち主としての登録（EditMode は OnEnable を呼ばないので、Tick の入口からも通す。冪等）。</summary>
+        private void EnsureRegistered()
+        {
+            if (isActiveAndEnabled)
+            {
+                _states?.RegisterParticipant(CompanionActionOwner.Defense, this);
+            }
+        }
+
         private void Update()
         {
             // 停止の判断は公開 Tick の入口へ移した（P4-FIX F05）。外から直接呼ばれる経路も塞ぐため。
             TickDefense(Time.deltaTime);
         }
 
+        private void OnEnable()
+        {
+            Build();
+            EnsureRegistered();
+        }
+
         private void OnDisable()
         {
             // 無効化・Scene 離脱で構えを残さない（§2.3 後始末）。
+            _states?.UnregisterParticipant(this);
             if (_guard != null)
             {
                 _guard.Reset();

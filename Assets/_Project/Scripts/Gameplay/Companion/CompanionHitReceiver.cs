@@ -39,6 +39,8 @@ namespace Momotaro.Gameplay.Companion
         private readonly ReceivedHitTracker _received = new ReceivedHitTracker();
         private ICompanionDefenseState _defense;
         private bool _defenseResolved;
+        private ICompanionTransferAcceptanceHook _transferHook;
+        private bool _transferHookResolved;
 
         /// <summary>被弾結果の通知チャネル（HUD・フィードバック・Debug が購読）。</summary>
         public HitResultChannel Results { get; } = new HitResultChannel();
@@ -99,7 +101,7 @@ namespace Momotaro.Gameplay.Companion
         /// <inheritdoc />
         public void ReceiveHit(in HitInfo hit)
         {
-            TryReceiveTransferredHit(hit);
+            Resolve(hit, transferred: false);
         }
 
         /// <inheritdoc />
@@ -110,6 +112,22 @@ namespace Momotaro.Gameplay.Companion
         /// 回避・ガード・ダメージはいずれも<b>処理した</b>＝受理である。
         /// </remarks>
         public bool TryReceiveTransferredHit(in HitInfo hit)
+        {
+            return Resolve(hit, transferred: true);
+        }
+
+        /// <summary>
+        /// 命中を共通の解決順に載せる。<paramref name="transferred"/> は守護の転送経路か（判定からの直接命中か）。
+        ///
+        /// <b>受理が確定した直後・被害を解決する前</b>に 2 つを同期的に行う（P4-FIX-R2）。
+        /// <list type="number">
+        /// <item><description>探索の解放：実命中は探索を中断する（c8c0ddf §5。代理が被害を吸わない）。</description></item>
+        /// <item><description>転送なら守護側の受理確定フック：ここで旧攻撃／防御が中断され、以降の解決で
+        /// 旧ガード能力が転送を防がない（§2.4「受理確定 → 旧行動中断 → 被害解決」）。</description></item>
+        /// </list>
+        /// 受理できなかった命中（退場・ダウン・二重）ではどちらも起きない＝拒否で旧行動は不変。
+        /// </summary>
+        private bool Resolve(in HitInfo hit, bool transferred)
         {
             EnsureRuntime();
             if (_actor == null || _vitals == null)
@@ -127,6 +145,16 @@ namespace Momotaro.Gameplay.Companion
             if (!_received.TryAccept(hit.HitId))
             {
                 return false;
+            }
+
+            // ---- ここから受理確定。被害の解決より先に、同じ呼び出しの中で旧行動を止める ----
+
+            // 戦闘本体への実命中は探索を同期的に中断する（探索表示が被害を吸わない。c8c0ddf §5）。
+            _states?.InterruptOwner(CompanionActionOwner.Investigate);
+
+            if (transferred)
+            {
+                ResolveTransferHook()?.OnTransferAccepted(hit);
             }
 
             if (_vitals.IsPostHitInvincible)
@@ -275,6 +303,24 @@ namespace Momotaro.Gameplay.Companion
             }
 
             return _defense;
+        }
+
+        /// <summary>守護側の受理確定フック（同一 GameObject。守護を持たない構成では null のまま）。</summary>
+        private ICompanionTransferAcceptanceHook ResolveTransferHook()
+        {
+            if (_transferHook is Object destroyed && destroyed == null)
+            {
+                _transferHook = null;
+                _transferHookResolved = false;
+            }
+
+            if (!_transferHookResolved || _transferHook == null)
+            {
+                _transferHook = GetComponent<ICompanionTransferAcceptanceHook>();
+                _transferHookResolved = true;
+            }
+
+            return _transferHook;
         }
 
     }

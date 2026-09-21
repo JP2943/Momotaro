@@ -8,6 +8,7 @@ using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Threat;
 using Momotaro.Gameplay.Modes;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -26,7 +27,7 @@ namespace Momotaro.Tests.PlayMode
     /// <item><description>会話・イベントは<b>破棄</b>であり、復帰時に古い Active を再開しないこと。</description></item>
     /// </list>
     /// </summary>
-    public sealed class CompanionActivityGatePlayTests
+    public sealed class CompanionActivityGatePlayTests : CompanionActivityFixture
     {
         private readonly List<Object> _spawned = new List<Object>();
         private float _originalTimeScale;
@@ -36,7 +37,7 @@ namespace Momotaro.Tests.PlayMode
         {
             _originalTimeScale = Time.timeScale;
             GameModeProvider.Current = null;
-            CompanionActivityProvider.Current = null;
+            CompanionActivityTestSource.InstallFreeRoam(); // 明示 Fake（P4-FIX-R2。供給元が無いと停止する）
             PerceptionTargetRegistry.Clear();
         }
 

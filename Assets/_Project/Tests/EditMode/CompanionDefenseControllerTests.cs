@@ -3,6 +3,7 @@ using System.Reflection;
 using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Enemy.Defense;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -15,7 +16,7 @@ namespace Momotaro.Tests.EditMode
     /// 「クールダウンで連続できないこと」、「倒れた・ひるんだ・退場した瞬間に構えを解くこと」、そして
     /// 「Data で能力を切れること」。危険観測は Fake を注入するため、物理にもフレームにも依存しない。
     /// </summary>
-    public sealed class CompanionDefenseControllerTests
+    public sealed class CompanionDefenseControllerTests : CompanionActivityFixture
     {
         private const float GuardCooldown = 3f;
         private const float EvadeCooldown = 4f;
@@ -287,6 +288,56 @@ namespace Momotaro.Tests.EditMode
                 new Momotaro.Gameplay.Combat.HitDamage(30f, 0f, 0f),
                 guardable: true, justGuardable: false,
                 hitId: Momotaro.Gameplay.Combat.HitId.Single(9001));
+        }
+
+        // ---- Guard → Evade（P4-FIX-R2。レビュー R2-07） ----
+
+        /// <summary>
+        /// ガード中にガード不能な危険へ切り替わったら、<b>旧ガードを解いてから</b>回避へ入る。
+        /// 以前は解かずに回避を始めていて、IsGuarding と IsEvading が同時に立ち、無敵の切れ目に旧ガードが働いた。
+        /// </summary>
+        [Test]
+        public void GuardThenUnblockableDanger_ReleasesGuardAndEvades()
+        {
+            (CompanionActor actor, CompanionDefenseController defense, FakeDanger danger) = MakeCompanion();
+            danger.HasDanger = true;
+            defense.TickDefense(0.1f);
+            Assert.IsTrue(defense.IsGuarding, "前提：構えている。");
+
+            danger.Unblockable = true;
+            defense.TickDefense(0.1f);
+
+            Assert.IsFalse(defense.IsGuarding, "回避へ移るときに旧ガード能力を解いている。");
+            Assert.IsTrue(defense.IsEvading, "回避が始まっている。");
+            Assert.AreEqual(CompanionState.Evade, actor.State);
+            Assert.Greater(defense.Guard.CooldownRemaining, 0f, "解いたガードはクールダウンへ入る（解除扱い）。");
+
+            // 回避の動作が終われば通常状態へ戻る（能力も所有権も残らない）。
+            danger.HasDanger = false;
+            defense.TickDefense(EnemyEvadeAbility.DefaultInvulnerableSeconds + 0.05f);
+            defense.TickDefense(0.01f);
+            Assert.IsFalse(defense.IsEvading);
+            Assert.IsFalse(defense.IsGuarding);
+            Assert.AreEqual(CompanionState.Follow, actor.State, "回避終了後に正常復帰する。");
+        }
+
+        /// <summary>
+        /// 行動を奪われたら（被弾の強制遷移）、ガード能力も同じ呼び出しの中で解かれる。
+        /// 受け口は状態ではなく能力を読むので、状態だけ変わって能力が残ると次の命中を旧ガードが防ぐ。
+        /// </summary>
+        [Test]
+        public void ForcedHitDuringGuard_ReleasesGuardAbilitySynchronously()
+        {
+            (CompanionActor actor, CompanionDefenseController defense, FakeDanger danger) = MakeCompanion();
+            var states = actor.GetComponent<CompanionStateArbiter>();
+            danger.HasDanger = true;
+            defense.TickDefense(0.1f);
+            Assert.IsTrue(defense.IsGuarding, "前提：構えている。");
+
+            states.ForceHit(CompanionState.Stagger, CompanionStateChangeReason.Staggered);
+
+            Assert.IsFalse(defense.IsGuarding, "奪われた瞬間に能力を手放している（Tick を待たない）。");
+            Assert.AreEqual(CompanionState.Stagger, actor.State, "状態は奪った側のもの。防御側が触らない。");
         }
     }
 }

@@ -47,9 +47,13 @@ namespace Momotaro.Gameplay.Companion
     /// 表に無い状態（Protect・Warp・Recovering など）は、v1.0 §8.3 の「表より優先される規則」に従って
     /// 個別に決めている。判断に迷う状態を既定で通さないのは、増えた状態が黙って戦闘扱いになるのを避けるため。
     ///
-    /// <b>探索中の列（レビュー §5）は P4-07A で入れた。</b>F02c の時点では
-    /// <see cref="CompanionState.Investigate"/> がまだ無く、無い状態の競合規則は書けなかった。
-    /// 調査中は<b>戦う・構える・避ける・庇うのいずれも中断として通る</b>（敵が出たら調べている場合ではない）。
+    /// <b>探索中の列（c8c0ddf §5「探索中の行動競合表」）。</b>探索の Moving／Investigating 中は、健康な犬丸も通常 AI の
+    /// 行動所有権を探索へ渡している。そこで<b>自動 Follow／Chase／Attack／Guard／Evade の開始はすべて拒否</b>する。
+    /// 探索を解くのは「危険候補」ではなく<b>実際の出来事</b>——実命中・明示の戦闘開始・会話／イベント・退場——で、
+    /// それらは同期的に探索を中断・解放してから元の処理へ進む（受け口・守護・活動 Context・駆動の入口が担う）。
+    /// 守護要求も探索所有中はこの表では Denied（守護側が先に探索を解放し、解放後の状態で改めて評価する）。
+    /// 以前は「調査中は戦う・構える・避ける・庇うのいずれも中断として通る」としていたが、これは裁定の逆で、
+    /// 危険情報だけで別系統の戦闘開始を作ってしまう（レビュー R2-05）。
     /// </summary>
     public static class CompanionActionRules
     {
@@ -102,11 +106,9 @@ namespace Momotaro.Gameplay.Companion
         }
 
         /// <summary>
-        /// 調査中か（P4-07A。レビュー §5「探索中の行動競合表」の行）。
+        /// 調査中か（c8c0ddf §5「探索中の行動競合表」の行）。
         ///
-        /// <b>調査は平常時に含めない。</b>含めてしまうと「調べているのに黙って攻撃が始まる」ことになり、
-        /// 中断したのか元から調べていなかったのかが状態から読めなくなる。
-        /// 調査から他の行動へ移るときは必ず<b>割込み</b>として通し、調査が中断されたことを残す。
+        /// <b>調査は平常時に含めない。</b>調査中の自動行動はすべて拒否で、調査を解くのは実際の出来事だけ。
         /// </summary>
         private static bool IsInvestigating(CompanionState state)
         {
@@ -114,17 +116,11 @@ namespace Momotaro.Gameplay.Companion
         }
 
         /// <summary>
-        /// 自動攻撃：平常時のみ。二重開始も、防御中・守護中・移動中の開始もしない。
-        /// <b>調査中は中断して戦う</b>（敵が出たら調べている場合ではない。§5）。
+        /// 自動攻撃：平常時のみ。二重開始も、防御中・守護中・移動中・<b>調査中</b>の開始もしない（§5：拒否・予約しない）。
         /// </summary>
         private static CompanionActionVerdict EvaluateAutoAttack(CompanionState current)
         {
-            if (IsNeutral(current))
-            {
-                return CompanionActionVerdict.Allowed;
-            }
-
-            return IsInvestigating(current) ? CompanionActionVerdict.Interrupt : CompanionActionVerdict.Denied;
+            return IsNeutral(current) ? CompanionActionVerdict.Allowed : CompanionActionVerdict.Denied;
         }
 
         /// <summary>
@@ -140,7 +136,6 @@ namespace Momotaro.Gameplay.Companion
 
             switch (current)
             {
-                case CompanionState.Investigate: // 危険が来たら調査を中断して構える（§5）。
                 case CompanionState.AttackPrepare:
                 case CompanionState.AttackRecovery:
                     return CompanionActionVerdict.Interrupt;
@@ -149,7 +144,7 @@ namespace Momotaro.Gameplay.Companion
                     return CompanionActionVerdict.Allowed; // 継続（終了判定は防御側が持つ）。
 
                 default:
-                    // AttackActive・Evade・Protect・Warp。
+                    // AttackActive・Evade・Protect・Warp・Investigate（§5：探索表示と並行起動しない）。
                     return CompanionActionVerdict.Denied;
             }
         }
@@ -167,7 +162,6 @@ namespace Momotaro.Gameplay.Companion
 
             switch (current)
             {
-                case CompanionState.Investigate: // 避けないと当たる。調査は中断する（§5）。
                 case CompanionState.AttackPrepare:
                 case CompanionState.AttackRecovery:
                 case CompanionState.Guard:
@@ -177,6 +171,7 @@ namespace Momotaro.Gameplay.Companion
                     return CompanionActionVerdict.Allowed; // 同じ回避の継続。
 
                 default:
+                    // AttackActive・Protect・Warp・Investigate（§5：危険候補だけでは探索を解かない）。
                     return CompanionActionVerdict.Denied;
             }
         }
@@ -184,7 +179,8 @@ namespace Momotaro.Gameplay.Companion
         /// <summary>
         /// 守護の成立：攻撃はどの段でも中断してよい（庇うほうが優先）。ガードも解いて移る。
         /// ただし<b>回避中は不可</b>（回避は動作全体で 1 行動。途中で庇いに化けない）。
-        /// 距離・クールダウン・活動状態といった条件は守護側が別に見る。
+        /// <b>探索所有中もそのままでは不可</b>（§5）。主人公への実命中では守護側が先に探索を同期解放し、
+        /// 解放後の状態（Follow）で改めて評価する。距離・クールダウン・活動状態は守護側が別に見る。
         /// </summary>
         private static CompanionActionVerdict EvaluateGuardianTransfer(CompanionState current)
         {
@@ -195,7 +191,6 @@ namespace Momotaro.Gameplay.Companion
 
             switch (current)
             {
-                case CompanionState.Investigate: // 主人公を庇うほうが調査より優先（§5）。
                 case CompanionState.AttackPrepare:
                 case CompanionState.AttackActive:
                 case CompanionState.AttackRecovery:
@@ -206,30 +201,22 @@ namespace Momotaro.Gameplay.Companion
                     return CompanionActionVerdict.Allowed; // 連続の可否はクールダウンが決める。
 
                 default:
-                    // Evade・Warp。
+                    // Evade・Warp・Investigate。
                     return CompanionActionVerdict.Denied;
             }
         }
 
         /// <summary>
-        /// 探索の開始：平常時のみ（P4-07A）。戦闘中かどうかは <see cref="CompanionActivity.CanInvestigate"/> が別に見る
-        /// （Wave 幕間・開始待ち Encounter も戦闘中）。ここは<b>行動としての</b>可否だけを決める。
+        /// 探索の開始：平常時のみ（v1.0 §8.3「探索開始：平常探索時のみ可」）。戦闘中かどうかは
+        /// <see cref="CompanionActivity.CanInvestigate"/> が別に見る（Wave 幕間・開始待ち Encounter も戦闘中）。
+        /// ここは<b>戦闘 Actor を探索へ引き渡してよい状態か</b>だけを決める。Down／Away の加入済み犬丸による探索は
+        /// 独立した表示代理で行うため、この表を通らない（§8.3 補足）。
         ///
-        /// <b>調査中の調査は継続</b>（同じ調査を進めているだけで、始め直しではない）。
-        /// 追いかけている最中（Chase）から調べに行くのは<b>許す</b>——Chase は平常時に含まれる。
-        /// 対象を見失った直後はまだ Chase のまま 1 フレーム残ることがあり、そこで禁じると
-        /// 「敵が消えたのに次の行動へ移らない」という止まり方をする。
+        /// <b>調査中の新しい調査は不可</b>（別の調査を実行中なら拒否し、現在の依頼を維持する。§4.3）。
         /// </summary>
         private static CompanionActionVerdict EvaluateInvestigate(CompanionState current)
         {
-            if (IsNeutral(current))
-            {
-                return CompanionActionVerdict.Allowed;
-            }
-
-            return IsInvestigating(current)
-                ? CompanionActionVerdict.Allowed  // 継続（終了判定は探索側が持つ）。
-                : CompanionActionVerdict.Denied;
+            return IsNeutral(current) ? CompanionActionVerdict.Allowed : CompanionActionVerdict.Denied;
         }
     }
 }

@@ -24,6 +24,7 @@ namespace Momotaro.Gameplay.Enemy.Threat
         private ThreatSettings _settings;
         private int _currentTargetId = NoTarget;
         private float _reevaluateTimer;
+        private bool _firstStrikeConsumed;
 
         /// <summary>設定を指定して生成する。</summary>
         public EnemyThreatTable(ThreatSettings settings)
@@ -63,14 +64,14 @@ namespace Momotaro.Gameplay.Enemy.Threat
             }
 
             float raw = _settings.WeightFor(source) * amount;
-            AddAcquired(target.ActorId, raw * target.AcquiredThreatMultiplier);
+            AddAcquired(target.ActorId, raw * target.AcquiredThreatMultiplier, target.MaxAcquiredThreat);
         }
 
         /// <summary>
         /// 獲得ヘイトを直接加算する（Phase 4 の型付き Threat Event 等の汎用入口）。対象倍率は呼び出し側で適用済みとする。
         /// 負値・0 は無視する。
         /// </summary>
-        public void AddAcquired(int actorId, float acquiredAmount)
+        public void AddAcquired(int actorId, float acquiredAmount, float maxAcquired = 0f)
         {
             if (actorId == NoTarget || acquiredAmount <= 0f)
             {
@@ -84,8 +85,38 @@ namespace Momotaro.Gameplay.Enemy.Threat
             }
 
             e.Acquired += acquiredAmount;
+
+            // 上限（0 以下は無制限）。仲間に天井を置くと、主人公が殴り返せば必ず狙いが戻る（試遊フィードバック 2026-09-21 その 2）。
+            if (maxAcquired > 0f && e.Acquired > maxAcquired)
+            {
+                e.Acquired = maxAcquired;
+            }
+
+            // 上限に達していても「殴り続けている」ことは事実なので、減衰待ちは伸ばす
+            // （天井で止まった仲間が、殴っている最中に勝手に減っていかないようにする）。
             e.TimeSinceGain = 0f;
         }
+
+        /// <summary>
+        /// この戦闘で「口火を切った一撃」をまだ誰にも与えていなければ true を返し、以後 false にする（1 戦闘 1 回）。
+        /// <see cref="Reset"/>（撃破・帰還完了）で再装填される。呼び出し側は true のときだけ
+        /// <see cref="ThreatSource.FirstStrike"/> を加算する。判定を<b>被弾時の認識段階に頼らない</b>のは、
+        /// 認識（EnemyPerception）と本テーブルの駆動が同じ結果チャネルを購読しており、どちらが先に呼ばれるかが
+        /// コンポーネントの登録順に左右されるため（順序に依存しない「その戦闘で最初のダメージか」で判定する）。
+        /// </summary>
+        public bool TryConsumeFirstStrike()
+        {
+            if (_firstStrikeConsumed)
+            {
+                return false;
+            }
+
+            _firstStrikeConsumed = true;
+            return true;
+        }
+
+        /// <summary>口火の一撃を既に与えたか（テスト・Debug 用）。</summary>
+        public bool FirstStrikeConsumed => _firstStrikeConsumed;
 
         /// <summary>対象の獲得ヘイト（基礎ヘイトを含まない。テスト／Debug 用）。</summary>
         public float GetAcquired(int actorId)
@@ -163,11 +194,19 @@ namespace Momotaro.Gameplay.Enemy.Threat
         }
 
         /// <summary>全対象の脅威と選択・再評価タイマを初期化する（戦闘終了／Return 完了。§7.2）。</summary>
-        public void Reset()
+        public void Reset(bool rearmFirstStrike = true)
         {
             _entries.Clear();
             _currentTargetId = NoTarget;
             _reevaluateTimer = 0f;
+
+            // 次の戦闘では、また先制した側が狙われる。ただし撃破時は再装填しない：
+            // 撃破の一撃は「状態が Down になったあと」に結果が配られるため、再装填すると
+            // その一撃が新しい戦闘の口火として数えられ、死体のヘイトに大きな値が載って診断を濁す。
+            if (rearmFirstStrike)
+            {
+                _firstStrikeConsumed = false;
+            }
         }
 
         private void Decay(float dt)

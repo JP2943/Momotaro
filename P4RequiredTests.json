@@ -1,898 +1,1932 @@
 {
-  "version": 1,
+  "version": 2,
   "note": "P4 の工程受入で Passed を要求するテストの正本。実行結果に現れる完全名で持つ。件数や正規表現では代替しない（必須が 1 本消えても総数が同じなら気付けないため）。テスト名を変えるときは、テストとこの一覧を同じ変更で更新し、requirementId の対応を残すこと。照合はブリッジの run-op verify-required-tests（stage と runIds を指定）で行う。 allowedSkips は空にしてある（F01）。Phase3／Phase3.5 の Scene 生成・検査テスト 13 件は「無題 Scene が開いていると自ら Skip する」ガードのせいで長期間 1 度も実行されていなかった。ガードを「未保存の変更があるときだけ Skip」へ緩めた結果すべて実行・Passed になったため、以後の Skip は「その実行で検証できていない」を意味する。Skip が出たら Scene を保存して再実行すること。",
   "stages": [
     "P4-FIX-02A",
     "F02b",
     "F02c",
     "F01",
+    "P4-FIX-R2",
     "P4-07A",
     "P4-07B",
-    "P4-08R"
+    "P4-08R",
+    "P4-FIX-AGGRO"
   ],
   "tests": [
     {
       "requirementId": "R09",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.AllPassed_IsOk"
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.AllPassed_IsOk",
+      "requirementIds": []
     },
     {
       "requirementId": "R09",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.NoTestsMatched_IsError_NotOk"
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.NoTestsMatched_IsError_NotOk",
+      "requirementIds": []
     },
     {
       "requirementId": "R09",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.AllSkipped_IsFailed_NotOk"
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.AllSkipped_IsFailed_NotOk",
+      "requirementIds": []
     },
     {
       "requirementId": "R09",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.AnyFailure_IsFailed"
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.AnyFailure_IsFailed",
+      "requirementIds": []
     },
     {
       "requirementId": "R09",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.Incomplete_IsError_EvenWithoutFailures"
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.Incomplete_IsError_EvenWithoutFailures",
+      "requirementIds": []
     },
     {
       "requirementId": "R09",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.Complete_WithExpectedCount_IsOk"
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.Complete_WithExpectedCount_IsOk",
+      "requirementIds": []
     },
     {
       "requirementId": "R09",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.Incomplete_WithFailures_ReportsFailedAndSaysSoInReason"
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.Incomplete_WithFailures_ReportsFailedAndSaysSoInReason",
+      "requirementIds": []
     },
     {
       "requirementId": "R09",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.BelowMinPassed_IsFailed"
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.BelowMinPassed_IsFailed",
+      "requirementIds": []
     },
     {
       "requirementId": "R09",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.AtMinPassed_IsOk"
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.AtMinPassed_IsOk",
+      "requirementIds": []
     },
     {
       "requirementId": "R09",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.MinPassedZero_MeansUnspecified"
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.MinPassedZero_MeansUnspecified",
+      "requirementIds": []
     },
     {
       "requirementId": "R09",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.ExpectedZero_MeansUnknown_DoesNotBlock"
+      "fullName": "Momotaro.Tests.EditMode.BridgeTestOutcomeTests.ExpectedZero_MeansUnknown_DoesNotBlock",
+      "requirementIds": []
     },
     {
       "requirementId": "R05",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.Rescan_SubscribesToCompanionResults"
+      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.Rescan_SubscribesToCompanionResults",
+      "requirementIds": []
     },
     {
       "requirementId": "R05",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.CompanionHitResult_PublishesFeedbackCue"
+      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.CompanionHitResult_PublishesFeedbackCue",
+      "requirementIds": []
     },
     {
       "requirementId": "R05",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.RepeatedRescan_NoDuplicateCompanionNotification"
+      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.RepeatedRescan_NoDuplicateCompanionNotification",
+      "requirementIds": []
     },
     {
       "requirementId": "R05",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.CompanionOnDisable_Unsubscribes"
+      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.CompanionOnDisable_Unsubscribes",
+      "requirementIds": []
     },
     {
       "requirementId": "R05",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.CompanionDestroyed_Rescan_SafeUnsubscribe"
+      "fullName": "Momotaro.Tests.EditMode.CombatFeedbackDispatcherTests.CompanionDestroyed_Rescan_SafeUnsubscribe",
+      "requirementIds": []
     },
     {
       "requirementId": "R07",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionCombatControllerTests.MidAttackDataEdit_DoesNotChangeReach"
+      "fullName": "Momotaro.Tests.EditMode.CompanionCombatControllerTests.MidAttackDataEdit_DoesNotChangeReach",
+      "requirementIds": []
     },
     {
       "requirementId": "R07",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionCombatControllerTests.MidAttackCooldownEdit_DoesNotChangeCooldownAtFinish"
+      "fullName": "Momotaro.Tests.EditMode.CompanionCombatControllerTests.MidAttackCooldownEdit_DoesNotChangeCooldownAtFinish",
+      "requirementIds": []
     },
     {
       "requirementId": "R07",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionCombatControllerTests.FinishedAttack_ClearsThePlan"
+      "fullName": "Momotaro.Tests.EditMode.CompanionCombatControllerTests.FinishedAttack_ClearsThePlan",
+      "requirementIds": []
     },
     {
       "requirementId": "R07",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionCombatControllerTests.CancelledAttack_ClearsThePlan"
+      "fullName": "Momotaro.Tests.EditMode.CompanionCombatControllerTests.CancelledAttack_ClearsThePlan",
+      "requirementIds": []
     },
     {
       "requirementId": "R03",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianControllerTests.DisablingAnOlderGuardian_KeepsTheCurrentRegistration"
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianControllerTests.DisablingAnOlderGuardian_KeepsTheCurrentRegistration",
+      "requirementIds": []
     },
     {
       "requirementId": "R03",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianControllerTests.DisablingTheCurrentGuardian_ClearsTheRegistration"
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianControllerTests.DisablingTheCurrentGuardian_ClearsTheRegistration",
+      "requirementIds": []
     },
     {
       "requirementId": "R04",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianControllerTests.DroppedTransfer_ReportsNotAccepted"
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianControllerTests.DroppedTransfer_ReportsNotAccepted",
+      "requirementIds": []
     },
     {
       "requirementId": "R04",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianControllerTests.TransferredHit_IsAcceptedOnlyOnce"
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianControllerTests.TransferredHit_IsAcceptedOnlyOnce",
+      "requirementIds": []
     },
     {
       "requirementId": "R08",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Build_WritesAttackDataToGivenPath"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Build_WritesAttackDataToGivenPath",
+      "requirementIds": []
     },
     {
       "requirementId": "R08",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Build_DoesNotReferenceProductionAssets"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Build_DoesNotReferenceProductionAssets",
+      "requirementIds": []
     },
     {
       "requirementId": "R08",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Build_RequiresAllOutputPathsExplicitly"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Build_RequiresAllOutputPathsExplicitly",
+      "requirementIds": []
     },
     {
       "requirementId": "R04",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.PlayerGuardianTransferTests.GuardianThatDropsTheHit_FallsBackToPlayerDamage"
+      "fullName": "Momotaro.Tests.EditMode.PlayerGuardianTransferTests.GuardianThatDropsTheHit_FallsBackToPlayerDamage",
+      "requirementIds": []
     },
     {
       "requirementId": "R04",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.PlayerGuardianTransferTests.ReentrantHitDuringTransfer_DoesNotTransferTwice"
+      "fullName": "Momotaro.Tests.EditMode.PlayerGuardianTransferTests.ReentrantHitDuringTransfer_DoesNotTransferTwice",
+      "requirementIds": []
     },
     {
       "requirementId": "N01",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.PlayerGuardianTransferTests.SameHitReentry_DoesNotDamagePlayerTwice"
+      "fullName": "Momotaro.Tests.EditMode.PlayerGuardianTransferTests.SameHitReentry_DoesNotDamagePlayerTwice",
+      "requirementIds": []
     },
     {
       "requirementId": "N02",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.GuardianHitOrderTests.DirectThenTransfer_DamagesPlayerWithoutGuardianCooldown"
+      "fullName": "Momotaro.Tests.EditMode.GuardianHitOrderTests.DirectThenTransfer_DamagesPlayerWithoutGuardianCooldown",
+      "requirementIds": []
     },
     {
       "requirementId": "N03",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.GuardianHitOrderTests.TransferThenDirect_DoesNotDamageCompanionTwice"
+      "fullName": "Momotaro.Tests.EditMode.GuardianHitOrderTests.TransferThenDirect_DoesNotDamageCompanionTwice",
+      "requirementIds": []
     },
     {
       "requirementId": "N04",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.MissingRequiredTest_FailsGate"
+      "fullName": "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.MissingRequiredTest_FailsGate",
+      "requirementIds": []
     },
     {
       "requirementId": "N05",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.RequiredSkip_FailsGateDespiteOtherPasses"
+      "fullName": "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.RequiredSkip_FailsGateDespiteOtherPasses",
+      "requirementIds": []
     },
     {
       "requirementId": "N06",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.UnlistedSkip_FailsGate"
+      "fullName": "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.UnlistedSkip_FailsGate",
+      "requirementIds": []
     },
     {
       "requirementId": "N07",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeRunCompletionTests.CancelledFilteredRun_IsNotOkAfterMinPassed"
+      "fullName": "Momotaro.Tests.EditMode.BridgeRunCompletionTests.CancelledFilteredRun_IsNotOkAfterMinPassed",
+      "requirementIds": []
     },
     {
       "requirementId": "N08",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.BridgeRunCompletionTests.InconclusiveOrMissingResult_IsNotOk"
+      "fullName": "Momotaro.Tests.EditMode.BridgeRunCompletionTests.InconclusiveOrMissingResult_IsNotOk",
+      "requirementIds": []
     },
     {
       "requirementId": "N09",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionFeedbackLifecycleTests.CompanionDisable_RemovesSubscription"
+      "fullName": "Momotaro.Tests.EditMode.CompanionFeedbackLifecycleTests.CompanionDisable_RemovesSubscription",
+      "requirementIds": []
     },
     {
       "requirementId": "N10",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionFeedbackLifecycleTests.CompanionDestroy_RemovesOldChannelSubscription"
+      "fullName": "Momotaro.Tests.EditMode.CompanionFeedbackLifecycleTests.CompanionDestroy_RemovesOldChannelSubscription",
+      "requirementIds": []
     },
     {
       "requirementId": "N11",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Build_LeavesProductionAssetBytesUnchanged"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Build_LeavesProductionAssetBytesUnchanged",
+      "requirementIds": []
     },
     {
       "requirementId": "N12",
       "stage": "P4-FIX-02A",
       "mode": "PlayMode",
-      "fullName": "Momotaro.Tests.PlayMode.CompanionFeedbackLifecyclePlayTests.EnabledCompanion_FirstHitReachesFeedbackOnce"
+      "fullName": "Momotaro.Tests.PlayMode.CompanionFeedbackLifecyclePlayTests.EnabledCompanion_FirstHitReachesFeedbackOnce",
+      "requirementIds": [
+        "P07"
+      ]
     },
     {
       "requirementId": "N13",
       "stage": "P4-FIX-02A",
       "mode": "PlayMode",
-      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityGatePlayTests.PauseAtTimeScaleOne_StopsBodyAndClocks"
+      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityGatePlayTests.PauseAtTimeScaleOne_StopsBodyAndClocks",
+      "requirementIds": [
+        "P08",
+        "R06"
+      ]
     },
     {
       "requirementId": "N14",
       "stage": "P4-FIX-02A",
       "mode": "PlayMode",
-      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityGatePlayTests.Resume_KeepsSwingAndDoesNotHitAgain"
+      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityGatePlayTests.Resume_KeepsSwingAndDoesNotHitAgain",
+      "requirementIds": [
+        "P08",
+        "R06"
+      ]
     },
     {
       "requirementId": "N15",
       "stage": "P4-FIX-02A",
       "mode": "PlayMode",
-      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityGatePlayTests.Dialogue_CancelsAttackAndDoesNotResumeOldActive"
+      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityGatePlayTests.Dialogue_CancelsAttackAndDoesNotResumeOldActive",
+      "requirementIds": []
     },
     {
       "requirementId": "N16",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActivityContextTests.IntermissionAndPendingEncounter_DisallowInvestigation"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityContextTests.IntermissionAndPendingEncounter_DisallowInvestigation",
+      "requirementIds": []
     },
     {
       "requirementId": "N17",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActivityContextTests.MissingContext_DisallowsActions"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityContextTests.MissingContext_DisallowsActions",
+      "requirementIds": []
     },
     {
       "requirementId": "N18",
       "stage": "P4-FIX-02A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionMotorArbitrationTests.OnlyCurrentOwnerCanWriteMovement"
+      "fullName": "Momotaro.Tests.EditMode.CompanionMotorArbitrationTests.OnlyCurrentOwnerCanWriteMovement",
+      "requirementIds": []
     },
     {
       "requirementId": "N19",
       "stage": "F02b",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.StaleCompletion_DoesNotOverwriteNewState"
+      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.StaleCompletion_DoesNotOverwriteNewState",
+      "requirementIds": []
     },
     {
       "requirementId": "N20",
       "stage": "F02b",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.NormalCompletion_AllowsDescentToLowerPriority"
+      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.NormalCompletion_AllowsDescentToLowerPriority",
+      "requirementIds": []
     },
     {
       "requirementId": "N21",
       "stage": "F02b",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.WeakerOwner_CannotStealFromStrongerOwner"
+      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.WeakerOwner_CannotStealFromStrongerOwner",
+      "requirementIds": []
     },
     {
       "requirementId": "N22",
       "stage": "F02b",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.ForcedHit_InvalidatesHandlesSynchronously"
+      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.ForcedHit_InvalidatesHandlesSynchronously",
+      "requirementIds": []
     },
     {
       "requirementId": "N23",
       "stage": "F02b",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.CompanionPrefabHasSingleStateEntryPoint"
+      "fullName": "Momotaro.Tests.EditMode.CompanionStateArbitrationTests.CompanionPrefabHasSingleStateEntryPoint",
+      "requirementIds": []
     },
     {
       "requirementId": "N24",
       "stage": "F02b",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionStateOwnershipIntegrationTests.StaggerDuringAttack_LaterFinishDoesNotRestoreChase"
+      "fullName": "Momotaro.Tests.EditMode.CompanionStateOwnershipIntegrationTests.StaggerDuringAttack_LaterFinishDoesNotRestoreChase",
+      "requirementIds": []
     },
     {
       "requirementId": "N25",
       "stage": "F02c",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.OverridingStates_DenyEveryAction"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.OverridingStates_DenyEveryAction",
+      "requirementIds": []
     },
     {
       "requirementId": "N26",
       "stage": "F02c",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.DefensiveActions_CannotInterruptTheActiveFrames"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.DefensiveActions_CannotInterruptTheActiveFrames",
+      "requirementIds": []
     },
     {
       "requirementId": "N27",
       "stage": "F02c",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.AutoAttack_StartsOnlyFromNeutralStates"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.AutoAttack_StartsOnlyFromNeutralStates",
+      "requirementIds": []
     },
     {
       "requirementId": "N28",
       "stage": "F02c",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.GuardianTransfer_InterruptsAttacksButNotEvade"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.GuardianTransfer_InterruptsAttacksButNotEvade",
+      "requirementIds": []
     },
     {
       "requirementId": "N29",
       "stage": "F02c",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Arbiter_DeniedAction_ChangesNeitherStateNorOwnership"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Arbiter_DeniedAction_ChangesNeitherStateNorOwnership",
+      "requirementIds": []
     },
     {
       "requirementId": "N30",
       "stage": "F02c",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.RealAttackActive_DoesNotStartGuard"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.RealAttackActive_DoesNotStartGuard",
+      "requirementIds": []
     },
     {
       "requirementId": "N31",
       "stage": "F02c",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.GuardEnds_ReturnsToFollow_SoTheCompanionCanActAgain"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.GuardEnds_ReturnsToFollow_SoTheCompanionCanActAgain",
+      "requirementIds": []
     },
     {
       "requirementId": "N32",
       "stage": "F02c",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Evade_HoldsTheActionForTheWholeMotion"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Evade_HoldsTheActionForTheWholeMotion",
+      "requirementIds": []
     },
     {
       "requirementId": "N33",
       "stage": "F02c",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.GuardFacing_IsNotOverwrittenByFollow"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.GuardFacing_IsNotOverwrittenByFollow",
+      "requirementIds": []
     },
     {
       "requirementId": "N34",
       "stage": "F02c",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.CancelledAttack_StartsTheSnapshotCooldown"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.CancelledAttack_StartsTheSnapshotCooldown",
+      "requirementIds": []
     },
     {
       "requirementId": "N35",
       "stage": "F02c",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Protect_DoesNotOverwriteStaggerCausedByTheTransferredHit"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Protect_DoesNotOverwriteStaggerCausedByTheTransferredHit",
+      "requirementIds": []
     },
     {
       "requirementId": "N36",
       "stage": "F02c",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Staggered_DoesNotTakeOverANewHit"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Staggered_DoesNotTakeOverANewHit",
+      "requirementIds": []
     },
     {
       "requirementId": "N37",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_ProducesDeterministicStructure"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_ProducesDeterministicStructure",
+      "requirementIds": []
     },
     {
       "requirementId": "N38",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_WiresActivityContextToTheSessionInThisScene"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_WiresActivityContextToTheSessionInThisScene",
+      "requirementIds": []
     },
     {
       "requirementId": "N39",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_WiresCompanionFollowAndGuardianToThePlayer"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_WiresCompanionFollowAndGuardianToThePlayer",
+      "requirementIds": []
     },
     {
       "requirementId": "N40",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_CompanionHasBothArbiters"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_CompanionHasBothArbiters",
+      "requirementIds": []
     },
     {
       "requirementId": "N41",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Rebuild_SamePath_DoesNotDuplicate"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Rebuild_SamePath_DoesNotDuplicate",
+      "requirementIds": []
     },
     {
       "requirementId": "N42",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_InvalidOutputPath_FailsWithoutSaving"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_InvalidOutputPath_FailsWithoutSaving",
+      "requirementIds": []
     },
     {
       "requirementId": "N43",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.FreshlyBuiltField_HasNoErrors"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.FreshlyBuiltField_HasNoErrors",
+      "requirementIds": [
+        "R01"
+      ]
     },
     {
       "requirementId": "N44",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.EmptyScene_ReportsMissingActivityContext"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.EmptyScene_ReportsMissingActivityContext",
+      "requirementIds": []
     },
     {
       "requirementId": "N45",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.MissingActivityContext_IsDetected"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.MissingActivityContext_IsDetected",
+      "requirementIds": []
     },
     {
       "requirementId": "N46",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.UnwiredActivityContext_IsDetected"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.UnwiredActivityContext_IsDetected",
+      "requirementIds": []
     },
     {
       "requirementId": "N47",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutStateArbiter_IsDetected"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutStateArbiter_IsDetected",
+      "requirementIds": []
     },
     {
       "requirementId": "N48",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutMovementArbiter_IsDetected"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutMovementArbiter_IsDetected",
+      "requirementIds": []
     },
     {
       "requirementId": "N49",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutLeader_IsDetected"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutLeader_IsDetected",
+      "requirementIds": []
     },
     {
       "requirementId": "N50",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.FieldWithoutCompanion_IsDetected"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.FieldWithoutCompanion_IsDetected",
+      "requirementIds": [
+        "R02"
+      ]
     },
     {
       "requirementId": "N51",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.InitialEnemies_AreForbidden"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.InitialEnemies_AreForbidden",
+      "requirementIds": []
     },
     {
       "requirementId": "N52",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_CameraShakeTargetsChildCamera"
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_CameraShakeTargetsChildCamera",
+      "requirementIds": []
     },
     {
       "requirementId": "N53",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_InvalidOutputPath_FailsWithoutSaving"
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_InvalidOutputPath_FailsWithoutSaving",
+      "requirementIds": []
     },
     {
       "requirementId": "N54",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_ProducesDeterministicStructure"
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_ProducesDeterministicStructure",
+      "requirementIds": []
     },
     {
       "requirementId": "N55",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_WiresFeedbackSystems"
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_WiresFeedbackSystems",
+      "requirementIds": []
     },
     {
       "requirementId": "N56",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_WiresVfxPresenters_WithRealFrames"
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Build_WiresVfxPresenters_WithRealFrames",
+      "requirementIds": []
     },
     {
       "requirementId": "N57",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Rebuild_SamePath_DoesNotDuplicate"
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialBuilderTests.Rebuild_SamePath_DoesNotDuplicate",
+      "requirementIds": []
     },
     {
       "requirementId": "N58",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.DebugHudPresent_IsForbidden"
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.DebugHudPresent_IsForbidden",
+      "requirementIds": []
     },
     {
       "requirementId": "N59",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.DuplicateSession_IsDetected"
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.DuplicateSession_IsDetected",
+      "requirementIds": []
     },
     {
       "requirementId": "N60",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.EmptyScene_ReportsMissingSystems"
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.EmptyScene_ReportsMissingSystems",
+      "requirementIds": []
     },
     {
       "requirementId": "N61",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.FreshlyBuiltScene_HasNoErrors"
+      "fullName": "Momotaro.Tests.EditMode.Phase35CombatTrialValidatorTests.FreshlyBuiltScene_HasNoErrors",
+      "requirementIds": []
     },
     {
       "requirementId": "N62",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Build_InvalidOutputPath_FailsWithoutSaving"
+      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Build_InvalidOutputPath_FailsWithoutSaving",
+      "requirementIds": []
     },
     {
       "requirementId": "N63",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Build_ProducesDeterministicStructure"
+      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Build_ProducesDeterministicStructure",
+      "requirementIds": []
     },
     {
       "requirementId": "N64",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Rebuild_SamePath_DoesNotDuplicate"
+      "fullName": "Momotaro.Tests.EditMode.Phase3EnemyTestFieldBuilderTests.Rebuild_SamePath_DoesNotDuplicate",
+      "requirementIds": []
     },
     {
       "requirementId": "N65",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.BuildCompanionField_TargetExists"
+      "fullName": "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.BuildCompanionField_TargetExists",
+      "requirementIds": []
     },
     {
       "requirementId": "N66",
       "stage": "F01",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.ValidateCompanionField_TargetExists"
-    },
-    {
-      "requirementId": "N67",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.FindsPointThroughRegistry_WalksThere_AndFinishes"
-    },
-    {
-      "requirementId": "N68",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.AfterFinishing_WaitsForCooldownBeforeNextPoint"
-    },
-    {
-      "requirementId": "N69",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.WithoutInvestigateAbility_NeverStarts"
-    },
-    {
-      "requirementId": "N70",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.PointBeyondLeashFromLeader_IsNotChosen"
-    },
-    {
-      "requirementId": "N71",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.PointBeyondOwnRange_IsNotChosen"
-    },
-    {
-      "requirementId": "N72",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.ChoosesNearestAvailablePoint"
-    },
-    {
-      "requirementId": "N73",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.DuringCombatActivity_DoesNotStart"
-    },
-    {
-      "requirementId": "N74",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.WhenCombatStarts_AbandonsAndReturnsToFollow"
-    },
-    {
-      "requirementId": "N75",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.DuringDialogue_DiscardsOngoingInvestigation"
-    },
-    {
-      "requirementId": "N76",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.DuringPause_FreezesWithoutLosingProgress"
-    },
-    {
-      "requirementId": "N77",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.WhileInvestigating_FollowDoesNotPullBack"
-    },
-    {
-      "requirementId": "N78",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.RealCombat_InterruptsInvestigation"
-    },
-    {
-      "requirementId": "N79",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.Disable_LeavesNoOwnership"
-    },
-    {
-      "requirementId": "N80",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.DisabledPoint_LeavesRegistry"
-    },
-    {
-      "requirementId": "N81",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.PointDisappearsMidway_ReturnsToFollow"
-    },
-    {
-      "requirementId": "N82",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.InvestigationTable_EveryCombatActionInterrupts"
+      "fullName": "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.ValidateCompanionField_TargetExists",
+      "requirementIds": []
     },
     {
       "requirementId": "N83",
       "stage": "P4-07A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Investigate_StartsOnlyFromNeutralStates"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.Investigate_StartsOnlyFromNeutralStates",
+      "requirementIds": []
     },
     {
       "requirementId": "N84",
       "stage": "P4-07A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.InvestigateRanksBetweenFollowAndChase"
-    },
-    {
-      "requirementId": "N85",
-      "stage": "P4-07A",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_PlacesInvestigationPointsWithinLeash"
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.InvestigateRanksBetweenFollowAndChase",
+      "requirementIds": []
     },
     {
       "requirementId": "N86",
       "stage": "P4-07A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.FieldWithoutInvestigationPoints_IsDetected"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.FieldWithoutInvestigationPoints_IsDetected",
+      "requirementIds": []
     },
     {
       "requirementId": "N87",
       "stage": "P4-07A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutInvestigationController_IsDetected"
-    },
-    {
-      "requirementId": "N88",
-      "stage": "P4-07B",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WaitOrder_StopsGoingSomewhere_ButNeverSelfDefence"
-    },
-    {
-      "requirementId": "N89",
-      "stage": "P4-07B",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.FollowOrder_AllowsEverything"
-    },
-    {
-      "requirementId": "N90",
-      "stage": "P4-07B",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.SetOrder_IsIdempotent"
-    },
-    {
-      "requirementId": "N91",
-      "stage": "P4-07B",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.Engagement_WaitStopsOnlyTheApproach"
-    },
-    {
-      "requirementId": "N92",
-      "stage": "P4-07B",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WaitOrder_DoesNotFollow_AndDoesNotWarpBack"
-    },
-    {
-      "requirementId": "N93",
-      "stage": "P4-07B",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.FollowOrderAgain_ResumesFollowing"
-    },
-    {
-      "requirementId": "N94",
-      "stage": "P4-07B",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WaitOrder_StopsInvestigation"
-    },
-    {
-      "requirementId": "N95",
-      "stage": "P4-07B",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WaitOrder_DoesNotChaseDistantEnemy"
-    },
-    {
-      "requirementId": "N96",
-      "stage": "P4-07B",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WaitOrder_StillFightsBackWhenEnemyComesClose"
-    },
-    {
-      "requirementId": "N97",
-      "stage": "P4-07B",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WaitOrder_StillGuardsAgainstDanger"
-    },
-    {
-      "requirementId": "N98",
-      "stage": "P4-07B",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderTests.WithoutOrdersComponent_BehavesAsFollow"
-    },
-    {
-      "requirementId": "N99",
-      "stage": "P4-07B",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_CompanionCarriesOrders_AndMissingOrdersIsDetected"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.CompanionWithoutInvestigationController_IsDetected",
+      "requirementIds": []
     },
     {
       "requirementId": "N100",
       "stage": "P4-08R",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_AddsTheCompanionLayerOnTopOfTheTrialScene"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_AddsTheCompanionLayerOnTopOfTheTrialScene",
+      "requirementIds": [
+        "R01"
+      ]
     },
     {
       "requirementId": "N101",
       "stage": "P4-08R",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_WiresActivityContextToTheTrialSession"
-    },
-    {
-      "requirementId": "N102",
-      "stage": "P4-08R",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_WiresOrderInputToTheCompanion"
-    },
-    {
-      "requirementId": "N103",
-      "stage": "P4-08R",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_PlacesInvestigationPointsWithinLeash"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_WiresActivityContextToTheTrialSession",
+      "requirementIds": []
     },
     {
       "requirementId": "N104",
       "stage": "P4-08R",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Rebuild_SamePath_DoesNotDuplicate"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Rebuild_SamePath_DoesNotDuplicate",
+      "requirementIds": []
     },
     {
       "requirementId": "N105",
       "stage": "P4-08R",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_InvalidOutputPath_FailsWithoutSaving"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_InvalidOutputPath_FailsWithoutSaving",
+      "requirementIds": []
     },
     {
       "requirementId": "N106",
       "stage": "P4-08R",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.TrialScene_StillSatisfiesPhase35Acceptance"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.TrialScene_StillSatisfiesPhase35Acceptance",
+      "requirementIds": []
     },
     {
       "requirementId": "N107",
       "stage": "P4-08R",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.FreshlyBuiltTrial_HasNoErrors"
-    },
-    {
-      "requirementId": "N108",
-      "stage": "P4-08R",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.MissingOrderInput_IsDetected"
-    },
-    {
-      "requirementId": "N109",
-      "stage": "P4-08R",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.OrderInputWithoutCompanions_IsDetected"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.FreshlyBuiltTrial_HasNoErrors",
+      "requirementIds": [
+        "R01"
+      ]
     },
     {
       "requirementId": "N110",
       "stage": "P4-08R",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.MissingActivityContext_IsDetected"
-    },
-    {
-      "requirementId": "N111",
-      "stage": "P4-08R",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderInputTests.ToggleAll_SwitchesEveryoneTogether"
-    },
-    {
-      "requirementId": "N112",
-      "stage": "P4-08R",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderInputTests.ToggleAll_WhenMixed_MakesEveryoneWait"
-    },
-    {
-      "requirementId": "N113",
-      "stage": "P4-08R",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderInputTests.SetAll_CountsOnlyRealChanges"
-    },
-    {
-      "requirementId": "N114",
-      "stage": "P4-08R",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderInputTests.Bind_IgnoresNullAndDuplicates"
-    },
-    {
-      "requirementId": "N115",
-      "stage": "P4-08R",
-      "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionOrderInputTests.ToggleAll_WithoutCompanions_DoesNothing"
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.MissingActivityContext_IsDetected",
+      "requirementIds": [
+        "R02"
+      ]
     },
     {
       "requirementId": "N116",
       "stage": "P4-08R",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.BuildCompanionTrial_TargetExists"
+      "fullName": "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.BuildCompanionTrial_TargetExists",
+      "requirementIds": []
+    },
+    {
+      "requirementId": "N119",
+      "requirementIds": [
+        "E16",
+        "R04"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianTransactionTests.GuardingCompanion_AcceptedTransfer_ReleasesGuardBeforeDamage"
+    },
+    {
+      "requirementId": "N120",
+      "requirementIds": [
+        "E17"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianTransactionTests.ActiveAttack_AcceptedTransfer_CancelsAttackInTheSameCall"
+    },
+    {
+      "requirementId": "N121",
+      "requirementIds": [
+        "E17",
+        "R04"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianTransactionTests.ActiveAttack_RejectedTransfer_LeavesAttackAndCooldownUntouched"
+    },
+    {
+      "requirementId": "N122",
+      "requirementIds": [
+        "R04"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianTransactionTests.TransferFirst_LaterDirectHitWithSameId_IsRejected"
+    },
+    {
+      "requirementId": "N123",
+      "requirementIds": [
+        "E19"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianTransactionTests.NonStaggerTransfer_LeavesNoProtectOwnership_AndNormalActionsResume"
+    },
+    {
+      "requirementId": "N124",
+      "requirementIds": [
+        "R04"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianTransactionTests.Transfer_PublishesOneCompanionSideNotification"
+    },
+    {
+      "requirementId": "N125",
+      "requirementIds": [
+        "E18"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianTransactionTests.LethalTransfer_KeepsDown"
+    },
+    {
+      "requirementId": "N126",
+      "requirementIds": [
+        "E18"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianTransactionTests.StaggeringTransfer_KeepsStagger"
+    },
+    {
+      "requirementId": "N127",
+      "requirementIds": [
+        "E15"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianTransactionTests.ActiveAttack_Danger_DoesNotStartGuardOrEvade"
+    },
+    {
+      "requirementId": "N128",
+      "requirementIds": [
+        "E16"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianTransactionTests.StartupAttack_Danger_InterruptsAttackAndGuards_WithSnapshotCooldown"
+    },
+    {
+      "requirementId": "N129",
+      "requirementIds": [
+        "E19"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianTransactionTests.InterruptedAttack_LaterTimeDoesNotProduceStaleCompletion"
+    },
+    {
+      "requirementId": "N130",
+      "requirementIds": [
+        "R03"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionGuardianTransactionTests.Disable_DuringTransaction_ReleasesProtectOwnership"
+    },
+    {
+      "requirementId": "N131",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionDefenseControllerTests.GuardThenUnblockableDanger_ReleasesGuardAndEvades"
+    },
+    {
+      "requirementId": "N132",
+      "requirementIds": [
+        "E15"
+      ],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionDefenseControllerTests.ForcedHitDuringGuard_ReleasesGuardAbilitySynchronously"
+    },
+    {
+      "requirementId": "N133",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityContextTests.NoProviderSource_IsStopped_RegardlessOfGameMode"
+    },
+    {
+      "requirementId": "N134",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityContextTests.ContextDisableAndDestroy_LeaveTheRuntimeStopped"
+    },
+    {
+      "requirementId": "N135",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityStopTests.Fixture_InstallsAnExplicitFakeBeforeEachTest"
+    },
+    {
+      "requirementId": "N136",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityStopTests.WithoutSource_CombatNeitherStartsNorContinues_AndHitboxIsSilent"
+    },
+    {
+      "requirementId": "N137",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityStopTests.WithoutSource_FollowDoesNotMoveOrWarp"
+    },
+    {
+      "requirementId": "N138",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityStopTests.WithoutSource_DefenseDoesNotStart_AndClocksFreeze"
+    },
+    {
+      "requirementId": "N139",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityStopTests.WithoutSource_GuardianDoesNotTransfer_AndCooldownFreezes"
+    },
+    {
+      "requirementId": "N140",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityStopTests.WithoutSource_VitalsClocksFreeze"
+    },
+    {
+      "requirementId": "N141",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4RequiredTestsManifestTests.UnmetRequirements_ReportsRequirementWithoutAnyTest"
+    },
+    {
+      "requirementId": "N142",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4RequiredTestsManifestTests.Manifest_RequirementsAreWellFormed"
     },
     {
       "requirementId": "N117",
-      "stage": "P4-08R",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
       "mode": "PlayMode",
-      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityFallbackPlayTests.WiredScene_NeverUsesTheTransitionalFallback"
+      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityStopPlayTests.WiredScene_RunsUnderTheContext"
     },
     {
       "requirementId": "N118",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityStopPlayTests.WithoutContext_RuntimeStaysStopped"
+    },
+    {
+      "requirementId": "N143",
+      "requirementIds": [],
+      "stage": "P4-FIX-R2",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityStopPlayTests.ContextDestroyedWhileRunning_StopsInPlace"
+    },
+    {
+      "requirementId": "N67",
+      "requirementIds": [
+        "E01"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.NormalRequest_MovesInvestigatesCompletes_AndHandsBackToFollow"
+    },
+    {
+      "requirementId": "N68",
+      "requirementIds": [
+        "E02"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.Unrecruited_ShowsHintOnly_NoRecordNoCompletion"
+    },
+    {
+      "requirementId": "N69",
+      "requirementIds": [
+        "E03",
+        "E20"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.DownButRecruited_IsAccepted_ByProxy_WithoutTouchingCombatValues"
+    },
+    {
+      "requirementId": "N70",
+      "requirementIds": [
+        "E04"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.InCombat_IsRejected_AndNothingIsReserved"
+    },
+    {
+      "requirementId": "N71",
+      "requirementIds": [
+        "E04"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.PlayerBusy_IsRejected"
+    },
+    {
+      "requirementId": "N72",
+      "requirementIds": [
+        "E05"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.MultiplePoints_SelectsNearest_ThenForward_ThenIdOrder"
+    },
+    {
+      "requirementId": "N73",
+      "requirementIds": [
+        "E05"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.OutOfRange_IsRejected"
+    },
+    {
+      "requirementId": "N74",
+      "requirementIds": [
+        "E08",
+        "P02"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.UnreachablePoint_IsRejectedBeforeAcceptance"
+    },
+    {
+      "requirementId": "N75",
+      "requirementIds": [
+        "E06"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.RequestWhileBusy_IsRejected_AndCurrentRequestIsKept"
+    },
+    {
+      "requirementId": "N76",
+      "requirementIds": [
+        "E07"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.CompletedPoint_IsNotInvestigatedAgain_EvenAfterDisableEnable"
+    },
+    {
+      "requirementId": "N77",
+      "requirementIds": [
+        "E08"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.PointDestroyedMidRequest_AbortsAndReleases"
+    },
+    {
+      "requirementId": "N78",
+      "requirementIds": [
+        "E08"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.PlayerLeavesContinueRange_AbortsUnfinished"
+    },
+    {
+      "requirementId": "N79",
+      "requirementIds": [
+        "E08"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.RecruitLostBeforeCompletion_AbortsAtConfirmation"
+    },
+    {
+      "requirementId": "N80",
+      "requirementIds": [
+        "E09"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.MoveTimeout_AbortsWithoutLeavingOwnership"
+    },
+    {
+      "requirementId": "N81",
+      "requirementIds": [
+        "E09"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.ProxyBlockedAfterAcceptance_AbortsWithoutPassingThroughWalls"
+    },
+    {
+      "requirementId": "N82",
+      "requirementIds": [
+        "E10"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.CompletionAndCombatStartInSameTick_CombatWins_NoRecord"
+    },
+    {
+      "requirementId": "N83",
+      "requirementIds": [
+        "E10",
+        "E14"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.ExplicitCombatStart_ReleasesSynchronously"
+    },
+    {
+      "requirementId": "N84",
+      "requirementIds": [
+        "E11"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.InterruptDuringReturn_KeepsSuccess_AndEmitsNoCancel"
+    },
+    {
+      "requirementId": "N85",
+      "requirementIds": [
+        "E12"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.StaleCompletion_FromAbortedRequest_IsIgnored"
+    },
+    {
+      "requirementId": "N86",
+      "requirementIds": [
+        "E13"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.Pause_FreezesProgress_AndResumesTheSameRequest"
+    },
+    {
+      "requirementId": "N87",
+      "requirementIds": [
+        "E14"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.DialogueOrEvent_AbortsAndDoesNotResume"
+    },
+    {
+      "requirementId": "N88",
+      "requirementIds": [
+        "E21"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.SettingsEditedMidRequest_DoNotAffectTheCurrentRequest"
+    },
+    {
+      "requirementId": "N89",
+      "requirementIds": [
+        "E22"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.MissingWiring_IsRejectedWithoutException"
+    },
+    {
+      "requirementId": "N90",
+      "requirementIds": [
+        "E14"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.DuringInvestigation_AutoCombatIsDenied_AndRealHitReleasesSynchronously"
+    },
+    {
+      "requirementId": "N91",
+      "requirementIds": [],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.GuardianEvaluation_ReleasesInvestigationFirst_ThenProtects"
+    },
+    {
+      "requirementId": "N92",
+      "requirementIds": [],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.DangerCandidateAlone_DoesNotReleaseInvestigation"
+    },
+    {
+      "requirementId": "N93",
+      "requirementIds": [
+        "E07"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.Record_MarksOnce_AndClearResets"
+    },
+    {
+      "requirementId": "N94",
+      "requirementIds": [
+        "E22"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.Settings_ClampsInvalidValues_AndDetectsUnusable"
+    },
+    {
+      "requirementId": "N95",
+      "requirementIds": [],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActionRuleTests.InvestigationTable_EveryAutomaticActionIsDenied"
+    },
+    {
+      "requirementId": "N96",
+      "requirementIds": [],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionActivityContextTests.StartGate_MakesPreparingFreeRoam_UntilCombatIsRequested"
+    },
+    {
+      "requirementId": "N97",
+      "requirementIds": [
+        "R01"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.Build_PlacesTheInvestigationLayer"
+    },
+    {
+      "requirementId": "N98",
+      "requirementIds": [
+        "E23",
+        "R02"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.DuplicatePointId_IsDetected"
+    },
+    {
+      "requirementId": "N99",
+      "requirementIds": [
+        "E23",
+        "R02"
+      ],
+      "stage": "P4-07A",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.PointWithoutSettingsOrId_IsDetected"
+    },
+    {
+      "requirementId": "N100",
+      "requirementIds": [
+        "E23",
+        "R02"
+      ],
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.MissingInvestigationSystems_AreDetected"
+    },
+    {
+      "requirementId": "N101",
+      "requirementIds": [
+        "E24",
+        "R02"
+      ],
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionFieldTests.DuplicateDriverOnOneBody_IsDetected"
+    },
+    {
+      "requirementId": "N102",
+      "requirementIds": [
+        "R01"
+      ],
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_MakesCombatStartExplicit_AndStartsInFreeExploration"
+    },
+    {
+      "requirementId": "N103",
+      "requirementIds": [
+        "R01"
+      ],
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_PlacesNormalWalledAndUnrecruitedPoints"
+    },
+    {
+      "requirementId": "N108",
+      "requirementIds": [
+        "R02"
+      ],
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.MissingTrialStage_IsDetected"
+    },
+    {
+      "requirementId": "N109",
+      "requirementIds": [
+        "R02"
+      ],
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.AutoStartLeftEnabled_IsDetected"
+    },
+    {
+      "requirementId": "N145",
+      "requirementIds": [
+        "P03"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.InteractInput_OnePress_YieldsOneRequest_AndHoldDoesNotRepeat"
+    },
+    {
+      "requirementId": "N146",
+      "requirementIds": [
+        "P03"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.InteractInput_PressWithoutTarget_IsDiscarded_AndNotCarriedToTheNextTarget"
+    },
+    {
+      "requirementId": "N147",
+      "requirementIds": [
+        "P03"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.InteractInput_ConsumesOnlyInteract_StepLatchIsUntouched"
+    },
+    {
+      "requirementId": "N148",
+      "requirementIds": [
+        "E04"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.InteractInput_ClosedGate_DoesNotLatch_AndReopeningDoesNotFire"
+    },
+    {
+      "requirementId": "N149",
+      "requirementIds": [],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.InteractInput_UsesPlayerInputProvider_WhenNoOverride"
+    },
+    {
+      "requirementId": "N150",
+      "requirementIds": [
+        "E03",
+        "E20"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.ProxyPresenter_DownCompanion_ShowsProxy_SuppressesNormal_ThenRestoresDownVisual"
+    },
+    {
+      "requirementId": "N151",
+      "requirementIds": [
+        "E03"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.ProxyPresenter_AwayCompanion_RestoreKeepsNormalHidden"
+    },
+    {
+      "requirementId": "N152",
+      "requirementIds": [
+        "E01"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.ProxyPresenter_BodyMode_ShowsPhaseLabelOverTheActor_WithoutProxy"
+    },
+    {
+      "requirementId": "N153",
+      "requirementIds": [
+        "E03"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.ProxyPresenter_InterruptDuringProxy_ReturnsOwnershipImmediately"
+    },
+    {
+      "requirementId": "N154",
+      "requirementIds": [],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.PlaceholderPresenter_GuardianTransfer_FlashesProtectColor_ThenReturnsToStateColor"
+    },
+    {
+      "requirementId": "N155",
+      "requirementIds": [],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.Marker_ShowsUnknown_Prompt_Investigating_Done"
+    },
+    {
+      "requirementId": "N156",
+      "requirementIds": [
+        "E02"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.Marker_UnrecruitedCandidate_ShowsHint"
+    },
+    {
+      "requirementId": "N157",
+      "requirementIds": [],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.PromptHud_ShowsPromptForTheCandidate_AndDistributesItToMarkers"
+    },
+    {
+      "requirementId": "N158",
+      "requirementIds": [],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.PromptHud_ShowsTransientMessages_ForAcceptedRejectedCompletedInterrupted"
+    },
+    {
+      "requirementId": "N159",
+      "requirementIds": [
+        "E02"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.PromptHud_UnrecruitedCandidate_ShowsHintOnPromptLine_AndRejectionUsesPointText"
+    },
+    {
+      "requirementId": "N160",
+      "requirementIds": [],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.InvestigationPresentationTests.CombatStartInput_OnePress_RequestsOnce_AndHudDropsTheStartLine"
+    },
+    {
+      "requirementId": "N161",
+      "requirementIds": [
+        "R01"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.Build_WiresInteractInput_Markers_Hud_AndCombatStartInput"
+    },
+    {
+      "requirementId": "N162",
+      "requirementIds": [
+        "R02"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.MissingInteractInput_IsDetected"
+    },
+    {
+      "requirementId": "N163",
+      "requirementIds": [
+        "R02",
+        "E23"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.MissingMarkerOrHud_IsDetected"
+    },
+    {
+      "requirementId": "N164",
+      "requirementIds": [
+        "R02"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.MissingCombatStartInput_IsDetected"
+    },
+    {
+      "requirementId": "N165",
+      "requirementIds": [
+        "R02"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionTrialTests.MissingProxyPresenter_IsDetected"
+    },
+    {
+      "requirementId": "N166",
+      "requirementIds": [
+        "R01"
+      ],
+      "stage": "P4-07B",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase4CompanionBuilderTests.Prefab_HasInvestigationProxyWired_WithoutCombatParts"
+    },
+    {
+      "requirementId": "N167",
+      "requirementIds": [
+        "P01",
+        "R01"
+      ],
       "stage": "P4-08R",
       "mode": "PlayMode",
-      "fullName": "Momotaro.Tests.PlayMode.CompanionActivityFallbackPlayTests.WithoutContext_TheFallbackIsActuallyUsed"
+      "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.Load_StartsInFreeExploration_WithoutEnemies_AndShowsPrompts"
+    },
+    {
+      "requirementId": "N168",
+      "requirementIds": [
+        "P01",
+        "P03"
+      ],
+      "stage": "P4-08R",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.RealKeyE_OnePressOneRequest_AndTheRealCompanionCompletesTheInvestigation"
+    },
+    {
+      "requirementId": "N169",
+      "requirementIds": [
+        "P02"
+      ],
+      "stage": "P4-08R",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.RealWall_RejectsBeforeAcceptance_AndInterruptsAfterAcceptance_WithoutPassingThrough"
+    },
+    {
+      "requirementId": "N170",
+      "requirementIds": [
+        "P04",
+        "E03"
+      ],
+      "stage": "P4-08R",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.DownedCompanion_InvestigatesByProxy_WithoutHealing_AndRestoresDisplayOwnership"
+    },
+    {
+      "requirementId": "N171",
+      "requirementIds": [
+        "P05"
+      ],
+      "stage": "P4-08R",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.RealKeyEnter_DuringInvestigation_StartsCombat_AndReleasesTheInvestigation"
+    },
+    {
+      "requirementId": "N172",
+      "requirementIds": [
+        "P06"
+      ],
+      "stage": "P4-08R",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.RealCombat_WithRealEnemyHitboxes_NoDuplicateDamagePerHit_NoIllegalTransitions"
+    },
+    {
+      "requirementId": "N173",
+      "requirementIds": [
+        "P10",
+        "P09"
+      ],
+      "stage": "P4-08R",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.FourWaves_Victory94_Retry_ReturnsToFreeExploration_WithoutResidue"
+    },
+    {
+      "requirementId": "N174",
+      "requirementIds": [
+        "P09",
+        "P11",
+        "R10"
+      ],
+      "stage": "P4-08R",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.Reload3Times_KeepsSingletons_AndLeavesNoResidue"
+    },
+    {
+      "requirementId": "N175",
+      "requirementIds": [
+        "R01",
+        "E23"
+      ],
+      "stage": "P4-08R",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.MonoScriptFileNameTests.ProductionUnityObjects_LiveInFilesNamedAfterTheClass"
+    },
+    {
+      "requirementId": "N176",
+      "requirementIds": [],
+      "stage": "P4-FIX-AGGRO",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyFirstStrikeThreatTests.FirstStrike_IsGrantedOnce_AndRearmsOnlyAfterTheFightEnds"
+    },
+    {
+      "requirementId": "N177",
+      "requirementIds": [],
+      "stage": "P4-FIX-AGGRO",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyFirstStrikeThreatTests.FirstStrike_UsesTheTargetsAcquiredMultiplier"
+    },
+    {
+      "requirementId": "N178",
+      "requirementIds": [],
+      "stage": "P4-FIX-AGGRO",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyFirstStrikeThreatTests.OneOpeningHitByTheCompanion_TurnsTheEnemyOnIt_WhereasWithoutFirstStrikeItDoesNot"
+    },
+    {
+      "requirementId": "N179",
+      "requirementIds": [],
+      "stage": "P4-FIX-AGGRO",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyFirstStrikeThreatTests.GrazingHitWithNoDamage_DoesNotSpendTheFirstStrike"
+    },
+    {
+      "requirementId": "N180",
+      "requirementIds": [],
+      "stage": "P4-FIX-AGGRO",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyFirstStrikeThreatTests.ShippedEnemies_FirstStrikeThreat_CanActuallyPullAggroOffThePlayer"
+    },
+    {
+      "requirementId": "N181",
+      "requirementIds": [],
+      "stage": "P4-FIX-AGGRO",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionAggroReproPlayTests.OnlyCompanionAttacks_EnemyTurnsOnTheCompanion_AndFightsBack"
+    },
+    {
+      "requirementId": "N182",
+      "requirementIds": [],
+      "stage": "P4-FIX-AGGRO",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionAggroReproPlayTests.RetreatingPlayer_EnemyKeepsChasingHim_AndStillFightsBack"
+    },
+    {
+      "requirementId": "N183",
+      "requirementIds": [],
+      "stage": "P4-FIX-AGGRO",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyFirstStrikeThreatTests.CompanionAcquiredThreat_StopsAtItsCap"
+    },
+    {
+      "requirementId": "N184",
+      "requirementIds": [],
+      "stage": "P4-FIX-AGGRO",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyFirstStrikeThreatTests.PlayerHasNoCap_AndTakesAggroBackFromTheCappedCompanion"
+    },
+    {
+      "requirementId": "N185",
+      "requirementIds": [],
+      "stage": "P4-FIX-AGGRO",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyFirstStrikeThreatTests.ZeroCap_MeansUnlimited"
+    },
+    {
+      "requirementId": "N186",
+      "requirementIds": [],
+      "stage": "P4-FIX-AGGRO",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionAggroReproPlayTests.AfterTheCompanionOpens_AFightingPlayerTakesAggroBack_BeforeTheEnemyDies"
     }
   ],
-  "allowedSkips": []
+  "allowedSkips": [],
+  "requirements": [
+    {
+      "id": "E01",
+      "summary": "正常な調査依頼：Moving→Investigating→成功→表示復帰",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E02",
+      "summary": "未加入：ヒントのみ。記録と成功通知なし",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E03",
+      "summary": "Down／Away／離脱CD中の加入済み犬丸：探索可。戦闘値の強制初期化なし",
+      "stage": "P4-07B"
+    },
+    {
+      "id": "E04",
+      "summary": "戦闘中・Wave幕間・結果画面：依頼拒否、入力予約なし",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E05",
+      "summary": "複数地点・同距離：決定的に1地点だけ選択",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E06",
+      "summary": "同一RequestId再送・別依頼連打：二重開始なし、現在依頼を壊さない",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E07",
+      "summary": "完了地点の再調査・Disable再Enable：成功通知と記録の重複なし",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E08",
+      "summary": "地点破棄・継続範囲外・加入取消：未完了のまま中断、参照解放",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E09",
+      "summary": "移動タイムアウト：ロックを残さず中断",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E10",
+      "summary": "完了と戦闘開始が同じTick：戦闘開始が優先、未完了",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E11",
+      "summary": "成功後の帰還中断：成功は1回、調査済みを取り消さない",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E12",
+      "summary": "中断した古い依頼からの完了：無視。新依頼や新Sceneへ影響なし",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E13",
+      "summary": "Pause→Resume、dt=0：時間が停止し、二重開始せず続行",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E14",
+      "summary": "会話・イベント・離脱：未完了の探索と古い攻撃を再開しない",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E15",
+      "summary": "AttackActive中のGuard／Evade要求：防御不可、二重行動なし",
+      "stage": "P4-FIX-R2"
+    },
+    {
+      "id": "E16",
+      "summary": "Startup／Recovery中の防御要求：旧判定と進捗を中断して防御、規定CD",
+      "stage": "P4-FIX-R2"
+    },
+    {
+      "id": "E17",
+      "summary": "Active中の守護成立／不成立：成立時だけ即時攻撃中断。不成立は不変",
+      "stage": "P4-FIX-R2"
+    },
+    {
+      "id": "E18",
+      "summary": "守護で致死／Stagger：Down／StaggerをProtectで上書きしない",
+      "stage": "P4-FIX-R2"
+    },
+    {
+      "id": "E19",
+      "summary": "正常終了・割込み後の古い終了通知：正常な下位復帰は可能、古い所有者は書き換え不可",
+      "stage": "P4-FIX-R2"
+    },
+    {
+      "id": "E20",
+      "summary": "探索中のHP0・復帰時間満了：戦闘状態と探索状態が混同されない",
+      "stage": "P4-07B"
+    },
+    {
+      "id": "E21",
+      "summary": "実行中のSO編集：現行依頼／攻撃Snapshotは不変",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E22",
+      "summary": "各null・破棄済み参照：無例外、安全な拒否／終了",
+      "stage": "P4-07A"
+    },
+    {
+      "id": "E23",
+      "summary": "地点ID重複・必須参照欠落：Validatorが確実にエラー",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "E24",
+      "summary": "同一Bodyで複数Driver：Validatorがエラー、暗黙に二重Tickしない",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "P01",
+      "summary": "Builder生成の実Scene・実PrefabでInteract：見た目・入力・完了通知まで到達",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "P02",
+      "summary": "受付前の実壁は到達不可として拒否、受付後の実壁は壁抜けせず中断。次の依頼を受付可能",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "P03",
+      "summary": "実入力の南ボタン／E：1押下1依頼。Step等の二重起動なし",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "P04",
+      "summary": "HP0の犬丸で調査：探索表示は動くが戦闘HPは探索によって回復しない",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "P05",
+      "summary": "調査途中から実戦闘開始：表示代理・依頼を解放し、戦闘へ正しく戻る",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "P06",
+      "summary": "防御＋守護を含む実Prefabで実Hitbox：同時行動なし、転送と直撃の重複ダメージなし",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "P07",
+      "summary": "犬丸Damage→Feedback：既存窓口へ届き、守護専用演出との二重HitStopなし",
+      "stage": "P4-FIX-02A"
+    },
+    {
+      "id": "P08",
+      "summary": "モード停止、timeScale=1のまま：Rigidbodyも停止。再開後に古い指示で飛び出さない",
+      "stage": "P4-FIX-02A"
+    },
+    {
+      "id": "P09",
+      "summary": "Scene再読込を3回：犬丸・Driver・購読・UIが各1。代理・探索済み・徳の残留なし",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "P10",
+      "summary": "4 Wave通し・Retry：既存勝敗／徳94／Retryリセットの回帰なし",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "P11",
+      "summary": "全PlayModeを続けて実行：読み込んだScene・静的状態を後続テストへ残さない",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "R01",
+      "summary": "F01 Scene再生成：クリーンなP4専用出力から生成し、犬丸・加入供給・Context・探索UI・Feedbackまで復元。専用Validator合格",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "R02",
+      "summary": "F01 負例：犬丸欠落、Driver重複、必須参照欠落、重複PointIdをそれぞれ検出。正常Sceneに戻せば合格",
+      "stage": "P4-08R"
+    },
+    {
+      "id": "R03",
+      "summary": "F03 Resolver所有権：A登録→B登録→A解除でもBを維持。B自身の解除は成功。Disable／破棄で漏れなし",
+      "stage": "P4-FIX-02A"
+    },
+    {
+      "id": "R04",
+      "summary": "F03 転送取引：直撃→転送／転送→直撃で犬丸の二重被害なし。拒否で旧行動不変、成立で一度だけ中断・CD・通知",
+      "stage": "P4-FIX-R2"
+    },
+    {
+      "id": "R05",
+      "summary": "F04 購読の寿命：Enable／Disable／再読込を繰り返してもResults購読は一重。旧通知で現Sceneへ演出しない",
+      "stage": "P4-FIX-02A"
+    },
+    {
+      "id": "R06",
+      "summary": "F05 停止と再開：timeScale=1のPauseで位置・向き・時計・攻撃進行が停止。再開後は同じSwingから再被害を出さない",
+      "stage": "P4-FIX-02A"
+    },
+    {
+      "id": "R07",
+      "summary": "F06 Snapshot：実行中にSOを変更しても現行攻撃は不変。次回攻撃には新値を反映",
+      "stage": "P4-FIX-02A"
+    },
+    {
+      "id": "R08",
+      "summary": "F07 Asset汚染：Builderテスト前後で本番Assetが不変。一時Assetだけを生成・後始末",
+      "stage": "P4-FIX-02A"
+    },
+    {
+      "id": "R09",
+      "summary": "F08 結果判定：成功あり／失敗あり／対象0件／全Skip／必須Skip／キャンセル・結果欠落を識別",
+      "stage": "P4-FIX-02A"
+    },
+    {
+      "id": "R10",
+      "summary": "F09 全件回帰：P3.5＋P4を連続実行し、Scene／Collider／登録／静的状態／GameMode／timeScaleの残留で後続を壊さない",
+      "stage": "P4-08R"
+    }
+  ]
 }

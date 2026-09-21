@@ -7,6 +7,7 @@ using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Enemy;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Threat;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -24,7 +25,7 @@ namespace Momotaro.Tests.EditMode
     /// 数値の前提（§7.1／§7.2）：主人公の基礎ヘイト 50（減衰しない）、仲間 0・獲得倍率 1.5、切替は現対象の 1.25 倍以上、
     /// 減衰は最後の獲得から 3 秒後に 20%/秒。主人公が一度も攻撃しなければ主人公の脅威は 50 のまま動かない。
     /// </summary>
-    public sealed class CompanionThreatAccrualTests
+    public sealed class CompanionThreatAccrualTests : CompanionActivityFixture
     {
         private readonly List<Object> _spawned = new List<Object>();
 

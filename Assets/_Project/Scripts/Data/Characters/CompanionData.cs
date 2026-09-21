@@ -23,6 +23,9 @@ namespace Momotaro.Data.Characters
         [Tooltip("獲得ヘイトへ掛ける対象補正（犬×1.5／猿×1.2／雉×0.5）。行動由来の加算にのみ乗る。")]
         [SerializeField] private float _acquiredThreatMultiplier = 1.5f;
 
+        [Tooltip("獲得ヘイトの上限（0 以下は無制限）。仲間が戦闘を最後まで抱え込まないための天井。主人公の基礎ヘイト × 切替比率 を下回る値にすると、主人公が殴り返せば必ず狙いが戻る。")]
+        [SerializeField] private float _maxAcquiredThreat;
+
         [Header("Follow (追従・隊列・ワープ。P4-02)")]
         [Tooltip("隊列の基準間隔（m）。主人公の後方 V 字配置の 1 単位。")]
         [SerializeField] private float _followSpacing = 1.6f;
@@ -67,23 +70,6 @@ namespace Momotaro.Data.Characters
         [Tooltip("再び回避するまでのクールダウン（秒）。連続回避を防ぐ。")]
         [SerializeField] private float _evadeCooldownSeconds = 4f;
 
-        [Header("Investigation (P4-07A 探索行動)")]
-        [Tooltip("探索行動（気になる地点を調べに行く）を使えるか。犬は使い、猿・雉は役割に応じて切る。")]
-        [SerializeField] private bool _canInvestigate = true;
-
-        [Tooltip("自分の位置からこの距離以内の調査地点を見つける（m）。0 で探索しない。")]
-        [SerializeField] private float _investigateRange = 6f;
-
-        [Tooltip("1 箇所を調べ終えるまでの秒数。")]
-        [SerializeField] private float _investigateSeconds = 1.5f;
-
-        [Tooltip("主人公からこの距離を超える調査地点へは行かない（m）。置き去りとワープの誘発を防ぐ紐。"
-            + "ワープ距離より短いこと（超えると調べに行った先でワープして戻される）。")]
-        [SerializeField] private float _investigateLeashDistance = 6f;
-
-        [Tooltip("1 箇所を調べ終えてから次を探し始めるまでの秒数。0 で連続。")]
-        [SerializeField] private float _investigateCooldownSeconds = 2f;
-
         [Header("Guardian (守護／かばう。契約は P4-01、実装は P4-05)")]
         [Tooltip("守護の有効距離（m）。主人公からこの距離以内に居るときだけ肩代わりを引き受ける。")]
         [SerializeField] private float _guardianRange = 3f;
@@ -104,6 +90,9 @@ namespace Momotaro.Data.Characters
 
         /// <summary>獲得ヘイト補正（<c>IThreatTarget.AcquiredThreatMultiplier</c> へ供給する）。</summary>
         public float AcquiredThreatMultiplier => _acquiredThreatMultiplier;
+
+        /// <summary>獲得ヘイトの上限（<c>IThreatTarget.MaxAcquiredThreat</c> へ供給する。0 以下は無制限）。</summary>
+        public float MaxAcquiredThreat => _maxAcquiredThreat;
 
         /// <summary>隊列の基準間隔（m）。</summary>
         public float FollowSpacing => _followSpacing;
@@ -156,21 +145,6 @@ namespace Momotaro.Data.Characters
         /// <summary>回避のクールダウン秒。</summary>
         public float EvadeCooldownSeconds => _evadeCooldownSeconds;
 
-        /// <summary>探索行動を使えるか（P4-07A）。</summary>
-        public bool CanInvestigate => _canInvestigate;
-
-        /// <summary>調査地点を見つける距離（m。0 で探索しない）。</summary>
-        public float InvestigateRange => _investigateRange;
-
-        /// <summary>1 箇所を調べ終えるまでの秒数。</summary>
-        public float InvestigateSeconds => _investigateSeconds;
-
-        /// <summary>主人公から離れてよい上限（m）。これを超える調査地点へは行かない。</summary>
-        public float InvestigateLeashDistance => _investigateLeashDistance;
-
-        /// <summary>次の調査を探し始めるまでの秒数。</summary>
-        public float InvestigateCooldownSeconds => _investigateCooldownSeconds;
-
         /// <summary>守護の有効距離（m）。</summary>
         public float GuardianRange => _guardianRange;
 
@@ -189,6 +163,11 @@ namespace Momotaro.Data.Characters
             if (_baseThreat < 0f)
             {
                 report.Error(name + ": BaseThreat must be >= 0.");
+            }
+
+            if (_maxAcquiredThreat < 0f)
+            {
+                report.Error(name + ": MaxAcquiredThreat must be >= 0 (0 = unlimited).");
             }
 
             if (_acquiredThreatMultiplier < 0f)
@@ -227,25 +206,6 @@ namespace Momotaro.Data.Characters
             if (_targetAcquireRange < 0f || _targetLoseRange < 0f)
             {
                 report.Error(name + ": Target ranges must be >= 0.");
-            }
-
-            if (_investigateRange < 0f || _investigateSeconds < 0f
-                || _investigateLeashDistance < 0f || _investigateCooldownSeconds < 0f)
-            {
-                report.Error(name + ": Investigation ranges/seconds must be >= 0.");
-            }
-
-            // 紐が停止距離より短いと、隊列に着いた時点で既に紐の外なので調査地点を 1 つも選べない
-            // （探索が有効なのに一度も動かない、という分かりにくい止まり方になる）。
-            if (_canInvestigate && _investigateRange > 0f && _investigateLeashDistance < _followStopDistance)
-            {
-                report.Error(name + ": InvestigateLeashDistance must be >= FollowStopDistance when investigation is enabled.");
-            }
-
-            // 紐がワープ距離以上だと、調べに行った先でワープの条件を満たし、隊列へ引き戻される。
-            if (_canInvestigate && _warpDistance > 0f && _investigateLeashDistance >= _warpDistance)
-            {
-                report.Error(name + ": InvestigateLeashDistance must be < WarpDistance (or disable investigation).");
             }
 
             // 見失い距離が捕捉距離より短いと、捕捉した次の瞬間に見失う（対象が定まらない）。

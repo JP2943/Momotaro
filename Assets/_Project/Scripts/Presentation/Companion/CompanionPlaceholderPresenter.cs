@@ -1,3 +1,4 @@
+using Momotaro.Gameplay.Combat.Guardian;
 using Momotaro.Gameplay.Companion;
 using UnityEngine;
 
@@ -14,7 +15,7 @@ namespace Momotaro.Presentation.Companion
     /// 素材・参照が未割当でも無表示・無例外で継続する（既存方針）。正式素材の統合（P10a）で本コンポーネントは役目を終える。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class CompanionPlaceholderPresenter : MonoBehaviour, ICompanionStateListener
+    public sealed class CompanionPlaceholderPresenter : MonoBehaviour, ICompanionStateListener, IGuardianTransferListener
     {
         [Tooltip("表示対象の仲間（未設定なら親から自動取得）。")]
         [SerializeField] private CompanionActor _actor;
@@ -28,8 +29,14 @@ namespace Momotaro.Presentation.Companion
         [Tooltip("方向インジケータを浮かせる高さ（m）。地面との Z ファイティングを避ける。")]
         [SerializeField, Min(0f)] private float _arrowHeight = 0.02f;
 
+        [Tooltip("守護成立の短い表示時間（秒）。Protect は状態としては一瞬なので、通知を受けて表示側が持つ（v1.0 §8.5）。")]
+        [SerializeField, Min(0f)] private float _protectFlashSeconds = 0.35f;
+
         private CompanionActor _subscribedActor;
+        private CompanionGuardianController _subscribedGuardian;
         private CompanionState _appliedState = CompanionState.Event; // 初回に必ず反映させるための番兵。
+        private float _protectFlashRemaining;
+        private bool _suppressed;
 
         /// <summary>表示対象（配線確認・Validator・テスト用）。</summary>
         public CompanionActor Actor => _actor;
@@ -42,6 +49,29 @@ namespace Momotaro.Presentation.Companion
 
         /// <summary>直近に反映した状態（テスト用）。</summary>
         public CompanionState AppliedState => _appliedState;
+
+        /// <summary>
+        /// 通常表示を一時的に抑制しているか（探索の表示代理が出ている間。v1.0 §5.2「通常表示と探索表示を同時に出さない」）。
+        /// 解除しても無条件に表示へ戻さず、そのときの状態（Down 等）に従う。
+        /// </summary>
+        public bool Suppressed
+        {
+            get => _suppressed;
+            set
+            {
+                if (_suppressed == value)
+                {
+                    return;
+                }
+
+                _suppressed = value;
+                _appliedState = CompanionState.Event; // 次の整合で必ず描き直す。
+                ApplyState();
+            }
+        }
+
+        /// <summary>守護成立の表示が残っているか（テスト・診断用）。</summary>
+        public bool IsProtectFlashing => _protectFlashRemaining > 0f;
 
         /// <summary>表示対象と描画先を注入する（Prefab 構築・テスト。null は無視して既存を保つ）。</summary>
         public void Bind(CompanionActor actor, SpriteRenderer body = null, SpriteRenderer directionArrow = null)
@@ -78,6 +108,7 @@ namespace Momotaro.Presentation.Companion
         private void OnDisable()
         {
             Unsubscribe();
+            _protectFlashRemaining = 0f;
         }
 
         private void LateUpdate()
@@ -88,6 +119,7 @@ namespace Momotaro.Presentation.Companion
                 Subscribe();
             }
 
+            TickProtectFlash(Time.deltaTime);
             ApplyState();   // 通知を取りこぼしても表示がずれ続けないよう、毎フレーム安全に整合させる。
             ApplyFacing();
         }
@@ -96,6 +128,34 @@ namespace Momotaro.Presentation.Companion
         public void OnCompanionStateChanged(in CompanionStateChanged change)
         {
             ApplyStateColor(change.Current);
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// 守護の成立は状態としては一瞬（Protect → 即 Follow）なので、通知を受けた表示側が短く桃色を保つ（v1.0 §8.5）。
+        /// HitStop・カメラ揺れは付けない（§11）。
+        /// </remarks>
+        public void OnGuardianTransfer(in GuardianTransferEvent transfer)
+        {
+            _protectFlashRemaining = _protectFlashSeconds;
+            _appliedState = CompanionState.Event; // 次の整合で色を描き直す。
+            ApplyState();
+        }
+
+        /// <summary>守護表示の残り時間を進める（LateUpdate から呼ばれるが、テストは決定的に直接呼べる）。</summary>
+        public void TickProtectFlash(float deltaTime)
+        {
+            if (_protectFlashRemaining <= 0f)
+            {
+                return;
+            }
+
+            _protectFlashRemaining -= deltaTime;
+            if (_protectFlashRemaining <= 0f)
+            {
+                _protectFlashRemaining = 0f;
+                _appliedState = CompanionState.Event; // 表示を通常色へ戻す。
+            }
         }
 
         /// <summary>現在状態を表示へ反映する（変化が無ければ何もしない）。</summary>
@@ -118,8 +178,13 @@ namespace Momotaro.Presentation.Companion
         private void ApplyStateColor(CompanionState state)
         {
             _appliedState = state;
-            bool visible = CompanionStateColors.IsVisible(state);
-            Color color = CompanionStateColors.Resolve(state);
+
+            // 探索の表示代理が出ている間は通常表示を消す（同時に 2 体描かない）。
+            // 守護成立の直後は実状態（Follow 等）に関わらず短く守護色を見せる。
+            bool visible = !_suppressed && CompanionStateColors.IsVisible(state);
+            Color color = _protectFlashRemaining > 0f
+                ? CompanionStateColors.Resolve(CompanionState.Protect)
+                : CompanionStateColors.Resolve(state);
 
             if (_body != null)
             {
@@ -167,12 +232,18 @@ namespace Momotaro.Presentation.Companion
             Unsubscribe();
             _subscribedActor = _actor;
             _subscribedActor?.States.AddListener(this);
+
+            // 守護の成立通知は Guardian が持つ（同じ Body に載っている。無ければ守護表示は出ないだけ）。
+            _subscribedGuardian = _subscribedActor != null ? _subscribedActor.GetComponent<CompanionGuardianController>() : null;
+            _subscribedGuardian?.Transfers.AddListener(this);
         }
 
         private void Unsubscribe()
         {
             _subscribedActor?.States.RemoveListener(this);
             _subscribedActor = null;
+            _subscribedGuardian?.Transfers.RemoveListener(this);
+            _subscribedGuardian = null;
         }
     }
 }

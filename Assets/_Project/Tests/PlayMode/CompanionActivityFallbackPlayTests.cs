@@ -6,6 +6,7 @@ using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Scenes;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -13,20 +14,19 @@ using UnityEngine.TestTools;
 namespace Momotaro.Tests.PlayMode
 {
     /// <summary>
-    /// P4-08R：移行期フォールバックが<b>出荷される構成では通らない</b>ことを実際に確かめる。
+    /// P4-FIX-R2（レビュー R2-08）：活動 Context が<b>無い</b>Runtime は実際に止まり、<b>ある</b>Runtime は動く。
     ///
-    /// <see cref="CompanionActivityProvider.Fallback"/> は残してある（停止側へ倒すと、自前で配線している
-    /// 大量の EditMode テストが一斉に動かなくなるため）。残す以上、「Builder が作る Scene では使われない」を
-    /// 言葉ではなく機械で示す必要がある。ここがその証明。
+    /// 以前ここにあったのは「移行期フォールバックが出荷構成では使われない」の証明だったが、フォールバック自体を
+    /// 撤去した（供給元が無ければ停止）。代わりに、実 Update 経路（Unity のフレーム進行）で
+    /// 「Context 無し → 位置・ワープ・攻撃が動かない」「Context の破棄 → その場から止まる」を固定する。
     ///
-    /// <b>2 本で 1 組。</b>配線済みで 0 件であることだけを確かめると、計数そのものが動いていない場合に
-    /// 何も検証していないのに緑になる。配線を外せば実際に増える、という対になる 1 本を必ず置く。
+    /// <b>2 本で 1 組。</b>止まることだけを確かめると、配線ミスで何も動いていない場合にも緑になる。
+    /// 同じ組立で Context を置けば動く、という対になる 1 本を必ず置く。
     /// </summary>
-    public sealed class CompanionActivityFallbackPlayTests
+    public sealed class CompanionActivityStopPlayTests : CompanionActivityFixture
     {
         private readonly List<Object> _spawned = new List<Object>();
 
-        /// <summary>モードの正本役（このテストが読むのは <see cref="Current"/> だけ）。</summary>
         private sealed class FakeModes : IGameModeService
         {
             public GameMode Current { get; set; } = GameMode.Exploration;
@@ -52,14 +52,21 @@ namespace Momotaro.Tests.PlayMode
             }
         }
 
+        private sealed class Rig
+        {
+            public GameObject Leader;
+            public GameObject Root;
+            public CompanionActor Actor;
+            public CompanionMotor Motor;
+            public CompanionFollowController Follow;
+            public CompanionCombatController Combat;
+        }
+
         [SetUp]
         public void SetUp()
         {
-            CompanionActivityProvider.Current = null;
-            CompanionActivityProvider.ResetFallbackCount();
             GameModeProvider.Current = new FakeModes();
             PerceptionTargetRegistry.Clear();
-            InvestigationPointRegistry.Clear();
         }
 
         [TearDown]
@@ -75,10 +82,8 @@ namespace Momotaro.Tests.PlayMode
 
             _spawned.Clear();
             CompanionActivityProvider.Current = null;
-            CompanionActivityProvider.ResetFallbackCount();
             GameModeProvider.Current = null;
             PerceptionTargetRegistry.Clear();
-            InvestigationPointRegistry.Clear();
         }
 
         private static void SetPrivateField(object target, string field, object value)
@@ -104,14 +109,11 @@ namespace Momotaro.Tests.PlayMode
             var data = ScriptableObject.CreateInstance<CompanionData>();
             _spawned.Add(data);
             SetPrivateField(data, "_moveSpeed", 5f);
-            SetPrivateField(data, "_canInvestigate", true);
-            SetPrivateField(data, "_investigateRange", 6f);
-            SetPrivateField(data, "_investigateLeashDistance", 6f);
             return data;
         }
 
-        /// <summary>活動 Context を置く（Builder が作る Scene と同じ形）。</summary>
-        private void InstallActivityContext()
+        /// <summary>活動 Context を置く（Builder が作る Scene と同じ形）。返すのは Context の GameObject。</summary>
+        private GameObject InstallActivityContext()
         {
             var sessionGo = new GameObject("CombatSession");
             _spawned.Add(sessionGo);
@@ -120,20 +122,18 @@ namespace Momotaro.Tests.PlayMode
             var contextGo = new GameObject("CompanionActivityContext");
             _spawned.Add(contextGo);
             contextGo.AddComponent<CompanionActivityContext>().Bind(session);
+            return contextGo;
         }
 
-        /// <summary>
-        /// 出荷される仲間と同じ駆動一式を載せる。
-        /// PlayMode からは AssetDatabase が使えないので Prefab そのものは読めないが、
-        /// <b>載っている駆動の顔ぶれ</b>は Prefab Builder と同じにしてある。
-        /// </summary>
-        private void MakeCompanion()
+        /// <summary>出荷される仲間と同じ駆動の顔ぶれで組む（Prefab は PlayMode から読めない）。主人公から 30m 離して置く。</summary>
+        private Rig MakeCompanion()
         {
             var leader = new GameObject("Player");
             _spawned.Add(leader);
 
             var go = new GameObject("Inumaru");
             _spawned.Add(go);
+            go.transform.position = new Vector3(0f, 0f, 30f);
             go.SetActive(false); // Data を差し込んでから起こす（PlayMode は AddComponent で Awake が走る）。
 
             var actor = go.AddComponent<CompanionActor>();
@@ -145,65 +145,82 @@ namespace Momotaro.Tests.PlayMode
 
             var tracker = go.AddComponent<CompanionTargetTracker>();
             tracker.Bind(actor);
-            go.AddComponent<CompanionCombatController>().Bind(actor, motor, tracker);
+            var combat = go.AddComponent<CompanionCombatController>();
+            combat.Bind(actor, motor, tracker);
 
             CompanionHitReceiver receiver = go.AddComponent<CompanionHitReceiver>();
             receiver.Bind(actor);
             go.AddComponent<CompanionDefenseController>().Bind(actor);
             go.AddComponent<CompanionGuardianController>().Bind(actor, receiver, leader.transform);
-            go.AddComponent<CompanionInvestigationController>().Bind(actor, follow);
-            go.AddComponent<CompanionOrders>();
 
             go.SetActive(true);
+            return new Rig { Leader = leader, Root = go, Actor = actor, Motor = motor, Follow = follow, Combat = combat };
         }
 
-        /// <summary>
-        /// <b>活動 Context が置かれた構成では、フォールバックが 1 度も使われない。</b>
-        /// Builder が作る Scene はこの形なので、移行期の経路は出荷される構成には残っていない。
-        /// </summary>
+        /// <summary>対になる 1 本：Context が置かれた構成では追従が動く（30m 離れているのでワープして戻る）。</summary>
         [UnityTest]
-        public IEnumerator WiredScene_NeverUsesTheTransitionalFallback()
+        public IEnumerator WiredScene_RunsUnderTheContext()
         {
             InstallActivityContext();
-            MakeCompanion();
+            Rig rig = MakeCompanion();
 
-            yield return null; // 有効化と OnEnable を通す。
+            yield return null;
+            Assert.IsTrue(CompanionActivityProvider.Current is CompanionActivityContext, "前提：実 Context が供給元になっている。");
 
-            Assert.IsNotNull(CompanionActivityProvider.Current, "前提：活動 Context が供給元になっている。");
-
-            // 立ち上がりの 1 フレーム（Context の OnEnable より前に走った Update）は数えない。
-            // 見たいのは「動いているあいだ通らない」ことであって、初期化順ではない。
-            CompanionActivityProvider.ResetFallbackCount();
-
-            for (int i = 0; i < 30; i++)
+            for (int i = 0; i < 10; i++)
             {
                 yield return null;
             }
 
-            Assert.AreEqual(0, CompanionActivityProvider.FallbackCount,
-                "配線済みの構成では移行期フォールバックを 1 度も通らない。");
+            Assert.Greater(rig.Motor.WarpCount, 0, "配線済みなら追従が動く（距離超過でワープする）。");
+            Assert.Less(rig.Actor.WorldPosition.z, 20f, "隊列位置へ戻っている。");
         }
 
-        /// <summary>
-        /// 対になる 1 本：活動 Context を置かなければ、フォールバックは<b>実際に</b>使われる。
-        /// これが無いと、上のテストは計数が動いていないだけでも緑になる。
-        /// </summary>
+        /// <summary>Context が無ければ、実フレームが進んでも位置・ワープ・状態が一切動かない。</summary>
         [UnityTest]
-        public IEnumerator WithoutContext_TheFallbackIsActuallyUsed()
+        public IEnumerator WithoutContext_RuntimeStaysStopped()
         {
-            MakeCompanion(); // 活動 Context を置かない。
+            CompanionActivityProvider.Current = null; // 共通 Fixture の Fake も外す＝供給元が無い。
+            Rig rig = MakeCompanion();
+            Vector3 start = rig.Actor.WorldPosition;
 
-            yield return null;
-            CompanionActivityProvider.ResetFallbackCount();
-
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < 10; i++)
             {
                 yield return null;
             }
 
             Assert.IsNull(CompanionActivityProvider.Current, "前提：供給元が居ない。");
-            Assert.Greater(CompanionActivityProvider.FallbackCount, 0,
-                "Context が無ければフォールバックを通る（計数が機能していることの裏取り）。");
+            Assert.AreEqual(0, rig.Motor.WarpCount, "供給元が無ければワープしない。");
+            Assert.AreEqual(start.z, rig.Actor.WorldPosition.z, 1e-3f, "供給元が無ければ動かない。");
+            Assert.IsFalse(rig.Motor.HasMoveTarget, "移動指示も残っていない。");
+            Assert.AreEqual(CompanionState.Follow, rig.Actor.State, "状態も動かさない。");
+        }
+
+        /// <summary>動いている最中に Context が破棄されたら、その場で止まる（許可側へ戻らない）。</summary>
+        [UnityTest]
+        public IEnumerator ContextDestroyedWhileRunning_StopsInPlace()
+        {
+            GameObject contextGo = InstallActivityContext();
+            Rig rig = MakeCompanion();
+            yield return null;
+            yield return null;
+            Assert.Greater(rig.Motor.WarpCount, 0, "前提：配線済みで動いている。");
+
+            // 隊列位置へ戻ったあと、主人公を離す → 追従が歩き出すはず。その直前に Context を壊す。
+            rig.Leader.transform.position = new Vector3(0f, 0f, 6f);
+            Object.Destroy(contextGo);
+            yield return null; // 破棄が確定するフレーム。
+
+            Assert.IsNull(CompanionActivityProvider.Current, "破棄で供給元が外れている。");
+            yield return null; // 停止ゲートが 1 度は通り、速度も消えたあとの位置を基準にする。
+            Vector3 frozen = rig.Actor.WorldPosition;
+            for (int i = 0; i < 10; i++)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(frozen.z, rig.Actor.WorldPosition.z, 1e-3f, "Context を失った瞬間から動かない。");
+            Assert.IsFalse(rig.Motor.HasMoveTarget);
         }
     }
 }

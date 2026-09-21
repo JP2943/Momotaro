@@ -28,6 +28,13 @@ namespace Momotaro.Gameplay.Companion
         [Tooltip("戦闘セッションを持たない区画（自由探索など）であることを明示する。")]
         [SerializeField] private bool _noEncounterInThisArea;
 
+        [Tooltip("明示開始の試遊段階（P4-08R。未設定なら P3.5 と同じく自動開始の Scene として扱う）。")]
+        [SerializeField] private TrialStageController _stage;
+
+        private IEncounterStartGate _startGateOverride;
+
+        private IEncounterStartGate StartGateSource => _startGateOverride ?? (_stage != null ? _stage : null);
+
         /// <inheritdoc />
         public CompanionActivity Current
         {
@@ -47,6 +54,16 @@ namespace Momotaro.Gameplay.Companion
                 }
 
                 CombatSessionState? session = _session != null ? _session.State : (CombatSessionState?)null;
+
+                // 明示開始の試遊段階（P4-08R）：戦闘開始が要求されるまでの Preparing は「開始待ちの Encounter」ではなく
+                // 自由探索として供給する（v1.0 §7.1「専用 Scene の自由探索は Encounter 開始前の別の試遊段階として供給」）。
+                // 要求されたあとの Preparing は従来どおり戦闘中（開始待ち）。
+                IEncounterStartGate gate = StartGateSource;
+                if (session == CombatSessionState.Preparing && gate != null && !gate.EncounterRequested)
+                {
+                    session = null;
+                }
+
                 return CompanionActivityResolver.Resolve(modes.Current, session);
             }
         }
@@ -74,6 +91,27 @@ namespace Momotaro.Gameplay.Companion
                 _session = session;
             }
         }
+
+        /// <summary>
+        /// 明示開始の門を注入する（P4-08R。null で解除）。門が「まだ要求されていない」と言う間、Preparing を自由探索として扱う。
+        /// 門は Scene の明示参照（試遊段階の制御役）から注入する。P3.5 の自動開始 Scene には門が無く、従来どおり動く。
+        /// </summary>
+        public void SetEncounterStartGate(IEncounterStartGate gate)
+        {
+            _startGateOverride = gate;
+        }
+
+        /// <summary>Scene の明示開始の門（試遊段階の制御役）を配線する（Scene 構築）。</summary>
+        public void BindStage(TrialStageController stage)
+        {
+            _stage = stage;
+        }
+
+        /// <summary>注入されている明示開始の門（Scene 検査・診断用）。</summary>
+        public IEncounterStartGate StartGate => StartGateSource;
+
+        /// <summary>配線された試遊段階（Scene 検査用）。</summary>
+        public TrialStageController Stage => _stage;
 
         /// <summary>この区画には戦闘セッションが無いことを明示する（自由探索区画）。</summary>
         public void MarkAreaWithoutEncounter()

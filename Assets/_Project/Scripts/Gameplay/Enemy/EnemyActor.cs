@@ -160,6 +160,10 @@ namespace Momotaro.Gameplay.Enemy
         /// <remarks>同上の理由で等倍。</remarks>
         public float AcquiredThreatMultiplier => 1f;
 
+        /// <inheritdoc />
+        /// <remarks>敵同士は敵対しないので、この値は使われない（無制限）。</remarks>
+        public float MaxAcquiredThreat => 0f;
+
         private void Awake()
         {
             EnsureRuntime();

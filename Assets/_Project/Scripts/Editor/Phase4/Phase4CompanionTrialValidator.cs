@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Momotaro.Editor.Phase35;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Gameplay.Scenes;
 using Momotaro.Infrastructure.Input;
 using UnityEditor;
 using UnityEngine;
@@ -85,38 +86,71 @@ namespace Momotaro.Editor.Phase4
             // 2. 仲間まわり（検証フィールドと共通）。
             Phase4CompanionSceneChecks.Validate(scene, errors, warnings);
 
-            // 3. 試遊としての操作。
-            ValidateOrderInput(scene, errors, warnings);
+            // 3. 試遊の開始経路（P4-08R。v1.0 §13.1）：起動直後は自由探索、明示開始で 4 Wave。
+            ValidateTrialStage(scene, errors, warnings);
+
+            // 4. 出荷 Scene は Build Settings に登録されていること（Retry の再読込・PlayMode の実 Scene 検証が依存する）。
+            if (scene.path == TrialScenePath && !Phase4CompanionTrialBuilder.IsRegisteredInBuildSettings(scene.path))
+            {
+                errors.Add("試遊 Scene が Build Settings に登録されていません（Retry で再読込できず、PlayMode の実 Scene 検証も走りません）。"
+                    + "Builder（Generate Companion Trial）を実行すると登録されます。");
+            }
         }
 
         /// <summary>
-        /// 指示の入力（P4-07B）が置かれ、相手が繋がっているかを検査する。
-        ///
-        /// 置いてあるだけでは足りない。相手が 0 体の入力はキーを押しても何も起きず、
-        /// 「指示が壊れている」のか「繋ぎ忘れ」なのかが実機では区別できない。
+        /// 明示開始の配線を検査する。WaveRunner の自動開始が切れていて、試遊段階が Wave と探索の調停役に繋がり、
+        /// 活動 Context がその段階を読んでいること。どれか 1 つ欠けると「Play した瞬間に敵が湧く」か
+        /// 「開始操作をしても何も起きない」か「自由探索なのに探索を受け付けない」になる。
         /// </summary>
-        private static void ValidateOrderInput(Scene scene, List<string> errors, List<string> warnings)
+        private static void ValidateTrialStage(Scene scene, List<string> errors, List<string> warnings)
         {
-            List<CompanionOrderInput> inputs = Phase4CompanionSceneChecks.Components<CompanionOrderInput>(scene);
-            if (inputs.Count != 1)
+            List<WaveRunner> waves = Phase4CompanionSceneChecks.Components<WaveRunner>(scene);
+            List<TrialStageController> stages = Phase4CompanionSceneChecks.Components<TrialStageController>(scene);
+            List<CompanionActivityContext> contexts = Phase4CompanionSceneChecks.Components<CompanionActivityContext>(scene);
+
+            if (stages.Count != 1)
             {
-                errors.Add("指示の入力（CompanionOrderInput）は 1 つであるべきですが " + inputs.Count + " です"
-                    + (inputs.Count > 1 ? "（重複）" : "（欠落）") + "。試遊で待機・追従を切り替えられません。");
+                errors.Add("試遊段階（TrialStageController）は 1 つであるべきですが " + stages.Count + " です"
+                    + (stages.Count > 1 ? "（重複）" : "（欠落）") + "。自由探索から戦闘を明示開始できません。");
                 return;
             }
 
-            CompanionOrderInput input = inputs[0];
-            if (input.CompanionCount == 0)
+            TrialStageController stage = stages[0];
+            if (stage.Waves == null)
             {
-                errors.Add("指示の入力に相手が 1 体も繋がっていません（キーを押しても何も起きません）。");
-                return;
+                errors.Add("TrialStageController：Wave（WaveRunner）が配線されていません（開始操作をしても敵が湧きません）。");
             }
 
-            int companions = Phase4CompanionSceneChecks.Count<CompanionOrders>(scene);
-            if (input.CompanionCount < companions)
+            if (stage.Investigation == null)
             {
-                warnings.Add("指示の入力が繋がっているのは " + input.CompanionCount + " 体で、Scene には "
-                    + companions + " 体います（繋がっていない仲間はキーで切り替わりません）。");
+                errors.Add("TrialStageController：探索の調停役が配線されていません（戦闘開始で探索を解放できません）。");
+            }
+
+            foreach (WaveRunner runner in waves)
+            {
+                var so = new SerializedObject(runner);
+                SerializedProperty auto = so.FindProperty("_autoStart");
+                if (auto != null && auto.boolValue)
+                {
+                    errors.Add(runner.gameObject.name + "：WaveRunner の自動開始が有効です（P4 試遊 Scene は明示開始。Play した瞬間に敵が湧きます）。");
+                }
+            }
+
+            if (contexts.Count == 1 && !ReferenceEquals(contexts[0].Stage, stage))
+            {
+                errors.Add("CompanionActivityContext：試遊段階が配線されていません（開始前の Preparing が戦闘扱いになり、自由探索で探索を受け付けません）。");
+            }
+
+            // 明示開始の入力（P4-07B／08R）。無いと Play しても戦闘へ進めない。
+            List<TrialCombatStartInput> starts = Phase4CompanionSceneChecks.Components<TrialCombatStartInput>(scene);
+            if (starts.Count != 1)
+            {
+                errors.Add("戦闘開始の入力（TrialCombatStartInput）は 1 つであるべきですが " + starts.Count + " です"
+                    + (starts.Count > 1 ? "（重複）" : "（欠落。Enter／Start で戦闘を始められません）") + "。");
+            }
+            else if (!ReferenceEquals(starts[0].Stage, stage))
+            {
+                errors.Add("TrialCombatStartInput：この Scene の試遊段階が配線されていません（参照不一致）。");
             }
         }
     }

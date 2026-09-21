@@ -6,6 +6,7 @@ using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Threat;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -20,7 +21,7 @@ namespace Momotaro.Tests.EditMode
     /// これにより敵側の <c>EnemyThreatTracker</c> が仲間の与ダメージを既存のまま獲得ヘイトへ変換できる。
     /// 時間は <see cref="CompanionCombatController.TickCombat"/> へ外部注入するため、決定的に検証できる。
     /// </summary>
-    public sealed class CompanionCombatControllerTests
+    public sealed class CompanionCombatControllerTests : CompanionActivityFixture
     {
         private const float Startup = 0.2f;
         private const float Active = 0.1f;

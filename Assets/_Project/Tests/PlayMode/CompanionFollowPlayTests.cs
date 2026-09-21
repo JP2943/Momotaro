@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -12,7 +13,7 @@ namespace Momotaro.Tests.PlayMode
     /// 距離超過でワープして復帰すること、無効化・破棄で速度と指示が残らないことを見る。
     /// 判断規則そのもの（停止・再開・停滞判定の境界）は EditMode で決定的に検証済みで、ここは配管だけを見る。
     /// </summary>
-    public sealed class CompanionFollowPlayTests
+    public sealed class CompanionFollowPlayTests : CompanionActivityFixture
     {
         private readonly List<Object> _spawned = new List<Object>();
 

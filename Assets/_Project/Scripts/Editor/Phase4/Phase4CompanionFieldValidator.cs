@@ -17,8 +17,8 @@ namespace Momotaro.Editor.Phase4
     ///
     /// <list type="number">
     /// <item><description><b>活動 Context が無いとき</b>、<see cref="CompanionActivityProvider"/> は
-    /// <see cref="CompanionActivityProvider.Fallback"/>（＝自由行動）へ落ちる。Pause・会話・イベントの
-    /// 区別ができないので、会話中に仲間が歩き回る。</description></item>
+    /// 停止を返し（P4-FIX-R2）、仲間は一切動かない。Scene の配線漏れは実機で「何もしない」として現れるので、
+    /// ここで先に検出する。</description></item>
     /// <item><description><b>調停役が無いとき</b>、各駆動は <see cref="CompanionActor"/>・
     /// <see cref="CompanionMotor"/> を直接書く経路へ落ちる。F02a／F02b／F02c で入れた
     /// 「書き手を 1 つにする」規則がまるごと効かなくなる。</description></item>

@@ -10,7 +10,7 @@ namespace Momotaro.Gameplay.Player
     /// <see cref="SetActive"/> が false のときはゲートが閉じ、Move はゼロ、Guard は解除される
     /// （GameMode が Gameplay でないときの挙動）。
     /// </summary>
-    public sealed class PlayerInputState : IPlayerInput
+    public sealed class PlayerInputState : IPlayerInput, IInteractInput
     {
         private bool _active = true;
         private bool _attackHeldRaw;
@@ -18,6 +18,8 @@ namespace Momotaro.Gameplay.Player
         private bool _stepHeldRaw;
         private bool _stepLatched;
         private bool _specialHeld;
+        private bool _interactHeldRaw;
+        private bool _interactLatched;
 
         /// <inheritdoc />
         public Vector2 Move { get; private set; }
@@ -116,6 +118,42 @@ namespace Momotaro.Gameplay.Player
             return true;
         }
 
+        /// <summary>
+        /// 入力ソースから Interact ボタンの生の押下状態を設定する。押下エッジ（false→true）でのみラッチする（Step と同様）。
+        /// ゲートが閉じている間はラッチしない（P4-07B）。
+        /// </summary>
+        public void SetInteract(bool pressed)
+        {
+            bool rising = pressed && !_interactHeldRaw;
+            _interactHeldRaw = pressed;
+
+            if (_active && rising)
+            {
+                _interactLatched = true;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool InteractPressed => _interactLatched;
+
+        /// <inheritdoc />
+        public bool ConsumeInteractPressed()
+        {
+            if (!_interactLatched)
+            {
+                return false;
+            }
+
+            _interactLatched = false;
+            return true;
+        }
+
+        /// <inheritdoc />
+        public void DiscardInteractPressed()
+        {
+            _interactLatched = false;
+        }
+
         /// <inheritdoc />
         public bool SpecialAttackHeld => _specialHeld;
 
@@ -145,6 +183,7 @@ namespace Momotaro.Gameplay.Player
             Move = Vector2.zero;
             _attackLatched = false;
             _stepLatched = false;
+            _interactLatched = false;
             _specialHeld = false;
             if (GuardHeld)
             {

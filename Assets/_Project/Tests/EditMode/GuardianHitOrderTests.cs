@@ -5,6 +5,7 @@ using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Combat.Guardian;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Player;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -23,7 +24,7 @@ namespace Momotaro.Tests.EditMode
     /// 同時命中をまとめて再配分する仕組みは入れない（本編の守護契約見直しで評価する）。
     /// その差がここで固定されていれば、あとから「順序で結果が変わるのは不具合か」を悩まずに済む。
     /// </summary>
-    public sealed class GuardianHitOrderTests
+    public sealed class GuardianHitOrderTests : CompanionActivityFixture
     {
         private const int PlayerMaxHp = 100;
         private const int CompanionMaxHp = 80;

@@ -1,4 +1,6 @@
 using System.IO;
+using Momotaro.Core.Identification;
+using Momotaro.Data.Exploration;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Enemy;
 using Momotaro.Gameplay.Player;
@@ -50,17 +52,9 @@ namespace Momotaro.Editor.Phase4
         /// <summary>敵を湧かせる中心（Phase3 と同じく原点）。</summary>
         public static readonly Vector3 SpawnCenterPosition = Vector3.zero;
 
-        /// <summary>
-        /// 調査地点の位置（P4-07A）。主人公（Z=-6）の周囲に置く。
-        /// 犬丸の紐（既定 6m）の内側に収まる距離にしてあり、置いた瞬間から調べに行く様子が見える。
-        /// 遠すぎると「紐に弾かれて何もしない」に見え、探索が壊れているのか設定なのか判別できない。
-        /// </summary>
-        public static readonly Vector3[] InvestigationPointPositions =
-        {
-            new Vector3(-3f, 0f, -7f),
-            new Vector3(3f, 0f, -7f),
-            new Vector3(0f, 0f, -3f),
-        };
+        /// <summary>調査地点の数（標準配置：正常 ×2、壁 ×1、未加入 ×1。P4-07A／P4-08R）。</summary>
+        public static int InvestigationPointCount =>
+            Phase4InvestigationLayerBuilder.StandardPoints(default).Length;
 
         /// <summary>生成結果。</summary>
         public readonly struct BuildResult
@@ -175,8 +169,8 @@ namespace Momotaro.Editor.Phase4
             AssetDatabase.Refresh();
 
             return new BuildResult(true, outputPath,
-                "Environment/Player/Inumaru/CameraRig+Main Camera/Light/SceneMode/SpawnCenter/InvestigationPoints(×"
-                + InvestigationPointPositions.Length + ")/"
+                "Environment/Player/Inumaru/CameraRig+Main Camera/Light/SceneMode/SpawnCenter/Investigation(地点×"
+                + InvestigationPointCount + ")/"
                 + "Phase4Systems(CombatSession+CompanionActivityContext+EnemyTestField+EnemyDebugToggle+CombatFeedback)、初期敵 0 体。");
         }
 
@@ -230,17 +224,6 @@ namespace Momotaro.Editor.Phase4
             var spawnCenter = new GameObject("SpawnCenter");
             spawnCenter.transform.position = SpawnCenterPosition;
 
-            // 調査地点（P4-07A）。主人公の周りに置く。犬丸の紐（InvestigateLeashDistance）の内側に
-            // 収まる位置にしてあり、置いた瞬間から調べに行くところを目視できる。
-            var points = new GameObject("InvestigationPoints");
-            for (int i = 0; i < InvestigationPointPositions.Length; i++)
-            {
-                var pointGo = new GameObject("InvestigationPoint_" + i);
-                pointGo.transform.SetParent(points.transform, false);
-                pointGo.transform.position = InvestigationPointPositions[i];
-                pointGo.AddComponent<CompanionInvestigationPoint>();
-            }
-
             // Phase4Systems。
             var systems = new GameObject("Phase4Systems");
 
@@ -255,7 +238,8 @@ namespace Momotaro.Editor.Phase4
             // Scene 側で必ず置くことを Validator が強制する（F01）。
             var activityGo = new GameObject("CompanionActivityContext");
             activityGo.transform.SetParent(systems.transform, false);
-            activityGo.AddComponent<CompanionActivityContext>().Bind(session);
+            var context = activityGo.AddComponent<CompanionActivityContext>();
+            context.Bind(session);
 
             // 敵の編成（Phase3 と同じ手順。初期 0 体で、Context Menu から出す）。
             var enemyFieldGo = new GameObject("EnemyTestField");
@@ -275,11 +259,24 @@ namespace Momotaro.Editor.Phase4
 
             // 犬丸（隊列位置へ置き、主人公へ追従させる）。Prefab 側で調停役まで組んであるので、
             // ここで足すのは「誰について行くか」だけ。
-            PlaceCompanion(companionPrefab, player.transform, playerState);
+            CompanionActor inumaru = PlaceCompanion(companionPrefab, player.transform, playerState);
+
+            // 探索の層（P4-07A）：地点・加入供給元・記録・調停役・試遊段階。犬丸の StableId を加入済みとして注入する。
+            InvestigationSettingsData settings = Phase4InvestigationLayerBuilder.LoadSettings();
+            if (settings == null)
+            {
+                throw new System.InvalidOperationException(
+                    "探索設定 Data が見つかりません: " + Phase4InvestigationLayerBuilder.SettingsAssetPath);
+            }
+
+            StableId inumaruId = inumaru != null && inumaru.Data != null ? inumaru.Data.Id : default;
+            Phase4InvestigationLayerBuilder.Build(
+                systems.transform, playerState, new[] { inumaru }, new[] { inumaruId },
+                Phase4InvestigationLayerBuilder.StandardPoints(inumaruId), settings, context, waves: null);
         }
 
-        /// <summary>犬丸を隊列位置へ置き、追従・守護の相手を主人公に固定する。</summary>
-        private static void PlaceCompanion(GameObject companionPrefab, Transform player, PlayerStateController playerState)
+        /// <summary>犬丸を隊列位置へ置き、追従・守護の相手を主人公に固定する。置いた本体を返す。</summary>
+        private static CompanionActor PlaceCompanion(GameObject companionPrefab, Transform player, PlayerStateController playerState)
         {
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(companionPrefab);
             instance.name = "Inumaru";
@@ -299,6 +296,7 @@ namespace Momotaro.Editor.Phase4
             // Scene を読んだだけで「誰を庇うのか」が分かる状態にしておく。
             CompanionHitReceiver receiver = instance.GetComponent<CompanionHitReceiver>();
             instance.GetComponent<CompanionGuardianController>()?.Bind(actor, receiver, player);
+            return actor;
         }
 
         private static void AssignEnemyField(

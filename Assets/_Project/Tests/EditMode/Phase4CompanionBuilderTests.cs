@@ -112,6 +112,36 @@ namespace Momotaro.Tests.EditMode
             Assert.IsNotNull(presenter.DirectionArrow.sprite, "方向インジケータの仮素材が割り当たる。");
         }
 
+        /// <summary>探索の表示代理（P4-07B。v1.0 §5.2）：本体と同じ仮素材をもう 1 組、戦闘 Actor を持たずに持つ。</summary>
+        [Test]
+        public void Prefab_HasInvestigationProxyWired_WithoutCombatParts()
+        {
+            GameObject prefab = BuildTemp();
+
+            var proxy = prefab.GetComponent<CompanionInvestigationProxyPresenter>();
+            Assert.IsNotNull(proxy, "表示代理が付く。");
+            Assert.AreSame(prefab.GetComponent<CompanionInvestigationController>(), proxy.Driver, "読む駆動は同じ Body のもの。");
+            Assert.AreSame(prefab.GetComponent<CompanionPlaceholderPresenter>(), proxy.Normal, "抑制する通常表示は同じ Body のもの。");
+            Assert.IsNotNull(proxy.ProxyAnchor, "代理の置き場がある。");
+            Assert.IsNotNull(proxy.ProxyBody, "代理の本体がある。");
+            Assert.IsNotNull(proxy.ProxyBody.sprite, "代理の本体は仮素材を使う。");
+            Assert.IsFalse(proxy.ProxyBody.enabled, "通常は描かない。");
+            Assert.IsTrue(proxy.ProxyBody.transform.IsChildOf(proxy.ProxyAnchor), "代理の本体は置き場の配下。");
+            Assert.IsNotNull(proxy.ProxyBody.GetComponentInParent<CameraFacingBillboard>(true), "代理の本体もカメラへ正対する。");
+            Assert.IsNotNull(proxy.ProxyArrow, "代理の方向インジケータがある。");
+            Assert.IsNotNull(proxy.ProxyArrow.sprite);
+            Assert.IsFalse(proxy.ProxyArrow.enabled);
+            Assert.IsNotNull(proxy.Label, "進行ラベル（TextMesh）がある。");
+            Assert.IsNotNull(proxy.Label.font, "ラベルにフォントが割り当たる。");
+            Assert.IsFalse(proxy.Label.gameObject.activeSelf, "ラベルは依頼中だけ出す。");
+
+            // 代理の配下に戦闘部品が無い（HP・Hurtbox・ヘイト・判定を持たない）。
+            Assert.IsNull(proxy.ProxyAnchor.GetComponentInChildren<CompanionActor>(true));
+            Assert.IsNull(proxy.ProxyAnchor.GetComponentInChildren<CompanionHitReceiver>(true));
+            Assert.IsNull(proxy.ProxyAnchor.GetComponentInChildren<Collider>(true));
+            Assert.AreEqual(1, prefab.GetComponentsInChildren<CompanionActor>(true).Length, "戦闘 Actor は 1 体だけ。");
+        }
+
         [Test]
         public void Prefab_KeepsArrowOutsideBillboard()
         {

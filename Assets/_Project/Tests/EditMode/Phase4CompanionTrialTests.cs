@@ -2,9 +2,12 @@ using System.Collections.Generic;
 using Momotaro.Editor.Phase35;
 using Momotaro.Editor.Phase4;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Scenes;
 using Momotaro.Infrastructure.Input;
+using Momotaro.Presentation.Companion;
+using Momotaro.Presentation.Hud;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -138,8 +141,9 @@ namespace Momotaro.Tests.EditMode
 
             Assert.AreEqual(1, All<CompanionActor>(scene).Count, "犬丸が 1 体いる。");
             Assert.AreEqual(1, All<CompanionActivityContext>(scene).Count, "活動 Context が 1 つある。");
-            Assert.AreEqual(1, All<CompanionOrderInput>(scene).Count, "指示の入力が 1 つある。");
-            Assert.AreEqual(Phase4CompanionTrialBuilder.InvestigationPointPositions.Length,
+            Assert.AreEqual(1, All<TrialStageController>(scene).Count, "試遊段階が 1 つある。");
+            Assert.AreEqual(1, All<InvestigationCoordinator>(scene).Count, "探索の調停役が 1 つある。");
+            Assert.AreEqual(Phase4CompanionTrialBuilder.InvestigationPointCount,
                 All<CompanionInvestigationPoint>(scene).Count, "調査地点が決められた数だけある。");
 
             // 3.5 側の主要システムも残っている（合成の土台を壊していない）。
@@ -159,33 +163,44 @@ namespace Momotaro.Tests.EditMode
                 "配線先はこの Scene の戦闘 Session。");
         }
 
-        /// <summary>指示の入力が犬丸に繋がっている（キーを押して何も起きない、を防ぐ）。</summary>
+        /// <summary>
+        /// 明示開始の配線（P4-08R。v1.0 §13.1）：WaveRunner の自動開始が切れ、試遊段階が Wave と探索の調停役へ、
+        /// 活動 Context が試遊段階へ繋がっている。3.5 の既定（自動開始）はこの Scene のインスタンスでだけ切る。
+        /// </summary>
         [Test]
-        public void Build_WiresOrderInputToTheCompanion()
+        public void Build_MakesCombatStartExplicit_AndStartsInFreeExploration()
         {
             Scene scene = BuildTrial();
 
-            CompanionOrderInput input = All<CompanionOrderInput>(scene)[0];
-            Assert.AreEqual(1, input.CompanionCount, "相手が繋がっている。");
-            Assert.IsTrue(input.AnyFollowing(), "初期状態は「ついて来い」。");
+            WaveRunner waves = All<WaveRunner>(scene)[0];
+            var so = new SerializedObject(waves);
+            Assert.IsFalse(so.FindProperty("_autoStart").boolValue, "P4 試遊 Scene の Wave は自動開始しない。");
+
+            TrialStageController stage = All<TrialStageController>(scene)[0];
+            Assert.AreSame(waves, stage.Waves, "試遊段階が Wave を起動する。");
+            Assert.AreSame(All<InvestigationCoordinator>(scene)[0], stage.Investigation, "試遊段階が探索を解放してから起動する。");
+            Assert.IsFalse(stage.EncounterRequested, "起動直後は自由探索（戦闘は要求されていない）。");
+
+            CompanionActivityContext context = All<CompanionActivityContext>(scene)[0];
+            Assert.AreSame(stage, context.Stage, "活動 Context が試遊段階を読む（開始前の Preparing を自由探索として供給する）。");
         }
 
-        /// <summary>調査地点が主人公の紐の内側にある（外だと探索は有効なのに一度も動かない）。</summary>
+        /// <summary>地点の構成：正常・壁・未加入が揃い、PointId が重複しない（§13.1）。</summary>
         [Test]
-        public void Build_PlacesInvestigationPointsWithinLeash()
+        public void Build_PlacesNormalWalledAndUnrecruitedPoints()
         {
             Scene scene = BuildTrial();
-
-            Transform player = All<PlayerStateController>(scene)[0].transform;
-            CompanionActor actor = All<CompanionActor>(scene)[0];
-            float leash = actor.Data.InvestigateLeashDistance;
-
-            foreach (CompanionInvestigationPoint point in All<CompanionInvestigationPoint>(scene))
+            List<CompanionInvestigationPoint> points = All<CompanionInvestigationPoint>(scene);
+            var ids = new HashSet<string>();
+            foreach (CompanionInvestigationPoint point in points)
             {
-                float distance = FormationSlot.HorizontalDistance(player.position, point.transform.position);
-                Assert.LessOrEqual(distance, leash,
-                    point.name + " は主人公から紐（" + leash + "m）の内側にある。");
+                Assert.IsTrue(point.PointId.IsValid && ids.Add(point.PointId.Value), point.name + "：PointId が有効で重複しない。");
+                Assert.IsNotNull(point.SettingsData, point.name + "：設定 Data が入っている。");
             }
+
+            Assert.IsTrue(points.Exists(pt => pt.RequiredCompanion.Equals(Phase4InvestigationLayerBuilder.UnrecruitedCompanionId)),
+                "未加入条件を確認できる地点がある。");
+            Assert.IsTrue(points.Exists(pt => pt.name.Contains("Walled")), "壁で到達できない検証用地点がある。");
         }
 
         [Test]
@@ -198,7 +213,7 @@ namespace Momotaro.Tests.EditMode
 
             Assert.AreEqual(rootsBefore, second.rootCount, "再生成でルートが増えない。");
             Assert.AreEqual(1, All<CompanionActor>(second).Count, "犬丸も増えない。");
-            Assert.AreEqual(1, All<CompanionOrderInput>(second).Count, "指示の入力も増えない。");
+            Assert.AreEqual(1, All<TrialStageController>(second).Count, "試遊段階も増えない。");
         }
 
         [Test]
@@ -247,31 +262,30 @@ namespace Momotaro.Tests.EditMode
         // ================================================================
 
         [Test]
-        public void MissingOrderInput_IsDetected()
+        public void MissingTrialStage_IsDetected()
         {
             Scene scene = BuildTrial();
             Assert.AreEqual(0, Errors(scene).Count, "前提：生成直後はエラー 0。");
 
-            Object.DestroyImmediate(All<CompanionOrderInput>(scene)[0].gameObject);
+            Object.DestroyImmediate(All<TrialStageController>(scene)[0].gameObject);
 
             List<string> errors = Errors(scene);
-            Assert.IsTrue(errors.Exists(e => e.Contains("CompanionOrderInput")),
-                "指示の入力の欠落を検出する:\n- " + string.Join("\n- ", errors));
+            Assert.IsTrue(errors.Exists(e => e.Contains("TrialStageController")),
+                "試遊段階の欠落を検出する:\n- " + string.Join("\n- ", errors));
         }
 
-        /// <summary>
-        /// 置いてあっても相手が 0 体なら不合格。キーを押しても何も起きず、
-        /// 「指示が壊れている」のか「繋ぎ忘れ」なのかが実機では区別できないため。
-        /// </summary>
+        /// <summary>自動開始が有効なままなら不合格（Play した瞬間に敵が湧き、自由探索の段階が無くなる）。</summary>
         [Test]
-        public void OrderInputWithoutCompanions_IsDetected()
+        public void AutoStartLeftEnabled_IsDetected()
         {
             Scene scene = BuildTrial();
-            All<CompanionOrderInput>(scene)[0].ClearCompanions();
+            var so = new SerializedObject(All<WaveRunner>(scene)[0]);
+            so.FindProperty("_autoStart").boolValue = true;
+            so.ApplyModifiedPropertiesWithoutUndo();
 
             List<string> errors = Errors(scene);
-            Assert.IsTrue(errors.Exists(e => e.Contains("相手が 1 体も繋がっていません")),
-                "繋ぎ忘れを検出する:\n- " + string.Join("\n- ", errors));
+            Assert.IsTrue(errors.Exists(e => e.Contains("自動開始")),
+                "自動開始の残りを検出する:\n- " + string.Join("\n- ", errors));
         }
 
         /// <summary>活動 Context を外したら検出する（試遊 Scene でも仲間の不変条件は同じ）。</summary>
@@ -284,6 +298,110 @@ namespace Momotaro.Tests.EditMode
             List<string> errors = Errors(scene);
             Assert.IsTrue(errors.Exists(e => e.Contains("CompanionActivityContext")),
                 "活動 Context の欠落を検出する:\n- " + string.Join("\n- ", errors));
+        }
+
+        // ================================================================
+        // P4-07B：入力・表示の復元と検出
+        // ================================================================
+
+        /// <summary>入力仲介・マーカー・短文 UI・明示開始入力が復元され、同じ調停役と地点を指す（R01。v1.0 §13.2「入力、UI」）。</summary>
+        [Test]
+        public void Build_WiresInteractInput_Markers_Hud_AndCombatStartInput()
+        {
+            Scene scene = BuildTrial();
+            InvestigationCoordinator coordinator = All<InvestigationCoordinator>(scene)[0];
+            TrialStageController stage = All<TrialStageController>(scene)[0];
+
+            List<InvestigationInteractInput> inputs = All<InvestigationInteractInput>(scene);
+            Assert.AreEqual(1, inputs.Count, "入力仲介は 1 つ。");
+            Assert.AreSame(coordinator, inputs[0].Coordinator, "入力仲介はこの Scene の調停役へ渡す。");
+
+            List<CompanionInvestigationPoint> points = All<CompanionInvestigationPoint>(scene);
+            List<InvestigationPointMarker> markers = All<InvestigationPointMarker>(scene);
+            Assert.AreEqual(points.Count, markers.Count, "地点ごとにマーカーが 1 つ。");
+            foreach (InvestigationPointMarker marker in markers)
+            {
+                Assert.IsNotNull(marker.Point, marker.name + "：地点が配線される。");
+                Assert.IsNotNull(marker.Ring, marker.name + "：輪がある。");
+                Assert.IsNotNull(marker.Ring.sprite, marker.name + "：輪の Sprite が割り当たる（Gizmos に依存しない）。");
+                Assert.IsNotNull(marker.Label, marker.name + "：文字がある。");
+                Assert.IsNotNull(marker.Label.font, marker.name + "：文字のフォントが割り当たる。");
+            }
+
+            List<InvestigationPromptHud> huds = All<InvestigationPromptHud>(scene);
+            Assert.AreEqual(1, huds.Count, "短文 UI は 1 つ。");
+            Assert.AreSame(coordinator, huds[0].Coordinator);
+            Assert.AreSame(stage, huds[0].Stage, "開始行のために試遊段階を知っている。");
+            Assert.AreEqual(markers.Count, huds[0].Markers.Count, "候補の案内を全マーカーへ配れる。");
+
+            List<TrialCombatStartInput> starts = All<TrialCombatStartInput>(scene);
+            Assert.AreEqual(1, starts.Count, "明示開始の入力は 1 つ。");
+            Assert.AreSame(stage, starts[0].Stage);
+
+            // 犬丸の Prefab 実体に表示代理が載っている。
+            CompanionActor actor = All<CompanionActor>(scene)[0];
+            var proxy = actor.GetComponent<CompanionInvestigationProxyPresenter>();
+            Assert.IsNotNull(proxy, "表示代理が付く。");
+            Assert.IsNotNull(proxy.ProxyBody.sprite, "代理の本体は仮素材を使う。");
+            Assert.IsNotNull(proxy.ProxyArrow.sprite);
+            Assert.IsNotNull(proxy.Label);
+            Assert.AreSame(actor.GetComponent<CompanionPlaceholderPresenter>(), proxy.Normal, "抑制する通常表示は同じ Body のもの。");
+        }
+
+        /// <summary>入力仲介が無ければ不合格（Interact を押しても何も起きない Scene を合格させない。R02）。</summary>
+        [Test]
+        public void MissingInteractInput_IsDetected()
+        {
+            Scene scene = BuildTrial();
+            Object.DestroyImmediate(All<InvestigationInteractInput>(scene)[0].gameObject);
+
+            List<string> errors = Errors(scene);
+            Assert.IsTrue(errors.Exists(e => e.Contains("InvestigationInteractInput")),
+                "入力仲介の欠落を検出する:\n- " + string.Join("\n- ", errors));
+        }
+
+        /// <summary>マーカーの無い地点・文字の無いマーカー・UI の欠落を検出する（R02。§11「必須の仮素材・テキスト参照は厳格検査」）。</summary>
+        [Test]
+        public void MissingMarkerOrHud_IsDetected()
+        {
+            Scene scene = BuildTrial();
+            List<InvestigationPointMarker> markers = All<InvestigationPointMarker>(scene);
+            InvestigationPointMarker first = markers[0];
+            string pointName = first.gameObject.name;
+            Object.DestroyImmediate(first);
+            Object.DestroyImmediate(markers[1].Label.gameObject);
+            Object.DestroyImmediate(All<InvestigationPromptHud>(scene)[0].gameObject);
+
+            List<string> errors = Errors(scene);
+            Assert.IsTrue(errors.Exists(e => e.Contains(pointName) && e.Contains("InvestigationPointMarker")),
+                "マーカーの無い地点を検出する:\n- " + string.Join("\n- ", errors));
+            Assert.IsTrue(errors.Exists(e => e.Contains("TextMesh")), "文字の欠落を検出する。");
+            Assert.IsTrue(errors.Exists(e => e.Contains("InvestigationPromptHud")), "短文 UI の欠落を検出する。");
+        }
+
+        /// <summary>明示開始の入力が無ければ不合格（自由探索から戦闘へ進めない。R02）。</summary>
+        [Test]
+        public void MissingCombatStartInput_IsDetected()
+        {
+            Scene scene = BuildTrial();
+            Object.DestroyImmediate(All<TrialCombatStartInput>(scene)[0].gameObject);
+
+            List<string> errors = Errors(scene);
+            Assert.IsTrue(errors.Exists(e => e.Contains("TrialCombatStartInput")),
+                "明示開始の入力の欠落を検出する:\n- " + string.Join("\n- ", errors));
+        }
+
+        /// <summary>表示代理を外した犬丸は不合格（Down 中の調査が見えず、通常表示の抑制もされない。R02）。</summary>
+        [Test]
+        public void MissingProxyPresenter_IsDetected()
+        {
+            Scene scene = BuildTrial();
+            CompanionActor actor = All<CompanionActor>(scene)[0];
+            Object.DestroyImmediate(actor.GetComponent<CompanionInvestigationProxyPresenter>());
+
+            List<string> errors = Errors(scene);
+            Assert.IsTrue(errors.Exists(e => e.Contains("CompanionInvestigationProxyPresenter")),
+                "表示代理の欠落を検出する:\n- " + string.Join("\n- ", errors));
         }
     }
 }

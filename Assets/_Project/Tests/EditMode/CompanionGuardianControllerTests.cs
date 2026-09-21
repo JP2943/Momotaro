@@ -4,6 +4,7 @@ using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Combat.Guardian;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -21,7 +22,7 @@ namespace Momotaro.Tests.EditMode
     /// <item><description>守護対象へ参照を残さないこと（無効化・Scene 離脱）</description></item>
     /// </list>
     /// </summary>
-    public sealed class CompanionGuardianControllerTests
+    public sealed class CompanionGuardianControllerTests : CompanionActivityFixture
     {
         private const float GuardianRange = 3f;
         private const float GuardianCooldown = 6f;
@@ -269,7 +270,8 @@ namespace Momotaro.Tests.EditMode
             guardian.NotifyTransferred(MakeHit(receiver), resolved);
 
             Assert.AreEqual(GuardianCooldown, guardian.CooldownRemaining, 1e-3f);
-            Assert.AreEqual(CompanionState.Protect, actor.State, "庇ったことを状態に出す。");
+            Assert.AreEqual(CompanionState.Follow, actor.State,
+                "Protect は取引の中だけ（P4-FIX-R2）。通知が終われば通常状態へ戻っていて、所有権も残らない。");
             Assert.IsFalse(guardian.TryResolveGuardian(MakeHit(receiver), out IGuardianReceiver _),
                 "クールダウン中は連続で庇わない（主人公が実質無敵になるのを防ぐ）。");
         }

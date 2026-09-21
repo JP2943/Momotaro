@@ -3,6 +3,7 @@ using System.Reflection;
 using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -17,7 +18,7 @@ namespace Momotaro.Tests.EditMode
     /// 命中は仲間専用の経路ではなく既存の <see cref="IDamageable.ReceiveHit"/> をそのまま通す。時間は
     /// <see cref="CompanionHitReceiver.TickVitals"/> へ注入するため、Editor の描画間隔に依存しない。
     /// </summary>
-    public sealed class CompanionHitReceiverTests
+    public sealed class CompanionHitReceiverTests : CompanionActivityFixture
     {
         private const int MaxHp = 100;
         private const float FlinchResistance = 40f;

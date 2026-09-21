@@ -236,6 +236,15 @@ namespace Momotaro.Gameplay.Enemy.Threat
             }
 
             _lastDamageTarget = target;
+
+            // 口火を切った一撃（試遊フィードバック 2026-09-21）。まだ誰とも交戦していない敵にとって、
+            // 最初に実害を与えた相手は「自分を襲った者」であり、基礎ヘイトの高い主人公より先に狙うべき相手になる。
+            // 空振り同然（HP も体幹も 0）の命中で 1 回限りの権利を消費しないよう、実際に通った命中だけを口火とみなす。
+            if ((applied.Hp > 0f || applied.Poise > 0f) && _table.TryConsumeFirstStrike())
+            {
+                _table.AddThreat(target, ThreatSource.FirstStrike);
+            }
+
             if (applied.Hp > 0f)
             {
                 _table.AddThreat(target, ThreatSource.HpDamage, applied.Hp);
@@ -263,11 +272,15 @@ namespace Momotaro.Gameplay.Enemy.Threat
             }
 
             // 戦闘終了：撃破（Down）または帰還完了（Return→通常）で脅威を初期化する（§7.2）。
-            if (change.Current == EnemyState.Down
-                || (change.Previous == EnemyState.Return
-                    && (change.Current == EnemyState.Idle || change.Current == EnemyState.Patrol)))
+            if (change.Current == EnemyState.Down)
             {
-                _table.Reset();
+                _table.Reset(rearmFirstStrike: false); // 撃破。以後この敵の脅威は使われない。
+                _lastDamageTarget = null;
+            }
+            else if (change.Previous == EnemyState.Return
+                     && (change.Current == EnemyState.Idle || change.Current == EnemyState.Patrol))
+            {
+                _table.Reset(); // 帰還完了＝戦闘の終わり。次に襲われたら、また先制した側を狙う。
                 _lastDamageTarget = null;
             }
         }

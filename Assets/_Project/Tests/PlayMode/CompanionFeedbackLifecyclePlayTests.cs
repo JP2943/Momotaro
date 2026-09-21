@@ -7,6 +7,7 @@ using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Modes;
 using Momotaro.Presentation.Companion;
 using Momotaro.Presentation.Diagnostics;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -22,7 +23,7 @@ namespace Momotaro.Tests.PlayMode
     ///
     /// 周期スキャンで仲間を探していたときに落ちていたのが、まさにこの一撃だった。
     /// </summary>
-    public sealed class CompanionFeedbackLifecyclePlayTests
+    public sealed class CompanionFeedbackLifecyclePlayTests : CompanionActivityFixture
     {
         private readonly List<Object> _spawned = new List<Object>();
 

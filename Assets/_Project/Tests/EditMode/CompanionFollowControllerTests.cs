@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Tests.Support;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -13,7 +14,7 @@ namespace Momotaro.Tests.EditMode
     /// 物理を待たずに済むよう、Update を明示的に駆動して「Motor へ何を指示したか」で検証する（実際に移動して縮まることは
     /// PlayMode の <c>CompanionFollowPlayTests</c> が見る）。
     /// </summary>
-    public sealed class CompanionFollowControllerTests
+    public sealed class CompanionFollowControllerTests : CompanionActivityFixture
     {
         private readonly List<Object> _spawned = new List<Object>();
 

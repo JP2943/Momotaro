@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Momotaro.Gameplay.Companion
@@ -35,6 +36,11 @@ namespace Momotaro.Gameplay.Companion
     /// 別の話なので、両方を見る入口を <see cref="TryStartAction"/> に用意した（F02c）。所有権だけでは
     /// 「振っている最中に自動ガードを始めない」を表現できない（防御のほうが強い持ち主だから通ってしまう）。
     /// 逆に表だけでも「弱い持ち主が強い持ち主から奪う」を止められない。両方要る。
+    ///
+    /// <b>奪われた側への同期通知</b>（P4-FIX-R2）。券が無効になるだけでは、奪われた側の判定・能力・移動は
+    /// 次の Tick まで生きている。守護の成立で言えば、Protect に変わったあとも旧攻撃の Hitbox が出続け、
+    /// 旧ガードが転送された命中を防いでしまう。そこで持ち主は <see cref="ICompanionActionParticipant"/> として
+    /// 登録し、奪われた瞬間に<b>同じ呼び出しの中で</b>止める（v1.0 §8.2、c8c0ddf §2.4）。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class CompanionStateArbiter : MonoBehaviour
@@ -43,6 +49,11 @@ namespace Momotaro.Gameplay.Companion
         [SerializeField] private CompanionActor _actor;
 
         private int _runId;
+        private readonly List<KeyValuePair<CompanionActionOwner, ICompanionActionParticipant>> _participants =
+            new List<KeyValuePair<CompanionActionOwner, ICompanionActionParticipant>>();
+
+        /// <summary>奪われた側へ通知した回数（テスト・診断用）。</summary>
+        public int InterruptNotificationCount { get; private set; }
 
         /// <summary>いま行動を持っている側（テスト・診断用）。</summary>
         public CompanionActionOwner CurrentOwner { get; private set; } = CompanionActionOwner.None;
@@ -65,6 +76,40 @@ namespace Momotaro.Gameplay.Companion
             if (actor != null)
             {
                 _actor = actor;
+            }
+        }
+
+        /// <summary>
+        /// 行動の持ち主として登録する（OnEnable で登録し、OnDisable で <see cref="UnregisterParticipant"/>）。
+        /// 同じ持ち主が複数登録されても通知は各 1 回。
+        /// </summary>
+        public void RegisterParticipant(CompanionActionOwner owner, ICompanionActionParticipant participant)
+        {
+            if (participant == null || owner == CompanionActionOwner.None)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _participants.Count; i++)
+            {
+                if (ReferenceEquals(_participants[i].Value, participant))
+                {
+                    return;
+                }
+            }
+
+            _participants.Add(new KeyValuePair<CompanionActionOwner, ICompanionActionParticipant>(owner, participant));
+        }
+
+        /// <summary>登録を外す（未登録なら何もしない）。</summary>
+        public void UnregisterParticipant(ICompanionActionParticipant participant)
+        {
+            for (int i = _participants.Count - 1; i >= 0; i--)
+            {
+                if (ReferenceEquals(_participants[i].Value, participant))
+                {
+                    _participants.RemoveAt(i);
+                }
             }
         }
 
@@ -228,6 +273,22 @@ namespace Momotaro.Gameplay.Companion
             return true;
         }
 
+        /// <summary>
+        /// 指定の持ち主が行動中なら、その行動を<b>同期的に</b>打ち切らせて所有権を空にする（状態は変えない）。
+        /// 実命中・戦闘開始が探索を解放する入口（c8c0ddf §5「同期的に探索中断→所有権解除→元の命中解決を続ける」）。
+        /// 打ち切ったら true。別の持ち主・誰も居ないなら何もしない。
+        /// </summary>
+        public bool InterruptOwner(CompanionActionOwner owner)
+        {
+            if (owner == CompanionActionOwner.None || CurrentOwner != owner)
+            {
+                return false;
+            }
+
+            InvalidateOutstanding();
+            return true;
+        }
+
         /// <summary>所有権と実行 ID を初期化する（加入・Retry・Scene 再構築）。</summary>
         public void ResetArbitration()
         {
@@ -270,17 +331,62 @@ namespace Momotaro.Gameplay.Companion
                 return false;
             }
 
+            CompanionActionOwner displaced = CurrentOwner;
+            int displacedRun = _runId;
+
             _runId++;
             CurrentOwner = owner;
             handle = new CompanionActionHandle(owner, _runId);
+
+            // 別の持ち主から奪ったなら、その場で止めさせる（同じ持ち主の乗り換え——Chase→攻撃——は通知しない。
+            // 自分の判定を自分で消しに行くことになる）。新しい券を配ったあとに呼ぶので、奪われた側が
+            // 古い券で Release しても今の行動には効かない。
+            if (displaced != CompanionActionOwner.None && displaced != owner)
+            {
+                NotifyInterrupted(displaced, displacedRun);
+            }
+
             return true;
         }
 
-        /// <summary>配ってある券をすべて無効にし、所有権を空にする。</summary>
+        /// <summary>配ってある券をすべて無効にし、所有権を空にする。持ち主が居れば同期的に止めさせる。</summary>
         private void InvalidateOutstanding()
         {
+            CompanionActionOwner displaced = CurrentOwner;
+            int displacedRun = _runId;
+
             _runId++;
             CurrentOwner = CompanionActionOwner.None;
+
+            if (displaced != CompanionActionOwner.None)
+            {
+                NotifyInterrupted(displaced, displacedRun);
+            }
+        }
+
+        /// <summary>奪われた持ち主の登録者へ、無効になった券を渡して止めさせる。</summary>
+        private void NotifyInterrupted(CompanionActionOwner owner, int runId)
+        {
+            var lost = new CompanionActionHandle(owner, runId);
+
+            // 通知の途中で登録が変わっても壊れないよう、写しを回す。
+            KeyValuePair<CompanionActionOwner, ICompanionActionParticipant>[] snapshot = _participants.ToArray();
+            for (int i = 0; i < snapshot.Length; i++)
+            {
+                if (snapshot[i].Key != owner)
+                {
+                    continue;
+                }
+
+                ICompanionActionParticipant participant = snapshot[i].Value;
+                if (participant is Object destroyed && destroyed == null)
+                {
+                    continue; // 破棄済み（interface 越しなので明示的に弾く）。
+                }
+
+                InterruptNotificationCount++;
+                participant.OnActionInterrupted(lost);
+            }
         }
 
         private void EnsureActor()

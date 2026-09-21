@@ -16,8 +16,18 @@ namespace Momotaro.Gameplay.Player
     /// 中断時 Hitbox 消去まで。HP/体幹/ひるみの実適用は対象外（対象側 <see cref="IDamageable"/> と後続 Task）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, IJustEvadeState, ISpecialChargeCancel, IAttackThreatSource, IAttackSwingSource, IStepObserver
+    public sealed class PlayerStateController : MonoBehaviour, ICombatActor, IGuardState, IJustGuardState, IEvadeState, IJustEvadeState, ISpecialChargeCancel, IAttackThreatSource, IAttackSwingSource, IStepObserver, IInteractActor
     {
+        /// <inheritdoc />
+        /// <remarks>
+        /// 探索の「調べる」を受け付けられる状態か（P4-07A。v1.0 §4.3「新規調査は攻撃・Step・Hurt 等の実行中には受理しない。
+        /// 通常の移動／待機から開始する」）。状態機の遷移そのものには触れない。
+        /// </remarks>
+        public bool CanInteract => _machine.Current == PlayerState.Idle || _machine.Current == PlayerState.Move;
+
+        /// <inheritdoc />
+        Vector3 IInteractActor.Position => transform.position;
+
         [SerializeField] private PlayerMotor _motor;
         [SerializeField] private PlayerFacing _facing;
         [SerializeField] private PlayerMovementData _movement;

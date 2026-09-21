@@ -28,20 +28,13 @@ namespace Momotaro.Gameplay.Companion
         /// <param name="angleDegrees">自分の前方と対象方向の角度（度。0＝正対）。</param>
         /// <param name="settings">攻撃設定 Snapshot。</param>
         /// <param name="cooldownRemaining">クールダウンの残り秒（0 以下で攻撃可能）。</param>
-        /// <param name="mayApproach">
-        /// 敵へ<b>寄っていって</b>よいか（P4-07B。待機を命じられていれば false）。
-        /// false でも間合いの内側なら攻撃・待機は行う。指示は「何をしに行くか」を決めるもので、
-        /// 目の前に来た敵を殴るなという意味ではない。
-        /// 既定 true は、指示の仕組みを持たない構成を従来どおり動かすため。
-        /// </param>
         public static CompanionEngageDecision Decide(
             bool hasTarget,
             bool canEngage,
             float distance,
             float angleDegrees,
             in CompanionAttackSettings settings,
-            float cooldownRemaining,
-            bool mayApproach = true)
+            float cooldownRemaining)
         {
             if (!hasTarget || !canEngage || !settings.HasAttack)
             {
@@ -50,9 +43,7 @@ namespace Momotaro.Gameplay.Companion
 
             if (distance > settings.AttackStartDistance)
             {
-                // 寄ってはいけないなら、遠い敵には関与しない（Hold にすると戦闘扱いのまま
-                // 追従が譲り続け、待機の姿勢へ入れなくなる）。
-                return mayApproach ? CompanionEngageDecision.Chase : CompanionEngageDecision.Idle;
+                return CompanionEngageDecision.Chase;
             }
 
             bool inAngle = settings.UseAngle <= 0f || angleDegrees <= settings.UseAngle;

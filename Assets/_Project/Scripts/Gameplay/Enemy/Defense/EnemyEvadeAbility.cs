@@ -80,6 +80,22 @@ namespace Momotaro.Gameplay.Enemy.Defense
             }
         }
 
+        /// <summary>
+        /// 回避の動作を打ち切って Cooldown へ入れる（行動を奪われたとき用。P4-FIX-R2）。
+        /// <see cref="Reset"/> と違い Cooldown を消さないので、打ち切りが連続回避の抜け道にならない。回避中でなければ何もしない。
+        /// </summary>
+        public void Interrupt()
+        {
+            if (!_evading)
+            {
+                return;
+            }
+
+            _evading = false;
+            _invulnRemaining = 0f;
+            _cooldownRemaining = _cooldown;
+        }
+
         /// <summary>回避・Cooldown を初期化する（撃破・無効化・検証の再試行用）。</summary>
         public void Reset()
         {

@@ -14,6 +14,21 @@
 バランス調整は**オーナーの判断領域**なので、Claude は分析と選択肢を出して判断を仰ぐ。実装上の不整合
 （例：判定の届く距離 < 攻撃開始距離）はバランスではなく欠陥なので、Claude が直す。
 
+## 仕様正本（P4）
+
+P4 の受入判定に使う仕様は次の 2 文書で、どちらもプロジェクト直下にある。**ロードマップ v2.2 の見出しや会話の要約から
+詳細を再設計しない**（実際にやって、P4-07 を丸ごと作り直す羽目になった）。
+
+- `Momotaro_P4_Claude_Implementation_Request_v1.0.md` — 合意済み詳細仕様。§3 スコープ、§4 体験・入力・受付条件、
+  §5 加入資格と表示代理、§6 依頼の進行と原子性、§7 戦闘判定と停止、§8 調停（8.3 競合表、8.5 守護取引）、
+  §10 Data・ID、§13 P4-08R、§14 自動受入条件（E01〜E24・P01〜P11）、C 追加受入（R01〜R10）、D 保留台帳（D01〜D08）
+- `Momotaro_P4_Review_and_Next_Instructions_c8c0ddf.md` — 追加裁定。§2.4 守護取引の順序、§4.4 最終ゲート、
+  **§5 探索中の競合表（探索中の自動 Follow／Chase／Attack／Guard／Evade は拒否。実命中・戦闘開始が同期的に探索を解放）**、§6 工程分割
+- `Momotaro_P4_Review_0f4c96b.md` — 上記に対する現行実装の差分指摘（R2-01〜R2-10）と作業順序
+
+受入要求 E／P／R と実テストの対応は `P4RequiredTests.json` の `requirements` と各テストの `requirementId`／`requirementIds` で持ち、
+`verify-required-tests` が**対応テストの無い要求**を不合格にする。
+
 ## 設計の約束（Phase 1〜3.5 で確定）
 
 - 層構造 `Core ← Data ← Gameplay ← Presentation`（+ Infrastructure / Editor / Tests）を asmdef で強制
@@ -120,6 +135,32 @@ Claude が Unity Editor を直接動かすための仕組み。`Assets/_Project/
 `status.json` の `aliveAt` が現在時刻に近ければ Editor は生きている。マウントが落ちていても
 `device_list_dir` は動くので、まずそれで生存を確かめる。
 
+### Scene・Prefab へ保存されるクラスの置き場（実際に踏んだもの）
+
+- **MonoBehaviour／ScriptableObject は、クラス名と同じ名前のファイルに置く。** 別名ファイルの中のクラスは AddComponent も
+  Builder 直後の Validator も通るが、**保存した Scene／Prefab を読み直すと Missing Script になる**（`InvestigationRecordHolder` と
+  `CompanionRosterContext` で起きた。実 Scene を読み直す PlayMode テストで発覚）。`MonoScriptFileNameTests` が出荷コードを検査する
+- **Builder の出力物（犬丸 Prefab・2 つの Scene）はコードを変えたら作り直す。** ソースからコンポーネントを撤去しても Prefab には
+  Missing Script が残り、Scene テストが「Missing Script があります」で全滅する。順に `build-inumaru` → `build-companion-field` →
+  `build-companion-trial`
+- **試遊 Scene は Build Settings に登録されていること**（Retry の再読込・PlayMode の実 Scene 検証が依存）。Trial Builder が
+  出荷パスだけ登録し、`ProjectSettings/EditorBuildSettings.asset` が変わる（コミット対象）
+
+### 直列化項目を新しく足すとき（実際に踏みかけたもの）
+
+- **`[Serializable]` の struct／クラスへ項目を足すと、既存の Prefab・Asset は YAML に項目が無いので Unity が 0 で読む。**
+  コード側の既定値は「未設定のときだけ使う」形のフォールバックしか無いことが多く、既存アセットが値を持っている限り出番が無い。
+  結果、**Data に足したのに実機では常に無効**という、テストでも Validator でも気付きにくい状態になる
+  （`ThreatSettings._firstStrikeThreat` で踏みかけた。敵 Prefab 5 つが値を直列化していた）
+- 対策は 2 つセットで。**既存アセットへ値を書き込む**ことと、**出荷アセットから読んで関係を検査する EditMode テストを置く**こと。
+  検査は「この値でその機能が成立するか」という関係だけを見て、数値の上限は縛らない（オーナーの調整を妨げないため）
+
+### テストの活動 Context
+
+- 仲間の駆動は活動 Context（`CompanionActivityProvider`）が無いと**停止する**（未注入を許可側へ戻さない。R2-08）。
+  仲間を動かすテストは `Momotaro.Tests.Support` の `CompanionActivityFixture` を**継承**する（[SetUp] で自由探索の Fake を差す）。
+  アセンブリ属性の `ITestAction` は Unity のランナーではテストごとに適用されないので使わない（試して確認済み）
+
 ### PlayMode テストを書くときの落とし穴（実際に踏んだもの）
 
 - **静的状態は前のテストから持ち越される。** 特に `GameModeProvider.Current` が Exploration／Combat 以外だと、
@@ -129,6 +170,11 @@ Claude が Unity Editor を直接動かすための仕組み。`Assets/_Project/
   差し込む構成は、GameObject を `SetActive(false)` で組み立ててから起こす。さもないと Runtime が既定値で確定する
 - **`Time.timeScale` で加速するときは、1 フレームの経過が判定時間（Active）を超えないこと。** 超えると判定段を
   跨いでしまい、実機とは違う条件を検証することになる
+- **実 Scene を読む PlayMode テストは常駐サービス（BootstrapRoot）を自前で作り直す。** 前のテストが破棄・提供点を null に
+  していることがある。終わったら消して `GameModeProvider.Current`／`PlayerInputProvider.Current` を null に戻す
+- **実入力は Input System に仮想デバイスを足して流す**（`InputSystem.AddDevice<Keyboard>()` → `QueueStateEvent(new KeyboardState(Key.E))`）。
+  IA_Momotaro → Adapter → ラッチ → 入力仲介 → 調停役という本物の経路を通る。終わったら `RemoveDevice`
+- **敵は湧いただけでは襲ってこない**（索敵は視界＋音）。実攻撃を受ける検証では主人公を近づけて J（攻撃）で音を出す
 
 ### PlayMode テストと Scene 破壊の常時許可
 
@@ -147,7 +193,10 @@ Claude は**都度の確認を取らずに PlayMode テストを実行してよ�
 
 ## ファイル受け渡し
 
-Claude のクラウド環境と PC は別。`_transfer/` 経由で tar を渡し、`cp -f` で配置する。
+Claude のクラウド環境と PC は別。`_transfer/` 経由で tar を渡し、`cp -f` で配置する
+（`SendUserFile` で tar の uuid を取り、`device_commit_files` で `_transfer/<batch>.tar` へ置き、PC 側シェルで展開する。
+新規 `.cs` の `.meta` は tar に同梱する。guid は `md5(アセットパス)`）。
+PC → クラウドは、PC 側シェルで tar を `_transfer/` に作り `device_stage_files` で 1 ファイルとして取る。
 PC 側シェルはファイルを削除できないため、消す場合は `_to_delete/` へ移す。
 `_transfer/` `_to_delete/` `_bridge/` は `.gitignore` 済み。
 
@@ -172,6 +221,6 @@ Claude が `git status` を見るときは、`Assets/_Project/Scripts` `Tests` `
 末尾に必ず付ける。
 
 ```
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01MpBRWHryddmH7tXUPWq2s8
 ```

@@ -20,6 +20,7 @@ namespace Momotaro.Infrastructure.Input
         private const string AttackAction = "Attack";
         private const string StepAction = "Step";
         private const string SpecialAttackAction = "SpecialAttack";
+        private const string InteractAction = "Interact";
 
         private readonly PlayerInputState _state = new PlayerInputState();
         private readonly InputAction _move;
@@ -27,6 +28,7 @@ namespace Momotaro.Infrastructure.Input
         private readonly InputAction _attack;
         private readonly InputAction _step;
         private readonly InputAction _special;
+        private readonly InputAction _interact;
         private bool _disposed;
 
         /// <summary>Gameplay 層へ渡す入力。</summary>
@@ -77,6 +79,25 @@ namespace Momotaro.Infrastructure.Input
                 _special.started += OnSpecialStarted;
                 _special.canceled += OnSpecialCanceled;
             }
+
+            // Interact（E／南ボタン）は任意接続（P4-07B）。押下エッジをラッチし、探索の入力仲介が 1 回消費する。
+            // 既存の Step（Space／東ボタン）とは割当が重ならない（IA_Momotaro.inputactions）。
+            _interact = map.FindAction(InteractAction, throwIfNotFound: false);
+            if (_interact != null)
+            {
+                _interact.started += OnInteractStarted;
+                _interact.canceled += OnInteractCanceled;
+            }
+        }
+
+        private void OnInteractStarted(InputAction.CallbackContext context)
+        {
+            _state.SetInteract(true);
+        }
+
+        private void OnInteractCanceled(InputAction.CallbackContext context)
+        {
+            _state.SetInteract(false);
         }
 
         /// <inheritdoc />
@@ -164,6 +185,12 @@ namespace Momotaro.Infrastructure.Input
             {
                 _special.started -= OnSpecialStarted;
                 _special.canceled -= OnSpecialCanceled;
+            }
+
+            if (_interact != null)
+            {
+                _interact.started -= OnInteractStarted;
+                _interact.canceled -= OnInteractCanceled;
             }
 
             _disposed = true;

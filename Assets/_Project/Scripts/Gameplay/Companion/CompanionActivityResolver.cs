@@ -19,14 +19,23 @@ namespace Momotaro.Gameplay.Companion
                 || state == CombatSessionState.Intermission;
         }
 
+        /// <summary>戦闘の終端（結果画面・再読込待ち）か。入力不可なので探索も受け付けない。</summary>
+        public static bool IsConcluded(CombatSessionState state)
+        {
+            return state == CombatSessionState.Victory
+                || state == CombatSessionState.Defeat
+                || state == CombatSessionState.Reloading;
+        }
+
         /// <summary>
         /// 現在の許可を決める。
         /// </summary>
         /// <param name="mode">ゲーム全体のモード。</param>
-        /// <param name="session">戦闘セッションの状態。セッションが無い区画では null。</param>
+        /// <param name="session">戦闘セッションの状態。セッションが無い区画・Encounter 開始前の自由探索では null。</param>
         public static CompanionActivity Resolve(GameMode mode, CombatSessionState? session)
         {
             bool encounterActive = session.HasValue && IsEncounterActive(session.Value);
+            bool concluded = session.HasValue && IsConcluded(session.Value);
 
             switch (mode)
             {
@@ -46,7 +55,13 @@ namespace Momotaro.Gameplay.Companion
 
                 case GameMode.Exploration:
                     // ここが F05 の要点。Exploration でも Encounter が動いていれば戦闘中として扱う。
-                    return encounterActive ? CompanionActivity.Fighting : CompanionActivity.FreeRoam;
+                    // 勝敗の結果画面は戦闘ではないが入力不可なので探索も不可（§7.1）。
+                    if (encounterActive)
+                    {
+                        return CompanionActivity.Fighting;
+                    }
+
+                    return concluded ? CompanionActivity.Concluded : CompanionActivity.FreeRoam;
 
                 default:
                     // 知らないモードは通さない（新しいモードが増えたとき、黙って戦闘扱いにしない）。

@@ -26,6 +26,12 @@ namespace Momotaro.EditorBridge
             /// <summary>対応する要求 ID（R03、N01 等）。名前を変えても要求との対応を失わないために持つ。</summary>
             public string requirementId;
 
+            /// <summary>
+            /// 同じテストが満たす追加の要求 ID（E05、P03 等）。仕様 C「同一テストで複数 ID を満たして構わない」のため。
+            /// <see cref="requirementId"/> と合わせて <see cref="RequirementIds"/> で読む。
+            /// </summary>
+            public string[] requirementIds = Array.Empty<string>();
+
             /// <summary>この工程の終了までに Passed を要求する。</summary>
             public string stage;
 
@@ -34,6 +40,47 @@ namespace Momotaro.EditorBridge
 
             /// <summary>実行結果に現れる完全名。</summary>
             public string fullName;
+
+            /// <summary>このテストが満たす要求 ID のすべて（主＋追加。空は除く）。</summary>
+            public IEnumerable<string> RequirementIds()
+            {
+                if (!string.IsNullOrEmpty(requirementId))
+                {
+                    yield return requirementId;
+                }
+
+                if (requirementIds == null)
+                {
+                    yield break;
+                }
+
+                foreach (string id in requirementIds)
+                {
+                    if (!string.IsNullOrEmpty(id))
+                    {
+                        yield return id;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 合意済みの受入要求（v1.0 §14 の E01〜E24・P01〜P11、C の R01〜R10）。
+        /// 一覧に載せるのは「何を満たすべきか」であり、テスト名ではない。テスト側が要求 ID を名乗ることで対応が生まれる。
+        /// <b>対応するテストが 1 本も無い要求は「未対応」</b>として、その工程の照合を不合格にする（レビュー R2-10）。
+        /// 実行結果から成功した名前だけを集めて一覧を作り直す運用にはしない。
+        /// </summary>
+        [Serializable]
+        public sealed class RequirementEntry
+        {
+            /// <summary>要求 ID（E01、P03、R10 等）。</summary>
+            public string id;
+
+            /// <summary>何を確かめる要求か（人が読む）。</summary>
+            public string summary;
+
+            /// <summary>この工程の終了までに対応テストが存在し Passed であることを要求する。</summary>
+            public string stage;
         }
 
         /// <summary>説明済みの非必須 Skip。</summary>
@@ -65,6 +112,54 @@ namespace Momotaro.EditorBridge
 
             /// <summary>説明済みの非必須 Skip。</summary>
             public AllowedSkipEntry[] allowedSkips = Array.Empty<AllowedSkipEntry>();
+
+            /// <summary>合意済みの受入要求（E／P／R）。</summary>
+            public RequirementEntry[] requirements = Array.Empty<RequirementEntry>();
+
+            /// <summary>
+            /// 指定工程までに対応テストを要求する受入要求のうち、<b>対応するテストが一覧に 1 本も無いもの</b>を集める。
+            /// 空文字なら全工程。
+            /// </summary>
+            public List<RequirementEntry> UnmetRequirements(string stage)
+            {
+                var covered = new HashSet<string>(StringComparer.Ordinal);
+                foreach (RequiredEntry entry in tests)
+                {
+                    if (entry == null || string.IsNullOrEmpty(entry.fullName))
+                    {
+                        continue;
+                    }
+
+                    foreach (string id in entry.RequirementIds())
+                    {
+                        covered.Add(id);
+                    }
+                }
+
+                var unmet = new List<RequirementEntry>();
+                bool all = string.IsNullOrEmpty(stage);
+                int limit = all ? int.MaxValue : StageIndex(stage);
+
+                foreach (RequirementEntry requirement in requirements)
+                {
+                    if (requirement == null || string.IsNullOrEmpty(requirement.id))
+                    {
+                        continue;
+                    }
+
+                    if (!all && StageIndex(requirement.stage) > limit)
+                    {
+                        continue; // まだ着手していない後続工程の要求は、この時点では問わない。
+                    }
+
+                    if (!covered.Contains(requirement.id))
+                    {
+                        unmet.Add(requirement);
+                    }
+                }
+
+                return unmet;
+            }
 
             /// <summary>
             /// 指定工程までに完了を要求する必須テストの完全名を集める。
