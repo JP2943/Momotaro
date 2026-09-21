@@ -41,6 +41,7 @@ namespace Momotaro.Gameplay.Companion
         private bool _defenseResolved;
         private ICompanionTransferAcceptanceHook _transferHook;
         private bool _transferHookResolved;
+        private CompanionInvestigationController _investigation;
 
         /// <summary>被弾結果の通知チャネル（HUD・フィードバック・Debug が購読）。</summary>
         public HitResultChannel Results { get; } = new HitResultChannel();
@@ -150,6 +151,11 @@ namespace Momotaro.Gameplay.Companion
             // ---- ここから受理確定。被害の解決より先に、同じ呼び出しの中で旧行動を止める ----
 
             // 戦闘本体への実命中は探索を同期的に中断する（探索表示が被害を吸わない。c8c0ddf §5）。
+            //
+            // 駆動を直接叩くのは、<b>表示代理で調べているとき本体の行動所有権を探索が持っていない</b>ため（R3-02）。
+            // 所有権を返すだけの経路では、代理探索中に自然復帰した本体が撃たれても依頼が残ってしまう。
+            // 所有権の解放はそのあと（駆動が未装備の構成でも所有権だけは返す。二度目の中断は冪等）。
+            ResolveInvestigation()?.NotifyRealHit();
             _states?.InterruptOwner(CompanionActionOwner.Investigate);
 
             if (transferred)
@@ -303,6 +309,22 @@ namespace Momotaro.Gameplay.Companion
             }
 
             return _defense;
+        }
+
+        /// <summary>
+        /// 探索の駆動（同一 GameObject。探索を持たない構成では null のまま）。
+        /// 具象型で持つのは、これが「同じ仲間の探索」を指す 1 対 1 の参照だから（契約越しにする利点が無い）。
+        /// </summary>
+        private CompanionInvestigationController ResolveInvestigation()
+        {
+            if (_investigation == null)
+            {
+                // 後から AddComponent された構成でも拾えるよう、見つかるまで毎回取り直す（命中は毎フレームではない）。
+                _investigation = GetComponent<CompanionInvestigationController>();
+            }
+
+            // 破棄済みを弾く。?. は素の参照比較なので、Unity の null 演算子でここで落としておく。
+            return _investigation != null ? _investigation : null;
         }
 
         /// <summary>守護側の受理確定フック（同一 GameObject。守護を持たない構成では null のまま）。</summary>

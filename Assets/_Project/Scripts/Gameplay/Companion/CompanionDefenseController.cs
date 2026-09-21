@@ -56,6 +56,7 @@ namespace Momotaro.Gameplay.Companion
         private bool _canGuard;
         private bool _canEvade;
         private bool _built;
+        private ICompanionInvestigationState _investigation; // 探索中は構えも回避も始めない（同一 GameObject。R3-03）。
         private CompanionActionHandle _action; // 構え・回避の引換券（F02b）。
         private Vector3 _holdFacing;           // 防御中に固定する向き（F02c）。
         private bool _hasHoldFacing;
@@ -83,6 +84,31 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>直近に危険を観測したか（診断用）。</summary>
         public bool SawDanger { get; private set; }
+
+        /// <summary>
+        /// 探索が走っているか（R3-03。本体・表示代理のどちらでも true。テスト・診断用）。
+        ///
+        /// 本体で調べているあいだは許可表が Investigate 状態の構え・回避を拒否するので状態だけで足りるが、
+        /// <b>表示代理</b>では本体の状態が探索を表さない。Down の自然復帰時刻が来ると状態は Follow へ戻り、
+        /// 見えない本体が敵の予兆に反応して構えてしまう。探索の利用中状態も見る。
+        /// </summary>
+        public bool IsInvestigating
+        {
+            get
+            {
+                if (_investigation is Object destroyed && destroyed == null)
+                {
+                    _investigation = null;
+                }
+
+                if (_investigation == null)
+                {
+                    _investigation = GetComponent<ICompanionInvestigationState>();
+                }
+
+                return _investigation != null && _investigation.IsInvestigationActive;
+            }
+        }
 
         /// <summary>状態・Data の供給元を注入する（Prefab 構築・テスト。null は無視）。</summary>
         public void Bind(CompanionActor actor)
@@ -145,6 +171,16 @@ namespace Momotaro.Gameplay.Companion
                 // 行動を先に手放すのは、ここから Follow へ戻さないため。倒れている・退場しているときの
                 // 状態は被弾側・退場側が握っており、防御が勝手に復帰させてよい場面ではない。
                 AbandonDefenseAction();
+                ReleaseGuard();
+                SawDanger = false;
+                return;
+            }
+
+            // 探索中は構えも回避も始めない（R3-03）。本体・表示代理のどちらでも同じ。
+            // 能力の時計（上の Tick）は進めたままにする＝探索は戦闘値・CD に触れないという契約を保つ。
+            if (IsInvestigating)
+            {
+                AbandonDefenseAction(); // 状態は変えない（探索が持っている、または被弾側が握っている）。
                 ReleaseGuard();
                 SawDanger = false;
                 return;

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
+using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Player;
 using UnityEngine;
 
@@ -34,7 +35,8 @@ namespace Momotaro.Gameplay.Companion.Investigation
     /// 欠けていれば未配線として拒否し、Validator が検出する（§5.1）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class InvestigationCoordinator : MonoBehaviour, IInvestigationOutcomeSink, IInvestigationReachability
+    public sealed class InvestigationCoordinator : MonoBehaviour, IInvestigationOutcomeSink, IInvestigationReachability,
+        IIncomingHitObserver
     {
         [Tooltip("主人公（位置・向き・いま Interact を実行できる状態か）。")]
         [SerializeField] private PlayerStateController _player;
@@ -52,6 +54,8 @@ namespace Momotaro.Gameplay.Companion.Investigation
         private IObstacleProbe _probe;
         private IInteractActor _playerOverride;
         private int _nextRequestId;
+        private IIncomingHitSource _hitSource;       // 主人公の被弾入口（実命中で探索を解放するための購読先。R3-02）。
+        private bool _hitSourceOverridden;           // テストが明示注入した（自動解決で上書きしない）。
 
         /// <summary>依頼を出す側（Scene の主人公、またはテストが注入した Fake）。</summary>
         private IInteractActor Interactor => _playerOverride ?? (_player != null ? _player : null);
@@ -125,6 +129,8 @@ namespace Momotaro.Gameplay.Companion.Investigation
             {
                 _companions = companions;
             }
+
+            SubscribeToPlayerHits(); // 主人公が後から差し替わった構成でも購読を張り直す。
         }
 
         /// <summary>依頼を出す側を差し替える（テストが Fake の主人公を注入する。null で Scene の主人公へ戻す）。</summary>
@@ -186,6 +192,43 @@ namespace Momotaro.Gameplay.Companion.Investigation
             for (int i = 0; i < _companions.Length; i++)
             {
                 _companions[i]?.NotifyCombatStart();
+            }
+        }
+
+        /// <summary>
+        /// 主人公の被弾入口を明示注入する（テスト・特殊な Scene 構成。null で自動解決へ戻す）。
+        /// </summary>
+        public void SetPlayerHitSource(IIncomingHitSource source)
+        {
+            UnsubscribeFromPlayerHits();
+            _hitSourceOverridden = source != null;
+            _hitSource = source;
+            if (_hitSource != null && isActiveAndEnabled)
+            {
+                _hitSource.AddIncomingHitObserver(this);
+            }
+        }
+
+        /// <summary>主人公の被弾入口を購読しているか（Scene 検査・診断用）。</summary>
+        public bool IsSubscribedToPlayerHits => _hitSource != null;
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// 主人公へ実命中が届いた（解決の前。R3-02）。実行中の依頼を<b>本体・表示代理の別なく</b>同期解放する。
+        /// 守護の資格・クールダウン・主人公側の防御分岐には依存しない。ここから戻ったあとで主人公の
+        /// 無敵／Step／JG／ガード／守護／通常 Damage の既存解決が続く（＝解放は必ず先に終わっている）。
+        /// </remarks>
+        public void OnIncomingHit(in HitInfo hit)
+        {
+            InterruptAllForRealHit();
+        }
+
+        /// <summary>実命中による探索中断を全員へ配る（実命中の入口から呼ぶ。冪等）。</summary>
+        public void InterruptAllForRealHit()
+        {
+            for (int i = 0; i < _companions.Length; i++)
+            {
+                _companions[i]?.NotifyRealHit();
             }
         }
 
@@ -350,6 +393,60 @@ namespace Momotaro.Gameplay.Companion.Investigation
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// 主人公の被弾入口を解決して購読する（R3-02）。参照は既に配線されている主人公から辿るだけで、
+        /// <c>Find*</c> も新しい直列化項目も増やさない。守護を持たない仲間・主人公でも成立する。
+        /// </summary>
+        private void SubscribeToPlayerHits()
+        {
+            if (_hitSourceOverridden || !isActiveAndEnabled)
+            {
+                return;
+            }
+
+            IIncomingHitSource resolved = _player != null ? _player.GetComponentInParent<IIncomingHitSource>() : null;
+            if (ReferenceEquals(resolved, _hitSource))
+            {
+                if (_hitSource != null)
+                {
+                    _hitSource.AddIncomingHitObserver(this); // 冪等。OnEnable の再入でも二重にならない。
+                }
+
+                return;
+            }
+
+            UnsubscribeFromPlayerHits();
+            _hitSource = resolved;
+            _hitSource?.AddIncomingHitObserver(this);
+        }
+
+        private void UnsubscribeFromPlayerHits()
+        {
+            _hitSource?.RemoveIncomingHitObserver(this);
+            _hitSource = null;
+        }
+
+        private void OnEnable()
+        {
+            if (_hitSourceOverridden)
+            {
+                _hitSource?.AddIncomingHitObserver(this);
+                return;
+            }
+
+            SubscribeToPlayerHits();
+        }
+
+        private void OnDisable()
+        {
+            // 購読は OnEnable／OnDisable 対称（§2.3 後始末）。明示注入は保持し、購読だけ外す。
+            _hitSource?.RemoveIncomingHitObserver(this);
+            if (!_hitSourceOverridden)
+            {
+                _hitSource = null;
+            }
         }
 
         private void EnsureProbe()

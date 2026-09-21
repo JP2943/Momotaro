@@ -41,6 +41,7 @@ namespace Momotaro.Gameplay.Companion
         private bool _leaderActorResolved;
         private CompanionActor _subscribedActor; // 状態通知の購読先（対称管理・重複購読防止）。
         private ICompanionEngagementSource _engagement; // 戦闘側（同一 GameObject。未装備なら null のまま）。
+        private ICompanionInvestigationState _investigation; // 探索側（同上。探索を持たない仲間では null）。
 
         /// <summary>判断モデル（テスト・Debug 用）。</summary>
         public CompanionFollowModel Model => _model;
@@ -60,6 +61,18 @@ namespace Momotaro.Gameplay.Companion
         /// </summary>
         public bool IsYieldingToStrongerMovementOwner =>
             _arbiter != null && _arbiter.Owner > CompanionMovementOwner.Follow;
+
+        /// <summary>
+        /// 探索へ譲っているか（R3-03。テスト・診断用）。
+        ///
+        /// 本体で調べているあいだは移動の所有権が探索にあるので
+        /// <see cref="IsYieldingToStrongerMovementOwner"/> でも止まるが、<b>表示代理のあいだは所有権が動かない</b>。
+        /// 代理は Down／退場中の本体に触れずに歩くので、Down の自然復帰時刻が来ると本体は Follow へ戻り、
+        /// 状態も所有権も「追従してよい」に見える。表示だけは代理に抑制されたままなので、
+        /// <b>見えない本体が歩き出す</b>（R3-03 で報告された経路）。探索の利用中状態を直接見て止める。
+        /// </summary>
+        public bool IsYieldingToInvestigation =>
+            ResolveInvestigation() != null && _investigation.IsInvestigationActive;
 
         /// <summary>追従対象・Actor・Motor を注入する（Scene 構築・テスト。null は無視して既存を保つ）。</summary>
         public void Bind(Transform leader, CompanionActor actor = null, CompanionMotor motor = null)
@@ -191,6 +204,15 @@ namespace Momotaro.Gameplay.Companion
                 return;
             }
 
+            // 探索中は判断ごと止める（R3-03）。本体・表示代理のどちらでも譲る。
+            // Motor へは触れない（本体探索では探索が握っており、代理探索では本体は既に止まっている）。
+            if (IsYieldingToInvestigation)
+            {
+                _model.Reset();   // 復帰時に古い停滞時間・前回距離を引きずらない。
+                ReleaseMovement(); // 自分が握っていれば返す（探索が握っていれば何も起きない）。
+                return;
+            }
+
             // 戦闘中は移動を戦闘側へ譲る（Motor へ触れない。停止も戦闘側が必要に応じて行う）。
             if (IsYieldingToCombat)
             {
@@ -284,6 +306,22 @@ namespace Momotaro.Gameplay.Companion
             }
 
             return _engagement;
+        }
+
+        /// <summary>探索側（同一 GameObject の <see cref="ICompanionInvestigationState"/>）を解決する（R3-03）。</summary>
+        private ICompanionInvestigationState ResolveInvestigation()
+        {
+            if (_investigation is Object destroyed && destroyed == null)
+            {
+                _investigation = null;
+            }
+
+            if (_investigation == null)
+            {
+                _investigation = GetComponent<ICompanionInvestigationState>();
+            }
+
+            return _investigation;
         }
 
         private void ResolveComponents()

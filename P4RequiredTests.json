@@ -10,7 +10,8 @@
     "P4-07A",
     "P4-07B",
     "P4-08R",
-    "P4-FIX-AGGRO"
+    "P4-FIX-AGGRO",
+    "P4-FIX-R3"
   ],
   "tests": [
     {
@@ -1218,10 +1219,12 @@
     },
     {
       "requirementId": "N91",
-      "requirementIds": [],
+      "requirementIds": [
+        "R11"
+      ],
       "stage": "P4-07A",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.GuardianEvaluation_ReleasesInvestigationFirst_ThenProtects"
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.RealHitOnThePlayer_ReleasesInvestigationFirst_ThenProtects"
     },
     {
       "requirementId": "N92",
@@ -1699,6 +1702,110 @@
       "stage": "P4-FIX-AGGRO",
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.CompanionAggroReproPlayTests.AfterTheCompanionOpens_AFightingPlayerTakesAggroBack_BeforeTheEnemyDies"
+    },
+    {
+      "requirementId": "N187",
+      "requirementIds": [
+        "R11"
+      ],
+      "stage": "P4-FIX-R3",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.PlayerGuardsTheHit_ReleasesInvestigationBeforeTheResultIsPublished"
+    },
+    {
+      "requirementId": "N188",
+      "requirementIds": [
+        "R11"
+      ],
+      "stage": "P4-FIX-R3",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.PlayerStepsTheHit_StillReleasesTheInvestigation"
+    },
+    {
+      "requirementId": "N189",
+      "requirementIds": [
+        "R11"
+      ],
+      "stage": "P4-FIX-R3",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.RealHitOnThePlayer_ReleasesTheProxyInvestigationToo"
+    },
+    {
+      "requirementId": "N190",
+      "requirementIds": [
+        "R11",
+        "R13"
+      ],
+      "stage": "P4-FIX-R3",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.RealHitOnTheRevivedBody_ReleasesTheProxyInvestigation"
+    },
+    {
+      "requirementId": "N191",
+      "requirementIds": [
+        "R12"
+      ],
+      "stage": "P4-FIX-R3",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.CompletionCallback_ThatStartsCombat_DoesNotThrow_AndKeepsTheSuccess"
+    },
+    {
+      "requirementId": "N192",
+      "requirementIds": [
+        "R12"
+      ],
+      "stage": "P4-FIX-R3",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.CompletionCallback_ThatStartsANewRequest_DoesNotLetTheOldCallFinishIt"
+    },
+    {
+      "requirementId": "N193",
+      "requirementIds": [
+        "R12"
+      ],
+      "stage": "P4-FIX-R3",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.CompletionCallback_ThatDisablesTheDriver_DoesNotThrow"
+    },
+    {
+      "requirementId": "N194",
+      "requirementIds": [
+        "R13",
+        "E20"
+      ],
+      "stage": "P4-FIX-R3",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.NaturalRevive_DuringProxyInvestigation_KeepsTheHiddenBodyStill"
+    },
+    {
+      "requirementId": "N195",
+      "requirementIds": [
+        "R14",
+        "E21"
+      ],
+      "stage": "P4-FIX-R3",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.ProxyMoveSpeedEditedMidRequest_DoesNotChangeTheCurrentRequest_ButAppliesToTheNext"
+    },
+    {
+      "requirementId": "N196",
+      "requirementIds": [
+        "R14",
+        "E21"
+      ],
+      "stage": "P4-FIX-R3",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.CompanionInvestigationTests.BodyMoveSpeedEditedMidRequest_DoesNotChangeTheCurrentRequest"
+    },
+    {
+      "requirementId": "N197",
+      "requirementIds": [
+        "R15",
+        "P06"
+      ],
+      "stage": "P4-FIX-R3",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.RealSceneOverlap_BothArrivalOrders_MatchTheAgreedGuardianContract"
     }
   ],
   "allowedSkips": [],
@@ -1927,6 +2034,31 @@
       "id": "R10",
       "summary": "F09 全件回帰：P3.5＋P4を連続実行し、Scene／Collider／登録／静的状態／GameMode／timeScaleの残留で後続を壊さない",
       "stage": "P4-08R"
+    },
+    {
+      "id": "R11",
+      "summary": "R3-02 実命中による探索中断：Body／Proxy とも、主人公側の無敵／Step／JG／ガードで先に解決される命中でも、解決より先に同期解放する",
+      "stage": "P4-FIX-R3"
+    },
+    {
+      "id": "R12",
+      "summary": "R3-01 完了通知からの再入：通知内で撤収・別依頼開始・Disable しても例外なし。成功記録・成功通知は各1回、新依頼を壊さない",
+      "stage": "P4-FIX-R3"
+    },
+    {
+      "id": "R13",
+      "summary": "R3-03 代理探索中の自然復帰：HP・復帰時計は進むが、非表示の本体は自動 Follow／Chase／Attack／Guard／Evade を再開しない",
+      "stage": "P4-FIX-R3"
+    },
+    {
+      "id": "R14",
+      "summary": "R3-04 探索の移動速度も受付時 Snapshot：実行中の Data 変更は現行依頼に効かず、次の依頼から反映",
+      "stage": "P4-FIX-R3"
+    },
+    {
+      "id": "R15",
+      "summary": "R3-05 守護の到達順：実 Scene で重なりを確実に作り、直撃→転送／転送→直撃の確定契約（受け手ごと最大1回・成立時のみ主人公無傷・成立通知と CD）を検証",
+      "stage": "P4-FIX-R3"
     }
   ]
 }

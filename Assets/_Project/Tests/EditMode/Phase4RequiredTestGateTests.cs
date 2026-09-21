@@ -202,7 +202,8 @@ namespace Momotaro.Tests.EditMode
         {
             Phase4RequiredTests.Manifest manifest = Phase4RequiredTests.Load(out string error);
             Assert.IsNotNull(manifest, error);
-            Assert.AreEqual(45, manifest.requirements.Length, "E01〜E24・P01〜P11・R01〜R10 の 45 件を列挙している。");
+            Assert.AreEqual(50, manifest.requirements.Length,
+                "E01〜E24・P01〜P11・R01〜R10 の 45 件に、レビュー a520a1c の R11〜R15（R3-01〜R3-05）を足した 50 件。");
 
             var seen = new HashSet<string>();
             foreach (Phase4RequiredTests.RequirementEntry requirement in manifest.requirements)

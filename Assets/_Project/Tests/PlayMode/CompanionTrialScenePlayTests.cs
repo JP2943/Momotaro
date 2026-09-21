@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using Momotaro.Gameplay.Combat;
+using Momotaro.Gameplay.Combat.Guardian;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Enemy;
@@ -89,16 +90,34 @@ namespace Momotaro.Tests.PlayMode
         private sealed class DamageLog : IHitResultListener
         {
             public readonly Dictionary<HitId, int> DamagePerHit = new Dictionary<HitId, int>();
+
+            /// <summary>何らかの結果（Damage／Guard／Evade）を出した命中。「その経路を通ったか」の判定に使う。</summary>
+            public readonly HashSet<HitId> ResolvedHits = new HashSet<HitId>();
+
             public int Results;
 
             public void OnHitResult(in HitResult result)
             {
                 Results++;
+                ResolvedHits.Add(result.HitId);
                 if (result.Kind == HitResultKind.Damage)
                 {
                     DamagePerHit.TryGetValue(result.HitId, out int n);
                     DamagePerHit[result.HitId] = n + 1;
                 }
+            }
+        }
+
+        /// <summary>守護成立の観測（どの命中で転送が成立したか。R3-05）。</summary>
+        private sealed class TransferLog : IGuardianTransferListener
+        {
+            public readonly HashSet<HitId> HitIds = new HashSet<HitId>();
+            public int Count;
+
+            public void OnGuardianTransfer(in GuardianTransferEvent transfer)
+            {
+                Count++;
+                HitIds.Add(transfer.HitId);
             }
         }
 
@@ -650,8 +669,10 @@ namespace Momotaro.Tests.PlayMode
             Refs r = Collect();
             var companionLog = new DamageLog();
             var playerLog = new DamageLog();
+            var transfers = new TransferLog();
             r.Receiver.Results.AddListener(companionLog);
             r.PlayerVitals.Results.AddListener(playerLog);
+            r.PlayerVitals.GuardianTransfers.AddListener(transfers);
             int playerHpStart = r.PlayerVitals.Vitals.Health.Current;
 
             // 犬丸の攻撃だけ止める（Wave1 の近接 1 体は犬丸が先に倒してしまい、敵の攻撃が一度も出ないことがある）。
@@ -680,22 +701,142 @@ namespace Momotaro.Tests.PlayMode
                 yield return null;
             }
 
+            // 各受け手について、同一 HitId の被害は最大 1 回。これは到達順に依らない契約（P4-01）。
             foreach (KeyValuePair<HitId, int> kv in companionLog.DamagePerHit)
             {
                 Assert.AreEqual(1, kv.Value, "犬丸：同一 HitId の被害は 1 回（転送と直撃の重複なし）: " + kv.Key);
             }
 
+            // 主人公が無傷であることを<b>無条件には</b>要求しない（R3-05）。同じ 1 振りが両者に重なったとき、
+            // 犬丸への直撃が先に届けば転送は重複として拒否され、主人公は自分に当たった分を通常どおり受ける——
+            // これが合意済みの到達順契約（GuardianHitOrderTests の N02／N03）。無条件の交差禁止は正しい挙動を落とす。
+            // 要求するのは「その HitId の転送が実際に成立していたなら主人公は削れない」だけ。
             foreach (KeyValuePair<HitId, int> kv in playerLog.DamagePerHit)
             {
                 Assert.AreEqual(1, kv.Value, "主人公：同一 HitId の被害は 1 回: " + kv.Key);
-                Assert.IsFalse(companionLog.DamagePerHit.ContainsKey(kv.Key), "同じ命中が主人公と犬丸の両方へ被害を出さない: " + kv.Key);
+                Assert.IsFalse(transfers.HitIds.Contains(kv.Key),
+                    "転送が成立した命中で主人公が削れている: " + kv.Key);
             }
 
-            Assert.GreaterOrEqual(companionLog.Results + playerLog.Results, 1);
+            foreach (HitId id in transfers.HitIds)
+            {
+                Assert.IsTrue(companionLog.ResolvedHits.Contains(id),
+                    "転送が成立した命中は犬丸側で解決されているはず: " + id);
+            }
+
+            Assert.GreaterOrEqual(companionLog.Results + playerLog.Results, 1, "実 Hitbox が 1 回は届いている。");
             Assert.AreEqual(0, r.Actor.IllegalTransitionCount);
             Assert.IsTrue(r.PlayerVitals.Vitals.Health.Current <= playerHpStart, "主人公 HP は増えない。");
             r.Receiver.Results.RemoveListener(companionLog);
             r.PlayerVitals.Results.RemoveListener(playerLog);
+            r.PlayerVitals.GuardianTransfers.RemoveListener(transfers);
+        }
+
+        // ================================================================
+        // P06（続き）：実 Scene・実 Prefab で「重なり」を確実に作り、到達順ごとの確定契約を通す
+        // ================================================================
+
+        /// <summary>
+        /// 同じ 1 振りが主人公と犬丸の両方に重なる状況を、<b>物理クエリの列挙順に頼らず</b>作って両方の到達順を通す（R3-05）。
+        ///
+        /// 上の P06 は実 Hitbox を使うぶん、どちらが先に届くか・そもそも重なるかを保証できない。
+        /// ここでは実 Scene の実 Prefab（追従・防御・守護・被弾はすべて出荷のまま）へ、同一 HitId の命中を
+        /// 決めた順で直接入れる。検証するのは合意済みの表そのもの。
+        ///
+        /// <list type="bullet">
+        /// <item><description>犬丸への直撃 → 主人公への命中：犬丸は 1 回だけ受け、転送は重複で拒否。
+        /// 主人公は通常 Damage。成立通知も CD も無い。</description></item>
+        /// <item><description>主人公への命中 → 犬丸への直撃：転送が成立して主人公は無傷。犬丸の受理は 1 回。
+        /// 成立通知 1 回と CD 開始。</description></item>
+        /// </list>
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RealSceneOverlap_BothArrivalOrders_MatchTheAgreedGuardianContract()
+        {
+            yield return LoadTrial();
+            Refs r = Collect();
+            var companionLog = new DamageLog();
+            var playerLog = new DamageLog();
+            var transfers = new TransferLog();
+            r.Receiver.Results.AddListener(companionLog);
+            r.PlayerVitals.Results.AddListener(playerLog);
+            r.PlayerVitals.GuardianTransfers.AddListener(transfers);
+
+            CompanionGuardianController guardian = r.Actor.GetComponent<CompanionGuardianController>();
+            Assert.IsNotNull(guardian, "出荷 Prefab に守護が付いている。");
+
+            // 追従で隣に来るのを待つ（位置を手で書かない＝実機と同じ間合いで庇わせる）。
+            yield return WaitUntil(
+                () => FormationSlot.HorizontalDistance(r.Actor.WorldPosition, r.PlayerRoot.transform.position) <= 2f,
+                8f, "犬丸が主人公の隣に来る", () => Diagnose(r));
+            Assert.AreEqual(CompanionState.Follow, r.Actor.State, "前提：追従中（庇える状態）。");
+            Assert.AreEqual(0f, guardian.CooldownRemaining, 1e-3f, "前提：守護 CD は空。");
+
+            var attacker = new GameObject("OverlapAttacker").AddComponent<FakeAttacker>();
+            attacker.transform.position = r.PlayerRoot.transform.position + new Vector3(0f, 0f, -2f);
+
+            // ---- 到達順 A：犬丸への直撃が先 ----
+            var first = HitId.Single(9101);
+            int dogHpA = r.Receiver.CurrentHp;
+            int playerHpA = r.PlayerVitals.Vitals.Health.Current;
+
+            r.Receiver.ReceiveHit(Sweep(r.Receiver, attacker, first));
+            r.PlayerVitals.ReceiveHit(Sweep(r.PlayerVitals, attacker, first));
+
+            Assert.Less(r.Receiver.CurrentHp, dogHpA, "犬丸は直撃を受ける。");
+            Assert.Less(r.PlayerVitals.Vitals.Health.Current, playerHpA,
+                "転送は重複で拒否され、主人公は自分に当たった分を受ける（到達順 A の確定契約）。");
+            Assert.AreEqual(1, companionLog.DamagePerHit[first], "犬丸の被害は 1 回。");
+            Assert.AreEqual(1, playerLog.DamagePerHit[first], "主人公の被害も 1 回。");
+            Assert.AreEqual(0, transfers.Count, "成立通知は出ない。");
+            Assert.AreEqual(0f, guardian.CooldownRemaining, 1e-3f, "CD も消費しない。");
+
+            // 被弾後無敵（双方 0.5 秒）が明けるまで待つ。明けないと次の順が別の経路（Evade）になる。
+            yield return WaitUntil(
+                () => !r.Receiver.Vitals.IsPostHitInvincible, 3f, "犬丸の被弾後無敵が明ける", () => Diagnose(r));
+            float until = Time.realtimeSinceStartup + 1.0f;
+            while (Time.realtimeSinceStartup < until)
+            {
+                yield return null;
+            }
+
+            yield return WaitUntil(
+                () => FormationSlot.HorizontalDistance(r.Actor.WorldPosition, r.PlayerRoot.transform.position) <= 2f,
+                8f, "犬丸がまだ隣に居る", () => Diagnose(r));
+            Assert.AreEqual(CompanionState.Follow, r.Actor.State, "前提：ひるみ・ダウンに入っていない。");
+
+            // ---- 到達順 B：主人公への命中が先（転送が成立する）----
+            var second = HitId.Single(9102);
+            int dogHpB = r.Receiver.CurrentHp;
+            int playerHpB = r.PlayerVitals.Vitals.Health.Current;
+
+            r.PlayerVitals.ReceiveHit(Sweep(r.PlayerVitals, attacker, second));
+            r.Receiver.ReceiveHit(Sweep(r.Receiver, attacker, second));
+
+            Assert.AreEqual(1, transfers.Count, "転送が成立した（この経路を実際に通った）。");
+            Assert.IsTrue(transfers.HitIds.Contains(second));
+            Assert.AreEqual(playerHpB, r.PlayerVitals.Vitals.Health.Current, "成立したので主人公は削れない。");
+            Assert.Less(r.Receiver.CurrentHp, dogHpB, "犬丸が代わりに受ける。");
+            Assert.AreEqual(1, companionLog.DamagePerHit[second], "後から届いた直撃は重複として捨てられる。");
+            Assert.IsFalse(playerLog.DamagePerHit.ContainsKey(second), "主人公にこの命中の被害は無い。");
+            Assert.Greater(guardian.CooldownRemaining, 0f, "成立したときだけ CD が始まる。");
+
+            Assert.AreEqual(0, r.Actor.IllegalTransitionCount, "不正遷移なし。");
+            Object.Destroy(attacker.gameObject);
+            r.Receiver.Results.RemoveListener(companionLog);
+            r.PlayerVitals.Results.RemoveListener(playerLog);
+            r.PlayerVitals.GuardianTransfers.RemoveListener(transfers);
+        }
+
+        /// <summary>重なりの検証で使う 1 振り（ガード不可・JG 不可・素の Damage。両者へ同じ HitId で届く）。</summary>
+        private const float OverlapHitHp = 10f;
+
+        private static HitInfo Sweep(IDamageable target, ICombatActor attacker, HitId hitId)
+        {
+            return new HitInfo(
+                attacker, target, Vector3.forward, Vector3.zero,
+                new HitDamage(OverlapHitHp, 0f, 0f),
+                guardable: false, justGuardable: false, hitId: hitId);
         }
 
         // ================================================================

@@ -23,9 +23,13 @@ namespace Momotaro.Gameplay.Player
     /// で進め、ガード中は停止する。表示・照会用に <see cref="PlayerVitals"/> の Stamina Vital を同期する。JG は対象外。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerVitalsHolder : MonoBehaviour, IDamageable, IPlayerDefeatState, IPlayerDefeatSource, IGuardianHost
+    public sealed class PlayerVitalsHolder : MonoBehaviour, IDamageable, IPlayerDefeatState, IPlayerDefeatSource, IGuardianHost,
+        IIncomingHitSource
     {
         [SerializeField] private PlayerData _data;
+
+        private readonly System.Collections.Generic.List<IIncomingHitObserver> _incomingObservers =
+            new System.Collections.Generic.List<IIncomingHitObserver>();
 
         private bool _defeated;
         private PlayerVitals _vitals;
@@ -361,6 +365,15 @@ namespace Momotaro.Gameplay.Player
                 return;
             }
 
+            // ---- ここから「この命中を自分のものとして解決する」ことが確定した ----
+
+            // 実命中が届いたことを、解決より先に同期で知らせる（R3-02。c8c0ddf §5）。
+            // 探索中の仲間はここで解放される。無敵・Step・JG・ガードで結果が Damage にならない命中でも、
+            // 一撃が届いたこと自体は変わらないので、解放は同じように起きる。
+            // 以前は守護評価（TryTransferToGuardian）の中で解放していたため、主人公が防御に成功すると
+            // そこへ到達せず、表示代理の探索は所有権を持たないので解放されなかった。
+            NotifyIncomingHit(hit);
+
             // 被弾後無敵（Hurt 由来 I-frame。既定 0.50 秒）は、ステップ無敵より前に評価し、通常 Damage を種別に依らず無効化する
             // （ガード不能・Steppable=false を含む。仕様書 §3.2 / Table3）。将来の明示的 InvincibilityBypass はここへ条件を足す拡張点。
             IPlayerHurtReaction reaction = ResolveHurtReaction();
@@ -588,6 +601,47 @@ namespace Momotaro.Gameplay.Player
 
             _guardianResolver = null;
             _guardianResolverResolved = true;
+        }
+
+        /// <inheritdoc />
+        public void AddIncomingHitObserver(IIncomingHitObserver observer)
+        {
+            if (observer != null && !_incomingObservers.Contains(observer))
+            {
+                _incomingObservers.Add(observer);
+            }
+        }
+
+        /// <inheritdoc />
+        public void RemoveIncomingHitObserver(IIncomingHitObserver observer)
+        {
+            if (observer != null)
+            {
+                _incomingObservers.Remove(observer);
+            }
+        }
+
+        /// <summary>観測者数（診断・テスト用）。</summary>
+        public int IncomingHitObserverCount => _incomingObservers.Count;
+
+        /// <summary>実命中の入口を観測者へ配る（解決の前。発火中の購読増減に備え写しを回す）。</summary>
+        private void NotifyIncomingHit(in HitInfo hit)
+        {
+            if (_incomingObservers.Count == 0)
+            {
+                return;
+            }
+
+            IIncomingHitObserver[] snapshot = _incomingObservers.ToArray();
+            for (int i = 0; i < snapshot.Length; i++)
+            {
+                if (snapshot[i] is Object destroyed && destroyed == null)
+                {
+                    continue; // 破棄済み（interface 越しなので明示的に弾く）。
+                }
+
+                snapshot[i].OnIncomingHit(hit);
+            }
         }
 
         /// <summary>致死を一度だけ確定し、型付き死亡通知を 1 回発行する（冪等）。接地 Collider は維持し、被弾無効化は ReceiveHit 先頭で担保。</summary>

@@ -54,7 +54,10 @@ namespace Momotaro.Gameplay.Companion.Investigation
         /// <summary>戦闘開始・Wave 幕間へ入った（明示の戦闘開始要求を含む）。</summary>
         CombatStarted = 1,
 
-        /// <summary>仲間の戦闘本体（または主人公の守護経路）への実命中で行動を奪われた。</summary>
+        /// <summary>
+        /// 実命中で解放された。仲間の戦闘本体への直撃と、主人公への命中の<b>どちらも</b>この理由になる（R3-02）。
+        /// 主人公側は防がれた命中（Guard／JG／有効 Step／無敵）でも解放する。届いたこと自体は変わらないため。
+        /// </summary>
         CompanionHit = 2,
 
         /// <summary>主人公が地点から継続範囲外へ離れた。</summary>

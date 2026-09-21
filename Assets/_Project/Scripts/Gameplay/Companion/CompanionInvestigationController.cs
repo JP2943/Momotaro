@@ -53,7 +53,8 @@ namespace Momotaro.Gameplay.Companion
     /// 依頼で使う数値は受付時の Snapshot（<see cref="InvestigationRequest.Settings"/>）だけを読む（E21）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class CompanionInvestigationController : MonoBehaviour, ICompanionActionParticipant
+    public sealed class CompanionInvestigationController : MonoBehaviour, ICompanionActionParticipant,
+        ICompanionInvestigationState
     {
         [Tooltip("状態・Data の供給元（未設定なら自動取得）。")]
         [SerializeField] private CompanionActor _actor;
@@ -77,6 +78,13 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>依頼を実行中か（受付〜引き渡し完了）。</summary>
         public bool IsBusy => _request != null;
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// <see cref="IsBusy"/> と同じ値を、戦闘側の駆動が参照するための契約として公開する（R3-03）。
+        /// 戦闘側は具象型ではなくこの契約だけを見るので、探索を持たない仲間の構成では null のままで済む。
+        /// </remarks>
+        public bool IsInvestigationActive => _request != null;
 
         /// <summary>現在の依頼（無ければ null）。</summary>
         public InvestigationRequest CurrentRequest => _request;
@@ -204,7 +212,9 @@ namespace Momotaro.Gameplay.Companion
                 return false;
             }
 
-            var candidate = new InvestigationRequest(requestId, _generation + 1, point, CompanionId);
+            // 移動速度も受付時に確定する（R3-04）。地点の設定と同じく、走っている依頼の途中で Data が変わっても揺れない。
+            float moveSpeed = _actor.Data != null ? _actor.Data.MoveSpeed : 0f;
+            var candidate = new InvestigationRequest(requestId, _generation + 1, point, CompanionId, moveSpeed);
 
             if (mode == InvestigationMode.Body)
             {
@@ -299,6 +309,28 @@ namespace Momotaro.Gameplay.Companion
             }
         }
 
+        /// <summary>
+        /// <b>実命中による探索中断</b>（R3-02）。本体・表示代理のどちらでも、行動の所有権を持っているかに関わらず
+        /// 同期的に依頼を解放する。守護の資格・クールダウン・主人公側の防御分岐に一切依存しない。
+        ///
+        /// 呼び出し元は 2 つ。
+        /// <list type="bullet">
+        /// <item><description>仲間の受け口（<see cref="CompanionHitReceiver"/>）— 戦闘本体への実命中。
+        /// 代理で調べているあいだに自然復帰した本体が撃たれた場合もここを通る。</description></item>
+        /// <item><description>探索の調停役（<see cref="Investigation.InvestigationCoordinator"/>）—
+        /// 主人公への実命中（<see cref="Momotaro.Gameplay.Combat.IIncomingHitObserver"/> 経由）。</description></item>
+        /// </list>
+        ///
+        /// 「危険を感知した」だけでは呼ばない。解くのは実際に一撃が届いたときだけ（c8c0ddf §5）。
+        /// </summary>
+        public void NotifyRealHit()
+        {
+            if (_request != null)
+            {
+                Abort(InvestigationInterruptReason.CompanionHit);
+            }
+        }
+
         /// <inheritdoc />
         /// <remarks>
         /// 本体で調べている最中に行動を奪われた（戦闘本体への実命中・主人公被弾からの守護評価・Down・退場）。
@@ -377,7 +409,9 @@ namespace Momotaro.Gameplay.Companion
         private void MoveToward(Vector3 target, float deltaTime, out bool blocked)
         {
             blocked = false;
-            float speed = _actor != null && _actor.Data != null ? _actor.Data.MoveSpeed : 0f;
+
+            // 受付時に固定した速度だけを使う（R3-04）。ここで Data を読み直すと、実行中の編集が現行依頼に効いてしまう。
+            float speed = _request.MoveSpeed;
 
             if (Mode == InvestigationMode.Body)
             {
@@ -430,18 +464,39 @@ namespace Momotaro.Gameplay.Companion
             return _player != null ? _player.Position : ProxyPosition;
         }
 
-        /// <summary>調査時間が満了した。調停役に完了確定を頼み、成功なら帰還へ、失敗なら未完了のまま中断する。</summary>
+        /// <summary>
+        /// 調査時間が満了した。調停役に完了確定を頼み、成功なら帰還へ、失敗なら未完了のまま中断する。
+        ///
+        /// <b>完了確定は外部通知（完了イベント）を同期で出す</b>。購読者はその中で戦闘を開始したり、
+        /// この駆動を Disable したり、別の依頼を始めたりできる。通知から戻ったときには
+        /// <see cref="_request"/> が既に解放・差し替えられていることがあるので、<b>戻ってから続きを進める前に
+        /// 依頼の同一性を確かめる</b>（R3-01）。確かめずに進めると、解放済みでは <see cref="_run"/> が null で例外になり、
+        /// 差し替え済みでは<b>新しい依頼を古い呼び出しが終わらせてしまう</b>。
+        /// </summary>
         private void Complete()
         {
             InvestigationRequest request = _request;
+            int generation = _generation;
             InvestigationInterruptReason failure = InvestigationInterruptReason.CompletionRejected;
             if (_sink == null || !_sink.TryConfirmCompletion(this, request, out failure))
             {
+                if (!IsStillCurrent(request, generation))
+                {
+                    return; // 再検査の途中で解放・差し替えられた。古い呼び出しは何もしない。
+                }
+
                 Abort(failure == InvestigationInterruptReason.None ? InvestigationInterruptReason.CompletionRejected : failure);
                 return;
             }
 
+            // 記録と成功通知はここまでで確定している（購読者が何をしても成功は 1 回）。
             CompletedCount++;
+
+            if (!IsStillCurrent(request, generation))
+            {
+                // 完了通知の中で撤収・別依頼開始が起きた。所有権も表示も既に新しい持ち主のものなので触らない。
+                return;
+            }
 
             if (Mode == InvestigationMode.Body)
             {
@@ -451,6 +506,18 @@ namespace Momotaro.Gameplay.Companion
             }
 
             _run.EnterReturning();
+        }
+
+        /// <summary>
+        /// 外部通知をまたいだあと、その依頼がまだ「現在の依頼」か（R3-01）。
+        /// 解放済み（null）・別依頼へ差し替え済み（世代違い）のどちらも false。
+        /// </summary>
+        private bool IsStillCurrent(InvestigationRequest request, int generation)
+        {
+            return request != null
+                && ReferenceEquals(_request, request)
+                && _generation == generation
+                && _run != null;
         }
 
         /// <summary>未完了のまま中断する（成功後の帰還中は理由通知を出さずに撤収するだけ。§6.3）。</summary>

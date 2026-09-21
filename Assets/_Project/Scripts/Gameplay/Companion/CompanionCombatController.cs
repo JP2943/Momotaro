@@ -68,6 +68,7 @@ namespace Momotaro.Gameplay.Companion
         private readonly Collider[] _overlapBuffer = new Collider[16];
 
         private ICompanionDefenseState _defense; // 防御中は攻撃を始めない（同一 GameObject。未装備なら null）。
+        private ICompanionInvestigationState _investigation; // 探索中は接近も攻撃も始めない（同上。R3-03）。
         private CompanionActor _subscribedActor; // 状態通知の購読先（対称管理・重複購読防止）。
         private HitId _currentSwing;
         private AttackSnapshot _snapshot; // 攻撃開始時に確定する不変値（実行中に原本が変わっても揺れない）。
@@ -219,7 +220,11 @@ namespace Momotaro.Gameplay.Companion
             // 探索中は接近も攻撃も始めない（c8c0ddf §5：探索中の自動 Follow／Chase／Attack は拒否）。
             // 判断そのものを止める。RequestChase は許可表を通らない開始（TryBegin）なので、ここで止めないと
             // 索敵が敵を拾った瞬間に探索から所有権を奪ってしまう。実命中・戦闘開始が探索を解放してから再判断する。
-            if (_actor.State == CompanionState.Investigate)
+            //
+            // 状態（Investigate）だけでは足りない（R3-03）。<b>表示代理</b>で調べているあいだ本体は探索状態にならず、
+            // Down の自然復帰時刻が来ると Follow へ戻る。そのとき表示は代理に抑制されたままなので、
+            // 見えない本体が敵へ寄って殴り始める。探索の利用中状態も見る。
+            if (_actor.State == CompanionState.Investigate || IsInvestigating)
             {
                 Decision = CompanionEngageDecision.Idle;
                 _wasEngaged = false;
@@ -714,6 +719,28 @@ namespace Momotaro.Gameplay.Companion
         /// 防御中（構え・回避の無敵中）か。防御と攻撃はどちらも同じ 1 体の行動なので、同時には成立させない。
         /// 防御コンポーネントが付いていない構成では常に false（従来どおり攻撃する）。
         /// </summary>
+        /// <summary>
+        /// 探索が走っているか（R3-03。本体・表示代理のどちらでも true。テスト・診断用）。
+        /// 探索を持たない仲間の構成では常に false。
+        /// </summary>
+        public bool IsInvestigating
+        {
+            get
+            {
+                if (_investigation is Object destroyedInvestigation && destroyedInvestigation == null)
+                {
+                    _investigation = null;
+                }
+
+                if (_investigation == null)
+                {
+                    _investigation = GetComponent<ICompanionInvestigationState>();
+                }
+
+                return _investigation != null && _investigation.IsInvestigationActive;
+            }
+        }
+
         private bool IsDefending()
         {
             if (_defense is Object destroyed && destroyed == null)

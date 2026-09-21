@@ -19,6 +19,16 @@ namespace Momotaro.Gameplay.Companion.Investigation
         public StableId CompanionId { get; }
         public StableId DiscoveryId { get; }
         public InvestigationSettings Settings { get; }
+
+        /// <summary>
+        /// この依頼で使う移動速度（受付時の Snapshot。R3-04）。往路も表示代理の帰還もこれだけを使う。
+        ///
+        /// 地点の設定（<see cref="Settings"/>）と同じ理由で固定する。実行中に Data の移動速度を書き換えると、
+        /// 走っている依頼の到着時刻・移動タイムアウトとの関係が途中で変わってしまう。
+        /// 新しい値は<b>次の依頼</b>から効く（E21「実行中の SO 編集：現行依頼は不変」）。
+        /// </summary>
+        public float MoveSpeed { get; }
+
         public Vector3 PointPosition { get; }
         public Vector3 ApproachPosition { get; }
         public Vector3 ApproachFacing { get; }
@@ -35,7 +45,8 @@ namespace Momotaro.Gameplay.Companion.Investigation
         /// <summary>終端の理由（成功なら None）。</summary>
         public InvestigationInterruptReason TerminalReason { get; private set; }
 
-        public InvestigationRequest(int requestId, int generation, IInvestigationPoint point, StableId companionId)
+        public InvestigationRequest(
+            int requestId, int generation, IInvestigationPoint point, StableId companionId, float moveSpeed = 0f)
         {
             RequestId = requestId;
             Generation = generation;
@@ -44,6 +55,7 @@ namespace Momotaro.Gameplay.Companion.Investigation
             CompanionId = companionId;
             DiscoveryId = point.DiscoveryId;
             Settings = point.Settings;
+            MoveSpeed = moveSpeed > 0f ? moveSpeed : 0f;
             PointPosition = point.Position;
             ApproachPosition = point.ApproachPosition;
             Vector3 facing = point.ApproachFacing;

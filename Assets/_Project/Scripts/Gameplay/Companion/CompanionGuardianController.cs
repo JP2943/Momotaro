@@ -115,9 +115,12 @@ namespace Momotaro.Gameplay.Companion
                 return false;
             }
 
-            // 主人公への実命中は、探索中の犬丸から探索を先に解放する（c8c0ddf §5）。解放は所有権と表示の話で、
-            // HP・CD には触らない。解放したあとの資格（状態・CD・距離）で守護を評価する。
-            _states?.InterruptOwner(CompanionActionOwner.Investigate);
+            // 主人公への実命中で探索を解放するのは<b>ここではない</b>（R3-02）。
+            // 以前はこの位置で InterruptOwner(Investigate) を呼んでいたが、それだと
+            // (1) 主人公が Guard／JG／有効 Step で先に return する命中では、ここまで到達せず解放されない、
+            // (2) 表示代理は行動の所有権を持たないので、所有権を返すだけでは解放できない。
+            // いまは被弾入口（PlayerVitalsHolder → InvestigationCoordinator）が解決より先に全員を解放する。
+            // ここへ来る時点で探索は既に解放済みなので、解放後の資格（状態・CD・距離）をそのまま評価すればよい。
 
             if (_receiver == null || _cooldownRemaining > 0f || !CanProtect() || _protect.IsValid)
             {
