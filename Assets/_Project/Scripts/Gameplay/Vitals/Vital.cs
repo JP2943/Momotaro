@@ -1,5 +1,5 @@
 using System;
-
+using Momotaro.Gameplay.Transfer;
 namespace Momotaro.Gameplay.Vitals
 {
     /// <summary>
@@ -9,7 +9,7 @@ namespace Momotaro.Gameplay.Vitals
     ///
     /// Phase 1 では被ダメージ・自然回復・死亡は扱わず、値の生成・増減・Clamp・通知の基礎のみを提供する。
     /// </summary>
-    public sealed class Vital
+    public sealed class Vital : ITransferableRuntime<VitalTransferSnapshot>
     {
         /// <summary>最大値（0 以上）。</summary>
         public int Max { get; private set; }
@@ -65,6 +65,21 @@ namespace Momotaro.Gameplay.Vitals
             {
                 Changed?.Invoke(new VitalChanged(prevCurrent, Current, Max));
             }
+        }
+
+        /// <inheritdoc />
+        public VitalTransferSnapshot ExportTransferSnapshot() => new VitalTransferSnapshot(Current);
+
+        /// <inheritdoc />
+        public bool TryImportTransferSnapshot(in VitalTransferSnapshot snapshot)
+        {
+            if (!TransferValue.IsValidHp(snapshot.Current, Max))
+            {
+                return false;
+            }
+
+            SetCurrent(snapshot.Current);
+            return true;
         }
 
         private int ClampToRange(int value)

@@ -62,5 +62,12 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>調査を終えた／打ち切った（P4-07A）。</summary>
         InvestigationFinished = 18,
+
+        /// <summary>
+        /// エリア遷移の到着時に、持ち越した配置状態を復元した（P5-03a。仕様書 v1.1 §4.6）。
+        /// <b>実際の被弾・復帰ではない</b>ことを購読者へ伝えるための専用理由で、
+        /// 被弾演出・SE／VFX・CD の再設定を起こしてはならない。
+        /// </summary>
+        Restored = 19,
     }
 }

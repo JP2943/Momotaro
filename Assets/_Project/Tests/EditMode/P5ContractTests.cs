@@ -1,5 +1,21 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using Momotaro.Core.Identification;
+using Momotaro.Data.Characters;
+using Momotaro.Gameplay.Combat;
+using Momotaro.Gameplay.Companion;
+using Momotaro.Data.Combat;
+using Momotaro.Gameplay.Enemy.Defense;
+using Momotaro.Gameplay.Enemy.Perception;
+using Momotaro.Gameplay.Enemy.Threat;
+using Momotaro.Gameplay.Player;
+using Momotaro.Gameplay.Transfer;
+using Momotaro.Gameplay.Vitals;
+using Momotaro.Tests.Support;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Session;
@@ -16,18 +32,18 @@ namespace Momotaro.Tests.EditMode
     ///
     /// 本クラスは工程ごとに増える。現時点で実装済みなのは P5-01（E01〜E05）。
     /// </summary>
-    public sealed class P5ContractTests
+    public sealed class P5ContractTests : CompanionActivityFixture
     {
-        private readonly List<Object> _spawned = new List<Object>();
+        private readonly List<UnityEngine.Object> _spawned = new List<UnityEngine.Object>();
 
         [TearDown]
         public void TearDown()
         {
-            foreach (Object o in _spawned)
+            foreach (UnityEngine.Object o in _spawned)
             {
                 if (o != null)
                 {
-                    Object.DestroyImmediate(o);
+                    UnityEngine.Object.DestroyImmediate(o);
                 }
             }
 
@@ -267,6 +283,495 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(10, again);
             progress.Grant(Reward("reward_unique", 7, true), out int onceAgain);
             Assert.AreEqual(0, onceAgain, "GrantOnce は死亡再開でも再付与しない。");
+        }
+
+        // ================================================================ P5-03a
+
+        private static void SetPrivate(object target, string field, object value)
+        {
+            // private フィールドは基底クラスに居ることがあるので階層を辿る（CompanionData の継承元など）。
+            for (Type t = target.GetType(); t != null; t = t.BaseType)
+            {
+                FieldInfo f = t.GetField(field, BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+                if (f != null)
+                {
+                    f.SetValue(target, value);
+                    return;
+                }
+            }
+
+            Assert.Fail("field not found: " + field + " on " + target.GetType().FullName);
+        }
+
+        private static void InvokePrivate(object target, string method)
+        {
+            MethodInfo m = target.GetType().GetMethod(method, BindingFlags.NonPublic | BindingFlags.Instance);
+            Assert.IsNotNull(m, "method not found: " + method);
+            m.Invoke(target, null);
+        }
+
+        // ---------------------------------------------------------------- E06
+
+        /// <summary>
+        /// P5-E06：保持対象を<b>それぞれ異なる非初期値</b>へ設定し、Export → 別実体へ Import →
+        /// 同じ deltaTime で進行させて、値・復帰時刻・使用可能時刻が連続することを確認する（§4.5）。
+        /// 0 だけの往復では合格にしない、という要求にそのまま対応する。
+        /// 併せて、中断で始まる CD は<b>中断完了後</b>に採ること（§4.4 の落とし穴）を実物で固定する。
+        /// </summary>
+        [Test]
+        public void TransferSnapshot_CapturesAfterCancellationAndRestoresVitals()
+        {
+            const float Dt = 0.1f;
+
+            // ---- スタミナ：現在値と回復待ちを別々の非初期値にする ----
+            var stamina = new StaminaState(100f, regenPerSecond: 10f, regenDelay: 1.5f);
+            stamina.Consume(37f);
+            Assert.AreNotEqual(100f, stamina.Current, "前提：非初期値。");
+            Assert.Greater(stamina.ExportTransferSnapshot().RegenDelayRemaining, 0f, "前提：回復待ちが動いている。");
+
+            var staminaB = new StaminaState(100f, regenPerSecond: 10f, regenDelay: 1.5f);
+            Assert.IsTrue(staminaB.TryImportTransferSnapshot(stamina.ExportTransferSnapshot()));
+            Assert.AreEqual(stamina.Current, staminaB.Current, 1e-4f);
+
+            stamina.Tick(Dt, regenBlocked: false);
+            staminaB.Tick(Dt, regenBlocked: false);
+            Assert.AreEqual(stamina.Current, staminaB.Current, 1e-4f, "同じ deltaTime で進めた後も一致する。");
+            Assert.AreEqual(stamina.ExportTransferSnapshot().RegenDelayRemaining,
+                staminaB.ExportTransferSnapshot().RegenDelayRemaining, 1e-4f, "回復開始の時刻が連続する。");
+
+            // ---- 被弾後無敵 ----
+            var hit = new HitReactionState(hurtSeconds: 0.3f, invincibleSeconds: 0.5f);
+            hit.Begin();
+            hit.Tick(0.35f); // Hurt は明け、無敵だけ残る区間（§6.1 が遷移を許す状態）。
+            Assert.IsFalse(hit.IsHurt, "前提：Hurt は終わっている。");
+            Assert.Greater(hit.InvincibleRemaining, 0f, "前提：無敵は非初期値で残っている。");
+
+            var hitB = new HitReactionState(hurtSeconds: 0.3f, invincibleSeconds: 0.5f);
+            Assert.IsTrue(hitB.TryImportTransferSnapshot(hit.ExportTransferSnapshot()));
+            Assert.AreEqual(hit.InvincibleRemaining, hitB.InvincibleRemaining, 1e-4f);
+
+            hit.Tick(Dt);
+            hitB.Tick(Dt);
+            Assert.AreEqual(hit.InvincibleRemaining, hitB.InvincibleRemaining, 1e-4f, "無敵の終わる時刻が連続する。");
+
+            // ---- 仲間の生存値（Down・復帰待ち・ひるみ蓄積を同時に非初期値へ） ----
+            var vitals = new CompanionVitals(null);
+            vitals.Health.SetCurrent(0);
+            SetPrivate(vitals, "_recoveryRemaining", 3.25f);
+            SetPrivate(vitals, "_postHitInvincibleRemaining", 0.2f);
+            typeof(CompanionVitals).GetProperty("IsDown").SetValue(vitals, true);
+            FlinchState flinch = (FlinchState)typeof(CompanionVitals)
+                .GetField("_flinch", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(vitals);
+            SetPrivate(flinch, "_accumulation", 17f);
+            SetPrivate(flinch, "_holdRemaining", 0.9f);
+
+            CompanionVitalsTransferSnapshot snap = vitals.ExportTransferSnapshot();
+            Assert.AreEqual(0, snap.Hp);
+            Assert.IsTrue(snap.IsDown);
+            Assert.AreEqual(3.25f, snap.RecoveryRemaining, 1e-4f);
+            Assert.AreEqual(17f, snap.Flinch.Accumulation, 1e-4f, "入れ子のひるみも採れている（readonly でも中身は可変）。");
+
+            var vitalsB = new CompanionVitals(null);
+            Assert.IsTrue(vitalsB.TryImportTransferSnapshot(snap));
+            Assert.AreEqual(0, vitalsB.Health.Current, "Revive を呼ばないので HP が勝手に戻らない。");
+            Assert.IsTrue(vitalsB.IsDown);
+            Assert.AreEqual(3.25f, vitalsB.RecoveryRemaining, 1e-4f);
+            Assert.AreEqual(17f, vitalsB.FlinchAccumulation, 1e-4f);
+
+            vitals.Tick(Dt);
+            vitalsB.Tick(Dt);
+            Assert.AreEqual(vitals.RecoveryRemaining, vitalsB.RecoveryRemaining, 1e-4f, "復帰時刻が連続する。");
+            Assert.AreEqual(vitals.IsDown, vitalsB.IsDown);
+
+            // ---- 不正値は部分適用せずに拒否する ----
+            var reject = new CompanionVitals(null);
+            int before = reject.Health.Current;
+            Assert.IsFalse(reject.TryImportTransferSnapshot(new CompanionVitalsTransferSnapshot(
+                10, true, 1f, 0f, default)), "Down なのに HP が残る矛盾を拒否する。");
+            Assert.IsFalse(reject.TryImportTransferSnapshot(new CompanionVitalsTransferSnapshot(
+                5, false, 0f, float.NaN, default)), "NaN を拒否する。");
+            Assert.AreEqual(before, reject.Health.Current, "拒否したので何も変わっていない。");
+
+            // ---- 構え・回避：解除／中断のあとに採る ----
+            var guard = new EnemyGuardAbility(cooldownSeconds: 2f, maxHoldSeconds: 5f);
+            Assert.IsTrue(guard.TryStart());
+            guard.Tick(0.4f);
+            Assert.AreEqual(0f, guard.ExportTransferSnapshot().CooldownRemaining, 1e-4f,
+                "構え中はまだ CD が始まっていない。ここで採ると CD が落ちる。");
+            guard.Release();
+            float guardCd = guard.ExportTransferSnapshot().CooldownRemaining;
+            Assert.Greater(guardCd, 0f, "Release 後に採れば CD が乗る（§4.5）。");
+
+            var guardB = new EnemyGuardAbility(cooldownSeconds: 2f, maxHoldSeconds: 5f);
+            Assert.IsTrue(guardB.TryImportTransferSnapshot(guard.ExportTransferSnapshot()));
+            Assert.IsFalse(guardB.IsReady, "CD 中なので使えない。");
+            guard.Tick(Dt);
+            guardB.Tick(Dt);
+            Assert.AreEqual(guard.CooldownRemaining, guardB.CooldownRemaining, 1e-4f, "使用可能になる時刻が連続する。");
+
+            var evade = new EnemyEvadeAbility(cooldownSeconds: 1.5f, invulnerableSeconds: 0.3f);
+            Assert.IsTrue(evade.TryStart());
+            evade.Interrupt();
+            float evadeCd = evade.ExportTransferSnapshot().CooldownRemaining;
+            Assert.Greater(evadeCd, 0f, "中断後に採れば CD が乗る。");
+
+            var evadeB = new EnemyEvadeAbility(cooldownSeconds: 1.5f, invulnerableSeconds: 0.3f);
+            Assert.IsTrue(evadeB.TryImportTransferSnapshot(evade.ExportTransferSnapshot()));
+            Assert.IsFalse(evadeB.IsInvulnerable, "回避由来の無敵は持ち越さない（§4.5 末尾）。");
+            Assert.AreEqual(evadeCd, evadeB.CooldownRemaining, 1e-4f);
+
+            // ---- 中断で生じた攻撃 CD を実物の Controller で確認する（§4.4 の落とし穴） ----
+            AssertCancelledAttackCooldownIsCaptured();
+        }
+
+        private const float RigStartup = 0.2f;
+        private const float RigActive = 0.1f;
+        private const float RigRecovery = 0.3f;
+        private const float RigCooldown = 1f;
+
+        /// <summary>
+        /// 攻撃中に <c>CancelAttack()</c> すると CD が <c>Max(現在, Plan.CooldownSeconds)</c> で始まる。
+        /// <b>中断前に採ると 0</b>、<b>中断後に採ると CD が乗る</b>ことを実際の Controller で示す。
+        /// </summary>
+        private void AssertCancelledAttackCooldownIsCaptured()
+        {
+            var attack = ScriptableObject.CreateInstance<AttackData>();
+            _spawned.Add(attack);
+            SetPrivate(attack, "_useRange", 2f);
+            SetPrivate(attack, "_useAngle", 90f);
+            SetPrivate(attack, "_cooldownSeconds", RigCooldown);
+            SetPrivate(attack, "_startupSeconds", RigStartup);
+            SetPrivate(attack, "_activeSeconds", RigActive);
+            SetPrivate(attack, "_recoverySeconds", RigRecovery);
+            SetPrivate(attack, "_hpMultiplier", 0.8f);
+
+            var data = ScriptableObject.CreateInstance<CompanionData>();
+            _spawned.Add(data);
+            SetPrivate(data, "_attackPower", 60f);
+            SetPrivate(data, "_basicAttack", attack);
+
+            var go = new GameObject("Inumaru");
+            _spawned.Add(go);
+            var actor = go.AddComponent<CompanionActor>();
+            actor.SetData(data);
+            actor.ResetState(CompanionState.Follow);
+            actor.SetFacing(Vector3.forward);
+            var motor = go.AddComponent<CompanionMotor>();
+            var tracker = go.AddComponent<CompanionTargetTracker>();
+            tracker.Bind(actor);
+            var combat = go.AddComponent<CompanionCombatController>();
+            combat.Bind(actor, motor, tracker);
+            InvokePrivate(combat, "OnEnable");
+
+            var enemyGo = new GameObject("Enemy");
+            _spawned.Add(enemyGo);
+            enemyGo.transform.position = new Vector3(0f, 0f, 1f);
+            var enemy = enemyGo.AddComponent<TransferFakeEnemy>();
+            enemy.Forward = Vector3.back;
+            PerceptionTargetRegistry.Register(enemy);
+
+            tracker.TickTargeting();
+            combat.TickCombat(0f);
+            Assert.IsTrue(combat.IsAttacking, "前提：攻撃が始まっている。");
+            tracker.TickTargeting();
+            combat.TickCombat(RigStartup);
+
+            Assert.AreEqual(0f, combat.ExportTransferSnapshot().CooldownRemaining, 1e-4f,
+                "攻撃中に採ると CD は 0。この順で採るのが §4.4 が名指しする誤り。");
+
+            combat.CancelAttack();
+            CompanionCombatTransferSnapshot cancelled = combat.ExportTransferSnapshot();
+            Assert.AreEqual(RigCooldown, cancelled.CooldownRemaining, 1e-3f,
+                "中断完了後に採れば、中断で生じた CD が Snapshot に乗る。");
+
+            PerceptionTargetRegistry.Clear();
+        }
+
+        private sealed class TransferFakeEnemy : MonoBehaviour, ICombatActor, IDamageable, IThreatTarget
+        {
+            public CombatFaction Faction => CombatFaction.Enemy;
+            public int FloorId => 0;
+            public Vector3 WorldPosition => transform.position;
+            public Vector3 Forward { get; set; } = Vector3.forward;
+            public int DamageableId => GetInstanceID();
+            public int ActorId => GetInstanceID();
+            public Vector3 Position => transform.position;
+            public bool IsActive { get; set; } = true;
+            public bool IsDown { get; set; }
+            public float BaseThreat => 0f;
+            public float AcquiredThreatMultiplier => 1f;
+
+            public void ReceiveHit(in HitInfo hit)
+            {
+            }
+        }
+
+        // ---------------------------------------------------------------- E28
+
+        private const string InventoryFileName = "P5_ActorTransferInventory.md";
+
+        private static readonly string[] Classifications =
+        {
+            "保持", "Capture前に終了", "固定設定・参照", "再構築", "合成",
+        };
+
+        private sealed class LedgerRow
+        {
+            public string Field;
+            public string Classification;
+            public string Reason;
+        }
+
+        /// <summary>台帳を読む。見出し <c>## `完全型名`</c> と、その下の表の行を拾う。</summary>
+        private static Dictionary<string, List<LedgerRow>> ReadInventory(out string path)
+        {
+            path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", InventoryFileName));
+            Assert.IsTrue(File.Exists(path), "持ち越し台帳が見つかりません: " + path);
+
+            var result = new Dictionary<string, List<LedgerRow>>();
+            string current = null;
+            var heading = new Regex(@"^##\s+`([A-Za-z0-9_.]+)`\s*$");
+            var row = new Regex(@"^\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*(.+?)\s*\|\s*$");
+
+            foreach (string raw in File.ReadAllLines(path))
+            {
+                Match h = heading.Match(raw);
+                if (h.Success)
+                {
+                    current = h.Groups[1].Value;
+                    if (!result.ContainsKey(current))
+                    {
+                        result.Add(current, new List<LedgerRow>());
+                    }
+
+                    continue;
+                }
+
+                if (current == null)
+                {
+                    continue;
+                }
+
+                Match r = row.Match(raw);
+                if (r.Success)
+                {
+                    result[current].Add(new LedgerRow
+                    {
+                        Field = r.Groups[1].Value,
+                        Classification = r.Groups[2].Value.Trim(),
+                        Reason = r.Groups[3].Value.Trim(),
+                    });
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>自動プロパティのバッキングフィールドはプロパティ名へ正規化する。</summary>
+        private static string NormalizeFieldName(string name)
+        {
+            int close = name.IndexOf('>');
+            return name.StartsWith("<", StringComparison.Ordinal) && close > 1
+                ? name.Substring(1, close - 1)
+                : name;
+        }
+
+        private static IEnumerable<FieldInfo> DeclaredFields(Type t)
+        {
+            return t.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+        }
+
+        /// <summary>
+        /// P5-E28：対象型を<b>反射で発見</b>し、持ち越し台帳と双方向に照合する（§4.5、裁定 1）。
+        ///
+        /// 手書きの対象型リストを使わないのが要点。リストの更新漏れでテストが嘘をつくのを防ぐ。
+        /// 新しい可変フィールドが増えて分類されていなければ失敗する。<b>後工程でここが落ちるのは正常</b>で、
+        /// そのとき台帳を更新するのが正しい対応（裁定 4）。
+        /// </summary>
+        [Test]
+        public void TransferInventory_ClassifiesEveryMutableRuntimeField()
+        {
+            Dictionary<string, List<LedgerRow>> ledger = ReadInventory(out string path);
+            Assembly gameplay = typeof(ITransferableRuntime).Assembly;
+
+            var markerTypes = gameplay.GetTypes()
+                .Where(t => typeof(ITransferableRuntime).IsAssignableFrom(t) && !t.IsInterface)
+                .OrderBy(t => t.FullName)
+                .ToList();
+            Assert.Greater(markerTypes.Count, 0, "ITransferableRuntime を実装する型が 1 つも見つかりません（反射の走査先が誤り）。");
+
+            var problems = new List<string>();
+
+            // (1) 反射で見つかった対象型は、すべて台帳に節を持つ。
+            foreach (Type t in markerTypes)
+            {
+                if (!ledger.ContainsKey(t.FullName))
+                {
+                    problems.Add("台帳に節がありません: " + t.FullName
+                        + "（ITransferableRuntime を実装したなら " + InventoryFileName + " へ分類を足すこと）");
+                }
+            }
+
+            // (2) 台帳の節はすべて実在する型で、行はすべて実在するフィールドを指す。
+            foreach (KeyValuePair<string, List<LedgerRow>> section in ledger)
+            {
+                Type t = gameplay.GetType(section.Key);
+                if (t == null)
+                {
+                    problems.Add("台帳にあるが型が存在しません: " + section.Key + "（改名・削除したら台帳も直すこと）");
+                    continue;
+                }
+
+                var actual = DeclaredFields(t).ToDictionary(f => NormalizeFieldName(f.Name), f => f);
+                var listed = new HashSet<string>();
+
+                foreach (LedgerRow r in section.Value)
+                {
+                    if (!listed.Add(r.Field))
+                    {
+                        problems.Add(section.Key + "." + r.Field + " が台帳に重複しています。");
+                    }
+
+                    if (!actual.ContainsKey(r.Field))
+                    {
+                        problems.Add("台帳にあるがフィールドが存在しません: " + section.Key + "." + r.Field);
+                        continue;
+                    }
+
+                    if (Array.IndexOf(Classifications, r.Classification) < 0)
+                    {
+                        problems.Add("分類が不正です: " + section.Key + "." + r.Field + " = '" + r.Classification
+                            + "'（使えるのは " + string.Join(" / ", Classifications) + "）");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(r.Reason))
+                    {
+                        problems.Add("理由が空です: " + section.Key + "." + r.Field);
+                    }
+
+                    // (3) 合成は、参照先も台帳の節でなければならない（入れ子の時間所有型。§4.5）。
+                    if (r.Classification == "合成")
+                    {
+                        Type ft = actual[r.Field].FieldType;
+                        if (!ledger.ContainsKey(ft.FullName))
+                        {
+                            problems.Add("合成の参照先が台帳にありません: " + section.Key + "." + r.Field
+                                + " -> " + ft.FullName);
+                        }
+                    }
+                }
+
+                // (4) 未分類のフィールドを検出する。ここが増えたら台帳を更新する（裁定 4）。
+                foreach (string name in actual.Keys)
+                {
+                    if (!listed.Contains(name))
+                    {
+                        problems.Add("未分類のフィールド: " + section.Key + "." + name
+                            + "（" + actual[name].FieldType.Name + "）");
+                    }
+                }
+            }
+
+            Assert.IsEmpty(problems,
+                "持ち越し台帳（" + path + "）と実装が一致しません。\n  - " + string.Join("\n  - ", problems) + "\n");
+        }
+
+        // ---------------------------------------------------------------- E29
+
+        private CompanionActor NewCompanionActor(string name, CompanionState initial)
+        {
+            var go = new GameObject(name);
+            _spawned.Add(go);
+            var actor = go.AddComponent<CompanionActor>();
+            actor.ResetState(initial);
+            return actor;
+        }
+
+        /// <summary>
+        /// P5-E29：到着時の状態復元が、値・状態・診断の整合を保つ（§4.6）。
+        /// <b>IllegalTransitionCount == 0</b>、行動所有者なし、HP・CD を変えないこと、
+        /// そして被弾を偽造しない（理由が <see cref="CompanionStateChangeReason.Restored"/> である）ことを見る。
+        ///
+        /// Away は P5 に実 gameplay 経路が無いため（裁定 5）、§4.6 が認める初期化中の専用 Restore API で検証する。
+        /// </summary>
+        [Test]
+        public void CompanionRestore_ReconcilesDownAwayWithoutIllegalTransitions()
+        {
+            foreach (CompanionState target in new[]
+                     { CompanionState.Follow, CompanionState.Stagger, CompanionState.Down, CompanionState.Away })
+            {
+                CompanionActor actor = NewCompanionActor("Inumaru_" + target, CompanionState.Follow);
+                // CompanionActor は [RequireComponent(typeof(CompanionStateArbiter))]。
+                // AddComponent すると [DisallowMultipleComponent] で null が返るので、付いているものを取る。
+                CompanionStateArbiter arbiter = actor.GetComponent<CompanionStateArbiter>();
+                Assert.IsNotNull(arbiter, "Arbiter は RequireComponent で自動付与される。");
+                arbiter.Bind(actor);
+
+                var listener = new RecordingStateListener();
+                actor.States.AddListener(listener);
+                List<CompanionStateChangeReason> reasons = listener.Reasons;
+
+                Assert.IsTrue(arbiter.TryRestoreState(target), target + " の復元が成立する。");
+                Assert.AreEqual(target, actor.State, target + " へ復元される。");
+                Assert.AreEqual(0, actor.IllegalTransitionCount, target + "：不正遷移を出さない。");
+                Assert.AreEqual(CompanionActionOwner.None, arbiter.CurrentOwner, target + "：行動所有者を残さない。");
+
+                if (target != CompanionState.Follow)
+                {
+                    CollectionAssert.DoesNotContain(reasons, CompanionStateChangeReason.Staggered,
+                        target + "：被弾を偽造しない。");
+                    CollectionAssert.DoesNotContain(reasons, CompanionStateChangeReason.Defeated,
+                        target + "：撃破を偽造しない。");
+                    CollectionAssert.Contains(reasons, CompanionStateChangeReason.Restored,
+                        target + "：復元専用の理由で通知する。");
+                }
+
+                // 冪等：同じ状態への再復元は成立し、不正遷移も増えない。
+                Assert.IsTrue(arbiter.TryRestoreState(target), target + "：再復元は冪等。");
+                Assert.AreEqual(0, actor.IllegalTransitionCount);
+            }
+
+            // ---- 値へ触れないこと。Down 復元の前後で HP・復帰残り・CD が変わらない ----
+            var vitals = new CompanionVitals(null);
+            vitals.Health.SetCurrent(0);
+            SetPrivate(vitals, "_recoveryRemaining", 2.5f);
+            typeof(CompanionVitals).GetProperty("IsDown").SetValue(vitals, true);
+
+            CompanionActor downActor = NewCompanionActor("Inumaru_Values", CompanionState.Follow);
+            var guardian = downActor.gameObject.AddComponent<CompanionGuardianController>();
+            Assert.IsTrue(guardian.TryImportTransferSnapshot(new CompanionGuardianTransferSnapshot(1.75f)));
+
+            CompanionStateArbiter downArbiter = downActor.GetComponent<CompanionStateArbiter>();
+            downArbiter.Bind(downActor);
+
+            int hpBefore = vitals.Health.Current;
+            float recoveryBefore = vitals.RecoveryRemaining;
+            float guardianCdBefore = guardian.ExportTransferSnapshot().CooldownRemaining;
+
+            Assert.IsTrue(downArbiter.TryRestoreState(CompanionState.Down));
+
+            Assert.AreEqual(hpBefore, vitals.Health.Current, "復元は HP を変えない。");
+            Assert.AreEqual(recoveryBefore, vitals.RecoveryRemaining, 1e-4f, "復元は復帰時計を変えない。");
+            Assert.AreEqual(guardianCdBefore, guardian.ExportTransferSnapshot().CooldownRemaining, 1e-4f,
+                "復元は CD を再設定しない。");
+            Assert.AreEqual(0, downActor.IllegalTransitionCount);
+
+            // ---- 行動状態は到着時に復元しない（§4.6） ----
+            CompanionActor reject = NewCompanionActor("Inumaru_Reject", CompanionState.Follow);
+            CompanionStateArbiter rejectArbiter = reject.GetComponent<CompanionStateArbiter>();
+            rejectArbiter.Bind(reject);
+            Assert.IsFalse(rejectArbiter.TryRestoreState(CompanionState.AttackActive), "攻撃中へは復元しない。");
+            Assert.IsFalse(rejectArbiter.TryRestoreState(CompanionState.Investigate), "探索中へは復元しない。");
+            Assert.AreEqual(CompanionState.Follow, reject.State, "拒否しても状態は変わらない。");
+            Assert.AreEqual(0, reject.IllegalTransitionCount, "拒否は不正遷移として数えない。");
+        }
+
+        /// <summary>状態通知の理由を記録するだけの購読者（E29 用）。</summary>
+        private sealed class RecordingStateListener : ICompanionStateListener
+        {
+            public List<CompanionStateChangeReason> Reasons { get; } = new List<CompanionStateChangeReason>();
+
+            public void OnCompanionStateChanged(in CompanionStateChanged change) => Reasons.Add(change.Reason);
         }
     }
 }

@@ -1,4 +1,5 @@
 using UnityEngine;
+using Momotaro.Gameplay.Transfer;
 
 namespace Momotaro.Gameplay.Enemy.Defense
 {
@@ -7,7 +8,7 @@ namespace Momotaro.Gameplay.Enemy.Defense
     /// MonoBehaviour 非依存。<see cref="TryStart"/> で回避を開始し短い無敵（I-frame）を得る。無敵が切れると Cooldown に入り、
     /// Cooldown 明けまで再回避できない（＝連続不可）。危険刺激の検知や退避移動は上位（<see cref="IEnemyDangerSense"/>／Controller）が担う。
     /// </summary>
-    public sealed class EnemyEvadeAbility
+    public sealed class EnemyEvadeAbility : ITransferableRuntime<EvadeAbilityTransferSnapshot>
     {
         /// <summary>回避の無敵時間（秒）の既定。§9「短い無敵」。</summary>
         public const float DefaultInvulnerableSeconds = 0.30f;
@@ -102,6 +103,28 @@ namespace Momotaro.Gameplay.Enemy.Defense
             _evading = false;
             _invulnRemaining = 0f;
             _cooldownRemaining = 0f;
+        }
+
+        /// <inheritdoc />
+        public EvadeAbilityTransferSnapshot ExportTransferSnapshot()
+        {
+            return new EvadeAbilityTransferSnapshot(_cooldownRemaining);
+        }
+
+        /// <inheritdoc />
+        public bool TryImportTransferSnapshot(in EvadeAbilityTransferSnapshot snapshot)
+        {
+            if (!TransferValue.IsValidRemaining(snapshot.CooldownRemaining)
+                || snapshot.CooldownRemaining > _cooldown)
+            {
+                return false;
+            }
+
+            // 回避動作と「回避由来の無敵」は持ち越さない（§4.5 末尾。回避終了後に無敵だけ復活させない）。
+            _evading = false;
+            _invulnRemaining = 0f;
+            _cooldownRemaining = snapshot.CooldownRemaining;
+            return true;
         }
     }
 }

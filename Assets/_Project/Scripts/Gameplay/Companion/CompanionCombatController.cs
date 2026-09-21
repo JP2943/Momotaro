@@ -3,6 +3,7 @@ using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Modes;
 using UnityEngine;
+using Momotaro.Gameplay.Transfer;
 
 namespace Momotaro.Gameplay.Companion
 {
@@ -28,7 +29,7 @@ namespace Momotaro.Gameplay.Companion
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class CompanionCombatController : MonoBehaviour, ICompanionEngagementSource, ICompanionStateListener,
-        ICompanionActionParticipant
+        ICompanionActionParticipant, ITransferableRuntime<CompanionCombatTransferSnapshot>
     {
         [Tooltip("状態・Data の供給元（未設定なら自動取得）。")]
         [SerializeField] private CompanionActor _actor;
@@ -814,5 +815,27 @@ namespace Momotaro.Gameplay.Companion
             }
         }
 
+
+        /// <summary>
+        /// 通常攻撃の CD を採取する（§4.5）。<b>採取の前に <see cref="CancelAttack"/> を完了させること。</b>
+        /// 中断は CD を <c>Max(現在, Plan.CooldownSeconds)</c> で開始するため、中断前に採ると
+        /// 中断で生じた CD が落ちる（§4.4 が名指しする実在の落とし穴）。
+        /// </summary>
+        public CompanionCombatTransferSnapshot ExportTransferSnapshot()
+        {
+            return new CompanionCombatTransferSnapshot(_cooldownRemaining);
+        }
+
+        /// <inheritdoc />
+        public bool TryImportTransferSnapshot(in CompanionCombatTransferSnapshot snapshot)
+        {
+            if (!TransferValue.IsValidRemaining(snapshot.CooldownRemaining))
+            {
+                return false;
+            }
+
+            _cooldownRemaining = snapshot.CooldownRemaining;
+            return true;
+        }
     }
 }

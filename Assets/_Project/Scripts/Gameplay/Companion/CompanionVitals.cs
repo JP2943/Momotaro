@@ -1,6 +1,7 @@
 using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Vitals;
+using Momotaro.Gameplay.Transfer;
 
 namespace Momotaro.Gameplay.Companion
 {
@@ -14,7 +15,7 @@ namespace Momotaro.Gameplay.Companion
     ///
     /// ダウンは終端ではない。仲間は <see cref="CompanionData.LeaveRecoverySeconds"/> 秒後に復帰する（敵の Down と違う点）。
     /// </summary>
-    public sealed class CompanionVitals
+    public sealed class CompanionVitals : ITransferableRuntime<CompanionVitalsTransferSnapshot>
     {
         /// <summary>1 回の命中を適用した結果。</summary>
         public readonly struct HitApplication
@@ -188,6 +189,62 @@ namespace Momotaro.Gameplay.Companion
             _postHitInvincibleRemaining = 0f;
             _flinch.Reset();
             Health.SetCurrent(Health.Max);
+        }
+
+        /// <inheritdoc />
+        public CompanionVitalsTransferSnapshot ExportTransferSnapshot()
+        {
+            return new CompanionVitalsTransferSnapshot(
+                Health.Current, IsDown, _recoveryRemaining, _postHitInvincibleRemaining,
+                _flinch.ExportTransferSnapshot());
+        }
+
+        /// <summary>
+        /// 値を復元する（§4.5）。<b><see cref="Revive"/>／<see cref="Reset"/> を呼ばない</b>のが要点で、
+        /// それらは HP と時計を勝手に再初期化してしまう。
+        ///
+        /// 値域と整合を<b>先にすべて検証</b>してから適用し、途中で失敗した状態を残さない。
+        /// HP と Down の矛盾（Down なのに HP が残っている／Down でないのに HP 0）は拒否する。
+        /// </summary>
+        public bool TryImportTransferSnapshot(in CompanionVitalsTransferSnapshot snapshot)
+        {
+            if (!TransferValue.IsValidHp(snapshot.Hp, Health.Max)
+                || !TransferValue.IsValidRemaining(snapshot.RecoveryRemaining)
+                || !TransferValue.IsValidRemaining(snapshot.PostHitInvincibleRemaining)
+                || snapshot.PostHitInvincibleRemaining > _postHitInvincibleSeconds
+                || snapshot.RecoveryRemaining > _recoverySeconds)
+            {
+                return false;
+            }
+
+            // HP と Down の整合。Down は HP 0、非 Down は HP 1 以上（§4.6 の復元表）。
+            if (snapshot.IsDown != (snapshot.Hp == 0))
+            {
+                return false;
+            }
+
+            // 復帰待ちは Down のときだけ意味を持つ。非 Down で残り時間があるのは矛盾。
+            if (!snapshot.IsDown && snapshot.RecoveryRemaining != 0f)
+            {
+                return false;
+            }
+
+            // 入れ子のひるみも先に検証する（部分適用を作らないため、ここまでで失敗しうる要因を出し切る）。
+            FlinchTransferSnapshot flinch = snapshot.Flinch;
+            if (!TransferValue.IsValidAccumulation(flinch.Accumulation)
+                || !TransferValue.IsValidRemaining(flinch.HoldRemaining)
+                || !TransferValue.IsValidRemaining(flinch.FlinchRemaining)
+                || !TransferValue.IsValidRemaining(flinch.ImmunityRemaining))
+            {
+                return false;
+            }
+
+            Health.SetCurrent(snapshot.Hp);
+            IsDown = snapshot.IsDown;
+            _recoveryRemaining = snapshot.RecoveryRemaining;
+            _postHitInvincibleRemaining = snapshot.PostHitInvincibleRemaining;
+            _flinch.TryImportTransferSnapshot(flinch);
+            return true;
         }
     }
 }

@@ -1,3 +1,5 @@
+using Momotaro.Gameplay.Transfer;
+
 namespace Momotaro.Gameplay.Combat
 {
     /// <summary>
@@ -8,7 +10,7 @@ namespace Momotaro.Gameplay.Combat
     /// 保持し、再蓄積でタイマー更新。<see cref="_holdSeconds"/> 秒経過で蓄積を一括 0（徐々に減らさない）。ひるみ中は蓄積しない。
     /// ひるみ時間 <see cref="_flinchSeconds"/> 秒、ひるみ終了後 <see cref="_immunitySeconds"/> 秒は新たなひるみを無効化する。
     /// </summary>
-    public sealed class FlinchState
+    public sealed class FlinchState : ITransferableRuntime<FlinchTransferSnapshot>
     {
         private readonly float _resistance;
         private readonly float _holdSeconds;
@@ -121,6 +123,30 @@ namespace Momotaro.Gameplay.Combat
             _holdRemaining = 0f;
             _flinchRemaining = 0f;
             _immunityRemaining = 0f;
+        }
+
+        /// <inheritdoc />
+        public FlinchTransferSnapshot ExportTransferSnapshot()
+        {
+            return new FlinchTransferSnapshot(_accumulation, _holdRemaining, _flinchRemaining, _immunityRemaining);
+        }
+
+        /// <inheritdoc />
+        public bool TryImportTransferSnapshot(in FlinchTransferSnapshot snapshot)
+        {
+            if (!TransferValue.IsValidAccumulation(snapshot.Accumulation)
+                || !TransferValue.IsValidRemaining(snapshot.HoldRemaining)
+                || !TransferValue.IsValidRemaining(snapshot.FlinchRemaining)
+                || !TransferValue.IsValidRemaining(snapshot.ImmunityRemaining))
+            {
+                return false;
+            }
+
+            _accumulation = snapshot.Accumulation;
+            _holdRemaining = snapshot.HoldRemaining;
+            _flinchRemaining = snapshot.FlinchRemaining;
+            _immunityRemaining = snapshot.ImmunityRemaining;
+            return true;
         }
     }
 }

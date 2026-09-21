@@ -402,5 +402,58 @@ namespace Momotaro.Gameplay.Companion
             // 無効化・Scene 離脱で所有権を残さない（§2.3 後始末）。
             InvalidateOutstanding();
         }
+
+        /// <summary>
+        /// エリア遷移の到着時に、持ち越した配置状態を復元する（P5-03a。仕様書 v1.1 §4.6）。
+        /// <b>初期化・停止期間だけ</b>で使う専用入口で、通常の行動遷移には使わない。
+        ///
+        /// 状態要求の窓口を本 Arbiter に一本化するため、Actor へ直接書き戻さない。理由は専用の
+        /// <see cref="CompanionStateChangeReason.Restored"/> を使い、購読者が実被弾・実復帰と区別できるようにする。
+        /// <b>HP・復帰時計・CD には触れない</b>（値の復元は各 Runtime の Import が済ませている前提）。
+        ///
+        /// 経路は状態ごとに分ける。Away は退場と同じ遷移、Down／Stagger は被弾由来の強制状態として適用する。
+        /// <b>Away を ForceHit へ渡さない</b>（非対応の状態要求。§4.6）。
+        /// </summary>
+        /// <param name="state">復元する配置状態。Away／Down／Stagger／Follow のみ受け付ける。</param>
+        /// <returns>復元できたか。対象外の状態、Actor 未配線、遷移が成立しない場合は false。</returns>
+        public bool TryRestoreState(CompanionState state)
+        {
+            EnsureActor();
+            if (_actor == null)
+            {
+                return false;
+            }
+
+            // 到着時点で旧 Scene の行動が残っていてはいけない。先に所有権を空にする。
+            InvalidateOutstanding();
+
+            if (state == _actor.State)
+            {
+                return true; // 既に目的の状態（Follow 既定からの Follow 復元など）。冪等。
+            }
+
+            switch (state)
+            {
+                case CompanionState.Away:
+                    return _actor.RequestState(CompanionState.Away, CompanionStateChangeReason.Restored);
+
+                case CompanionState.Down:
+                case CompanionState.Stagger:
+                    // 退場中は被弾由来の状態を持てない（状態機の規則）。先に場へ戻す必要がある。
+                    if (_actor.State == CompanionState.Away
+                        && !_actor.RequestState(CompanionState.Follow, CompanionStateChangeReason.Restored))
+                    {
+                        return false;
+                    }
+
+                    return _actor.ForceHitState(state, CompanionStateChangeReason.Restored);
+
+                case CompanionState.Follow:
+                    return _actor.RequestState(CompanionState.Follow, CompanionStateChangeReason.Restored);
+
+                default:
+                    return false; // 攻撃中・防御中・探索中などの行動状態は到着時に復元しない（§4.6）。
+            }
+        }
     }
 }

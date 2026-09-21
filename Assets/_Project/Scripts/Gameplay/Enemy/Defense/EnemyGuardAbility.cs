@@ -1,4 +1,5 @@
 using UnityEngine;
+using Momotaro.Gameplay.Transfer;
 
 namespace Momotaro.Gameplay.Enemy.Defense
 {
@@ -7,7 +8,7 @@ namespace Momotaro.Gameplay.Enemy.Defense
     /// 非依存。<see cref="TryStart"/> で構え、<see cref="Tick"/> で経過を進め、最大保持時間で自動解除して Cooldown に入る。
     /// Cooldown 中は再構えできない。実際の被ダメージ軽減は <see cref="EnemyGuardMath"/>、方向・Special 貫通は命中時に判定する。
     /// </summary>
-    public sealed class EnemyGuardAbility
+    public sealed class EnemyGuardAbility : ITransferableRuntime<GuardAbilityTransferSnapshot>
     {
         /// <summary>ガードの最大保持時間（秒）。§9。</summary>
         public const float MaxHoldSeconds = 2f;
@@ -95,6 +96,28 @@ namespace Momotaro.Gameplay.Enemy.Defense
             _guarding = false;
             _held = 0f;
             _cooldownRemaining = 0f;
+        }
+
+        /// <inheritdoc />
+        public GuardAbilityTransferSnapshot ExportTransferSnapshot()
+        {
+            return new GuardAbilityTransferSnapshot(_cooldownRemaining);
+        }
+
+        /// <inheritdoc />
+        public bool TryImportTransferSnapshot(in GuardAbilityTransferSnapshot snapshot)
+        {
+            if (!TransferValue.IsValidRemaining(snapshot.CooldownRemaining)
+                || snapshot.CooldownRemaining > _cooldown)
+            {
+                return false;
+            }
+
+            // 構え中フラグと保持経過は持ち越さない（§4.5）。Release 済みの状態から CD だけを復元する。
+            _guarding = false;
+            _held = 0f;
+            _cooldownRemaining = snapshot.CooldownRemaining;
+            return true;
         }
     }
 }

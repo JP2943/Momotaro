@@ -1,5 +1,6 @@
 using Momotaro.Gameplay.Combat;
 using UnityEngine;
+using Momotaro.Gameplay.Transfer;
 
 namespace Momotaro.Gameplay.Player
 {
@@ -16,7 +17,8 @@ namespace Momotaro.Gameplay.Player
     /// P3.5-09 で調整する場合は本コンポーネントの Serialized 値、または Data 化した設定を差し替える。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class PlayerHitReaction : MonoBehaviour, IPlayerHurtReaction
+    public sealed class PlayerHitReaction : MonoBehaviour, IPlayerHurtReaction,
+        ITransferableRuntime<HitReactionTransferSnapshot>
     {
         [Tooltip("被弾硬直（強制行動不能）の秒数。仕様書 Table3 の初期値 0.30。")]
         [SerializeField] private float _hurtSeconds = 0.30f;
@@ -76,5 +78,15 @@ namespace Momotaro.Gameplay.Player
             // Disable / Scene 離脱 / Retry で硬直・無敵を残さない（仕様書 §2.3）。
             State.Reset();
         }
+
+        /// <summary>被弾後無敵の残り秒（持ち越し・検証用）。設定秒は <see cref="PostHitInvincibleSeconds"/>。</summary>
+        public float PostHitInvincibleRemaining => State.InvincibleRemaining;
+
+        /// <inheritdoc />
+        public HitReactionTransferSnapshot ExportTransferSnapshot() => State.ExportTransferSnapshot();
+
+        /// <inheritdoc />
+        public bool TryImportTransferSnapshot(in HitReactionTransferSnapshot snapshot)
+            => State.TryImportTransferSnapshot(snapshot);
     }
 }

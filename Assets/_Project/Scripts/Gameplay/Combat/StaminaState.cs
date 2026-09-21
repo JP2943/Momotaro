@@ -1,3 +1,5 @@
+using Momotaro.Gameplay.Transfer;
+
 namespace Momotaro.Gameplay.Combat
 {
     /// <summary>
@@ -11,7 +13,7 @@ namespace Momotaro.Gameplay.Combat
     /// ブレイク終了時に最大値の <see cref="_breakRestoreRatio"/> まで回復する。回復停止条件（ガード中・被弾・チャージ中・
     /// ダウン中）は呼び出し側が <c>regenBlocked</c> で与える。ブレイク中は内部的に常に回復停止。通常攻撃中は回復可。
     /// </summary>
-    public sealed class StaminaState
+    public sealed class StaminaState : ITransferableRuntime<StaminaTransferSnapshot>
     {
         private readonly float _max;
         private readonly float _regenPerSecond;
@@ -159,6 +161,34 @@ namespace Momotaro.Gameplay.Combat
             _current = _max;
             _regenDelayRemaining = 0f;
             _breakRemaining = 0f;
+        }
+
+        /// <inheritdoc />
+        public StaminaTransferSnapshot ExportTransferSnapshot()
+        {
+            return new StaminaTransferSnapshot(_current, _regenDelayRemaining, _breakRemaining);
+        }
+
+        /// <inheritdoc />
+        public bool TryImportTransferSnapshot(in StaminaTransferSnapshot snapshot)
+        {
+            // Break 中は通常遷移を受付拒否する（正本は §6.1、ここはその帰結。裁定 6）。採取時も 0 を要求し制限を緩めない。
+            if (snapshot.BreakRemaining != 0f)
+            {
+                return false;
+            }
+
+            if (!TransferValue.IsValidRemaining(snapshot.RegenDelayRemaining)
+                || float.IsNaN(snapshot.Current) || float.IsInfinity(snapshot.Current)
+                || snapshot.Current < 0f || snapshot.Current > _max)
+            {
+                return false;
+            }
+
+            _current = snapshot.Current;
+            _regenDelayRemaining = snapshot.RegenDelayRemaining;
+            _breakRemaining = 0f;
+            return true;
         }
     }
 }

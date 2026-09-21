@@ -2,6 +2,7 @@ using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Combat.Guardian;
 using Momotaro.Gameplay.Modes;
 using UnityEngine;
+using Momotaro.Gameplay.Transfer;
 
 namespace Momotaro.Gameplay.Companion
 {
@@ -39,7 +40,7 @@ namespace Momotaro.Gameplay.Companion
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class CompanionGuardianController : MonoBehaviour, IGuardianResolver, ICompanionTransferAcceptanceHook,
-        ICompanionActionParticipant
+        ICompanionActionParticipant, ITransferableRuntime<CompanionGuardianTransferSnapshot>
     {
         [Tooltip("状態・Data の供給元（未設定なら自動取得）。")]
         [SerializeField] private CompanionActor _actor;
@@ -369,5 +370,23 @@ namespace Momotaro.Gameplay.Companion
             _cooldownRemaining = 0f;
         }
 
+
+        /// <summary>守護 CD を採取する（§4.5）。転送中フラグ・実行券・HitId 再入情報は持ち越さない。</summary>
+        public CompanionGuardianTransferSnapshot ExportTransferSnapshot()
+        {
+            return new CompanionGuardianTransferSnapshot(_cooldownRemaining);
+        }
+
+        /// <inheritdoc />
+        public bool TryImportTransferSnapshot(in CompanionGuardianTransferSnapshot snapshot)
+        {
+            if (!TransferValue.IsValidRemaining(snapshot.CooldownRemaining))
+            {
+                return false;
+            }
+
+            _cooldownRemaining = snapshot.CooldownRemaining;
+            return true;
+        }
     }
 }

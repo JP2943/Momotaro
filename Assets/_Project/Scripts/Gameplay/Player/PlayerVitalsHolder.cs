@@ -2,6 +2,7 @@ using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Combat.Guardian;
 using UnityEngine;
+using Momotaro.Gameplay.Transfer;
 
 namespace Momotaro.Gameplay.Player
 {
@@ -24,7 +25,7 @@ namespace Momotaro.Gameplay.Player
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class PlayerVitalsHolder : MonoBehaviour, IDamageable, IPlayerDefeatState, IPlayerDefeatSource, IGuardianHost,
-        IIncomingHitSource
+        IIncomingHitSource, ITransferableRuntime<PlayerVitalsTransferSnapshot>
     {
         [SerializeField] private PlayerData _data;
 
@@ -655,6 +656,55 @@ namespace Momotaro.Gameplay.Player
             _defeated = true;
             ResolveReactionMotor()?.ClearReaction(); // 死亡確定で進行中の押し出しを打ち切る（死体が滑らない。§7.4）。
             Defeats.Publish(new PlayerDefeatedEvent(DamageableId, transform.position));
+        }
+
+        /// <inheritdoc />
+        public PlayerVitalsTransferSnapshot ExportTransferSnapshot()
+        {
+            EnsureVitals();
+            VitalTransferSnapshot health = _vitals != null
+                ? _vitals.Health.ExportTransferSnapshot()
+                : new VitalTransferSnapshot(0);
+            StaminaTransferSnapshot stamina = _stamina != null
+                ? _stamina.ExportTransferSnapshot()
+                : new StaminaTransferSnapshot(0f, 0f, 0f);
+            return new PlayerVitalsTransferSnapshot(health, stamina);
+        }
+
+        /// <summary>
+        /// HP とスタミナを復元する（§4.5）。Data から構築済みの最大値・設定秒はそのまま使い、
+        /// Snapshot には現在値だけを載せる。どちらか一方でも値域が不正なら<b>両方とも適用しない</b>。
+        /// </summary>
+        public bool TryImportTransferSnapshot(in PlayerVitalsTransferSnapshot snapshot)
+        {
+            EnsureVitals();
+            if (_vitals == null || _stamina == null)
+            {
+                return false;
+            }
+
+            // 先に両方を検査する。Vital 側は Import が検証込みなので、ここでは HP の値域だけ先読みする。
+            if (!TransferValue.IsValidHp(snapshot.Health.Current, _vitals.Health.Max))
+            {
+                return false;
+            }
+
+            // スタミナは Import 自身が Break・値域を検証する。失敗するなら HP へ触れる前に返す。
+            StaminaState probe = _stamina;
+            StaminaTransferSnapshot before = probe.ExportTransferSnapshot();
+            if (!probe.TryImportTransferSnapshot(snapshot.Stamina))
+            {
+                return false;
+            }
+
+            if (!_vitals.Health.TryImportTransferSnapshot(snapshot.Health))
+            {
+                probe.TryImportTransferSnapshot(before); // 部分適用を残さない。
+                return false;
+            }
+
+            _defeated = _vitals.Health.Current <= 0;
+            return true;
         }
     }
 }

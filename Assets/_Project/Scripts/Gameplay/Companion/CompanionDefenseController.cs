@@ -2,6 +2,7 @@ using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Enemy.Defense;
 using Momotaro.Gameplay.Modes;
 using UnityEngine;
+using Momotaro.Gameplay.Transfer;
 
 namespace Momotaro.Gameplay.Companion
 {
@@ -33,7 +34,8 @@ namespace Momotaro.Gameplay.Companion
     /// ガード中にガード不能な危険が来て回避へ移るときも、<b>旧ガードを解いてから</b>回避を始める（R2-07）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class CompanionDefenseController : MonoBehaviour, ICompanionDefenseState, ICompanionActionParticipant
+    public sealed class CompanionDefenseController : MonoBehaviour, ICompanionDefenseState, ICompanionActionParticipant,
+        ITransferableRuntime<CompanionDefenseTransferSnapshot>
     {
         [Tooltip("状態・Data の供給元（未設定なら自動取得）。")]
         [SerializeField] private CompanionActor _actor;
@@ -464,5 +466,45 @@ namespace Momotaro.Gameplay.Companion
             SawDanger = false;
         }
 
+
+        /// <summary>
+        /// 構え・回避の CD を採取する（§4.5）。<b>Guard は Release 後、Evade は中断後</b>に採ること。
+        /// 同じ CD を Controller と能力の両方へ複製せず、実体は各能力が 1 つずつ持つ。
+        /// </summary>
+        public CompanionDefenseTransferSnapshot ExportTransferSnapshot()
+        {
+            Build();
+            GuardAbilityTransferSnapshot guard = _guard != null
+                ? _guard.ExportTransferSnapshot()
+                : new GuardAbilityTransferSnapshot(0f);
+            EvadeAbilityTransferSnapshot evade = _evade != null
+                ? _evade.ExportTransferSnapshot()
+                : new EvadeAbilityTransferSnapshot(0f);
+            return new CompanionDefenseTransferSnapshot(guard, evade);
+        }
+
+        /// <summary>両方を検証してから適用する。片方でも不正なら<b>どちらも適用しない</b>（§4.5）。</summary>
+        public bool TryImportTransferSnapshot(in CompanionDefenseTransferSnapshot snapshot)
+        {
+            Build();
+            if (_guard == null || _evade == null)
+            {
+                return false;
+            }
+
+            GuardAbilityTransferSnapshot beforeGuard = _guard.ExportTransferSnapshot();
+            if (!_guard.TryImportTransferSnapshot(snapshot.Guard))
+            {
+                return false;
+            }
+
+            if (!_evade.TryImportTransferSnapshot(snapshot.Evade))
+            {
+                _guard.TryImportTransferSnapshot(beforeGuard); // 部分適用を残さない。
+                return false;
+            }
+
+            return true;
+        }
     }
 }

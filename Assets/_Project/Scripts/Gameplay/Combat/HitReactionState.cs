@@ -1,3 +1,5 @@
+using Momotaro.Gameplay.Transfer;
+
 namespace Momotaro.Gameplay.Combat
 {
     /// <summary>
@@ -9,7 +11,7 @@ namespace Momotaro.Gameplay.Combat
     /// 経過が持続時間ちょうどに達した瞬間に終了する（0.30/0.50 秒＝終了、直前＝有効、直後＝終了）。Game Time 前提のため、
     /// Pause（deltaTime 0）では進行しない。
     /// </summary>
-    public sealed class HitReactionState
+    public sealed class HitReactionState : ITransferableRuntime<HitReactionTransferSnapshot>
     {
         private readonly float _hurtSeconds;
         private readonly float _invincibleSeconds;
@@ -80,6 +82,32 @@ namespace Momotaro.Gameplay.Combat
         {
             _hurtRemaining = 0f;
             _invincibleRemaining = 0f;
+        }
+
+        /// <inheritdoc />
+        public HitReactionTransferSnapshot ExportTransferSnapshot()
+        {
+            return new HitReactionTransferSnapshot(_hurtRemaining, _invincibleRemaining);
+        }
+
+        /// <inheritdoc />
+        public bool TryImportTransferSnapshot(in HitReactionTransferSnapshot snapshot)
+        {
+            // Hurt 中は §6.1 が遷移を受付拒否するため、採取時 0 でなければ Snapshot が壊れている。
+            if (snapshot.HurtRemaining != 0f)
+            {
+                return false;
+            }
+
+            if (!TransferValue.IsValidRemaining(snapshot.InvincibleRemaining)
+                || snapshot.InvincibleRemaining > _invincibleSeconds)
+            {
+                return false;
+            }
+
+            _hurtRemaining = 0f;
+            _invincibleRemaining = snapshot.InvincibleRemaining;
+            return true;
         }
     }
 }

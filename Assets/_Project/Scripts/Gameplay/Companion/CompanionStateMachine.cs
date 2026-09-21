@@ -99,8 +99,9 @@ namespace Momotaro.Gameplay.Companion
                 return false;
             }
 
-            // 退場は最優先で常に成立させる（残留を作らないため）。
-            if (next == CompanionState.Away && reason == CompanionStateChangeReason.Left)
+            // 退場は最優先で常に成立させる（残留を作らないため）。到着時の Away 復元も同じ経路を使う（§4.6）。
+            if (next == CompanionState.Away
+                && (reason == CompanionStateChangeReason.Left || reason == CompanionStateChangeReason.Restored))
             {
                 Apply(next, reason);
                 return true;
@@ -109,7 +110,8 @@ namespace Momotaro.Gameplay.Companion
             if (Current == CompanionState.Down
                 && reason != CompanionStateChangeReason.Recovered
                 && reason != CompanionStateChangeReason.Spawned
-                && reason != CompanionStateChangeReason.Left)
+                && reason != CompanionStateChangeReason.Left
+                && reason != CompanionStateChangeReason.Restored)
             {
                 RecordIllegal(next, reason);
                 return false;
@@ -120,7 +122,8 @@ namespace Momotaro.Gameplay.Companion
                 && reason != CompanionStateChangeReason.Recovered
                 && reason != CompanionStateChangeReason.Defeated
                 && reason != CompanionStateChangeReason.ForcedByEvent
-                && reason != CompanionStateChangeReason.Left)
+                && reason != CompanionStateChangeReason.Left
+                && reason != CompanionStateChangeReason.Restored)
             {
                 RecordIllegal(next, reason);
                 return false;

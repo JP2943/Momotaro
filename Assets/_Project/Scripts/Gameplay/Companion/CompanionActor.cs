@@ -1,6 +1,7 @@
 using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
 using UnityEngine;
+using Momotaro.Gameplay.Transfer;
 
 namespace Momotaro.Gameplay.Companion
 {
@@ -20,7 +21,8 @@ namespace Momotaro.Gameplay.Companion
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(CompanionStateArbiter))]
-    public sealed class CompanionActor : MonoBehaviour, ICompanionActor, ICombatActor
+    public sealed class CompanionActor : MonoBehaviour, ICompanionActor, ICombatActor,
+        ITransferableRuntime<CompanionActorTransferSnapshot>
     {
         [Tooltip("仲間の基礎データ（役割・ヘイト補正・追従・攻撃・守護の数値）。未割当でも既定値で安全に動く。")]
         [SerializeField] private CompanionData _data;
@@ -168,6 +170,21 @@ namespace Momotaro.Gameplay.Companion
 #else
             return null;
 #endif
+        }
+
+        /// <summary>配置状態を採取する（§4.6）。値の Import だけでは復元完了にしないため状態も別に運ぶ。</summary>
+        public CompanionActorTransferSnapshot ExportTransferSnapshot()
+        {
+            return new CompanionActorTransferSnapshot(State);
+        }
+
+        /// <summary>
+        /// 状態の復元は <c>CompanionStateArbiter</c> を唯一の窓口とするため、ここでは<b>受け付けない</b>
+        /// （§4.6）。Actor へ直接書き戻すと所有権・購読の整合が取れないので、常に false を返す。
+        /// </summary>
+        public bool TryImportTransferSnapshot(in CompanionActorTransferSnapshot snapshot)
+        {
+            return false;
         }
     }
 }

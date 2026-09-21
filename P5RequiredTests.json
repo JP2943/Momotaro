@@ -62,7 +62,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.TransferSnapshot_CapturesAfterCancellationAndRestoresVitals",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E07",
@@ -238,7 +238,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.TransferInventory_ClassifiesEveryMutableRuntimeField",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E29",
@@ -246,7 +246,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.CompanionRestore_ReconcilesDownAwayWithoutIllegalTransitions",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E30",
