@@ -81,12 +81,31 @@ namespace Momotaro.Gameplay.Companion
         /// <summary>隊列番号（0 始まり）。</summary>
         public int SlotIndex { get; }
 
+        /// <summary>
+        /// 経路（NavMesh）で迂回している最中か（P5-05。仕様書 v1.1 §10.1）。
+        ///
+        /// <b>true の間は停滞判定を積まない。</b> 迂回中は角へ向かって歩くので、
+        /// 隊列位置までの距離はしばらく縮まらない（むしろ離れることもある）。
+        /// そこを「近づけていない」と数えると、正しく迂回しているだけなのにワープしてしまう。
+        /// §10.1 が「新たな停止・停滞判定を既存 FollowModel と二重に競合させない」と言うのはこのこと。
+        /// 経路で届かないという判断は経路側が持ち、その結果だけがワープ資格へ渡る。
+        /// </summary>
+        public bool PathFollowActive { get; }
+
         public CompanionFollowInput(Vector3 leaderPosition, Vector3 leaderForward, Vector3 selfPosition, int slotIndex)
+            : this(leaderPosition, leaderForward, selfPosition, slotIndex, false)
+        {
+        }
+
+        public CompanionFollowInput(
+            Vector3 leaderPosition, Vector3 leaderForward, Vector3 selfPosition, int slotIndex,
+            bool pathFollowActive)
         {
             LeaderPosition = leaderPosition;
             LeaderForward = leaderForward;
             SelfPosition = selfPosition;
             SlotIndex = slotIndex;
+            PathFollowActive = pathFollowActive;
         }
     }
 }

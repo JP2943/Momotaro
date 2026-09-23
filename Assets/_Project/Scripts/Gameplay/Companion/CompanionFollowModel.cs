@@ -50,6 +50,17 @@ namespace Momotaro.Gameplay.Companion
                 return RequestWarp();
             }
 
+            // 経路（NavMesh）で迂回している最中は、停滞をここで数えない（P5-05。§10.1）。
+            // 迂回は隊列位置から一度離れることがあり、それを失敗と読むと正しい迂回がワープに化ける。
+            // 「経路でも届かない」の判断は経路側が持ち、その結果だけがここへ渡ってくる。
+            if (input.PathFollowActive)
+            {
+                StuckSeconds = 0f;
+                _previousDistance = DistanceToSlot;
+                Decision = CompanionFollowDecision.Move;
+                return Decision;
+            }
+
             // 経路失敗：移動中に限り、近づけていない時間を積む。停止中は積まない（止まっているのは正常）。
             if (Decision == CompanionFollowDecision.Move)
             {

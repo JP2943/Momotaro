@@ -49,8 +49,58 @@ namespace Momotaro.Gameplay.Companion
         /// <summary>現在の追従対象。</summary>
         public Transform Leader => _leader;
 
-        /// <summary>直近の判断（テスト・Debug 用）。</summary>
+        /// <summary>直近の判断。</summary>
         public CompanionFollowDecision Decision => _model.Decision;
+
+        // ---- P5-05：長距離追従の経路（§10.1／§10.2）----
+
+        private readonly Navigation.CompanionPathFollowModel _pathModel = new Navigation.CompanionPathFollowModel();
+        private Navigation.IPathProvider _pathProvider;
+        private Navigation.IWarpCandidateProbe _warpProbe;
+        private Investigation.IObstacleProbe _obstacleProbe;
+        private readonly System.Collections.Generic.List<Vector3> _warpCandidates =
+            new System.Collections.Generic.List<Vector3>();
+
+        /// <summary>経路の判断（診断・テスト用）。</summary>
+        public Navigation.CompanionPathFollowModel PathModel => _pathModel;
+
+        /// <summary>経路の供給元が差さっているか（Validator・テスト用）。</summary>
+        public bool HasPathProvider => _pathProvider != null;
+
+        /// <summary>ワープ候補を断った回数（診断・テスト用）。安全な場所が無くて止まった回数。</summary>
+        public int UnsafeWarpBlockedCount { get; private set; }
+
+        /// <summary>
+        /// 経路の供給元を明示注入する（P5-05。§10.1）。
+        /// <b>GetComponent だけに頼らない。</b> テストは Fake を差し、実機は NavMesh Adapter を差す。
+        /// 未注入なら経路追従は行わず、診断できる形（<see cref="HasPathProvider"/> が false）で止まる。
+        /// </summary>
+        public void BindPathProvider(Navigation.IPathProvider provider)
+        {
+            _pathProvider = provider;
+            _pathModel.Reset();
+        }
+
+        /// <summary>ワープ候補の安全性を調べる供給元を差す（§10.2）。未注入ならワープを止める。</summary>
+        public void BindWarpProbe(Navigation.IWarpCandidateProbe probe)
+        {
+            _warpProbe = probe;
+        }
+
+        /// <summary>直線で通れるかの判定を差し替える（テスト。未設定なら壁レイヤーへの物理判定）。</summary>
+        public void SetObstacleProbe(Investigation.IObstacleProbe probe)
+        {
+            _obstacleProbe = probe;
+        }
+
+        /// <summary>門の開通など、世界の通行状態が変わったことを伝える（§10.1）。</summary>
+        public void NotifyWorldChanged()
+        {
+            _pathModel.NotifyWorldChanged();
+        }
+
+        private Investigation.IObstacleProbe ObstacleProbe =>
+            _obstacleProbe ?? (_obstacleProbe = new Investigation.PhysicsObstacleProbe());
 
         /// <summary>戦闘側へ移動を譲っているか（テスト・診断用）。</summary>
         public bool IsYieldingToCombat => ResolveEngagement() != null && _engagement.IsEngaged;
@@ -242,21 +292,50 @@ namespace Momotaro.Gameplay.Companion
             float speed = _actor.Data != null ? _actor.Data.MoveSpeed : 4.5f;
             float stopRadius = _actor.Data != null ? _actor.Data.FollowStopDistance : 0.35f;
 
-            var input = new CompanionFollowInput(
-                _leader.position, ResolveLeaderForward(), transform.position, _actor.SlotIndex);
             CompanionFollowSettings settings = CompanionFollowSettings.From(_actor.Data);
+
+            // 隊列位置は経路の判断より先に要る（そこが経路の目的地になる）。
+            Vector3 slot = FormationSlot.Resolve(
+                _leader.position, ResolveLeaderForward(), _actor.SlotIndex, settings.Spacing);
+
+            // 経路の判断（§10.1）。供給元が未注入なら Direct 相当に倒れる（経路追従を行わない）。
+            Navigation.PathFollowDecision pathDecision = TickPath(deltaTime, slot);
+
+            var input = new CompanionFollowInput(
+                _leader.position, ResolveLeaderForward(), transform.position, _actor.SlotIndex,
+                pathDecision == Navigation.PathFollowDecision.MoveToCorner);
+
+            // 経路がまだ得られていない間は動かない（§10.1。届かないと決めつけて壁へ突っ込ませない）。
+            if (pathDecision == Navigation.PathFollowDecision.Waiting)
+            {
+                EnterFollow();
+                SubmitMove(CompanionMoveRequest.StopFacing(ResolveLeaderForward()));
+                return;
+            }
 
             switch (_model.Tick(input, settings, deltaTime))
             {
                 case CompanionFollowDecision.Move:
                     EnterFollow();
+
+                    // 迂回中は角へ、そうでなければ隊列位置へ。<b>書き込むのは同じ 1 本</b>
+                    // （調停役 → Motor。NavMeshAgent は置かない。§10.1）。
+                    Vector3 target = pathDecision == Navigation.PathFollowDecision.MoveToCorner
+                        ? _pathModel.NextCorner
+                        : _model.SlotPosition;
                     SubmitMove(CompanionMoveRequest.MoveFacing(
-                        _model.SlotPosition, speed, stopRadius, _model.SlotPosition - transform.position));
+                        target, speed, stopRadius, target - transform.position));
                     break;
 
                 case CompanionFollowDecision.Warp:
-                    BeginFollowAction(CompanionState.Warp, CompanionStateChangeReason.Warped);
-                    SubmitMove(CompanionMoveRequest.Warp(_model.SlotPosition));
+                    if (!TryWarpToSafePlace())
+                    {
+                        // 安全な場所が無い。壁内へ押し込まず、止まって次の評価を待つ（§10.2）。
+                        UnsafeWarpBlockedCount++;
+                        EnterFollow();
+                        SubmitMove(CompanionMoveRequest.StopFacing(ResolveLeaderForward()));
+                    }
+
                     break;
 
                 default: // Hold
@@ -265,6 +344,84 @@ namespace Momotaro.Gameplay.Companion
                     SubmitMove(CompanionMoveRequest.StopFacing(ResolveLeaderForward()));
                     break;
             }
+        }
+
+        /// <summary>
+        /// 経路の判断を 1 Tick 進める（§10.1）。供給元が無ければ経路追従はしない。
+        /// </summary>
+        private Navigation.PathFollowDecision TickPath(float deltaTime, Vector3 slot)
+        {
+            if (_pathProvider == null)
+            {
+                // 未注入。経路追従は行わない（§10.1。Validator がここを不合格にする）。
+                _pathModel.Reset();
+                return Navigation.PathFollowDecision.Direct;
+            }
+
+            bool clear = ObstacleProbe.IsClear(transform.position, slot);
+            var pathInput = new Navigation.PathFollowInput(transform.position, slot, clear);
+            return _pathModel.Tick(pathInput, Navigation.PathFollowSettings.Default, _pathProvider, deltaTime);
+        }
+
+        /// <summary>
+        /// 安全なワープ先へ跳ぶ（§10.2）。候補が無ければ<b>跳ばずに false</b>。
+        ///
+        /// 候補は主人公近傍の隊列位置を固定順で並べる。近い順に並べ替えない：
+        /// 同じ状況で同じ場所へ出ることの方が、見ている側には分かりやすい。
+        /// </summary>
+        private bool TryWarpToSafePlace()
+        {
+            Vector3 slot = _model.SlotPosition;
+
+            if (_warpProbe == null)
+            {
+                // 安全性を確かめる手立てが無い構成（P4 の試遊など）は従来どおり跳ぶ。
+                BeginFollowAction(CompanionState.Warp, CompanionStateChangeReason.Warped);
+                SubmitMove(CompanionMoveRequest.Warp(slot));
+                return true;
+            }
+
+            Vector3 leaderPosition = _leader.position;
+            Vector3 forward = ResolveLeaderForward();
+            _warpCandidates.Clear();
+            _warpCandidates.Add(slot);
+            _warpCandidates.Add(FormationSlot.Resolve(leaderPosition, forward, _actor.SlotIndex + 1, 1.2f));
+            _warpCandidates.Add(leaderPosition - forward * 1.2f);
+            _warpCandidates.Add(leaderPosition + Vector3.Cross(Vector3.up, forward) * 1.2f);
+            _warpCandidates.Add(leaderPosition - Vector3.Cross(Vector3.up, forward) * 1.2f);
+
+            if (!Navigation.SafeWarpSelector.TrySelect(
+                    _warpCandidates, leaderPosition, IsWarpAllowed(), _warpProbe,
+                    out Vector3 chosen, out _))
+            {
+                return false;
+            }
+
+            BeginFollowAction(CompanionState.Warp, CompanionStateChangeReason.Warped);
+            SubmitMove(CompanionMoveRequest.Warp(chosen));
+            _pathModel.Reset();
+            return true;
+        }
+
+        /// <summary>
+        /// いま通常 Follow のワープをしてよいか（§10.2）。
+        /// 攻撃 Active・防御・被弾・Down・Away・探索占有中は禁止。
+        /// </summary>
+        private bool IsWarpAllowed()
+        {
+            if (_actor == null)
+            {
+                return false;
+            }
+
+            if (IsFollowSuspended(_actor.State) || IsYieldingToInvestigation || IsYieldingToCombat)
+            {
+                return false;
+            }
+
+            return _actor.State == CompanionState.Follow
+                || _actor.State == CompanionState.Idle
+                || _actor.State == CompanionState.Warp;
         }
 
         /// <summary>追従中の状態へ入れる（既に Follow なら何もしない。Warp・戦闘からの復帰もここを通る）。</summary>

@@ -23,6 +23,7 @@ using Momotaro.Tests.Support;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Interaction;
+using Momotaro.Gameplay.Navigation;
 using Momotaro.Gameplay.Session;
 using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.World;
@@ -1994,6 +1995,273 @@ namespace Momotaro.Tests.EditMode
             public string Prompt => "調べる";
             public string MissingCompanionHint => "未加入";
             public string CompletedText => "調査済み";
+        }
+
+        // ---------------------------------------------------------------- E22・E23（経路とワープ）
+
+        /// <summary>
+        /// P5-E22：経路追従は <b>Complete だけを成功扱いにし</b>、再探索は上限つきで、
+        /// 位置の書込み口は増えない（§10.1）。
+        ///
+        /// Partial を成功にすると、閉じた門の手前まで歩いては止まり、
+        /// 止まったことを停滞と数えてワープへ進む、という筋の悪い流れになる。
+        /// 再探索に上限が無いと、届かない場所を延々と計算し続けて何も起きない。
+        /// </summary>
+        [Test]
+        public void FollowPath_UsesOneMovementWriterAndBoundedRetries()
+        {
+            var settings = new PathFollowSettings(
+                directDistance: 2.5f, requeryInterval: 0.5f, targetMoveThreshold: 1f,
+                cornerArriveDistance: 0.6f, stallSeconds: 3f, maxRetries: 2, progressEpsilon: 0.02f);
+
+            var provider = new FakePathProvider();
+            var model = new CompanionPathFollowModel();
+
+            Vector3 self = Vector3.zero;
+            Vector3 target = new Vector3(10f, 0f, 0f);
+
+            // ---- 近い・直線で通れるなら経路を使わない（§10.1 の 1 行目） ----
+            Assert.AreEqual(PathFollowDecision.Direct,
+                model.Tick(new PathFollowInput(self, new Vector3(1f, 0f, 0f), false), settings, provider, 0.1f),
+                "近ければ経路を使わない。");
+            Assert.AreEqual(0, provider.Calls, "問い合わせもしない。");
+
+            Assert.AreEqual(PathFollowDecision.Direct,
+                model.Tick(new PathFollowInput(self, target, true), settings, provider, 0.1f),
+                "直線で通れるなら経路を使わない。");
+            Assert.AreEqual(0, provider.Calls);
+
+            // ---- Complete：角へ向かう ----
+            provider.Result = PathQueryResult.Complete(new[] { new Vector3(0f, 0f, 5f), target });
+            Assert.AreEqual(PathFollowDecision.MoveToCorner,
+                model.Tick(new PathFollowInput(self, target, false), settings, provider, 0.1f));
+            Assert.AreEqual(PathQueryStatus.Complete, model.Status);
+            Assert.AreEqual(new Vector3(0f, 0f, 5f), model.NextCorner, "最初の角へ向かう。");
+            Assert.AreEqual(1, provider.Calls);
+
+            // ---- 再探索は間隔を守る（§10.1 の 0.5 秒） ----
+            model.Tick(new PathFollowInput(self, target, false), settings, provider, 0.2f);
+            Assert.AreEqual(1, provider.Calls, "間隔の内では探し直さない。");
+            model.Tick(new PathFollowInput(self, target, false), settings, provider, 0.4f);
+            Assert.AreEqual(2, provider.Calls, "間隔を超えたら探し直す。");
+
+            // ---- 目標が 1 unit 以上動いたら、間隔を待たずに探し直す ----
+            int before = provider.Calls;
+            model.Tick(new PathFollowInput(self, target + new Vector3(0f, 0f, 1.5f), false), settings, provider, 0.01f);
+            Assert.AreEqual(before + 1, provider.Calls, "目標が動いたら間隔を待たない。");
+
+            // ---- 門の開通は、間隔を待たずに探し直す ----
+            before = provider.Calls;
+            model.NotifyWorldChanged();
+            model.Tick(new PathFollowInput(self, target + new Vector3(0f, 0f, 1.5f), false), settings, provider, 0.01f);
+            Assert.AreEqual(before + 1, provider.Calls, "通行状態が変わったら間隔を待たない。");
+
+            // ---- Partial は成功にしない。上限まで探し直して失敗する ----
+            var partialModel = new CompanionPathFollowModel();
+            var partialProvider = new FakePathProvider
+            {
+                Result = PathQueryResult.Partial(new[] { new Vector3(0f, 0f, 3f) }),
+            };
+
+            // 最初の 1 回は「再探索」ではない。届かない間は<b>待つ</b>（壁へ突っ込ませない）。
+            PathFollowDecision decision =
+                partialModel.Tick(new PathFollowInput(self, target, false), settings, partialProvider, 0.1f);
+            Assert.AreEqual(PathFollowDecision.Waiting, decision, "Partial は成功扱いにしない。まだ待つ。");
+            Assert.AreEqual(PathQueryStatus.Partial, partialModel.Status);
+            Assert.AreEqual(0, partialModel.RetryCount, "初回の問い合わせは再探索に数えない。");
+            Assert.AreEqual(1, partialProvider.Calls);
+
+            // 間隔を置いて探し直す。2 回まで。
+            Assert.AreEqual(PathFollowDecision.Waiting,
+                partialModel.Tick(new PathFollowInput(self, target, false), settings, partialProvider, 0.6f));
+            Assert.AreEqual(1, partialModel.RetryCount);
+
+            Assert.AreEqual(PathFollowDecision.Failed,
+                partialModel.Tick(new PathFollowInput(self, target, false), settings, partialProvider, 0.6f),
+                "上限まで探し直しても届かなければ失敗。");
+            Assert.AreEqual(2, partialModel.RetryCount, "再探索は 2 回まで。");
+            Assert.AreEqual(3, partialProvider.Calls, "最初の 1 回＋再探索 2 回。");
+
+            // さらに Tick しても、再探索は増えない（無制限に探し続けない）。
+            partialModel.Tick(new PathFollowInput(self, target, false), settings, partialProvider, 0.6f);
+            Assert.AreEqual(2, partialModel.RetryCount, "上限を超えて探し直さない。");
+
+            // ---- Invalid も同じ扱い ----
+            var invalidModel = new CompanionPathFollowModel();
+            var invalidProvider = new FakePathProvider { Result = PathQueryResult.Invalid() };
+            Assert.AreEqual(PathFollowDecision.Waiting,
+                invalidModel.Tick(new PathFollowInput(self, target, false), settings, invalidProvider, 0.1f));
+            invalidModel.Tick(new PathFollowInput(self, target, false), settings, invalidProvider, 0.6f);
+            Assert.AreEqual(PathFollowDecision.Failed,
+                invalidModel.Tick(new PathFollowInput(self, target, false), settings, invalidProvider, 0.6f));
+            Assert.AreEqual(2, invalidModel.RetryCount);
+
+            // ---- 供給元が未注入なら、経路追従をせずに止まる（勝手に直線で突っ込まない） ----
+            var unwired = new CompanionPathFollowModel();
+            Assert.AreEqual(PathFollowDecision.Failed,
+                unwired.Tick(new PathFollowInput(self, target, false), settings, null, 0.1f),
+                "供給元が無ければ経路追従を止める（§10.1）。");
+
+            // ---- 停滞：角へ近づけない時間が上限を超えたら失敗へ ----
+            var stallModel = new CompanionPathFollowModel();
+            var stallProvider = new FakePathProvider
+            {
+                Result = PathQueryResult.Complete(new[] { new Vector3(0f, 0f, 5f), target }),
+            };
+
+            Assert.AreEqual(PathFollowDecision.MoveToCorner,
+                stallModel.Tick(new PathFollowInput(self, target, false), settings, stallProvider, 0.1f));
+
+            // 同じ場所に留まり続ける（角へ近づけない）。
+            for (int i = 0; i < 200 && stallModel.Decision != PathFollowDecision.Failed; i++)
+            {
+                stallModel.Tick(new PathFollowInput(self, target, false), settings, stallProvider, 0.2f);
+            }
+
+            Assert.AreEqual(PathFollowDecision.Failed, stallModel.Decision, "停滞したら失敗にする。");
+            Assert.AreEqual(2, stallModel.RetryCount, "失敗までに探し直すのは上限まで。");
+
+            // ---- 所有権：位置を書く口は増やさない（§10.1「NavMeshAgent を置かない」） ----
+            AssertNoNavMeshAgentInGameplay();
+
+            // ---- 二重の停滞判定にしない：経路追従中は既存 FollowModel が停滞を積まない ----
+            var followModel = new CompanionFollowModel();
+            CompanionFollowSettings followSettings = new CompanionFollowSettings(
+                spacing: 1.2f, stopDistance: 0.5f, resumeDistance: 1.0f,
+                warpDistance: 100f, stuckSeconds: 1f, stuckProgressEpsilon: 0.02f);
+
+            // 迂回中の想定：隊列位置から離れた場所に居続ける。
+            var stuckInput = new CompanionFollowInput(
+                Vector3.zero, Vector3.forward, new Vector3(8f, 0f, 0f), 0, pathFollowActive: true);
+            for (int i = 0; i < 20; i++)
+            {
+                followModel.Tick(stuckInput, followSettings, 0.2f);
+            }
+
+            Assert.AreEqual(0f, followModel.StuckSeconds, 1e-4f,
+                "経路で迂回している間は停滞を積まない（判定を 2 つ競わせない。§10.1）。");
+            Assert.AreEqual(0, followModel.WarpRequests, "迂回しているだけでワープしない。");
+        }
+
+        /// <summary>
+        /// P5-E23：ワープ先は<b>固定順で検査して、危険なら使わない</b>。
+        /// 候補がなければ<b>止まる</b>（壁内へ押し込まない。§10.2）。
+        ///
+        /// 「経路計算が失敗した」は、閉じた門の未開通側へ先回りしてよい理由にならない。
+        /// だから候補ごとに「主人公と同じ通行可能側か」を確かめる。
+        /// </summary>
+        [Test]
+        public void SafeWarp_RejectsClosedSideBlockedAndWrongFloor()
+        {
+            Vector3 leader = Vector3.zero;
+            var first = new Vector3(1f, 0f, 0f);
+            var second = new Vector3(0f, 0f, 1f);
+            var third = new Vector3(-1f, 0f, 0f);
+            var candidates = new List<Vector3> { first, second, third };
+
+            // ---- 全部安全なら、固定順の先頭が選ばれる（近い順に並べ替えない） ----
+            var probe = new FakeWarpProbe();
+            Assert.IsTrue(SafeWarpSelector.TrySelect(
+                candidates, leader, warpAllowed: true, probe, out Vector3 chosen, out SafeWarpRejection reason));
+            Assert.AreEqual(SafeWarpRejection.None, reason);
+            Assert.AreEqual(first, chosen, "与えられた順の先頭。");
+
+            // ---- 床でない候補は飛ばす ----
+            probe.NotGround.Add(first);
+            Assert.IsTrue(SafeWarpSelector.TrySelect(candidates, leader, true, probe, out chosen, out _));
+            Assert.AreEqual(second, chosen, "床でない候補は使わない。");
+
+            // ---- 壁・水・閉門に重なる候補は飛ばす ----
+            probe.Blocked.Add(second);
+            Assert.IsTrue(SafeWarpSelector.TrySelect(candidates, leader, true, probe, out chosen, out _));
+            Assert.AreEqual(third, chosen, "塞がっている候補は使わない。");
+
+            // ---- 主人公と繋がっていない候補（閉門の向こう側）は飛ばす ----
+            probe.Disconnected.Add(third);
+            Assert.IsFalse(SafeWarpSelector.TrySelect(candidates, leader, true, probe, out chosen, out reason),
+                "繋がっていない側へ先回りさせない（§10.2 の 1 行目）。");
+            Assert.AreEqual(SafeWarpRejection.AllUnsafe, reason);
+            Assert.AreEqual(default(Vector3), chosen, "選ばなかったときは値を返さない。");
+
+            // ---- 候補が無ければ止まる（最後の候補へ逃げない） ----
+            Assert.IsFalse(SafeWarpSelector.TrySelect(
+                new List<Vector3>(), leader, true, probe, out _, out reason));
+            Assert.AreEqual(SafeWarpRejection.NoCandidate, reason);
+
+            // ---- 安全性を確かめられない構成では置かない（安全側へ倒す） ----
+            Assert.IsFalse(SafeWarpSelector.TrySelect(candidates, leader, true, null, out _, out reason));
+            Assert.AreEqual(SafeWarpRejection.AllUnsafe, reason);
+
+            // ---- 攻撃・防御・被弾・Down／Away・探索占有中はワープしない ----
+            var clean = new FakeWarpProbe();
+            Assert.IsFalse(SafeWarpSelector.TrySelect(candidates, leader, false, clean, out _, out reason),
+                "禁止されている状態では、安全な候補があっても跳ばない。");
+            Assert.AreEqual(SafeWarpRejection.NotAllowed, reason);
+            Assert.AreEqual(0, clean.Calls, "候補を調べにすら行かない。");
+        }
+
+        /// <summary>
+        /// §10.1 の「長距離 Follow 経路に NavMeshAgent を置かない」を構造で確かめる。
+        ///
+        /// 規則は「位置・速度・向きの実書込みは <c>CompanionMovementArbiter</c> → <c>CompanionMotor</c> を維持する」。
+        /// <c>NavMeshAgent</c> は自分で Transform を動かすので、置いた時点で書込み口が 2 つになる。
+        /// コメントで約束するのではなく、<b>型を持っていないこと</b>で担保する。
+        /// </summary>
+        private static void AssertNoNavMeshAgentInGameplay()
+        {
+            System.Reflection.Assembly gameplay = typeof(CompanionFollowController).Assembly;
+            var offenders = new List<string>();
+
+            foreach (System.Type type in gameplay.GetTypes())
+            {
+                foreach (System.Reflection.FieldInfo field in type.GetFields(
+                             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+                             | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static
+                             | System.Reflection.BindingFlags.DeclaredOnly))
+                {
+                    if (field.FieldType == typeof(UnityEngine.AI.NavMeshAgent))
+                    {
+                        offenders.Add(type.FullName + "." + field.Name);
+                    }
+                }
+            }
+
+            CollectionAssert.IsEmpty(offenders,
+                "Gameplay が NavMeshAgent を持っている（位置の書込み口が 2 つになる。§10.1）: "
+                + string.Join(", ", offenders));
+        }
+
+        private sealed class FakePathProvider : IPathProvider
+        {
+            public PathQueryResult Result { get; set; } = PathQueryResult.Invalid();
+
+            public int Calls { get; private set; }
+
+            public PathQueryResult Query(Vector3 from, Vector3 to)
+            {
+                Calls++;
+                return Result;
+            }
+        }
+
+        private sealed class FakeWarpProbe : IWarpCandidateProbe
+        {
+            public readonly List<Vector3> NotGround = new List<Vector3>();
+            public readonly List<Vector3> Blocked = new List<Vector3>();
+            public readonly List<Vector3> Disconnected = new List<Vector3>();
+
+            public int Calls { get; private set; }
+
+            public bool IsOnNavigableGround(Vector3 position)
+            {
+                Calls++;
+                return !NotGround.Contains(position);
+            }
+
+            public bool IsBlocked(Vector3 position) => Blocked.Contains(position);
+
+            public bool IsConnectedToLeader(Vector3 position, Vector3 leaderPosition) =>
+                !Disconnected.Contains(position);
         }
 
         // ---------------------------------------------------------------- E09（到着トークンの世代）
