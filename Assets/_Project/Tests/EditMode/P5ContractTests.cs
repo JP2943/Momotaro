@@ -1376,7 +1376,7 @@ namespace Momotaro.Tests.EditMode
             // 段階 Preparing：ロード開始の世代違い。
             Assert.AreEqual(AreaTransitionPhase.Preparing, coordinator.Phase);
             Assert.IsFalse(coordinator.NotifyLoadStarted(firstId, new FakeLoad()), "古い世代のロード開始は効かない。");
-            Assert.IsFalse(coordinator.NotifyFailed(firstId), "古い世代の失敗通知は効かない。");
+            Assert.IsFalse(coordinator.NotifyFailed(firstId, oldSceneUsable: true), "古い世代の失敗通知は効かない。");
             Assert.AreEqual(AreaTransitionPhase.Preparing, coordinator.Phase);
 
             Assert.IsTrue(coordinator.NotifyLoadStarted(secondId, new FakeLoad()));
@@ -1483,10 +1483,18 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, coordinator.RecoveryCount, "復旧は 1 回だけ。");
             Assert.AreEqual(1, coordinator.LoadStartCount, "復旧の判断だけでは再ロードしない。");
 
-            // 復旧先も失敗したら Error に留める。時計は止めたまま（壊れた状態で動かさない）。
-            Assert.IsTrue(coordinator.NotifyFailed(id));
+            // 保留していた復旧は実行側が 1 回だけ受け取れる。
+            Assert.IsTrue(coordinator.TryConsumeRecovery(), "復旧を受け取れる。");
+            Assert.IsFalse(coordinator.TryConsumeRecovery(), "2 回は受け取れない（無限再試行しない）。");
+
+            // タイムアウト後は、遅れて完了した目的地を通常どおり Ready にできない（§6.3）。
+            Assert.IsFalse(coordinator.NotifyBinding(id),
+                "タイムアウト後の到着は受け付けない（目的地を活動させない）。");
+
+            // 復旧先も失敗したら Error に留める。旧 Scene が使えないので時計は止めたまま。
+            Assert.IsTrue(coordinator.NotifyFailed(id, oldSceneUsable: false));
             Assert.AreEqual(AreaTransitionPhase.Failed, coordinator.Phase);
-            Assert.IsTrue(clock.IsFrozen, "失敗したまま Gameplay を動かさない。");
+            Assert.IsTrue(clock.IsFrozen, "旧 Scene が使えないなら Gameplay を動かさない。");
             Assert.IsFalse(coordinator.IsTransitioning, "Failed は遷移中ではない（新しい要求を受けられる）。");
 
             // ---- 旧 Scene が生きている時点での失敗は、元の活動へ戻せる ----
@@ -1494,9 +1502,11 @@ namespace Momotaro.Tests.EditMode
             var recoverable = new AreaTransitionCoordinator(catalog, conditions, clock2);
             AreaTransitionDecision a2 = recoverable.TryRequest(ToB());
             Assert.IsTrue(clock2.IsFrozen);
-            Assert.IsTrue(recoverable.NotifyFailed(a2.TransitionId));
+            Assert.IsTrue(recoverable.NotifyFailed(a2.TransitionId, oldSceneUsable: true));
             Assert.AreEqual(AreaTransitionPhase.Failed, recoverable.Phase);
             Assert.AreEqual(0, recoverable.LoadStartCount, "ロード前の失敗では 1 度もロードしていない。");
+            Assert.IsFalse(clock2.IsFrozen,
+                "旧 Scene が生きている失敗では時計を戻す。戻さないと留まったまま何も操作できない。");
         }
 
         /// <summary>

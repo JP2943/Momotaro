@@ -501,8 +501,15 @@ namespace Momotaro.Editor.Phase5
         {
             root.gameObject.name = "Phase5TrialRoot";
             Phase5Placeholder.CreateLabel("P5 探索試遊（起動）", root, new Vector3(0f, 0f, 0f), Color.white, 0.5f);
-            Phase5Placeholder.CreateLabel("Play すると エリア A へ移動します（配線は P5-03b）",
+            Phase5Placeholder.CreateLabel("Play すると エリア A の開始点へ移動します",
                 root, new Vector3(0f, 0f, -1.5f), Color.white, 0.2f);
+
+            // 実際に A へ進む（§5.2 の「統合起動 Scene から Play」）。
+            Phase5TrialLauncher launcher = root.gameObject.AddComponent<Phase5TrialLauncher>();
+            var so = new SerializedObject(launcher);
+            so.FindProperty("_catalog").objectReferenceValue =
+                AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase5AreaIds.CatalogDataPath);
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static void CreateFloor(Transform parent, Vector3 center, float width, float depth, Material mat)
@@ -609,6 +616,24 @@ namespace Momotaro.Editor.Phase5
                 companionDefense = companionGo.GetComponentInChildren<CompanionDefenseController>(true);
                 companionGuardian = companionGo.GetComponentInChildren<CompanionGuardianController>(true);
                 companionStates = companionGo.GetComponentInChildren<CompanionStateArbiter>(true);
+            }
+
+            // 仲間の活動許可（§12.1）。未配線だと CompanionActivityProvider は停止側へ倒れ、
+            // 犬丸が一切動かない。P5-07 で Encounter を載せるまでは「このエリアに戦闘は無い」と明示する。
+            var activityGo = new GameObject("CompanionActivity");
+            activityGo.transform.SetParent(systems.transform, false);
+            CompanionActivityContext activity = activityGo.AddComponent<CompanionActivityContext>();
+            activity.MarkAreaWithoutEncounter();
+
+            // 追従の相手（主人公）を配線する。未割当だと犬丸は付いてこない。
+            if (companionRoot != null && playerRoot != null)
+            {
+                var follow = companionRoot.GetComponentInChildren<CompanionFollowController>(true);
+                if (follow != null)
+                {
+                    follow.Bind(playerRoot.transform, companionActor,
+                        companionRoot.GetComponentInChildren<CompanionMotor>(true));
+                }
             }
 
             // Actor 値の採取・復元の窓口（§4.4〜§4.6）。明示参照で持つ（Find* を使わない）。

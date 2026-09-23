@@ -147,7 +147,7 @@ namespace Momotaro.Infrastructure.World
             //    値の復元は AreaReady より前。1 つでも失敗したら Ready を確定しない。
             PlaceArrivals(entryPoint, definitionFacing: ResolveFacing(entryId));
 
-            if (transitions.TryConsumePendingTransfer(out AreaTransferSnapshot transfer))
+            if (transitions.TryPeekPendingTransfer(out AreaTransferSnapshot transfer))
             {
                 if (_transferPort == null)
                 {
@@ -176,7 +176,10 @@ namespace Momotaro.Infrastructure.World
 
             // 8. Ready を確定して活動・入力を許可する。
             _context.ConfirmReady();
-            AreaPendingArrival.MarkCompleted();
+
+            // 完了は「自分が処理しているエリア・入口・世代」でだけ記録できる。
+            // 無条件に完了にできると、古い Scene の初期化担当が新しい遷移を完了させてしまう。
+            AreaPendingArrival.TryMarkCompleted(AreaPendingArrival.TransitionId, areaId, entryId);
 
             Initialized = true;
             FailureReason = string.Empty;

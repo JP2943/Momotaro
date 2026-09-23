@@ -126,6 +126,7 @@ namespace Momotaro.Gameplay.Session
             Phase = AreaTransitionPhase.Preparing;
             TimedOut = false;
             _recoveryStarted = false;
+            _recoveryConsumed = false;
             _elapsedUnscaled = 0f;
             _operation = null;
             _clock?.Freeze();
@@ -149,10 +150,16 @@ namespace Momotaro.Gameplay.Session
             return true;
         }
 
-        /// <summary>ロードが終わり Bind へ入ったことを通知する。<c>sceneLoaded</c> だけで Ready 扱いにしない（§6.2 手順 7）。</summary>
+        /// <summary>
+        /// ロードが終わり Bind へ入ったことを通知する。<c>sceneLoaded</c> だけで Ready 扱いにしない（§6.2 手順 7）。
+        ///
+        /// <b>監視がタイムアウトしていたら受け付けない。</b> 遅れて完了した目的地を通常どおり
+        /// 活動させてはいけない（§6.3「遅れてロード完了しても目的地を活動させず、保留した復旧だけを 1 回開始する」）。
+        /// タイムアウト後は <see cref="RecoveryPending"/> を見て復旧へ分岐する。
+        /// </summary>
         public bool NotifyBinding(int transitionId)
         {
-            if (!IsCurrent(transitionId) || Phase != AreaTransitionPhase.Loading)
+            if (!IsCurrent(transitionId) || Phase != AreaTransitionPhase.Loading || TimedOut)
             {
                 StaleNotificationCount++;
                 return false;
@@ -195,10 +202,16 @@ namespace Momotaro.Gameplay.Session
         }
 
         /// <summary>
-        /// 復旧できずに停止する（§6.3 の最終行）。Error 表示に留め、無限再試行しない。
-        /// Gameplay 時計は止めたままにする（壊れた状態で動かさない）。
+        /// 遷移に失敗したことを確定する（§6.3）。
+        ///
+        /// <b>旧 Scene が使えるかどうかで扱いが変わる。</b>
+        /// 使えるなら「その場に留まって元の活動を再開する」ので Gameplay 時計を<b>戻す</b>。
+        /// 戻さないと、留まってはいるが移動も CD 進行もできない状態になる（GPT レビュー R1 で指摘された）。
+        /// 使えないなら復旧ロードが要るので、止めたままにする（壊れた状態で動かさない）。
         /// </summary>
-        public bool NotifyFailed(int transitionId)
+        /// <param name="transitionId">失敗した遷移の世代。</param>
+        /// <param name="oldSceneUsable">旧 Scene が生きていて、そのまま活動を再開できるか。</param>
+        public bool NotifyFailed(int transitionId, bool oldSceneUsable)
         {
             if (!IsCurrent(transitionId))
             {
@@ -208,6 +221,12 @@ namespace Momotaro.Gameplay.Session
 
             Phase = AreaTransitionPhase.Failed;
             _operation = null;
+
+            if (oldSceneUsable)
+            {
+                _clock?.Thaw();
+            }
+
             return true;
         }
 
@@ -244,7 +263,41 @@ namespace Momotaro.Gameplay.Session
         }
 
         /// <summary>復旧を開始してよい状態か（診断・テスト用）。</summary>
-        public bool RecoveryPending => TimedOut && _recoveryStarted;
+        public bool RecoveryPending => TimedOut && _recoveryStarted && !_recoveryConsumed;
+
+        private bool _recoveryConsumed;
+
+        /// <summary>
+        /// 保留していた復旧を実行側が受け取る。<b>1 回だけ true を返す</b>（§6.3「無限再試行しない」）。
+        /// サービスはこれが true のときだけ復旧ロードを始める。
+        /// </summary>
+        public bool TryConsumeRecovery()
+        {
+            if (!RecoveryPending)
+            {
+                return false;
+            }
+
+            _recoveryConsumed = true;
+            return true;
+        }
+
+        /// <summary>
+        /// 旧 Scene が破棄されたあとの失敗から、復旧ロードを 1 回だけ始めてよいか問う（§6.3 の 3 行目）。
+        /// タイムアウト由来の復旧と同じ回数上限を共有する。
+        /// </summary>
+        public bool TryBeginRecovery(int transitionId)
+        {
+            if (!IsCurrent(transitionId) || _recoveryStarted)
+            {
+                return false;
+            }
+
+            _recoveryStarted = true;
+            _recoveryConsumed = true;
+            RecoveryCount++;
+            return true;
+        }
 
         private bool IsCurrent(int transitionId) =>
             transitionId != 0 && transitionId == CurrentTransitionId;

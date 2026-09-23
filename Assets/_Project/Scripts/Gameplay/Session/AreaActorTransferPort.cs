@@ -121,7 +121,10 @@ namespace Momotaro.Gameplay.Session
             CompanionGuardianTransferSnapshot companionGuardian = _companionGuardian != null
                 ? _companionGuardian.ExportTransferSnapshot()
                 : default;
-            CompanionState companionState = hasCompanion ? _companionActor.State : CompanionState.Follow;
+            // 行動状態（Attack／Guard／Chase／Investigate 等）はそのまま持ち越せない。
+            // 止めても状態名は変わらないので、生の State を運ぶと到着側の復元が拒否する
+            // （GPT レビュー R1 で指摘された）。§4.6 の復元表に従って、生存値から配置状態を決める。
+            CompanionState companionState = ResolveRestorableState(hasCompanion, companionVitals);
 
             return new AreaTransferSnapshot(
                 hasPlayer, playerVitals, playerHit,
@@ -146,52 +149,112 @@ namespace Momotaro.Gameplay.Session
                 return true; // 初回入場・直開き。運ぶ値が無いのは正常。
             }
 
-            if (snapshot.HasPlayer && _playerVitals != null
-                && !_playerVitals.TryImportTransferSnapshot(snapshot.PlayerVitals))
+            // 先に配線を確かめる。<b>参照が欠けていたら成功にしない。</b>
+            // 以前は null を飛ばして成功扱いだったため、復元先を配線し忘れた Scene でも
+            // 遷移が通り、値だけ静かに消えていた（GPT レビュー R1）。
+            if (!TryValidateReferences(snapshot, out string missing))
             {
-                return Fail("主人公の生存値を復元できませんでした（値域か Break 中）。");
+                return Fail("復元先が未配線です: " + missing);
             }
 
-            if (snapshot.HasPlayer && _playerHitReaction != null
-                && !_playerHitReaction.TryImportTransferSnapshot(snapshot.PlayerHitReaction))
+            if (snapshot.HasPlayer)
             {
-                return Fail("主人公の被弾後無敵を復元できませんでした。");
+                if (!_playerVitals.TryImportTransferSnapshot(snapshot.PlayerVitals))
+                {
+                    return Fail("主人公の生存値を復元できませんでした（値域か Break 中）。");
+                }
+
+                if (!_playerHitReaction.TryImportTransferSnapshot(snapshot.PlayerHitReaction))
+                {
+                    return Fail("主人公の被弾後無敵を復元できませんでした。");
+                }
             }
 
             if (snapshot.HasCompanion)
             {
-                if (_companionVitals != null
-                    && !_companionVitals.Vitals.TryImportTransferSnapshot(snapshot.CompanionVitals))
+                if (!_companionVitals.Vitals.TryImportTransferSnapshot(snapshot.CompanionVitals))
                 {
                     return Fail("仲間の生存値を復元できませんでした（HP と Down の矛盾か値域）。");
                 }
 
-                if (_companionCombat != null
-                    && !_companionCombat.TryImportTransferSnapshot(snapshot.CompanionCombat))
+                if (!_companionCombat.TryImportTransferSnapshot(snapshot.CompanionCombat))
                 {
                     return Fail("仲間の攻撃 CD を復元できませんでした。");
                 }
 
-                if (_companionDefense != null
-                    && !_companionDefense.TryImportTransferSnapshot(snapshot.CompanionDefense))
+                if (!_companionDefense.TryImportTransferSnapshot(snapshot.CompanionDefense))
                 {
                     return Fail("仲間の防御 CD を復元できませんでした。");
                 }
 
-                if (_companionGuardian != null
-                    && !_companionGuardian.TryImportTransferSnapshot(snapshot.CompanionGuardian))
+                if (!_companionGuardian.TryImportTransferSnapshot(snapshot.CompanionGuardian))
                 {
                     return Fail("仲間の守護 CD を復元できませんでした。");
                 }
 
                 // 値のあとに配置状態（§4.6）。Arbiter を唯一の窓口にする。
-                if (_companionStates != null && !_companionStates.TryRestoreState(snapshot.CompanionState))
+                if (!_companionStates.TryRestoreState(snapshot.CompanionState))
                 {
                     return Fail("仲間の配置状態 " + snapshot.CompanionState + " を復元できませんでした。");
                 }
             }
 
             LastApplySucceeded = true;
+            return true;
+        }
+
+        /// <summary>Snapshot が運んでいる分の復元先がすべて配線されているか。</summary>
+        private bool TryValidateReferences(in AreaTransferSnapshot snapshot, out string missing)
+        {
+            if (snapshot.HasPlayer)
+            {
+                if (_playerVitals == null)
+                {
+                    missing = "PlayerVitalsHolder";
+                    return false;
+                }
+
+                if (_playerHitReaction == null)
+                {
+                    missing = "PlayerHitReaction";
+                    return false;
+                }
+            }
+
+            if (snapshot.HasCompanion)
+            {
+                if (_companionVitals == null)
+                {
+                    missing = "CompanionHitReceiver";
+                    return false;
+                }
+
+                if (_companionCombat == null)
+                {
+                    missing = "CompanionCombatController";
+                    return false;
+                }
+
+                if (_companionDefense == null)
+                {
+                    missing = "CompanionDefenseController";
+                    return false;
+                }
+
+                if (_companionGuardian == null)
+                {
+                    missing = "CompanionGuardianController";
+                    return false;
+                }
+
+                if (_companionStates == null)
+                {
+                    missing = "CompanionStateArbiter";
+                    return false;
+                }
+            }
+
+            missing = string.Empty;
             return true;
         }
 
@@ -240,6 +303,44 @@ namespace Momotaro.Gameplay.Session
                 body.linearVelocity = Vector3.zero;
                 body.angularVelocity = Vector3.zero;
             }
+        }
+
+        /// <summary>
+        /// 持ち越す配置状態を決める（§4.6 の復元表）。
+        ///
+        /// <list type="bullet">
+        /// <item><description>Away → Away を維持（通常表示・戦闘参加を有効化しない）。</description></item>
+        /// <item><description>非 Away で IsDown → Down。</description></item>
+        /// <item><description>非 Away・非 Down でひるみ残りあり → Stagger。</description></item>
+        /// <item><description>上記以外 → Follow（旧攻撃・旧防御・旧探索を再開しない）。</description></item>
+        /// </list>
+        ///
+        /// 行動状態は<b>ここで落とす</b>のが正しい。到着時に行動の途中へ復元しないという §4.6 の規則そのもので、
+        /// 生の State を運んで到着側で弾くと、遷移そのものが失敗してしまう。
+        /// </summary>
+        private CompanionState ResolveRestorableState(bool hasCompanion, in CompanionVitalsTransferSnapshot vitals)
+        {
+            if (!hasCompanion)
+            {
+                return CompanionState.Follow;
+            }
+
+            if (_companionActor != null && _companionActor.State == CompanionState.Away)
+            {
+                return CompanionState.Away;
+            }
+
+            if (vitals.IsDown)
+            {
+                return CompanionState.Down;
+            }
+
+            if (vitals.Flinch.FlinchRemaining > 0f)
+            {
+                return CompanionState.Stagger;
+            }
+
+            return CompanionState.Follow;
         }
     }
 }

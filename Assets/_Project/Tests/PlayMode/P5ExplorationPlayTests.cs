@@ -265,9 +265,33 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(AreaB.Value, Object.FindFirstObjectByType<AreaContext>().AreaId.Value);
             Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current);
 
-            // ---- 完了通知の中から次の遷移を要求した状況 ----
-            AreaTransitionDecision second = service.TryTravel(AreaA, AreaAFromB);
-            Assert.IsTrue(second.Accepted, "続けて要求できる。理由=" + second.Rejection);
+            // ---- 完了通知「の中から」次の遷移を要求する ----
+            //
+            // 完了を待ってから外で要求するのは再入ではない。実際に危ないのは、
+            // 完了の通知を受けた購読者がその場で次の遷移を要求し、
+            // <b>呼び出しが戻ってきた先で旧世代の後始末が走る</b>形。
+            // 徳の変化通知を完了の代わりに使い、その中から遷移を要求する。
+            var progressForReentry = Object.FindFirstObjectByType<PlayerProgressHolder>();
+            AreaTransitionDecision second = default;
+            bool reentered = false;
+            System.Action<int> onVirtue = null;
+            onVirtue = _ =>
+            {
+                if (reentered)
+                {
+                    return;
+                }
+
+                reentered = true;
+                second = service.TryTravel(AreaA, AreaAFromB);
+            };
+            progressForReentry.VirtueChanged += onVirtue;
+            progressForReentry.Grant(
+                new RewardSnapshot(new StableId("reward_test_p13"), 5, default, false), out _);
+            progressForReentry.VirtueChanged -= onVirtue;
+
+            Assert.IsTrue(reentered, "通知の中から要求している。");
+            Assert.IsTrue(second.Accepted, "通知の中からでも受理される。理由=" + second.Rejection);
             Assert.AreNotEqual(firstId, second.TransitionId, "世代が進む。");
 
             // 古い世代の解除は効かない（旧 Coroutine の finally 相当）。
@@ -333,7 +357,8 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(17, session.Progress.Virtue, "進行は変わらない。");
 
             // ---- 受理後にロードが開始できない：失敗として終端する ----
-            service.LoadOverride = _ => null; // ロードを開始できない状況をテスト専用に注入する。
+            // ロードを開始できない実装へ差し替える。本番と同じ IAreaSceneLoader 経路を通る。
+            service.Loader = new FailingLoader();
             AreaTransitionDecision accepted = service.TryTravel(AreaB, AreaBFromA);
             Assert.IsTrue(accepted.Accepted, "受付条件は満たしているので受理される。");
 
@@ -356,8 +381,32 @@ namespace Momotaro.Tests.PlayMode
             // 旧 Scene は生きたまま（破棄前に失敗したので、そのエリアに留まっている）。
             Assert.AreEqual(AreaA.Value, Object.FindFirstObjectByType<AreaContext>().AreaId.Value);
 
+            // ---- ここが要。API で再遷移できるだけでなく、通常操作が戻っていること ----
+            //
+            // 受理の時点で活動を閉じ、Gameplay 時計も止めている。失敗したまま時計を戻さないと
+            // 「留まってはいるが移動も CD 進行もできない」状態になる。
+            Assert.IsFalse(service.Clock.IsFrozen, "失敗後は Gameplay 時計が戻っている。");
+            Assert.IsTrue(Object.FindFirstObjectByType<AreaContext>().IsAreaReady, "活動が再開している。");
+            Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current, "探索へ戻っている。");
+
+            // CD が実際に進む（時計が動いている証拠）。
+            var guardianAfterFail = Object.FindFirstObjectByType<CompanionGuardianController>();
+            Assert.IsNotNull(guardianAfterFail);
+            Assert.IsTrue(guardianAfterFail.TryImportTransferSnapshot(new CompanionGuardianTransferSnapshot(1f)));
+            float cdBefore = guardianAfterFail.ExportTransferSnapshot().CooldownRemaining;
+            guardianAfterFail.TickGuardian(0.25f);
+            Assert.Less(guardianAfterFail.ExportTransferSnapshot().CooldownRemaining, cdBefore,
+                "失敗後に CD が進む（時計が止まったままではない）。");
+
+            // 移動もできる（Warp が拒否されない）。
+            var motorAfterFail = Object.FindFirstObjectByType<CompanionMotor>();
+            Assert.IsNotNull(motorAfterFail);
+            Vector3 posBefore = motorAfterFail.transform.position;
+            motorAfterFail.WarpTo(posBefore + new Vector3(2f, 0f, 0f));
+            Assert.AreNotEqual(posBefore, motorAfterFail.transform.position, "失敗後は移動できる。");
+
             // 差し替えを戻せば、次の遷移は普通に通る（無限に壊れたままにしない）。
-            service.LoadOverride = null;
+            service.Loader = new UnitySceneLoader();
             AreaTransitionDecision retry = service.TryTravel(AreaB, AreaBFromA);
             Assert.IsTrue(retry.Accepted, "失敗のあとも新しい要求を受け付ける。理由=" + retry.Rejection);
 
@@ -538,6 +587,22 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(CompanionState.Down, Object.FindFirstObjectByType<CompanionActor>().State);
             Assert.AreEqual(0, Object.FindFirstObjectByType<CompanionActor>().IllegalTransitionCount);
 
+            // ---- 到着後に時計が再開する（止まったままにならない） ----
+            //
+            // 「ロード中に進まない」だけを見ていると、到着後も止まったままの実装が通ってしまう。
+            var receiverForClock = Object.FindFirstObjectByType<CompanionHitReceiver>();
+            float recoveryAtArrival = receiverForClock.Vitals.RecoveryRemaining;
+            Assert.Greater(recoveryAtArrival, 0f, "前提：まだ復帰待ちが残っている。");
+
+            Assert.IsFalse(Transitions().Clock.IsFrozen, "到着後は Gameplay 時計が戻っている。");
+            receiverForClock.TickVitals(0.5f);
+            Assert.Less(receiverForClock.Vitals.RecoveryRemaining, recoveryAtArrival,
+                "到着後は復帰の時計が進む。");
+
+            // 仲間の活動許可も戻っている（未配線だと犬丸が一切動かない）。
+            Assert.IsTrue(CompanionActivityProvider.HasSource, "活動 Context が差さっている。");
+            Assert.IsTrue(CompanionActivityProvider.Activity.ClocksRun, "到着後は仲間の時計が動く。");
+
             // 到着位置は入口へ置換されている（位置は運ばない。§4.4）。
             // まず「どの入口へ到着したことになっているか」を見る。ここが正しくて位置がずれるなら配置の問題、
             // ここから間違っているなら入口の解決の問題（原因を切り分けてから位置を見る）。
@@ -683,6 +748,182 @@ namespace Momotaro.Tests.PlayMode
 
             yield return WaitForCompleted(coordinator, 2);
             Assert.AreEqual(AreaA.Value, Object.FindFirstObjectByType<AreaContext>().AreaId.Value, "A へ戻る。");
+        }
+
+        /// <summary>読込を開始できない Loader（P12）。本番と同じ契約なので経路は 1 本のまま。</summary>
+        private sealed class FailingLoader : IAreaSceneLoader
+        {
+            public IAreaLoadOperation Load(string scenePath) => new FailedOperation();
+
+            private sealed class FailedOperation : IAreaLoadOperation
+            {
+                public bool IsDone => true;
+                public bool HasError => true;
+            }
+        }
+
+        // ---------------------------------------------------------------- E10（実サービス）
+
+        /// <summary>
+        /// P5-E10（実サービス）：監視がタイムアウトしたあと、遅れてロードが完了しても
+        /// <b>目的地を活動させず</b>、元 Area を 1 回だけ再ロードして復旧する（§6.3）。
+        ///
+        /// EditMode の E10 は調停役の回数・フラグを見ているが、実際に復旧ロードを走らせるのは
+        /// サービスなので、そこが繋がっていないと「遅れて着いた目的地をそのまま Ready にする」実装が通る
+        /// （GPT レビューで指摘された抜け）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TimedOutLoad_RecoversToOriginWithoutActivatingDestination()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            AreaTransitionService service = Transitions();
+            service.TimeoutSeconds = 0.2f; // 調停役を作る前に縮める。
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            GameSessionState session = Sessions().Session;
+            var progress = Object.FindFirstObjectByType<PlayerProgressHolder>();
+            progress.Grant(new RewardSnapshot(new StableId("reward_test_e10"), 31, default, false), out _);
+
+            AreaTransitionCoordinator coordinator = service.Coordinator;
+            Assert.IsNotNull(coordinator);
+
+            // 監視上限より遅れて完了する Loader。実 Scene のロードはしない。
+            var slow = new DelayedLoader(0.8f);
+            service.Loader = slow;
+
+            Assert.IsTrue(service.TryTravel(AreaB, AreaBFromA).Accepted);
+
+            // 復旧が終わるまで待つ。
+            float waited = 0f;
+            while (service.RecoveredCount < 1 && waited < 15f)
+            {
+                waited += Time.unscaledDeltaTime;
+                slow.Tick(Time.unscaledDeltaTime);
+                yield return null;
+            }
+
+            Assert.IsTrue(coordinator.TimedOut, "監視がタイムアウトしている。");
+            Assert.AreEqual(1, coordinator.RecoveryCount, "復旧は 1 回だけ。");
+            Assert.AreEqual(1, service.RecoveredCount, "元 Area への復旧ロードが完了している。");
+            Assert.AreEqual(0, coordinator.CompletedCount, "遅れて着いた目的地を通常の完了にしない。");
+
+            // 元の場所に居て、進行も失っていない。
+            Assert.AreEqual(AreaA.Value, Object.FindFirstObjectByType<AreaContext>().AreaId.Value,
+                "元のエリアへ戻っている。");
+            Assert.AreEqual(31, session.Progress.Virtue, "徳を失わない。");
+            Assert.AreEqual(1, Sessions().CreatedCount, "Session を作り直さない。");
+
+            // 復旧後は普通に操作できる。
+            Assert.IsFalse(service.Clock.IsFrozen, "復旧後は Gameplay 時計が戻っている。");
+            Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current);
+
+            service.Loader = new UnitySceneLoader();
+        }
+
+        /// <summary>
+        /// <b>実際に Scene を読みつつ</b>、完了の報告だけを遅らせる Loader（E10 の復旧経路を通すため）。
+        ///
+        /// 読込そのものを偽物にすると、復旧先も読み込まれず「復旧に失敗した」という別の経路を
+        /// 検査してしまう（最初にそれで落ちた）。遅いロードを再現したいだけなので、
+        /// 本物の読込を走らせて <see cref="IAreaLoadOperation.IsDone"/> の報告を遅らせる。
+        /// </summary>
+        private sealed class DelayedLoader : IAreaSceneLoader
+        {
+            private readonly float _delay;
+            private readonly UnitySceneLoader _inner = new UnitySceneLoader();
+            private readonly System.Collections.Generic.List<Operation> _issued =
+                new System.Collections.Generic.List<Operation>();
+
+            public DelayedLoader(float delay)
+            {
+                _delay = delay;
+            }
+
+            public IAreaLoadOperation Load(string scenePath)
+            {
+                var op = new Operation(_inner.Load(scenePath), _delay);
+                _issued.Add(op);
+                return op;
+            }
+
+            /// <summary>発行済みの操作の「報告の遅れ」を進める。</summary>
+            public void Tick(float unscaledDelta)
+            {
+                for (int i = 0; i < _issued.Count; i++)
+                {
+                    _issued[i].Advance(unscaledDelta);
+                }
+            }
+
+            private sealed class Operation : IAreaLoadOperation
+            {
+                private readonly IAreaLoadOperation _real;
+                private readonly float _delay;
+                private float _elapsed;
+
+                public Operation(IAreaLoadOperation real, float delay)
+                {
+                    _real = real;
+                    _delay = delay;
+                }
+
+                public bool IsDone => _real.IsDone && _elapsed >= _delay;
+                public bool HasError => _real.HasError;
+
+                public void Advance(float delta) => _elapsed += delta;
+            }
+        }
+
+        // ---------------------------------------------------------------- P03（行動中の遷移）
+
+        /// <summary>
+        /// P5-P03（行動中）：仲間が<b>行動中でも</b>遷移が成立し、到着時に Follow へ整理される（§4.6）。
+        ///
+        /// 中断しても状態名は変わらないので、生の状態（Attack／Guard／Chase 等）をそのまま運ぶと
+        /// 到着側の復元が拒否し、<b>遷移そのものが失敗する</b>（GPT レビューで指摘された）。
+        /// 採取のときに §4.6 の復元表へ落としてあることを、実際に攻撃中の遷移で確かめる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TravelWhileCompanionActing_ArrivesAsFollow()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            // 仲間を行動中の状態にする。Chase は通常の AI 遷移なので Arbiter 経由で作れる。
+            var actor = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.IsNotNull(actor);
+            Assert.IsTrue(actor.RequestState(CompanionState.Chase, CompanionStateChangeReason.EngagedTarget),
+                "前提：仲間が行動中になる。");
+            Assert.AreEqual(CompanionState.Chase, actor.State);
+
+            AreaTransitionService service = Transitions();
+            AreaTransitionCoordinator coordinator = service.Coordinator;
+
+            AreaTransitionDecision decision = service.TryTravel(AreaB, AreaBFromA);
+            Assert.IsTrue(decision.Accepted, "仲間が行動中でも主人公の遷移は妨げない（§6.1）。理由=" + decision.Rejection);
+
+            yield return WaitForCompleted(coordinator, 1);
+
+            var arrived = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.AreEqual(CompanionState.Follow, arrived.State,
+                "行動状態は持ち越さず Follow へ整理される（旧攻撃・旧防御・旧探索を再開しない）。");
+            Assert.AreEqual(0, arrived.IllegalTransitionCount, "不正遷移を出さない。");
+
+            // 到着後は普通に活動できる。
+            Assert.IsTrue(Object.FindFirstObjectByType<AreaContext>().IsAreaReady);
+            Assert.IsFalse(service.Clock.IsFrozen);
+            Assert.IsTrue(CompanionActivityProvider.Activity.ClocksRun, "仲間の時計が動く。");
         }
     }
 }

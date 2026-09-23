@@ -94,7 +94,10 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.TransitionFailure_HasBoundedRecoveryWithoutDuplicateLoads",
       "requirementIds": [],
-      "implemented": true
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.TimedOutLoad_RecoversToOriginWithoutActivatingDestination"
+      ]
     },
     {
       "requirementId": "P5-E11",
@@ -282,7 +285,10 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.AreaRoundTrip_PreservesProgressVitalsAndDownTimers",
       "requirementIds": [],
-      "implemented": true
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.TravelWhileCompanionActing_ArrivesAsFollow"
+      ]
     },
     {
       "requirementId": "P5-P04",
