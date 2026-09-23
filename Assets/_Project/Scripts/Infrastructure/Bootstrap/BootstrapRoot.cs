@@ -50,6 +50,9 @@ namespace Momotaro.Infrastructure.Bootstrap
         /// <summary>起動を止めた理由（診断・テスト用。成功なら空）。</summary>
         public string BootstrapFailure => _registry.LastFailure;
 
+        /// <summary>遷移の終端失敗を出す仮の表示（§6.3。診断・テスト用）。</summary>
+        public AreaTransitionFailureView FailureView { get; private set; }
+
         /// <summary>
         /// 起動の<b>成否が確定したか</b>（P5-03b 修正。GPT レビュー R2 の指摘 2）。
         ///
@@ -166,6 +169,12 @@ namespace Momotaro.Infrastructure.Bootstrap
             // エリア遷移（P5-03b。§6.2）。判断は Gameplay の調停役、実行はこのサービス。
             var transitions = gameObject.AddComponent<AreaTransitionService>();
             _registry.Register(transitions);
+
+            // 終端失敗の仮の表示（§6.3 の最終行）。常駐に置く：失敗したときは Scene 側が
+            // 壊れているのが普通で、Scene に置いた表示では出せない。正式版は P5-06 で置き換える。
+            var failureView = gameObject.AddComponent<AreaTransitionFailureView>();
+            failureView.Bind(transitions);
+            FailureView = failureView;
         }
     }
 }

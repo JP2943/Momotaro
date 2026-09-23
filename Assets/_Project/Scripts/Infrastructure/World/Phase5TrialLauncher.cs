@@ -101,12 +101,9 @@ namespace Momotaro.Infrastructure.World
                 return false;
             }
 
-            // 終端失敗したときの戻り先は「この Scene」。パスを外から差すのではなく、
-            // 起動役が自分の居場所を名乗る（§6.3「既存 Launcher へ戻る操作を提示」）。
-            if (!string.IsNullOrEmpty(gameObject.scene.path))
-            {
-                transitions.LauncherScenePath = gameObject.scene.path;
-            }
+            // 戻り先はここではない。この Scene は開くと自動で A へ進むので、
+            // 「安全に戻る」先にすると壊れた流れへ即座に押し戻すことになる
+            // （GPT レビュー R3 の指摘 3）。戻り先は既存の Launcher Scene に統一してある。
 
             // 統合起動 Scene には Area が無いので、受付条件は「起動直後の素通し」を使う。
             transitions.Bind(_catalog, new LaunchConditions());

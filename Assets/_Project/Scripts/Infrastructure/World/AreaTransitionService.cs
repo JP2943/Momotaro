@@ -433,7 +433,10 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         private void FailTerminal(int transitionId, string reason)
         {
-            AreaPendingArrival.Clear();
+            // 消さずに<b>放棄</b>として残す（GPT レビュー R3 の指摘 1）。
+            // 消すと「要求なし＝直開き」と区別できず、キャンセルできないロードが
+            // 遅れて Scene を読み終えたときに、その Scene が自分で活動を始めてしまう。
+            AreaPendingArrival.Abandon();
             _coordinator.NotifyFailed(transitionId, oldSceneUsable: false);
             _running = null;
 
@@ -460,60 +463,109 @@ namespace Momotaro.Infrastructure.World
         /// <summary>重複ロードを断った回数（診断・テスト用）。0 でない＝重ね掛けを防いだということ。</summary>
         public int DuplicateLoadBlockedCount { get; private set; }
 
-        /// <summary>Launcher へ戻した回数（診断・テスト用）。</summary>
+        /// <summary>Launcher へ<b>戻り終えた</b>回数（診断・テスト用）。開始だけでは増えない。</summary>
         public int ReturnedToLauncherCount { get; private set; }
 
-        /// <summary>差されていないときの戻り先（P5 の統合起動 Scene。§13.1）。</summary>
-        public const string DefaultLauncherScenePath =
-            "Assets/_Project/Scenes/Tests/Phase5/SCN_Phase5_ExplorationTrial.unity";
+        /// <summary>Launcher へ戻れなかった回数（診断・テスト用）。</summary>
+        public int ReturnToLauncherFailedCount { get; private set; }
+
+        /// <summary>いま Launcher へ戻る途中か（表示側が操作を止めるため）。</summary>
+        public bool IsReturningToLauncher => _returning;
+
+        // Coroutine のハンドルでは持たない。即座に終わる Coroutine は StartCoroutine が
+        // 返る前に走り切るので、ハンドルの代入と実際の進行がずれる（実際に踏んだ）。
+        private bool _returning;
 
         /// <summary>
-        /// 戻る Scene のパス（§6.3「既存 Launcher へ戻る操作を提示」）。
-        /// 起動役が自分の Scene のパスを差す。差されていなければ P5 の統合起動 Scene を使う。
+        /// 戻り先（§6.3「既存 Launcher へ戻る操作を提示」）。
+        ///
+        /// <b>既存の Launcher Scene に統一する</b>（GPT レビュー R3 の指摘 3）。
+        /// 以前は P5 の統合起動 Scene を差していたが、あれは開くと自動で A へ進むので、
+        /// 「安全に戻る」はずの操作が壊れた流れへ即座に押し戻していた。
+        /// Launcher は何も自動で始めないので、戻り先として正しい。
         /// </summary>
+        public const string DefaultLauncherScenePath =
+            "Assets/_Project/Scenes/SCN_System_Launcher.unity";
+
+        /// <summary>戻り先の Scene パス。差し替えはテスト・将来の構成変更のため。</summary>
         public string LauncherScenePath { get; set; } = DefaultLauncherScenePath;
 
+        /// <summary>戻りロードの監視上限（unscaled 秒）。ここも無界に待たない。</summary>
+        public float ReturnTimeoutSeconds { get; set; } = AreaTransitionCoordinator.DefaultTimeoutSeconds;
+
         /// <summary>
-        /// いま Launcher へ戻れるか。
+        /// いま Launcher へ戻る操作を始められるか。
         ///
-        /// <b>生きているロード操作が終端するまでは戻れない。</b> 戻り操作も Scene のロードなので、
+        /// <b>生きているロード操作が終端するまでは始められない。</b> 戻り操作も Scene のロードなので、
         /// 終端していない操作の上に重ねれば同じ事故になる
         /// （§6.3「古い操作が終端するまで新たなロードを開始しない」）。
         /// 表示側はこれが false の間、戻る操作を押せない状態にする。
         /// </summary>
         public bool CanReturnToLauncher =>
             HasTerminalFailure
+            && !IsReturningToLauncher
             && !string.IsNullOrEmpty(LauncherScenePath)
             && (_liveOperation == null || _liveOperation.IsDone);
 
         /// <summary>
-        /// 既存 Launcher へ戻す（§6.3 の最終行）。<b>自動では呼ばない。</b>
-        /// 戻れない状態（終端失敗していない・生きているロードがある）では何もせず false を返す。
+        /// 既存 Launcher へ戻る操作を<b>始める</b>（§6.3 の最終行）。<b>自動では呼ばない。</b>
+        ///
+        /// 返り値は「戻り終えた」ではなく<b>「戻りを始めた」</b>。
+        /// ロードの発行に成功しただけで戻れたことにすると、開始に失敗した操作まで成功扱いになる
+        /// （GPT レビュー R3 の指摘 3）。片付け（Snapshot の破棄・時計の解凍・Error 表示の解除）は
+        /// <b>ロードが完了してから</b>行う。失敗したら理由を差し替えて停止状態のまま留まる。
         /// </summary>
-        public bool TryReturnToLauncher()
+        public bool TryBeginReturnToLauncher()
         {
-            if (!HasTerminalFailure || string.IsNullOrEmpty(LauncherScenePath))
+            if (!CanReturnToLauncher)
             {
                 return false;
             }
 
-            if (!TryStartLoad(LauncherScenePath, out _))
+            if (!TryStartLoad(LauncherScenePath, out IAreaLoadOperation operation))
             {
                 return false;
             }
 
-            // 戻るので、運んでいた Actor 値と到着要求は捨てる。世界状態（Session）はそのまま残す。
+            _returning = true;
+            GameModeProvider.Current?.ChangeMode(GameMode.Loading);
+            StartCoroutine(ReturnToLauncherRoutine(operation));
+            return true;
+        }
+
+        /// <summary>戻りロードを完了まで見届ける。失敗したら停止状態を維持する。</summary>
+        private IEnumerator ReturnToLauncherRoutine(IAreaLoadOperation operation)
+        {
+            float waited = 0f;
+            while (!operation.IsDone && waited < ReturnTimeoutSeconds)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            _returning = false;
+
+            if (!operation.IsDone || operation.HasError)
+            {
+                // 戻れなかった。<b>Error 表示も時計の凍結もそのまま</b>にして、理由だけ差し替える。
+                ReturnToLauncherFailedCount++;
+                TerminalFailureReason = operation.IsDone
+                    ? "Launcher へ戻るロードが失敗しました。"
+                    : "Launcher へ戻るロードが " + ReturnTimeoutSeconds.ToString("0.##") + " 秒以内に完了しませんでした。";
+                GameLog.Error(LogCategory.Scene, "Return to launcher failed: " + TerminalFailureReason);
+                TerminalFailed?.Invoke(TerminalFailureReason);
+                yield break;
+            }
+
+            // 戻れた。ここで初めて片付ける。世界状態（Session）はそのまま残す。
             ClearPendingTransfer();
             AreaPendingArrival.Clear();
-
             HasTerminalFailure = false;
             TerminalFailureReason = null;
 
             // 受理の時点で止めた時計を戻す。止めたままだと、戻った先でも何も動かない。
             _clock.Thaw();
-            GameModeProvider.Current?.ChangeMode(GameMode.Loading);
             ReturnedToLauncherCount++;
-            return true;
         }
 
         /// <summary>
@@ -648,18 +700,54 @@ namespace Momotaro.Infrastructure.World
         /// <summary>到着先の入口。</summary>
         public static StableId EntryId { get; private set; }
 
-        /// <summary>要求が入っているか。</summary>
-        public static bool HasPending => TransitionId != 0;
+        /// <summary>いまの状態。</summary>
+        public static AreaArrivalState State { get; private set; } = AreaArrivalState.None;
+
+        /// <summary>生きた到着要求が入っているか（<see cref="AreaArrivalState.Pending"/> のときだけ true）。</summary>
+        public static bool HasPending => State == AreaArrivalState.Pending;
+
+        /// <summary>
+        /// 到着側が<b>自分で活動許可を出してよいか</b>（＝直開き）。
+        ///
+        /// <b>「到着トークンが無い」を直開きの証拠にしない。</b> 終端失敗のあと、
+        /// キャンセルできないロードが遅れて Scene を読み終えると、そこには生きた要求が無い。
+        /// トークンの有無だけで判断すると、<b>失敗して止めたはずの遷移先が自分で動き出す</b>
+        /// （GPT レビュー R3 の指摘 1）。直開きを許すのは「遷移が 1 つも走っていない」ときだけ。
+        /// </summary>
+        public static bool SelfActivationAllowed => State == AreaArrivalState.None;
 
         private static bool _prepared;
 
-        /// <summary>遷移の開始時に設定する。</summary>
+        /// <summary>遷移の開始時に設定する（<see cref="AreaArrivalState.Pending"/> へ）。</summary>
         public static void Set(int transitionId, StableId areaId, StableId entryId)
         {
             TransitionId = transitionId;
             AreaId = areaId;
             EntryId = entryId;
             _prepared = false;
+            State = AreaArrivalState.Pending;
+        }
+
+        /// <summary>
+        /// 要求を<b>放棄する</b>（終端失敗。§6.3 の最終行）。
+        ///
+        /// 消さずに放棄として残す。消すと「要求なし＝直開き」と区別できなくなり、
+        /// 遅れて着いた Scene が自分で活動を始めてしまう。
+        /// 放棄後は準備完了の報告も受け付けない（誰も許可を出さないので、着いても動かない）。
+        /// </summary>
+        public static void Abandon()
+        {
+            _prepared = false;
+            State = AreaArrivalState.Abandoned;
+        }
+
+        /// <summary>直開きを断った回数（診断・テスト用）。0 でない＝遅れて着いた Scene を止めたということ。</summary>
+        public static int BlockedSelfActivationCount { get; private set; }
+
+        /// <summary>直開きを断ったことを数える。</summary>
+        public static void NoteBlockedSelfActivation()
+        {
+            BlockedSelfActivationCount++;
         }
 
         /// <summary>
@@ -673,7 +761,8 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         public static bool TryMarkPrepared(int transitionId, StableId areaId, StableId entryId)
         {
-            if (transitionId == 0 || transitionId != TransitionId
+            if (State != AreaArrivalState.Pending
+                || transitionId == 0 || transitionId != TransitionId
                 || !areaId.Equals(AreaId) || !entryId.Equals(EntryId))
             {
                 MismatchedCompletionCount++;
@@ -686,25 +775,44 @@ namespace Momotaro.Infrastructure.World
 
         /// <summary>指定の世代について準備できているか。</summary>
         public static bool IsPreparedFor(int transitionId) =>
-            _prepared && transitionId != 0 && transitionId == TransitionId;
+            _prepared && State == AreaArrivalState.Pending
+            && transitionId != 0 && transitionId == TransitionId;
 
         /// <summary>一致しない完了要求を無視した回数（診断・テスト用）。</summary>
         public static int MismatchedCompletionCount { get; private set; }
 
-        /// <summary>片付ける（成功・失敗・新規開始・テストの後始末）。</summary>
+        /// <summary>
+        /// 片付ける（遷移の成功・旧 Scene が生きている失敗・Launcher への復帰完了・テストの後始末）。
+        /// <b>終端失敗では呼ばない</b>（放棄として残す。<see cref="Abandon"/>）。
+        /// </summary>
         public static void Clear()
         {
             TransitionId = 0;
             AreaId = default;
             EntryId = default;
             _prepared = false;
+            State = AreaArrivalState.None;
         }
 
         /// <summary>診断カウンタを戻す（テストの後始末）。</summary>
         public static void ResetDiagnostics()
         {
             MismatchedCompletionCount = 0;
+            BlockedSelfActivationCount = 0;
         }
+    }
+
+    /// <summary>到着要求の状態（P5-03b 修正。GPT レビュー R3 の指摘 1）。</summary>
+    public enum AreaArrivalState
+    {
+        /// <summary>遷移していない。この Scene を開いたのは直開き。</summary>
+        None = 0,
+
+        /// <summary>遷移中で、到着を待っている。許可を出すのは遷移サービス。</summary>
+        Pending = 1,
+
+        /// <summary>終端失敗で放棄した。遅れて着いても<b>誰も許可を出さない</b>。</summary>
+        Abandoned = 2,
     }
 
     /// <summary>

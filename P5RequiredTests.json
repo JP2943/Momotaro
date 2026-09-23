@@ -70,7 +70,10 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.LoadingGate_FreezesClocksAndStopsDirectTicks",
       "requirementIds": [],
-      "implemented": true
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.FrozenDuringTransition_PlayerDoesNotSlide"
+      ]
     },
     {
       "requirementId": "P5-E08",
@@ -371,7 +374,8 @@
       "requirementIds": [],
       "implemented": true,
       "supportingTests": [
-        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RecoveryLoadThatNeverCompletes_FailsWithReasonAndOffersLauncherReturn"
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RecoveryLoadThatNeverCompletes_FailsWithReasonAndOffersLauncherReturn",
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ArrivalAfterAbandonedTransition_DoesNotSelfActivate"
       ]
     },
     {

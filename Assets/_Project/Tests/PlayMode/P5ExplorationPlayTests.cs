@@ -35,6 +35,7 @@ namespace Momotaro.Tests.PlayMode
         private const string AreaBScene = "Assets/_Project/Scenes/Tests/Phase5/SCN_Phase5_AreaB.unity";
         private const string TrialScene =
             "Assets/_Project/Scenes/Tests/Phase5/SCN_Phase5_ExplorationTrial.unity";
+        private const string LauncherScene = "Assets/_Project/Scenes/SCN_System_Launcher.unity";
 
         private static readonly StableId AreaA = new StableId("area_p5_a");
         private static readonly StableId AreaB = new StableId("area_p5_b");
@@ -54,6 +55,7 @@ namespace Momotaro.Tests.PlayMode
             GameplayClockProvider.Current = null;
             GameSessionProvider.Current = null;
             AreaPendingArrival.Clear();
+            AreaPendingArrival.ResetDiagnostics();
         }
 
         [UnityTearDown]
@@ -1109,17 +1111,65 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsTrue(service.Clock.IsFrozen, "壊れた状態のまま世界を動かさない。");
 
             // ---- 生きている復旧ロードが終端するまでは、戻り操作も始めない ----
+            //
+            // 戻り操作も Scene のロードなので、終端していない操作の上に重ねれば同じ事故になる
+            // （§6.3「古い操作が終端するまで新たなロードを開始しない」）。
             Assert.IsFalse(service.CanReturnToLauncher, "終端していない操作の上に重ねない。");
-            Assert.IsFalse(service.TryReturnToLauncher(), "押しても始まらない。");
+            Assert.IsFalse(service.TryBeginReturnToLauncher(), "押しても始まらない。");
+            Assert.IsFalse(service.IsReturningToLauncher, "戻りも始まっていない。");
             Assert.AreEqual(0, service.ReturnedToLauncherCount);
-            Assert.GreaterOrEqual(service.DuplicateLoadBlockedCount, 1, "重複ロードを断った記録が残る。");
+
+            // ---- 仮の Error 表示に理由が出ている（API だけで「提示した」ことにしない。§6.3） ----
+            AreaTransitionFailureView view = BootstrapRoot.Instance.FailureView;
+            Assert.IsNotNull(view, "終端失敗の表示が常駐している。");
+            Assert.IsTrue(view.IsShowing, "プレイヤーに Error が出ている。");
+            StringAssert.Contains("復旧ロード", view.Message, "表示に理由が出ている。");
+            Assert.IsFalse(view.CanPressReturn, "生きているロードがある間は戻る操作を押せない。");
+            Assert.IsFalse(view.TryPressReturn(), "押しても始まらない。");
 
             // ---- 遅れて復旧ロードが終端した。ここで初めて戻れる ----
             loader.CompleteStuck();
             Assert.IsTrue(service.CanReturnToLauncher, "終端したら戻れる。");
-            Assert.IsTrue(service.TryReturnToLauncher(), "既存 Launcher へ戻る操作が成立する。");
-            Assert.AreEqual(1, service.ReturnedToLauncherCount);
+            Assert.IsTrue(view.CanPressReturn, "表示側の操作も押せるようになる。");
+
+            // ---- まず戻りロードが失敗する。停止状態は維持される ----
+            //
+            // 「ロードを発行できた」を戻れた証拠にすると、開始に失敗した操作まで成功扱いになる
+            // （GPT レビュー R3 の指摘 3）。完了を見届けるまで畳まないことを、実際に失敗させて見る。
+            LogAssert.Expect(LogType.Error, new Regex("Return to launcher failed"));
+            loader.FailNextLoad = true;
+            Assert.IsTrue(view.TryPressReturn(), "戻り操作は始まる。");
+
+            waited = 0f;
+            while (service.IsReturningToLauncher && waited < 10f)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            Assert.AreEqual(1, service.ReturnToLauncherFailedCount, "戻れなかったことを数える。");
+            Assert.AreEqual(0, service.ReturnedToLauncherCount, "戻れていないので増えない。");
+            Assert.IsTrue(service.HasTerminalFailure, "失敗したら停止状態を維持する。");
+            Assert.IsTrue(service.Clock.IsFrozen, "失敗したら時計も止めたまま。");
+            StringAssert.Contains("Launcher", service.TerminalFailureReason,
+                "理由が戻りの失敗に差し替わる。理由=" + service.TerminalFailureReason);
+            Assert.IsTrue(view.IsShowing, "表示も出たまま。");
+
+            // ---- もう一度押すと、今度は本物の Launcher Scene へ戻る ----
+            Assert.IsTrue(view.TryPressReturn(), "再試行はプレイヤーの操作で行う（自動再試行しない）。");
+
+            waited = 0f;
+            while (service.ReturnedToLauncherCount < 1 && waited < 15f)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            Assert.AreEqual(1, service.ReturnedToLauncherCount, "戻り終えて初めて数える。");
+            Assert.AreEqual(LauncherScene, SceneManager.GetActiveScene().path,
+                "戻り先は既存の Launcher Scene（自動で A へ進む試遊 Scene ではない）。");
             Assert.IsFalse(service.HasTerminalFailure, "戻ったら Error 表示を畳む。");
+            Assert.IsFalse(view.IsShowing, "表示も消える。");
             Assert.IsFalse(service.Clock.IsFrozen,
                 "戻り先でも止めたままにしない（戻ったのに何も動かない、を作らない）。");
 
@@ -1128,27 +1178,10 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreSame(session, Sessions().Session, "同じ Session が続く。");
             Assert.AreEqual(41, session.Progress.Virtue, "徳を失わない。");
 
-            // ---- 検査が終わったので、縮めた監視上限と差し替えた Loader を戻す ----
-            //
-            // 戻り先の Scene には起動役が居り、常駐が生きている以上そこから通常の遷移が始まる。
-            // 縮めた上限のままだと、その正常な遷移が「失敗」として終端し、
-            // 検査していない Error がテストの後始末で出る（実際に踏んだ）。
             service.Loader = new UnitySceneLoader();
             service.TimeoutSeconds = AreaTransitionCoordinator.DefaultTimeoutSeconds;
             service.RecoveryTimeoutSeconds = AreaTransitionCoordinator.DefaultTimeoutSeconds;
             service.BindTimeoutSeconds = 10f;
-
-            // 戻り先の Scene が実際に有効になることまで見届ける（数えただけで終わらせない）。
-            float settle = 0f;
-            while (SceneManager.GetActiveScene().path != TrialScene && settle < 10f)
-            {
-                settle += Time.unscaledDeltaTime;
-                yield return null;
-            }
-
-            Assert.AreEqual(TrialScene, SceneManager.GetActiveScene().path,
-                "既存 Launcher の Scene へ実際に戻っている。");
-            DestroyTrialLaunchers();
         }
 
         /// <summary>
@@ -1168,8 +1201,17 @@ namespace Momotaro.Tests.PlayMode
                 _firstDelay = firstDelay;
             }
 
+            /// <summary>次の 1 回のロードを「開始できなかった」ことにする。</summary>
+            public bool FailNextLoad { get; set; }
+
             public IAreaLoadOperation Load(string scenePath)
             {
+                if (FailNextLoad)
+                {
+                    FailNextLoad = false;
+                    return new FailedOperation();
+                }
+
                 _count++;
                 if (_count == 1)
                 {
@@ -1184,6 +1226,13 @@ namespace Momotaro.Tests.PlayMode
                 }
 
                 return _inner.Load(scenePath);
+            }
+
+            private sealed class FailedOperation : IAreaLoadOperation
+            {
+                public bool IsDone => true;
+
+                public bool HasError => true;
             }
 
             /// <summary>1 回目の「報告の遅れ」を進める。</summary>
@@ -1334,8 +1383,276 @@ namespace Momotaro.Tests.PlayMode
             // 遷移で到着した側は到着トークンを持つ（直開きと区別できている）。
             Assert.AreNotEqual(0, FindInitializer().ArrivalToken, "遷移で到着した側はトークンを持つ。");
 
-            // 終端失敗したときの戻り先は「統合起動 Scene」（§6.3 の最終行）。
-            Assert.AreEqual(TrialScene, service.LauncherScenePath, "起動役が自分の Scene を戻り先として名乗る。");
+            // 終端失敗したときの戻り先は<b>既存の Launcher Scene</b>（§6.3 の最終行）。
+            // この統合起動 Scene は開くと自動で A へ進むので、戻り先にしてはいけない。
+            Assert.AreEqual(LauncherScene, service.LauncherScenePath,
+                "戻り先は既存 Launcher に統一されている（自動で A へ進む Scene を戻り先にしない）。");
+        }
+
+        // ---------------------------------------------------------------- P12（放棄後の遅延到着）
+
+        /// <summary>
+        /// P5-P12（補強）：終端失敗で<b>放棄したあとに遅れて読み終わった Scene</b>が、
+        /// 自分で活動を始めない（§6.3。GPT レビュー R3 の指摘 1）。
+        ///
+        /// Unity の非同期ロードはキャンセルできないので、復旧の監視が切れたあとでも Scene は着く。
+        /// 到着側が「到着トークンが無い＝直開き」と判断していると、
+        /// <b>失敗して止めたはずのエリアが自分で Ready になり、探索へ戻ってしまう</b>。
+        /// ここでは復旧先を<b>実際に遅れて到着させて</b>、活動が始まらないことを見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ArrivalAfterAbandonedTransition_DoesNotSelfActivate()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            AreaTransitionService service = Transitions();
+            service.TimeoutSeconds = 0.2f;
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            service.RecoveryTimeoutSeconds = 0.3f;
+            service.BindTimeoutSeconds = 0.5f;
+
+            GameSessionState session = Sessions().Session;
+            var loader = new DeferredRecoveryLoader(0.8f);
+            service.Loader = loader;
+
+            LogAssert.Expect(LogType.Error, new Regex("Area transition failed terminally"));
+
+            Assert.IsTrue(service.TryTravel(AreaB, AreaBFromA).Accepted);
+
+            float waited = 0f;
+            while (service.TerminalFailureCount < 1 && waited < 20f)
+            {
+                waited += Time.unscaledDeltaTime;
+                loader.Tick(Time.unscaledDeltaTime);
+                yield return null;
+            }
+
+            Assert.AreEqual(1, service.TerminalFailureCount, "前提：復旧が返ってこず終端失敗する。");
+            Assert.AreEqual(AreaArrivalState.Abandoned, AreaPendingArrival.State,
+                "要求は消さずに放棄として残る（消すと直開きと区別できない）。");
+            Assert.IsTrue(service.Clock.IsFrozen, "止めたまま。");
+
+            // ---- ここで、キャンセルできなかった復旧ロードが遅れて Scene を読み終える ----
+            Assert.IsTrue(loader.ReleaseDeferred(), "前提：保留していた復旧ロードがある。");
+
+            waited = 0f;
+            while (SceneManager.GetActiveScene().path != AreaAScene && waited < 15f)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            Assert.AreEqual(AreaAScene, SceneManager.GetActiveScene().path, "前提：復旧先が実際に到着した。");
+            yield return null;
+            yield return null;
+
+            // ---- 着いたが、活動は始まらない ----
+            AreaInitializer arrived = FindInitializer();
+            Assert.IsTrue(arrived.Initialized, "初期化そのものは済む（Bind までは行う）。");
+            Assert.AreEqual(0, arrived.ArrivalToken, "生きた到着要求は無い。");
+            Assert.IsTrue(arrived.SelfActivationBlocked,
+                "トークンが無いことを直開きの証拠にしない（自己許可を断っている）。");
+            Assert.AreEqual(1, AreaPendingArrival.BlockedSelfActivationCount, "断ったことを数える。");
+
+            var context = Object.FindFirstObjectByType<AreaContext>();
+            Assert.IsNotNull(context);
+            Assert.IsFalse(context.IsAreaReady, "放棄後に着いた Scene を活動させない。");
+            Assert.AreEqual(0, context.ReadyCount, "活動の許可は 1 度も出ていない。");
+            Assert.AreNotEqual(GameMode.Exploration, GameModeProvider.Current.Current,
+                "探索へ戻していない（入力を許可していない）。");
+            Assert.IsTrue(service.Clock.IsFrozen, "Gameplay 時計も止めたまま。");
+            Assert.IsTrue(service.HasTerminalFailure, "Error 表示の状態が続く。");
+
+            // 実物でも動かない。
+            var motor = Object.FindFirstObjectByType<CompanionMotor>();
+            if (motor != null)
+            {
+                Vector3 before = motor.transform.position;
+                motor.WarpTo(before + new Vector3(3f, 0f, 0f));
+                Assert.AreEqual(before, motor.transform.position, "凍結中は移動できない。");
+            }
+
+            // ---- プレイヤーは Error 表示から Launcher へ戻れる ----
+            AreaTransitionFailureView view = BootstrapRoot.Instance.FailureView;
+            Assert.IsTrue(view.IsShowing);
+            Assert.IsTrue(view.CanPressReturn, "生きているロードは終端しているので押せる。");
+            Assert.IsTrue(view.TryPressReturn());
+
+            waited = 0f;
+            while (service.ReturnedToLauncherCount < 1 && waited < 15f)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            Assert.AreEqual(1, service.ReturnedToLauncherCount, "Launcher へ戻れる。");
+            Assert.AreEqual(AreaArrivalState.None, AreaPendingArrival.State, "戻ったら放棄も畳む。");
+            Assert.AreEqual(1, Sessions().CreatedCount, "Session を作り直さない。");
+            Assert.AreSame(session, Sessions().Session);
+
+            service.Loader = new UnitySceneLoader();
+            service.TimeoutSeconds = AreaTransitionCoordinator.DefaultTimeoutSeconds;
+            service.RecoveryTimeoutSeconds = AreaTransitionCoordinator.DefaultTimeoutSeconds;
+            service.BindTimeoutSeconds = 10f;
+        }
+
+        /// <summary>
+        /// 1 回目＝本物のロードだが完了報告を遅らせる、2 回目（＝復旧）＝<b>まだ読み始めない</b>、
+        /// 3 回目以降＝本物。<see cref="ReleaseDeferred"/> で、保留していた復旧ロードを
+        /// <b>本当に走らせて遅延到着を起こす</b>。
+        ///
+        /// 前のテスト（<c>RecoveryLoadThatNeverCompletes…</c>）は Scene を生成しない操作で止めていたので、
+        /// 「遅れて着いた Scene が自分で動き出す」経路を検査できなかった（GPT レビュー R3 の指摘 1）。
+        /// </summary>
+        private sealed class DeferredRecoveryLoader : IAreaSceneLoader
+        {
+            private readonly UnitySceneLoader _inner = new UnitySceneLoader();
+            private readonly float _firstDelay;
+            private DelayedOperation _first;
+            private DeferredOperation _deferred;
+            private int _count;
+
+            public DeferredRecoveryLoader(float firstDelay)
+            {
+                _firstDelay = firstDelay;
+            }
+
+            public IAreaLoadOperation Load(string scenePath)
+            {
+                _count++;
+                if (_count == 1)
+                {
+                    _first = new DelayedOperation(_inner.Load(scenePath), _firstDelay);
+                    return _first;
+                }
+
+                if (_count == 2)
+                {
+                    _deferred = new DeferredOperation(_inner, scenePath);
+                    return _deferred;
+                }
+
+                return _inner.Load(scenePath);
+            }
+
+            /// <summary>1 回目の「報告の遅れ」を進める。</summary>
+            public void Tick(float unscaledDelta)
+            {
+                if (_first != null)
+                {
+                    _first.Advance(unscaledDelta);
+                }
+            }
+
+            /// <summary>保留していた復旧ロードを実際に走らせる（遅延到着を起こす）。</summary>
+            public bool ReleaseDeferred()
+            {
+                if (_deferred == null)
+                {
+                    return false;
+                }
+
+                _deferred.Begin();
+                return true;
+            }
+
+            private sealed class DeferredOperation : IAreaLoadOperation
+            {
+                private readonly IAreaSceneLoader _inner;
+                private readonly string _scenePath;
+                private IAreaLoadOperation _real;
+
+                public DeferredOperation(IAreaSceneLoader inner, string scenePath)
+                {
+                    _inner = inner;
+                    _scenePath = scenePath;
+                }
+
+                public bool IsDone => _real != null && _real.IsDone;
+
+                public bool HasError => _real != null && _real.HasError;
+
+                public void Begin()
+                {
+                    if (_real == null)
+                    {
+                        _real = _inner.Load(_scenePath);
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------- E07（凍結中の主人公）
+
+        /// <summary>
+        /// P5-E07（補強）：移動中に遷移を始めても、主人公は<b>その場で止まる</b>（§6.2 手順 3）。
+        ///
+        /// 時計を見て早期 return するだけだと、直前の <c>Rigidbody</c> 速度が残り、
+        /// 旧 Scene が生きている間ずっと滑り続ける（GPT レビュー R3 の指摘 2）。
+        /// 仲間の Motor は同じ条件で速度をゼロにしているので、主人公だけが滑る形になっていた。
+        ///
+        /// 目的地のロードは<b>完了しない</b>操作にして、旧 Scene を生かしたまま物理を進める。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FrozenDuringTransition_PlayerDoesNotSlide()
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            var playerRoot = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(playerRoot, "エリアに主人公が居る。");
+            Rigidbody body = playerRoot.Body;
+            Assert.IsNotNull(body, "主人公に Rigidbody がある。");
+
+            AreaTransitionService service = Transitions();
+
+            // 目的地を読み終えない Loader。旧 Scene が生き続けるので、物理を進めて観測できる。
+            service.Loader = new NeverCompletingLoader();
+
+            // 走っている最中に遷移を要求する。
+            body.linearVelocity = new Vector3(6f, body.linearVelocity.y, 4f);
+            Vector3 before = body.position;
+
+            Assert.IsTrue(service.TryTravel(AreaB, AreaBFromA).Accepted);
+            Assert.IsTrue(service.Clock.IsFrozen, "前提：受理で Gameplay 時計が止まる。");
+
+            for (int i = 0; i < 12; i++)
+            {
+                yield return new WaitForFixedUpdate();
+            }
+
+            Vector3 velocity = body.linearVelocity;
+            Assert.AreEqual(0f, Mathf.Abs(velocity.x), 1e-3f, "凍結中に XZ 速度を残さない（x）。");
+            Assert.AreEqual(0f, Mathf.Abs(velocity.z), 1e-3f, "凍結中に XZ 速度を残さない（z）。");
+
+            Vector3 after = body.position;
+            Assert.AreEqual(before.x, after.x, 0.05f, "凍結中は滑らない（x）。");
+            Assert.AreEqual(before.z, after.z, 0.05f, "凍結中は滑らない（z）。");
+
+            service.Loader = new UnitySceneLoader();
+        }
+
+        /// <summary>いつまでも読み終えない Loader（旧 Scene を生かしたまま凍結を観測するため）。</summary>
+        private sealed class NeverCompletingLoader : IAreaSceneLoader
+        {
+            public IAreaLoadOperation Load(string scenePath) => new PendingOperation();
+
+            private sealed class PendingOperation : IAreaLoadOperation
+            {
+                public bool IsDone => false;
+
+                public bool HasError => false;
+            }
         }
     }
 }

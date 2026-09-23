@@ -74,9 +74,15 @@ namespace Momotaro.Infrastructure.World
 
         /// <summary>
         /// 初期化を始めた時点で捕まえた到着トークン（診断・テスト用）。
-        /// 0 は「遷移を伴わない直開き」。
+        /// 0 は「このエリア宛ての生きた到着要求が無い」。直開きとは限らない。
         /// </summary>
         public int ArrivalToken { get; private set; }
+
+        /// <summary>
+        /// 直開きの自己許可を断ったか（診断・テスト用）。
+        /// 終端失敗で放棄された遷移のあとに、遅れて読み終わった Scene がここに来る。
+        /// </summary>
+        public bool SelfActivationBlocked { get; private set; }
 
         private void Start()
         {
@@ -224,12 +230,22 @@ namespace Momotaro.Infrastructure.World
                 // 遷移で来た。開始時に捕まえたトークンで報告し、所有者の許可を待つ。
                 AreaPendingArrival.TryMarkPrepared(arrivalToken, areaId, entryId);
             }
-            else
+            else if (AreaPendingArrival.SelfActivationAllowed)
             {
-                // 直開き（遷移を伴わない起動）。所有者が居ないので自分で許可する。
-                // 遷移していない＝捨てられた到着になりようがないので、ここに穴は無い。
+                // 直開き（遷移が 1 つも走っていない起動）。所有者が居ないので自分で許可する。
                 _context.Activate();
                 GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
+            }
+            else
+            {
+                // <b>トークンが無い＝直開き、ではない</b>（GPT レビュー R3 の指摘 1）。
+                // 遷移が終端失敗して放棄されたあと、キャンセルできないロードが遅れて
+                // この Scene を読み終えた場合もここに来る。許可を出す所有者はもう居ないので、
+                // 準備だけ済ませて<b>活動させない</b>。プレイヤーは Error 表示から Launcher へ戻る。
+                SelfActivationBlocked = true;
+                AreaPendingArrival.NoteBlockedSelfActivation();
+                GameLog.Warning(LogCategory.Scene,
+                    "Arrived after the transition was abandoned; not activating this area: " + areaId.Value);
             }
 
             Initialized = true;

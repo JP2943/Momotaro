@@ -58,19 +58,26 @@ namespace Momotaro.Gameplay.Player
 
         private void FixedUpdate()
         {
-            // 遷移中は物理でも動かさない（P5-E07）。時計を止めるだけでは Rigidbody は動き続ける
-            // ため、仲間の Motor と同じくここでも判定する（GPT レビュー R2 の指摘 1）。
-            if (Session.GameplayClockProvider.IsFrozen)
-            {
-                return;
-            }
-
             if (_root == null || _root.Body == null)
             {
                 return;
             }
 
             Rigidbody body = _root.Body;
+
+            // 遷移中は物理でも動かさない（P5-E07）。時計を止めるだけでは Rigidbody は動き続ける
+            // ため、仲間の Motor と同じくここでも判定する（GPT レビュー R2 の指摘 1）。
+            //
+            // <b>止めるだけでは足りない。</b> 早期 return するだけだと直前の速度が残り、
+            // 移動中に遷移を始めると旧 Scene が生きている間は滑り続ける（GPT レビュー R3 の指摘 2）。
+            // 仲間の Motor と同じく XZ 速度をゼロにする。Y は物理値のまま残す
+            // （重力・接地は Gameplay の時計ではなく物理の話なので、ここで消すと浮く）。
+            // 反応（ヒットバック）の残り時間は進めない：この下の Tick まで到達しない。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                body.linearVelocity = new Vector3(0f, body.linearVelocity.y, 0f);
+                return;
+            }
 
             // P3.5-08A：ヒットバック／ガードバックは入力・抑制より優先。XZ を反応速度で上書きし Y は物理値を保持（Y 不変）。
             if (_reaction.IsActive)
