@@ -44,9 +44,15 @@ namespace Momotaro.EditorBridge
         /// <summary>仲間試遊 Scene を再生成し、そのまま検査する（P4-08R）。</summary>
         public const string BuildCompanionTrial = "build-companion-trial";
 
+        /// <summary>P5 の探索試遊（3 Scene・Data カタログ・仮地形）を再生成する（P5-02。仕様書 §16.1）。</summary>
+        public const string BuildExplorationTrial = "build-exploration-trial";
+
         /// <summary>実行できる操作の一覧（エラーメッセージにそのまま出す）。</summary>
         public static readonly string[] All =
-            { BuildInumaru, ValidateProjectData, VerifyRequiredTests, BuildCompanionField, BuildCompanionTrial };
+        {
+            BuildInumaru, ValidateProjectData, VerifyRequiredTests,
+            BuildCompanionField, BuildCompanionTrial, BuildExplorationTrial,
+        };
 
         /// <summary>実行結果。</summary>
         public readonly struct OperationResult
@@ -72,7 +78,7 @@ namespace Momotaro.EditorBridge
         public static bool IsKnown(string op)
         {
             return op == BuildInumaru || op == ValidateProjectData || op == VerifyRequiredTests
-                || op == BuildCompanionField || op == BuildCompanionTrial;
+                || op == BuildCompanionField || op == BuildCompanionTrial || op == BuildExplorationTrial;
         }
 
         /// <summary>操作を実行する。未知の操作・呼び出し失敗は <see cref="OperationResult.Success"/> false で返す。</summary>
@@ -92,6 +98,9 @@ namespace Momotaro.EditorBridge
 
                     case VerifyRequiredTests:
                         return RunVerifyRequiredTests(command);
+
+                    case BuildExplorationTrial:
+                        return RunBuildExplorationTrial();
 
                     case BuildCompanionField:
                         return RunBuildCompanionField();
@@ -265,6 +274,7 @@ namespace Momotaro.EditorBridge
         private const string CompanionFieldValidatorType = "Momotaro.Editor.Phase4.Phase4CompanionFieldValidator";
         private const string CompanionTrialBuilderType = "Momotaro.Editor.Phase4.Phase4CompanionTrialBuilder";
         private const string CompanionTrialValidatorType = "Momotaro.Editor.Phase4.Phase4CompanionTrialValidator";
+        private const string ExplorationBuilderType = "Momotaro.Editor.Phase5.Phase5ExplorationBuilder";
 
         private static OperationResult RunBuildInumaru()
         {
@@ -493,6 +503,47 @@ namespace Momotaro.EditorBridge
         {
             PropertyInfo p = type.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
             return p?.GetValue(instance);
+        }
+
+        /// <summary>
+        /// P5 の探索試遊（3 Scene・Data カタログ・仮地形）を再生成する（P5-02。仕様書 §16.1）。
+        ///
+        /// <b>未保存の Scene 変更があれば Builder 自身が断る</b>ため、手で加えた変更を黙って消さない
+        /// （`CLAUDE.md`「Scene を作り直す操作を載せてよいのは、未保存の変更があるとき自分で断る場合だけ」）。
+        /// 本アセンブリは Momotaro.Editor を参照しないので、既存の Scene 生成と同じく反射で呼ぶ。
+        /// </summary>
+        private static OperationResult RunBuildExplorationTrial()
+        {
+            Type builder = FindType(ExplorationBuilderType);
+            if (builder == null)
+            {
+                return new OperationResult(false, "型が見つかりません: " + ExplorationBuilderType);
+            }
+
+            MethodInfo build = builder.GetMethod(
+                "BuildAll", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
+            if (build == null)
+            {
+                return new OperationResult(false, ExplorationBuilderType + ".BuildAll() が見つかりません。");
+            }
+
+            object result = build.Invoke(null, null);
+            if (result == null)
+            {
+                return new OperationResult(false, "BuildAll の戻り値が空でした。");
+            }
+
+            Type resultType = result.GetType();
+            bool success = ReadProperty(resultType, result, "Success") is bool b && b;
+            string message = ReadProperty(resultType, result, "Message") as string ?? string.Empty;
+
+            var details = new List<string>();
+            if (ReadProperty(resultType, result, "Outputs") is IEnumerable<string> outputs)
+            {
+                details.AddRange(outputs);
+            }
+
+            return new OperationResult(success, message, details);
         }
     }
 }

@@ -214,7 +214,11 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.AreaCatalog_ResolvesEntriesAndRejectsUnsupportedFloor",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P5ContractTests.AreaCatalog_ShippedPhase5CatalogResolves",
+        "Momotaro.Tests.EditMode.P5ContractTests.GeneratedAreaScenes_LoadWithEntriesMatchingCatalog"
+      ]
     },
     {
       "requirementId": "P5-E26",

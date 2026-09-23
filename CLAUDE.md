@@ -246,6 +246,11 @@ Windows 側の git（LFS あり）では正常に clean と表示される。
 Claude が `git status` を見るときは、`Assets/_Project/Scripts` `Tests` `Data` `Prefabs` のように
 **コードとアセット定義のパスへ限定する**こと（全体を見ると時間もかかり、上記の誤解も招く）。
 
+**`git --no-optional-locks status` を使う。** 素の `git status` は索引を更新しようとして `.git/index.lock` を作るが、
+PC 側シェルはファイルを削除できないため**ロックが残り、Windows 側の git がすべて止まる**（P5-02 で実際に踏んだ）。
+`--no-optional-locks` なら索引を書かないのでロックを作らない。うっかり残した場合は `_to_delete/` へ `mv` して退避する
+（`rm` は使えない）。`git log` `git show` `git diff` は索引を書かないので、そのままでよい。
+
 ## コミットメッセージ
 
 末尾に必ず付ける。**2 行とも、そのスレッドの実際の値に置き換えること**（下は書式の例であり、固定値ではない）。

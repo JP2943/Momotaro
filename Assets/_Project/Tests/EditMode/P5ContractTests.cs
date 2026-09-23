@@ -8,7 +8,10 @@ using Momotaro.Core.Identification;
 using Momotaro.Data.Characters;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Core.World;
+using Momotaro.Data;
 using Momotaro.Data.Combat;
+using Momotaro.Data.World;
 using Momotaro.Gameplay.Enemy.Defense;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Threat;
@@ -772,6 +775,283 @@ namespace Momotaro.Tests.EditMode
             public List<CompanionStateChangeReason> Reasons { get; } = new List<CompanionStateChangeReason>();
 
             public void OnCompanionStateChanged(in CompanionStateChanged change) => Reasons.Add(change.Reason);
+        }
+
+        // ================================================================ P5-02
+
+        // ---------------------------------------------------------------- E25
+
+        private AreaDefinition NewArea(
+            string areaId, string scenePath, int floorId,
+            (string id, CardinalDirection facing)[] entries, string defaultEntryId)
+        {
+            var asset = ScriptableObject.CreateInstance<AreaDefinition>();
+            _spawned.Add(asset);
+            SetPrivate(asset, "_id", new StableId(areaId));
+
+            var list = new List<AreaEntryDefinition>();
+            foreach ((string id, CardinalDirection facing) in entries)
+            {
+                var e = new AreaEntryDefinition();
+                e.EditorSet(new StableId(id), facing);
+                list.Add(e);
+            }
+
+            asset.EditorSet(scenePath, floorId, list, new StableId(defaultEntryId));
+            return asset;
+        }
+
+        private AreaCatalogData NewCatalog(List<AreaDefinition> areas, string respawnArea, string respawnEntry)
+        {
+            var asset = ScriptableObject.CreateInstance<AreaCatalogData>();
+            _spawned.Add(asset);
+            SetPrivate(asset, "_id", new StableId("area_catalog_test"));
+            asset.EditorSet(areas, new StableId(respawnArea), new StableId(respawnEntry));
+            return asset;
+        }
+
+        private static bool HasError(IReadOnlyList<string> errors, string fragment)
+        {
+            foreach (string e in errors)
+            {
+                if (e.Contains(fragment))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// P5-E25：カタログが安定 ID・入口・既定入口・死亡再開点を解決し、<b>非対応の Floor を拒否</b>する
+        /// （仕様書 v1.1 §3.1／§3.3／§13.3）。
+        ///
+        /// FloorId は「論理的に同じ階層か」を示す int で、Y 座標や buildIndex から推定しない。
+        /// <b>不整合を自動補正して同じ階とみなさない</b>のが要点で、黙って直すと多層の実装時に嘘が残る。
+        /// </summary>
+        [Test]
+        public void AreaCatalog_ResolvesEntriesAndRejectsUnsupportedFloor()
+        {
+            const string ScenePathA = "Assets/_Project/Scenes/Tests/Phase5/SCN_Phase5_AreaA.unity";
+            const string ScenePathB = "Assets/_Project/Scenes/Tests/Phase5/SCN_Phase5_AreaB.unity";
+
+            AreaDefinition a = NewArea("area_p5_a", ScenePathA, 0, new[]
+            {
+                ("area_p5_a_start", CardinalDirection.North),
+                ("area_p5_a_from_b", CardinalDirection.West),
+            }, "area_p5_a_start");
+
+            AreaDefinition b = NewArea("area_p5_b", ScenePathB, 0, new[]
+            {
+                ("area_p5_b_from_a", CardinalDirection.East),
+            }, "area_p5_b_from_a");
+
+            // ---- 正常系：A↔B と死亡再開の経路がすべて解決できる ----
+            AreaCatalogData data = NewCatalog(new List<AreaDefinition> { a, b }, "area_p5_a", "area_p5_a_start");
+            Assert.IsTrue(AreaCatalog.TryBuild(data, out AreaCatalog catalog, out IReadOnlyList<string> errors),
+                "正常なカタログは構築できる。errors=" + string.Join(" / ", errors));
+            Assert.AreEqual(2, catalog.AreaCount);
+            Assert.AreEqual(3, catalog.EntryCount);
+
+            Assert.IsTrue(catalog.TryGetScenePath(new StableId("area_p5_a"), out string pathA));
+            Assert.AreEqual(ScenePathA, pathA);
+
+            Assert.IsTrue(catalog.TryGetEntry(new StableId("area_p5_a"), new StableId("area_p5_a_from_b"),
+                out AreaEntryInfo fromB), "A の戻り入口を解決できる。");
+            Assert.AreEqual(CardinalDirection.West, fromB.Facing, "向きは Data が正本。");
+            Assert.AreEqual(ScenePathA, fromB.ScenePath, "入口は所属エリアの Scene パスを運ぶ。");
+
+            // 直開きの既定入口（§5.2）。B は area_p5_b_from_a。
+            Assert.IsTrue(catalog.TryGetDefaultEntry(new StableId("area_p5_b"), out AreaEntryInfo defaultB));
+            Assert.AreEqual("area_p5_b_from_a", defaultB.EntryId.Value);
+
+            // 死亡再開点（§3.1。P5 では固定）。
+            Assert.IsTrue(catalog.TryGetRespawnEntry(out AreaEntryInfo respawn));
+            Assert.AreEqual("area_p5_a", respawn.AreaId.Value);
+            Assert.AreEqual("area_p5_a_start", respawn.EntryId.Value);
+
+            // 存在しない ID は解決できない（既定値を返して成功にしない）。
+            Assert.IsFalse(catalog.TryGetEntry(new StableId("area_p5_a"), new StableId("area_p5_a_nope"), out _));
+            Assert.IsFalse(catalog.TryGetScenePath(new StableId("area_p5_c"), out _));
+
+            // ---- 非対応 Floor は拒否する。自動補正して同じ階とみなさない（§3.3） ----
+            AreaDefinition upper = NewArea("area_p5_upper", ScenePathB, 1, new[]
+            {
+                ("area_p5_upper_start", CardinalDirection.North),
+            }, "area_p5_upper_start");
+
+            AreaCatalogData withUpper = NewCatalog(
+                new List<AreaDefinition> { a, upper }, "area_p5_a", "area_p5_a_start");
+            Assert.IsFalse(AreaCatalog.TryBuild(withUpper, out AreaCatalog rejected, out IReadOnlyList<string> floorErrors),
+                "非 0 の FloorId を含むカタログは構築しない。");
+            Assert.IsNull(rejected, "失敗時は部分的に使えるカタログを返さない。");
+            Assert.IsTrue(HasError(floorErrors, "unsupported FloorId 1"), "理由に Floor を名指しする。errors="
+                + string.Join(" / ", floorErrors));
+
+            // Data 側の Validate も同じ判断をする（Bridge の validate-project-data が拾う経路）。
+            var report = new DataValidationReport();
+            upper.Validate(report);
+            Assert.IsTrue(report.HasErrors, "AreaDefinition.Validate も非 0 Floor を error にする。");
+
+            // ---- 既定入口が入口一覧に無い ----
+            AreaDefinition badDefault = NewArea("area_p5_bad", ScenePathA, 0, new[]
+            {
+                ("area_p5_bad_start", CardinalDirection.North),
+            }, "area_p5_bad_missing");
+            AreaCatalogData badCatalog = NewCatalog(
+                new List<AreaDefinition> { badDefault }, "area_p5_bad", "area_p5_bad_start");
+            Assert.IsFalse(AreaCatalog.TryBuild(badCatalog, out _, out IReadOnlyList<string> defaultErrors));
+            Assert.IsTrue(HasError(defaultErrors, "default entry"), "既定入口の不整合を名指しする。");
+
+            // ---- 死亡再開点が解決できない ----
+            AreaCatalogData noRespawn = NewCatalog(
+                new List<AreaDefinition> { a, b }, "area_p5_b", "area_p5_a_start");
+            Assert.IsFalse(AreaCatalog.TryBuild(noRespawn, out _, out IReadOnlyList<string> respawnErrors),
+                "死亡再開点が解決できないカタログは構築しない（敗北から復帰できなくなる）。");
+            Assert.IsTrue(HasError(respawnErrors, "Respawn point"), "理由に再開点を名指しする。");
+
+            // ---- 重複 ID ----
+            AreaCatalogData duplicate = NewCatalog(
+                new List<AreaDefinition> { a, a }, "area_p5_a", "area_p5_a_start");
+            Assert.IsFalse(AreaCatalog.TryBuild(duplicate, out _, out IReadOnlyList<string> dupErrors));
+            Assert.IsTrue(HasError(dupErrors, "Duplicate area id"), "重複を名指しする。");
+        }
+
+        /// <summary>
+        /// P5-E25（出荷カタログ）：実際に生成された P5 の Data から構築できることを確認する。
+        /// 手で組んだ Fixture だけでは、Builder の出力が壊れていても気付けない
+        /// （`CLAUDE.md`「実アセット → 出荷される SO の配線を AssetDatabase で読んで検査する」）。
+        /// </summary>
+        [Test]
+        public void AreaCatalog_ShippedPhase5CatalogResolves()
+        {
+            const string CatalogPath = "Assets/_Project/Data/Tests/Phase5/SO_AreaCatalog_P5.asset";
+            var data = UnityEditor.AssetDatabase.LoadAssetAtPath<AreaCatalogData>(CatalogPath);
+            Assert.IsNotNull(data, "出荷カタログが見つかりません: " + CatalogPath
+                + "（Momotaro / Phase 5 / Generate Exploration Trial で生成する）");
+
+            Assert.IsTrue(AreaCatalog.TryBuild(data, out AreaCatalog catalog, out IReadOnlyList<string> errors),
+                "出荷カタログが構築できません: " + string.Join(" / ", errors));
+
+            Assert.AreEqual(2, catalog.AreaCount, "A と B の 2 エリア。");
+            Assert.AreEqual(3, catalog.EntryCount, "入口は 3 つ（a_start / a_from_b / b_from_a）。");
+
+            // A↔B と死亡再開の経路が存在する（§13.3）。
+            Assert.IsTrue(catalog.TryGetEntry(new StableId("area_p5_a"), new StableId("area_p5_a_from_b"), out _));
+            Assert.IsTrue(catalog.TryGetEntry(new StableId("area_p5_b"), new StableId("area_p5_b_from_a"), out _));
+            Assert.IsTrue(catalog.TryGetRespawnEntry(out AreaEntryInfo respawn));
+            Assert.AreEqual("area_p5_a_start", respawn.EntryId.Value, "死亡再開点は A の開始点（§3.1）。");
+
+            // Scene が実在し、Build Settings へ登録されている（§13.3）。
+            foreach (string areaId in new[] { "area_p5_a", "area_p5_b" })
+            {
+                Assert.IsTrue(catalog.TryGetScenePath(new StableId(areaId), out string scenePath));
+                Assert.IsNotNull(UnityEditor.AssetDatabase.LoadAssetAtPath<UnityEditor.SceneAsset>(scenePath),
+                    "Scene が実在しません: " + scenePath);
+
+                bool registered = false;
+                foreach (UnityEditor.EditorBuildSettingsScene s in UnityEditor.EditorBuildSettings.scenes)
+                {
+                    if (s.path == scenePath)
+                    {
+                        registered = true;
+                        break;
+                    }
+                }
+
+                Assert.IsTrue(registered, "Build Settings へ未登録です: " + scenePath);
+            }
+        }
+
+        /// <summary>
+        /// P5-E25（実 Scene）：生成された A／B の Scene を<b>読み直して</b>、AreaRoot と入口が
+        /// Data の入口一覧と 1 対 1 で対応することを確認する。
+        ///
+        /// 保存した Scene を読み直すまで <b>Missing Script</b> は現れない（`CLAUDE.md` が名指しする事故で、
+        /// <c>InvestigationRecordHolder</c> と <c>CompanionRosterContext</c> で実際に起きた）。
+        /// Builder 直後の検査だけでは通ってしまうので、ここで実ファイルから開き直す。
+        ///
+        /// Scene を置換するため、<b>未保存の変更があるときだけ</b> Skip する（F01 の方針。
+        /// 無題 Scene というだけで止めると、常態で永久に走らない）。
+        /// </summary>
+        [Test]
+        public void GeneratedAreaScenes_LoadWithEntriesMatchingCatalog()
+        {
+            for (int i = 0; i < UnityEditor.SceneManagement.EditorSceneManager.sceneCount; i++)
+            {
+                UnityEngine.SceneManagement.Scene open =
+                    UnityEditor.SceneManagement.EditorSceneManager.GetSceneAt(i);
+                if (open.isDirty)
+                {
+                    Assert.Ignore("未保存の変更がある Scene が開いているため実行しません: "
+                        + (string.IsNullOrEmpty(open.path) ? "(無題 Scene)" : open.path));
+                }
+            }
+
+            var pairs = new[]
+            {
+                ("Assets/_Project/Scenes/Tests/Phase5/SCN_Phase5_AreaA.unity", "area_p5_a", 2),
+                ("Assets/_Project/Scenes/Tests/Phase5/SCN_Phase5_AreaB.unity", "area_p5_b", 1),
+            };
+
+            try
+            {
+                foreach ((string scenePath, string areaId, int entryCount) in pairs)
+                {
+                    UnityEngine.SceneManagement.Scene scene =
+                        UnityEditor.SceneManagement.EditorSceneManager.OpenScene(
+                            scenePath, UnityEditor.SceneManagement.OpenSceneMode.Single);
+                    Assert.IsTrue(scene.IsValid(), "Scene を開けません: " + scenePath);
+
+                    var roots = new List<GameObject>(scene.GetRootGameObjects());
+                    AreaRoot areaRoot = null;
+                    foreach (GameObject go in roots)
+                    {
+                        AreaRoot found = go.GetComponentInChildren<AreaRoot>(true);
+                        if (found != null)
+                        {
+                            Assert.IsNull(areaRoot, scenePath + ": AreaRoot は 1 つだけ。");
+                            areaRoot = found;
+                        }
+                    }
+
+                    Assert.IsNotNull(areaRoot, scenePath + ": AreaRoot が見つかりません（Missing Script の疑い）。");
+                    Assert.IsNotNull(areaRoot.Definition, scenePath + ": AreaDefinition が未配線です。");
+                    Assert.AreEqual(areaId, areaRoot.AreaId.Value, scenePath + ": AreaId が一致しません。");
+                    Assert.AreEqual(entryCount, areaRoot.EntryPoints.Count, scenePath + ": 入口の数。");
+
+                    // Data の入口一覧と Scene 上の入口が 1 対 1（§13.3「正本と参照が一致する」）。
+                    foreach (AreaEntryDefinition def in areaRoot.Definition.Entries)
+                    {
+                        Assert.IsTrue(areaRoot.TryGetEntryPoint(def.EntryId, out AreaEntryPoint point),
+                            scenePath + ": Data の入口 '" + def.EntryId.Value + "' に対応する Scene 上の入口がありません。");
+                        Assert.IsNotNull(point, scenePath + ": 入口が Missing です。");
+                        Assert.Greater(point.AlternatePlacements.Count, 0,
+                            scenePath + ": 入口 '" + def.EntryId.Value + "' に代替配置候補がありません（§6.3）。");
+                    }
+
+                    // 到着位置・代替候補が壁や水へ埋まっていないこと（§3.2）。床の上に居ることだけを見る。
+                    foreach (AreaEntryPoint point in areaRoot.EntryPoints)
+                    {
+                        Assert.AreEqual(0f, point.ArrivalPosition.y, 0.01f,
+                            scenePath + ": 入口 '" + point.EntryId.Value + "' の到着位置が床面（Y=0）にありません。");
+                        foreach (Transform alt in point.AlternatePlacements)
+                        {
+                            Assert.IsNotNull(alt, scenePath + ": 代替配置候補が Missing です。");
+                            Assert.AreEqual(0f, alt.position.y, 0.01f,
+                                scenePath + ": 代替配置候補が床面にありません。");
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                // 生成物を開いたまま残さない。
+                UnityEditor.SceneManagement.EditorSceneManager.NewScene(
+                    UnityEditor.SceneManagement.NewSceneSetup.EmptyScene,
+                    UnityEditor.SceneManagement.NewSceneMode.Single);
+            }
         }
     }
 }

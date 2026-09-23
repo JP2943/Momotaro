@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 11c7d9068ea9b8b1e372f64e911563b9, type: 3}
+  m_Name: SO_AreaCatalog_P5
+  m_EditorClassIdentifier: Momotaro.Data::Momotaro.Data.World.AreaCatalogData
+  _id:
+    _value: area_catalog_p5
+  _displayName: "P5 \u30A8\u30EA\u30A2\u30AB\u30BF\u30ED\u30B0"
+  _description: 
+  _version: 1
+  _debugNote: 
+  _areas:
+  - {fileID: 11400000, guid: 5d439c0e4ef7a2e408e546798356488a, type: 2}
+  - {fileID: 11400000, guid: a70a73dc38a9af14c9281a72da3f95ba, type: 2}
+  _respawnAreaId:
+    _value: area_p5_a
+  _respawnEntryId:
+    _value: area_p5_a_start
