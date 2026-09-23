@@ -6,7 +6,9 @@
         "Momotaro.Data",
         "Momotaro.Gameplay",
         "Momotaro.Presentation",
-        "Momotaro.Infrastructure"
+        "Momotaro.Infrastructure",
+        "Unity.AI.Navigation",
+        "Unity.AI.Navigation.Editor"
     ],
     "includePlatforms": [
         "Editor"

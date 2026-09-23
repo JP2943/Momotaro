@@ -8,6 +8,8 @@ using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Interaction;
+using Momotaro.Gameplay.Navigation;
+using Momotaro.Infrastructure.Navigation;
 using Momotaro.Gameplay.Session;
 using Momotaro.Gameplay.Transfer;
 using Momotaro.Presentation.Hud;
@@ -1720,15 +1722,27 @@ namespace Momotaro.Tests.PlayMode
             yield return MovePlayerTo(lever.InteractionAnchor + new Vector3(0.6f, 0f, 0f));
 
             // ---- キーボード E：押しっぱなしでも 1 回だけ ----
+            // <b>固定フレーム待ちにしない。</b> 実デバイスの押下が Action を通って届くまでの
+            // フレーム数は編集器の負荷で変わる。効果が出るまで待ち、そのあと押し続けて
+            // 「2 回目が起きないこと」を見る（実際に、固定待ちで取りこぼして落ちた）。
             bool sawStep = false;
             yield return PressKey(Key.E);
+            yield return WaitUntilOrTimeout(() => mediator.InteractCount >= 1, 3f);
+
             for (int i = 0; i < 12; i++)
             {
                 sawStep |= player.Current == PlayerState.Step;
                 yield return null;
             }
 
-            Assert.AreEqual(1, mediator.InteractCount, "E の押しっぱなしでも実行は 1 回。");
+            Assert.AreEqual(1, mediator.InteractCount,
+                "E の押しっぱなしでも実行は 1 回。診断: discarded=" + mediator.DiscardedCount
+                + " rejection=" + mediator.Controller.LastRejection
+                + " registry=" + AreaInteractableRegistry.Count
+                + " mode=" + (GameModeProvider.Current != null ? GameModeProvider.Current.Current.ToString() : "null")
+                + " ready=" + Object.FindFirstObjectByType<AreaContext>().IsAreaReady
+                + " input=" + (PlayerInputProvider.Current != null ? PlayerInputProvider.Current.GetType().Name : "null")
+                + " interactPressed=" + ((PlayerInputProvider.Current as IInteractInput)?.InteractPressed));
             Assert.AreEqual(1, lever.OpenedCount, "門が 1 回だけ開く。");
             Assert.IsTrue(lever.Door.IsOpened, "門が開いている。");
             Assert.IsTrue(Object.FindFirstObjectByType<AreaFlagDoor>().IsOpened);
@@ -1752,6 +1766,8 @@ namespace Momotaro.Tests.PlayMode
 
             int before = mediator.InteractCount;
             yield return PressGamepadSouth();
+            yield return WaitUntilOrTimeout(() => near.Calls >= 1, 3f);
+
             for (int i = 0; i < 12; i++)
             {
                 sawStep |= player.Current == PlayerState.Step;
@@ -1767,10 +1783,7 @@ namespace Momotaro.Tests.PlayMode
 
             // ---- 離して押し直せば、また 1 回だけ効く ----
             yield return PressGamepadSouth();
-            for (int i = 0; i < 6; i++)
-            {
-                yield return null;
-            }
+            yield return WaitUntilOrTimeout(() => near.Calls >= 2, 3f);
 
             Assert.AreEqual(2, near.Calls, "押し直せば 1 回ぶん効く。");
             Assert.AreEqual(0, far.Calls);
@@ -1792,6 +1805,24 @@ namespace Momotaro.Tests.PlayMode
             Physics.SyncTransforms();
             yield return new WaitForFixedUpdate();
             yield return null;
+        }
+
+        /// <summary>
+        /// 条件が成り立つまで待つ（実時間の上限つき）。
+        /// 実デバイスの押下が届くまでのフレーム数は編集器の負荷で変わるので、固定フレームで待たない。
+        /// </summary>
+        private static IEnumerator WaitUntilOrTimeout(System.Func<bool> condition, float timeoutSeconds)
+        {
+            float deadline = Time.realtimeSinceStartup + timeoutSeconds;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                if (condition())
+                {
+                    yield break;
+                }
+
+                yield return null;
+            }
         }
 
         private IEnumerator PressKey(Key key)
@@ -1886,11 +1917,7 @@ namespace Momotaro.Tests.PlayMode
 
             yield return MovePlayerTo(lever.InteractionAnchor + new Vector3(0.6f, 0f, 0f));
             yield return PressKey(Key.E);
-            for (int i = 0; i < 8; i++)
-            {
-                yield return null;
-            }
-
+            yield return WaitUntilOrTimeout(() => lever.OpenedCount >= 1, 3f);
             yield return ReleaseKeys();
 
             Assert.AreEqual(1, lever.OpenedCount, "レバーで 1 回だけ開通する。");
@@ -1910,11 +1937,7 @@ namespace Momotaro.Tests.PlayMode
 
             yield return MovePlayerTo(backDoor.InteractionAnchor + new Vector3(0.8f, 0f, 0f));
             yield return PressKey(Key.E);
-            for (int i = 0; i < 8; i++)
-            {
-                yield return null;
-            }
-
+            yield return WaitUntilOrTimeout(() => backDoor.RequestCount >= 1, 3f);
             yield return ReleaseKeys();
             Assert.AreEqual(1, backDoor.RequestCount, "扉は押下 1 回で 1 件だけ要求する。");
 
@@ -1938,6 +1961,243 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual("開通済み", again.Message);
             Assert.AreEqual(0, leverBack.OpenedCount, "断りで開通回数は増えない。");
             Assert.AreEqual(1, Sessions().CreatedCount, "Session を作り直さない。");
+        }
+
+        // ---------------------------------------------------------------- P11（NavMesh の迂回と門）
+
+        /// <summary>
+        /// P5-P11：仲間の長距離追従が<b>実 L 字通路を迂回</b>し、<b>閉じた門は抜けず</b>、
+        /// 開通したら経路が更新される（§10.1／§10.2）。
+        ///
+        /// 経路そのものは焼いた NavMesh と実配置に依存するので、EditMode では確かめられない。
+        /// ここでは実 Scene の NavMesh へ問い合わせ、門のくり抜きが効いていること、
+        /// 開通が Navigation へ反映されることを見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator NavMeshFollow_DetoursAndUpdatesAfterDoorOpens()
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            // ---- 経路の供給元が注入されている（§10.1。未注入なら迂回しない） ----
+            var follow = Object.FindFirstObjectByType<CompanionFollowController>();
+            Assert.IsNotNull(follow, "エリアに犬丸の追従がある。");
+            Assert.IsTrue(follow.HasPathProvider,
+                "NavMesh の供給元が注入されている（未注入だと長距離の迂回を行わない）。");
+
+            var binder = Object.FindFirstObjectByType<AreaNavigationBinder>();
+            Assert.IsNotNull(binder, "経路の配線役がエリアに居る。");
+            Assert.IsTrue(binder.IsWired);
+
+            var provider = new NavMeshPathProvider();
+
+            // ---- 迂回：衝立を挟んだ 2 点は、直線ではなく回り込みで繋がる ----
+            //
+            // 衝立は (-7.5, 0, -1) に幅 0.5・奥行 4（z は -3〜1）。その東西に立つと直線は通らない。
+            var west = new Vector3(-10f, 0f, -1f);
+            var east = new Vector3(-5f, 0f, -1f);
+
+            PathQueryResult detour = provider.Query(west, east);
+            Assert.AreEqual(PathQueryStatus.Complete, detour.Status, "回り込めば繋がっている。");
+            Assert.Greater(detour.CornerCount, 2,
+                "直線ではなく角を持つ（衝立を回り込んでいる）。角数=" + detour.CornerCount);
+
+            float straight = Vector3.Distance(west, east);
+            float along = 0f;
+            for (int i = 1; i < detour.CornerCount; i++)
+            {
+                along += Vector3.Distance(detour.Corners[i - 1], detour.Corners[i]);
+            }
+
+            Assert.Greater(along, straight * 1.2f,
+                "経路長が直線より明らかに長い（実際に回り込んでいる）。直線=" + straight + " 経路=" + along);
+
+            // ---- 閉じた門は抜けない ----
+            //
+            // 東の通路は仕切り（x=6）と外壁（x=12）の間。門はそこを z=0 で塞いでいる。
+            var southOfGate = new Vector3(9f, 0f, -6f);
+            var northOfGate = new Vector3(9f, 0f, 6f);
+
+            var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.IsNotNull(lever);
+            Assert.IsFalse(lever.Door.IsOpened, "前提：門は閉じている。");
+            Assert.IsNotNull(lever.Door.NavObstacle, "門は NavMesh のくり抜きを持つ。");
+            Assert.IsTrue(lever.Door.NavObstacle.carving, "くり抜きが有効（避けるだけでは経路は素通りする）。");
+
+            // くり抜きが NavMesh へ反映されるまで数フレーム待つ。
+            yield return WaitForCarving(provider, southOfGate, northOfGate, blocked: true);
+
+            PathQueryResult closed = provider.Query(southOfGate, northOfGate);
+            Assert.AreNotEqual(PathQueryStatus.Complete, closed.Status,
+                "閉じた門を抜ける経路は出ない（Partial を成功にしないのはこの形のため）。状態=" + closed.Status);
+
+            // ---- 開通したら、経路が更新される ----
+            Assert.AreEqual(0, binder.PathUpdateCount, "前提：まだ更新していない。");
+            AreaInteractionOutcome outcome = lever.Interact();
+            Assert.IsTrue(outcome.Handled, "レバーで開通する。");
+            Assert.AreEqual(1, binder.PathUpdateCount, "開通が経路へ伝わる（§10.1 の再探索条件）。");
+            Assert.IsFalse(lever.Door.NavObstacle.enabled, "くり抜きが外れる（§10.2 末尾）。");
+
+            yield return WaitForCarving(provider, southOfGate, northOfGate, blocked: false);
+
+            PathQueryResult opened = provider.Query(southOfGate, northOfGate);
+            Assert.AreEqual(PathQueryStatus.Complete, opened.Status,
+                "開通したら通れる。状態=" + opened.Status);
+        }
+
+        /// <summary>くり抜きの反映を待つ（NavMesh の更新は即時ではない）。</summary>
+        private static IEnumerator WaitForCarving(
+            NavMeshPathProvider provider, Vector3 from, Vector3 to, bool blocked)
+        {
+            float waited = 0f;
+            while (waited < 3f)
+            {
+                bool complete = provider.Query(from, to).Status == PathQueryStatus.Complete;
+                if (complete != blocked)
+                {
+                    yield break;
+                }
+
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+        }
+
+        // ---------------------------------------------------------------- P06（実 Collider）
+
+        /// <summary>
+        /// P5-P06：実 Collider で、通常移動・Step・押し出しが壁と水の境界を越えない。
+        /// 通れる床は通る（§3.3。止めすぎも失敗）。
+        ///
+        /// 「止まること」だけを見ると、全部止まる実装（動けない主人公）が通ってしまう。
+        /// <b>通れる床で実際に進むこと</b>を先に確かめてから、越えないことを見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator MovementStepAndHitback_RespectWallsAndWaterBoundary()
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            var root = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(root);
+            Rigidbody body = root.Body;
+            Assert.IsNotNull(body);
+
+            var motorForInput = Object.FindFirstObjectByType<PlayerMotor>();
+            Assert.IsNotNull(motorForInput, "主人公に Motor がある。");
+
+            // 入力を差し替えて<b>通常移動の経路そのもの</b>を動かす。
+            //
+            // Rigidbody へ直接速度を書いても、Motor が毎 FixedUpdate に上書きするので動かない。
+            // また Motor は入力の供給点を<b>最初の 1 回だけ</b>覚えるので、
+            // Scene が立ち上がったあとに提供点を差し替えても効かない（どちらも実際に踏んだ）。
+            // 見たいのは「物理が壁と境界を止めるか」なので、Motor が持つ入力そのものを差し替える。
+            // 実デバイスから Action を通す経路は P10 が見ている。
+            IPlayerInput previousInput = PlayerInputProvider.Current;
+            var fakeInput = new StickInput();
+            PlayerInputProvider.Current = fakeInput;
+            SetPrivate(motorForInput, "_input", fakeInput);
+
+            try
+            {
+                // ---- 通れる床は通る ----
+                yield return MovePlayerTo(new Vector3(0f, 0f, -6f));
+                float startX = body.position.x;
+                yield return DriveInput(fakeInput, new Vector2(1f, 0f), 30);
+                Assert.Greater(body.position.x, startX + 0.5f,
+                    "開けた床では実際に進む（止まりすぎも失敗）。x=" + body.position.x);
+
+                // ---- 外壁は越えない（東の外壁は x = 12） ----
+                yield return MovePlayerTo(new Vector3(10.5f, 0f, -6f));
+                yield return DriveInput(fakeInput, new Vector2(1f, 0f), 40);
+                Assert.Less(body.position.x, 12f, "外壁を越えない。x=" + body.position.x);
+
+                // ---- 水の境界は越えない（水場は (-8, 5.5) 付近） ----
+                Vector3 water = new Vector3(-8f, 0f, 5.5f);
+                yield return MovePlayerTo(water + new Vector3(0f, 0f, -4f));
+                yield return DriveInput(fakeInput, new Vector2(0f, 1f), 40);
+                Assert.Less(body.position.z, water.z - 1.0f,
+                    "水の境界を越えない（見た目の板ではなく透明な境界で止まる）。z=" + body.position.z);
+            }
+            finally
+            {
+                PlayerInputProvider.Current = previousInput;
+                SetPrivate(motorForInput, "_input", previousInput);
+            }
+
+            // ---- Step も越えない ----
+            var motor = Object.FindFirstObjectByType<PlayerMotor>();
+            Assert.IsNotNull(motor, "主人公に Motor がある。");
+            yield return MovePlayerTo(new Vector3(10.5f, 0f, -6f));
+            motor.MovementSuppressed = true;
+            motor.StepVelocity = new Vector3(12f, 0f, 0f);
+            for (int i = 0; i < 30; i++)
+            {
+                yield return new WaitForFixedUpdate();
+            }
+
+            motor.MovementSuppressed = false;
+            motor.StepVelocity = Vector3.zero;
+            Assert.Less(body.position.x, 12f, "Step でも外壁を越えない。x=" + body.position.x);
+
+            // ---- 押し出し（ヒットバック）も越えない ----
+            yield return MovePlayerTo(new Vector3(10.5f, 0f, -6f));
+            motor.PushReaction(Vector3.right, 6f, 0.4f);
+            for (int i = 0; i < 40; i++)
+            {
+                yield return new WaitForFixedUpdate();
+            }
+
+            motor.ClearReaction();
+            Assert.Less(body.position.x, 12f, "押し出しでも外壁を越えない。x=" + body.position.x);
+        }
+
+        /// <summary>移動入力を倒したまま物理を進める（通常移動の経路をそのまま通す）。</summary>
+        private static IEnumerator DriveInput(StickInput input, Vector2 move, int steps)
+        {
+            input.Move = move;
+            for (int i = 0; i < steps; i++)
+            {
+                yield return new WaitForFixedUpdate();
+            }
+
+            input.Move = Vector2.zero;
+            yield return new WaitForFixedUpdate();
+        }
+
+        /// <summary>移動だけを倒せる主人公入力（通常移動の検査用）。</summary>
+        private sealed class StickInput : IPlayerInput
+        {
+            public Vector2 Move { get; set; }
+
+            public bool GuardHeld => false;
+
+            public event System.Action GuardStarted;
+
+            public event System.Action GuardCanceled;
+
+            public bool Active => true;
+
+            public bool SpecialAttackHeld => false;
+
+            public bool ConsumeAttackPressed() => false;
+
+            public bool ConsumeStepPressed() => false;
+
+            /// <summary>未使用のイベントで警告が出ないようにするためだけの呼び出し口。</summary>
+            public void RaiseGuardForCompiler()
+            {
+                GuardStarted?.Invoke();
+                GuardCanceled?.Invoke();
+            }
         }
     }
 }

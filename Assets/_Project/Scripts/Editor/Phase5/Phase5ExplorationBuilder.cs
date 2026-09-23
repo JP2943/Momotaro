@@ -11,7 +11,9 @@ using Momotaro.Infrastructure.Input;
 using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Session;
+using Momotaro.Infrastructure.Navigation;
 using Momotaro.Infrastructure.World;
+using Unity.AI.Navigation;
 using Momotaro.Presentation.Hud;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -421,7 +423,11 @@ namespace Momotaro.Editor.Phase5
             var fixtureRoot = new GameObject("Fixtures");
             fixtureRoot.transform.SetParent(root, false);
 
-            fixtures.Door = CreateFlagDoor(fixtureRoot.transform, Phase5AreaIds.FlagAGate, Phase5Layout.AreaAGate);
+            // 門は東の通路を<b>完全に塞ぐ</b>。塞がっていない門は門ではない：
+            // 迂回できてしまうと「開通しないと進めない」という §7.3 の意味が消える。
+            // 通路は仕切り（x=6）と外壁（x=12）の間の 6m なので、少し余らせて 6.2m で塞ぐ。
+            fixtures.Door = CreateFlagDoor(fixtureRoot.transform, Phase5AreaIds.FlagAGate,
+                Phase5Layout.AreaAGate, new Vector3(6.2f, Phase5Layout.WallHeight, 0.6f));
             fixtures.Lever = CreateFlagLever(fixtureRoot.transform, Phase5AreaIds.FlagAGate,
                 definition.Id, fixtures.Door, Phase5Layout.AreaALever);
             fixtures.Points.Add(CreateInvestigationPoint(fixtureRoot.transform, "Investigation",
@@ -432,9 +438,11 @@ namespace Momotaro.Editor.Phase5
 
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
             areaRoot.EditorSet(definition, new List<AreaEntryPoint> { start, fromB },
-                new List<AreaExitGate> { toB }, new List<AreaFlagDoor> { fixtures.Door });
+                new List<AreaExitGate> { toB }, new List<AreaFlagDoor> { fixtures.Door },
+                null, new List<AreaFlagLever> { fixtures.Lever });
 
             CreateAreaSystems(root, areaRoot, definition, fixtures);
+            BakeNavMesh(root, "NavMesh_P5_A");
         }
 
         private static void PopulateAreaB(Transform root, AreaDefinition definition)
@@ -508,6 +516,49 @@ namespace Momotaro.Editor.Phase5
                 new List<AreaTransitionDoor> { fixtures.TransitionDoor });
 
             CreateAreaSystems(root, areaRoot, definition, fixtures);
+            BakeNavMesh(root, "NavMesh_P5_B");
+        }
+
+        /// <summary>
+        /// NavMesh をベイクして Asset として保存する（P5-05。§10.2 末尾）。
+        ///
+        /// <b>プレイ開始時に毎回焼き直さない。</b> 焼き直しは重いうえ、
+        /// 焼けたかどうかが実行時の運次第になる。Builder で焼いて保存し、Scene が参照する。
+        ///
+        /// 門は <c>NavMeshModifier</c> でベイクから外してある。閉じている間の通行止めは
+        /// くり抜き（<c>NavMeshObstacle</c>）で行い、開通時にくり抜きを外す。
+        /// こうしておくと「開通したのに NavMesh に穴が残ったまま」にならない。
+        /// </summary>
+        private static void BakeNavMesh(Transform root, string assetName)
+        {
+            // <b>面は根に付ける。</b> Children で集める設定なので、子オブジェクトに付けると
+            // 「自分の子」＝空を焼くことになり、NavMesh がどこにも生成されない（実際に踏んだ）。
+            NavMeshSurface surface = root.gameObject.AddComponent<NavMeshSurface>();
+            surface.collectObjects = CollectObjects.Children;
+
+            // <b>Collider から焼く。</b> 見た目（Renderer）から焼くと、ラベルや半透明の板まで
+            // 地形として拾ってしまう。通行できるかどうかを決めているのは Collider の方で、
+            // 「見た目と通行判定がずれない」という §3.3 の考え方とも揃う。Trigger は拾われない。
+            surface.useGeometry = UnityEngine.AI.NavMeshCollectGeometry.PhysicsColliders;
+
+            surface.BuildNavMesh();
+
+            if (surface.navMeshData == null)
+            {
+                Debug.LogWarning("NavMesh を焼けませんでした: " + assetName);
+                return;
+            }
+
+            string folder = Phase5AreaIds.DataFolder;
+            if (!AssetDatabase.IsValidFolder(folder))
+            {
+                Directory.CreateDirectory(folder);
+                AssetDatabase.Refresh();
+            }
+
+            string path = folder + "/" + assetName + ".asset";
+            AssetDatabase.CreateAsset(surface.navMeshData, path);
+            AssetDatabase.SaveAssets();
         }
 
         /// <summary>
@@ -591,7 +642,8 @@ namespace Momotaro.Editor.Phase5
         }
 
         /// <summary>Flag で恒久開通する門（§7.3）。通行を止める Collider と、閉じている見た目を持つ。</summary>
-        private static AreaFlagDoor CreateFlagDoor(Transform parent, StableId flagId, Vector3 position)
+        private static AreaFlagDoor CreateFlagDoor(
+            Transform parent, StableId flagId, Vector3 position, Vector3 size)
         {
             var go = new GameObject("Door_" + flagId.Value);
             go.transform.SetParent(parent, false);
@@ -600,7 +652,7 @@ namespace Momotaro.Editor.Phase5
             // 通行止め。開通すると無効化される。
             BoxCollider blocker = go.AddComponent<BoxCollider>();
             blocker.center = new Vector3(0f, Phase5Layout.WallHeight * 0.5f, 0f);
-            blocker.size = new Vector3(0.6f, Phase5Layout.WallHeight, Phase5Layout.CorridorWidth);
+            blocker.size = size;
 
             // 閉じているときだけ見せる板。
             Material mat = Phase5Placeholder.EnsureMaterial("M_P5_Gate", Phase5Placeholder.GateColor);
@@ -608,13 +660,25 @@ namespace Momotaro.Editor.Phase5
             visual.transform.SetParent(go.transform, false);
             Phase5Placeholder.CreateBox("Body", visual.transform,
                 position + new Vector3(0f, Phase5Layout.WallHeight * 0.5f, 0f),
-                new Vector3(0.4f, Phase5Layout.WallHeight, Phase5Layout.CorridorWidth), mat, solid: false);
+                size, mat, solid: false);
             Phase5Placeholder.CreateLabel("門", visual.transform,
                 position + new Vector3(0f, Phase5Layout.WallHeight + 0.2f, 0f),
                 Phase5Placeholder.GateColor, 0.2f);
 
+            // ベイクからは外す（§10.2）。焼き込んでしまうと、開通しても NavMesh に穴が残ったままになる。
+            // 閉じている間の通行止めは、くり抜き（NavMeshObstacle）で動的に行う。
+            NavMeshModifier modifier = go.AddComponent<NavMeshModifier>();
+            modifier.ignoreFromBuild = true;
+            modifier.applyToChildren = true;
+
+            UnityEngine.AI.NavMeshObstacle obstacle = go.AddComponent<UnityEngine.AI.NavMeshObstacle>();
+            obstacle.shape = UnityEngine.AI.NavMeshObstacleShape.Box;
+            obstacle.center = new Vector3(0f, Phase5Layout.WallHeight * 0.5f, 0f);
+            obstacle.size = size;
+            obstacle.carving = true; // くり抜かないと経路は素通りする（避けるだけになる）。
+
             AreaFlagDoor door = go.AddComponent<AreaFlagDoor>();
-            door.Bind(flagId, blocker, visual);
+            door.Bind(flagId, blocker, visual, obstacle);
             return door;
         }
 
@@ -751,6 +815,11 @@ namespace Momotaro.Editor.Phase5
                 }
             }
 
+            // 主人公・犬丸はベイクから外す（動く物は地形ではない）。
+            // 外さないと、生成時に立っていた場所に穴の空いた NavMesh が焼き込まれる。
+            IgnoreFromNavMeshBuild(playerRoot);
+            IgnoreFromNavMeshBuild(companionRoot);
+
             // Actor 値の採取・復元の窓口（§4.4〜§4.6）。明示参照で持つ（Find* を使わない）。
             AreaActorTransferPort port = systems.AddComponent<AreaActorTransferPort>();
             port.Bind(vitals, vitals != null ? vitals.GetComponentInChildren<PlayerHitReaction>(true) : null,
@@ -808,6 +877,22 @@ namespace Momotaro.Editor.Phase5
                 }
             }
 
+            // ---- 経路の配線（§10.1／§10.2）----
+            //
+            // Gameplay は NavMesh を知らない。Adapter の注入と、門の開通を経路へ伝える purpose を
+            // Infrastructure のこの部品が持つ。未配線だと長距離の迂回が行われない（Validator の対象）。
+            if (companionRoot != null)
+            {
+                var follow = companionRoot.GetComponentInChildren<CompanionFollowController>(true);
+                if (follow != null)
+                {
+                    var navGo = new GameObject("AreaNavigation");
+                    navGo.transform.SetParent(systems.transform, false);
+                    AreaNavigationBinder binder = navGo.AddComponent<AreaNavigationBinder>();
+                    binder.Bind(areaRoot, follow);
+                }
+            }
+
             var catalog = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase5AreaIds.CatalogDataPath);
             AreaInitializer initializer = systems.AddComponent<AreaInitializer>();
 
@@ -821,6 +906,19 @@ namespace Momotaro.Editor.Phase5
             so.FindProperty("_record").objectReferenceValue = record;
             so.FindProperty("_catalog").objectReferenceValue = catalog;
             so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>この GameObject 以下を NavMesh のベイク対象から外す。</summary>
+        private static void IgnoreFromNavMeshBuild(GameObject target)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            NavMeshModifier modifier = target.AddComponent<NavMeshModifier>();
+            modifier.ignoreFromBuild = true;
+            modifier.applyToChildren = true;
         }
 
         /// <summary>既定入口の到着位置（主人公の初期配置に使う）。見つからなければ原点。</summary>

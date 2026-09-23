@@ -30,6 +30,9 @@ namespace Momotaro.Gameplay.Interaction
         [Tooltip("閉じているときだけ見せる見た目（任意）。")]
         [SerializeField] private GameObject _closedVisual;
 
+        [Tooltip("閉じている間 NavMesh をくり抜く障害物（任意）。開通時に無効化する。")]
+        [SerializeField] private UnityEngine.AI.NavMeshObstacle _navObstacle;
+
         /// <summary>この門の FlagId。</summary>
         public StableId FlagId => string.IsNullOrEmpty(_flagId) ? default : new StableId(_flagId);
 
@@ -43,12 +46,18 @@ namespace Momotaro.Gameplay.Interaction
         public string LastFailure { get; private set; } = string.Empty;
 
         /// <summary>Scene 構築・テストからの注入。</summary>
-        public void Bind(StableId flagId, Collider blocker, GameObject closedVisual)
+        public void Bind(
+            StableId flagId, Collider blocker, GameObject closedVisual,
+            UnityEngine.AI.NavMeshObstacle navObstacle = null)
         {
             _flagId = flagId.Value ?? string.Empty;
             _blocker = blocker;
             _closedVisual = closedVisual;
+            _navObstacle = navObstacle;
         }
+
+        /// <summary>くり抜き用の障害物（Validator・テスト用）。</summary>
+        public UnityEngine.AI.NavMeshObstacle NavObstacle => _navObstacle;
 
         /// <summary>
         /// 開いた状態を適用する。<b>通行を開けてから見た目を変える。</b>
@@ -73,6 +82,13 @@ namespace Momotaro.Gameplay.Interaction
 
             // 1. 通行を開ける。ここが通らなければ見た目も変えない。
             _blocker.enabled = false;
+
+            // 1b. 経路にも反映する（§10.2 末尾「門の通行状態変更を Navigation へ反映し」）。
+            //     ここを忘れると、物理的には通れるのに仲間は閉まっているつもりで迂回し続ける。
+            if (_navObstacle != null)
+            {
+                _navObstacle.enabled = false;
+            }
 
             // 2. 見た目を閉じ側から外す（任意配線）。
             if (_closedVisual != null)
