@@ -230,6 +230,31 @@ namespace Momotaro.Gameplay.Player
         /// <summary>チャージが最大到達済みか（HUD/検証用）。</summary>
         public bool IsSpecialCharged => _special != null && _special.IsCharged;
 
+        /// <summary>
+        /// エリア遷移を受け付けてよい「移動可能な平常状態」か（P5-03b。仕様書 v1.1 §6.1）。
+        ///
+        /// 許すのは <see cref="PlayerState.Idle"/> と <see cref="PlayerState.Move"/> だけ。
+        /// 攻撃・Guard・Step・Hurt・GuardBreak・必殺の溜め／発動・死亡は<b>すべて拒否</b>する。
+        /// 判定を状態機の現在値に寄せてあるので、状態が増えたときに既定で拒否側へ倒れる
+        /// （新しい行動状態を足したのに遷移が通ってしまう、という穴を作らない）。
+        ///
+        /// これは<b>受付条件の一部</b>であって、ここだけで遷移が決まるわけではない。
+        /// AreaReady・モード・生存・戦闘は <c>AreaTransitionConditionsSource</c> が別に見る。
+        /// </summary>
+        public bool IsFreeToTravel
+        {
+            get
+            {
+                if (_machine == null)
+                {
+                    return false;
+                }
+
+                PlayerState state = _machine.Current;
+                return state == PlayerState.Idle || state == PlayerState.Move;
+            }
+        }
+
         /// <inheritdoc />
         public void CancelSpecialChargeOnHit()
         {
@@ -435,6 +460,12 @@ namespace Momotaro.Gameplay.Player
         /// <param name="deltaTime">経過秒。負値は 0 として扱う。</param>
         public void Tick(float deltaTime)
         {
+            // 遷移中は Gameplay 時計を進めない。Update からでも直接呼ばれても同じ（§6.2 手順 3、P5-E07）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
             _deltaTime = deltaTime < 0f ? 0f : deltaTime;
             EnsureRuntime();
 

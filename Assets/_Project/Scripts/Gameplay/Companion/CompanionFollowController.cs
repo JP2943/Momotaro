@@ -168,6 +168,12 @@ namespace Momotaro.Gameplay.Companion
         /// </summary>
         public void TickFollow(float deltaTime)
         {
+            // 遷移中は Gameplay 時計を進めない。Update からでも直接呼ばれても同じ（§6.2 手順 3、P5-E07）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
             ResolveComponents();
 
             // 自動取得で Actor が後から解決された場合にも購読を張る（Bind 経由でない Scene 構成の保険）。

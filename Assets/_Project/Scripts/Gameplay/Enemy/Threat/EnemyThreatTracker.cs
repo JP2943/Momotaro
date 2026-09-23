@@ -183,6 +183,12 @@ namespace Momotaro.Gameplay.Enemy.Threat
         /// <summary>選択と減衰を 1 フレーム進める（Update から、またはテストが決定的に呼ぶ）。</summary>
         public void TickSelection(float deltaTime)
         {
+            // 遷移中は Gameplay 時計を進めない。Update からでも直接呼ばれても同じ（§6.2 手順 3、P5-E07）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
             using var _perf = EnemyProfilerMarkers.Threat.Auto(); // P3-11：Threat 選択の負荷計測。
             EnsureRefs();
             if (_actor == null || _table == null)

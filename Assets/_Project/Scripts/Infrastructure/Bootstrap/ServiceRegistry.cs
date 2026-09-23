@@ -15,6 +15,9 @@ namespace Momotaro.Infrastructure.Bootstrap
         /// <summary>登録済みサービス数。</summary>
         public int Count => _services.Count;
 
+        /// <summary>直近に起動を止めた理由（診断・テスト用。成功なら空）。</summary>
+        public string LastFailure { get; private set; } = string.Empty;
+
         /// <summary>
         /// サービスを初期化順の末尾に登録する。
         /// </summary>
@@ -50,6 +53,7 @@ namespace Momotaro.Infrastructure.Bootstrap
                 catch (System.Exception ex)
                 {
                     // 例外は Critical 失敗として扱い、起動を停止する。
+                    LastFailure = service.ServiceName + " threw: " + ex.Message;
                     GameLog.Error(LogCategory.Boot,
                         "Service threw during Initialize: " + ex.Message, id: service.ServiceName);
                     return false;
@@ -64,6 +68,7 @@ namespace Momotaro.Infrastructure.Bootstrap
 
                 if (result.IsCritical)
                 {
+                    LastFailure = service.ServiceName + ": " + (result.Message ?? "(no message)");
                     GameLog.Error(LogCategory.Boot,
                         "Critical service failed, aborting bootstrap: " + (result.Message ?? "(no message)"),
                         id: service.ServiceName);
@@ -76,6 +81,23 @@ namespace Momotaro.Infrastructure.Bootstrap
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// 登録済みサービスを型で引く（P5-03b）。Scene 側の初期化担当が常駐サービスへ辿るための口。
+        /// <b>探索はしない。</b> 登録順の線形走査で、見つからなければ null を返す（サービス数は一桁）。
+        /// </summary>
+        public T Get<T>() where T : class, IGameService
+        {
+            for (int i = 0; i < _services.Count; i++)
+            {
+                if (_services[i] is T typed)
+                {
+                    return typed;
+                }
+            }
+
+            return null;
         }
     }
 }

@@ -493,6 +493,12 @@ namespace Momotaro.Gameplay.Enemy.Combat
         /// <summary>攻撃を 1 Tick 進める（Update から、またはテストが決定的に呼ぶ）。物理 Hitbox は <see cref="PollHitbox"/>。</summary>
         public void TickAttack(float deltaTime)
         {
+            // 遷移中は Gameplay 時計を進めない。Update からでも直接呼ばれても同じ（§6.2 手順 3、P5-E07）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
             if (!_machine.IsAttacking)
             {
                 return;

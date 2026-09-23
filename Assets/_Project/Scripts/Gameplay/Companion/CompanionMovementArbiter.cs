@@ -65,6 +65,12 @@ namespace Momotaro.Gameplay.Companion
         /// </summary>
         public bool Submit(CompanionMovementOwner owner, in CompanionMoveRequest request)
         {
+            // 遷移中は新しい移動要求を通さない（P5-E07）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return false;
+            }
+
             EnsureRefs();
 
             if (owner == CompanionMovementOwner.None)

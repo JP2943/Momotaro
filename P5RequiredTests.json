@@ -70,7 +70,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.LoadingGate_FreezesClocksAndStopsDirectTicks",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E08",
@@ -78,7 +78,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.AreaTransition_RejectsInvalidModesAndActions",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E09",
@@ -86,7 +86,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Transition_ReentryAndStaleCompletionCannotReleaseNewRun",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E10",
@@ -94,7 +94,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.TransitionFailure_HasBoundedRecoveryWithoutDuplicateLoads",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E11",
@@ -266,7 +266,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.BootstrapAndDirectOpen_CreateOneReadySession",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P02",
@@ -274,7 +274,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.FirstRewardAfterLoad_ReachesInjectedStateAndHud",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P03",
@@ -282,7 +282,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.AreaRoundTrip_PreservesProgressVitalsAndDownTimers",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P04",
@@ -290,7 +290,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.HeldExitInput_DoesNotBounceBackOrStartEncounter",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P05",
@@ -354,7 +354,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.InvalidDestination_RecoversWithoutLosingSession",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P13",
@@ -362,7 +362,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.CompletionCallback_CanRequestTravelWithoutOldRunCorruption",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P14",

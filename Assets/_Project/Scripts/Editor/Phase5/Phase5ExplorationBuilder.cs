@@ -3,7 +3,13 @@ using System.IO;
 using Momotaro.Core.Identification;
 using Momotaro.Core.World;
 using Momotaro.Data.World;
+using Momotaro.Gameplay.Companion.Investigation;
+using Momotaro.Gameplay.Companion;
+using Momotaro.Gameplay.Player;
+using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Session;
+using Momotaro.Infrastructure.World;
+using Momotaro.Presentation.Hud;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -24,6 +30,9 @@ namespace Momotaro.Editor.Phase5
     /// </summary>
     public static class Phase5ExplorationBuilder
     {
+        private const string PlayerPrefabPath = "Assets/_Project/Prefabs/Player/PF_Player_Momotaro.prefab";
+        private const string CompanionPrefabPath = "Assets/_Project/Prefabs/Companions/PF_Companion_Inumaru.prefab";
+
         /// <summary>生成の結果。</summary>
         public readonly struct BuildResult
         {
@@ -409,8 +418,14 @@ namespace Momotaro.Editor.Phase5
             AreaEntryPoint fromB = CreateEntryPoint(entries.transform, Phase5AreaIds.AreaAFromB,
                 Phase5Layout.AreaAFromB, Phase5Layout.AreaAFromBAlternates, "B から");
 
+            AreaExitGate toB = CreateExitGate(root, "ExitGate_ToB", Phase5Layout.AreaAExitToB,
+                Phase5AreaIds.AreaB, Phase5AreaIds.AreaBFromA, Vector3.right);
+
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
-            areaRoot.EditorSet(definition, new List<AreaEntryPoint> { start, fromB });
+            areaRoot.EditorSet(definition, new List<AreaEntryPoint> { start, fromB },
+                new List<AreaExitGate> { toB });
+
+            CreateAreaSystems(root, areaRoot, definition);
         }
 
         private static void PopulateAreaB(Transform root, AreaDefinition definition)
@@ -468,8 +483,14 @@ namespace Momotaro.Editor.Phase5
             AreaEntryPoint fromA = CreateEntryPoint(entries.transform, Phase5AreaIds.AreaBFromA,
                 Phase5Layout.AreaBFromA, Phase5Layout.AreaBFromAAlternates, "A から");
 
+            AreaExitGate toA = CreateExitGate(root, "ExitGate_ToA", Phase5Layout.AreaBDoorToA,
+                Phase5AreaIds.AreaA, Phase5AreaIds.AreaAFromB, Vector3.left);
+
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
-            areaRoot.EditorSet(definition, new List<AreaEntryPoint> { fromA });
+            areaRoot.EditorSet(definition, new List<AreaEntryPoint> { fromA },
+                new List<AreaExitGate> { toA });
+
+            CreateAreaSystems(root, areaRoot, definition);
         }
 
         /// <summary>
@@ -528,6 +549,146 @@ namespace Momotaro.Editor.Phase5
                 new Vector3(t, 0.04f, depth), mat, solid: false);
             Phase5Placeholder.CreateBox("Edge_West", parent, center + new Vector3(-hx, 0.02f, 0f),
                 new Vector3(t, 0.04f, depth), mat, solid: false);
+        }
+
+        /// <summary>
+        /// エリアの常駐配線（§5.1 の「AreaRoot / 初期化担当 / GameplayRoot」のうち、P5-03b で必要な分）。
+        ///
+        /// 置くのは初期化状態・受付条件・注入先・初期化担当の 4 つだけ。
+        /// 主人公・犬丸・HUD・Encounter は後続工程で載せる（先回りして空の配線を置かない）。
+        /// </summary>
+        private static void CreateAreaSystems(Transform root, AreaRoot areaRoot, AreaDefinition definition)
+        {
+            var systems = new GameObject("AreaSystems");
+            systems.transform.SetParent(root, false);
+
+            AreaContext context = systems.AddComponent<AreaContext>();
+            AreaTransitionConditionsSource conditions = systems.AddComponent<AreaTransitionConditionsSource>();
+            PlayerProgressHolder progress = systems.AddComponent<PlayerProgressHolder>();
+            InvestigationRecordHolder record = systems.AddComponent<InvestigationRecordHolder>();
+
+            // 主人公を入口へ置く。§6.1 の受付条件は主人公の状態と生存を見るので、
+            // ここが無いと「分からない＝安全側」で遷移が一切通らない（R2-08 と同じ考え方）。
+            var playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            PlayerStateController player = null;
+            PlayerVitalsHolder vitals = null;
+            GameObject playerRoot = null;
+            if (playerPrefab != null)
+            {
+                var playerGo = (GameObject)PrefabUtility.InstantiatePrefab(playerPrefab);
+                playerRoot = playerGo;
+                playerGo.name = "Player";
+                playerGo.transform.SetParent(root, false);
+                playerGo.transform.position = ResolveDefaultArrival(areaRoot, definition);
+                player = playerGo.GetComponentInChildren<PlayerStateController>(true);
+                vitals = playerGo.GetComponentInChildren<PlayerVitalsHolder>(true);
+            }
+
+            conditions.Bind(context, player, vitals, null);
+
+            // 犬丸。主人公の隣へ置く（入口に重ねない。§3.2）。
+            var companionPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(CompanionPrefabPath);
+            CompanionActor companionActor = null;
+            CompanionHitReceiver companionVitals = null;
+            CompanionCombatController companionCombat = null;
+            CompanionDefenseController companionDefense = null;
+            CompanionGuardianController companionGuardian = null;
+            CompanionStateArbiter companionStates = null;
+            GameObject companionRoot = null;
+            if (companionPrefab != null)
+            {
+                var companionGo = (GameObject)PrefabUtility.InstantiatePrefab(companionPrefab);
+                companionRoot = companionGo;
+                companionGo.name = "Inumaru";
+                companionGo.transform.SetParent(root, false);
+                companionGo.transform.position =
+                    ResolveDefaultArrival(areaRoot, definition) + new Vector3(-1.2f, 0f, 0f);
+                companionActor = companionGo.GetComponentInChildren<CompanionActor>(true);
+                companionVitals = companionGo.GetComponentInChildren<CompanionHitReceiver>(true);
+                companionCombat = companionGo.GetComponentInChildren<CompanionCombatController>(true);
+                companionDefense = companionGo.GetComponentInChildren<CompanionDefenseController>(true);
+                companionGuardian = companionGo.GetComponentInChildren<CompanionGuardianController>(true);
+                companionStates = companionGo.GetComponentInChildren<CompanionStateArbiter>(true);
+            }
+
+            // Actor 値の採取・復元の窓口（§4.4〜§4.6）。明示参照で持つ（Find* を使わない）。
+            AreaActorTransferPort port = systems.AddComponent<AreaActorTransferPort>();
+            port.Bind(vitals, vitals != null ? vitals.GetComponentInChildren<PlayerHitReaction>(true) : null,
+                companionActor, companionVitals, companionCombat, companionDefense,
+                companionGuardian, companionStates);
+
+            // 配置対象は Prefab の根。PlayerStateController は子に居ることがあるので、
+            // 根を明示的に渡す（子の transform を動かしても Rigidbody に引き戻される）。
+            port.BindRoots(
+                playerRoot != null ? playerRoot.transform : null,
+                companionRoot != null ? companionRoot.transform : null);
+
+            // 開放出入口の駆動（§6.1）。
+            AreaExitGateDriver gateDriver = systems.AddComponent<AreaExitGateDriver>();
+            gateDriver.Bind(areaRoot, player);
+
+            // 徳を映す HUD（§11 の必須 UI のうち、P5-03b で要る分）。
+            CreateHud(systems.transform, vitals, player, progress);
+
+            var catalog = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase5AreaIds.CatalogDataPath);
+            AreaInitializer initializer = systems.AddComponent<AreaInitializer>();
+
+            // private な SerializeField は SerializedObject で配線する（Builder の既存の作法）。
+            var so = new SerializedObject(initializer);
+            so.FindProperty("_transferPort").objectReferenceValue = port;
+            so.FindProperty("_areaRoot").objectReferenceValue = areaRoot;
+            so.FindProperty("_context").objectReferenceValue = context;
+            so.FindProperty("_conditions").objectReferenceValue = conditions;
+            so.FindProperty("_progress").objectReferenceValue = progress;
+            so.FindProperty("_record").objectReferenceValue = record;
+            so.FindProperty("_catalog").objectReferenceValue = catalog;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>既定入口の到着位置（主人公の初期配置に使う）。見つからなければ原点。</summary>
+        private static Vector3 ResolveDefaultArrival(AreaRoot areaRoot, AreaDefinition definition)
+        {
+            return areaRoot.TryGetEntryPoint(definition.DefaultEntryId, out AreaEntryPoint point)
+                ? point.ArrivalPosition
+                : Vector3.zero;
+        }
+
+        /// <summary>
+        /// 徳・HP を映す仮 HUD（§11）。完成 UI 素材は要求しない。
+        /// <c>CombatPlayHud</c> は戦闘試遊用だが、徳と HP の表示契約は同じなので流用する。
+        /// 戦闘固有の参照（Session・Wave・Outcome）は P5 では未配線のままでよい。
+        /// </summary>
+        private static void CreateHud(
+            Transform parent, PlayerVitalsHolder vitals, PlayerStateController playerState,
+            PlayerProgressHolder progress)
+        {
+            var hudGo = new GameObject("AreaHud");
+            hudGo.transform.SetParent(parent, false);
+
+            CombatPlayHud hud = hudGo.AddComponent<CombatPlayHud>();
+            hud.Bind(vitals, playerState, null);
+            hud.SetProgressSource(progress);
+        }
+
+        /// <summary>
+        /// 開放出入口を作る（§6.1）。Trigger の Collider を持ち、範囲内で出口方向へ
+        /// 0.15 秒連続入力されたら遷移を要求する。立っているだけでは遷移しない。
+        /// </summary>
+        private static AreaExitGate CreateExitGate(
+            Transform root, string name, Vector3 position,
+            StableId destinationArea, StableId destinationEntry, Vector3 exitDirection)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(root, false);
+            go.transform.position = position;
+
+            BoxCollider trigger = go.AddComponent<BoxCollider>();
+            trigger.isTrigger = true;
+            trigger.size = new Vector3(1.6f, Phase5Layout.WallHeight, Phase5Layout.CorridorWidth);
+
+            AreaExitGate gate = go.AddComponent<AreaExitGate>();
+            gate.Configure(destinationArea, destinationEntry, exitDirection);
+            return gate;
         }
     }
 }

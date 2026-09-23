@@ -140,6 +140,12 @@ namespace Momotaro.Gameplay.Enemy.Locomotion
         /// <summary>1 判断分を進める（Update から、またはテストが決定的に呼ぶ）。移動の物理適用は <see cref="EnemyMotor"/> の責務。</summary>
         public void TickBrain(float deltaTime)
         {
+            // 遷移中は Gameplay 時計を進めない。Update からでも直接呼ばれても同じ（§6.2 手順 3、P5-E07）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
             EnsureRefs();
             if (_actor == null)
             {

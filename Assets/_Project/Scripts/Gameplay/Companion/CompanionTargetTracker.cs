@@ -50,6 +50,12 @@ namespace Momotaro.Gameplay.Companion
         /// </summary>
         public void TickTargeting()
         {
+            // 遷移中は索敵も止める（新しい標的を掴んだまま次の Scene へ入らない。P5-E07）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
             ResolveActor();
             if (_actor == null || !CanEngage(_actor.State))
             {

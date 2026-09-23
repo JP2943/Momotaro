@@ -23,6 +23,9 @@ namespace Momotaro.Gameplay.Session
         [Tooltip("Scene 上の入口。Data の入口一覧と 1 対 1 で対応させる。")]
         [SerializeField] private List<AreaEntryPoint> _entryPoints = new List<AreaEntryPoint>();
 
+        [Tooltip("開放出入口（§6.1）。到着時に一度武装解除する対象。")]
+        [SerializeField] private List<AreaExitGate> _exitGates = new List<AreaExitGate>();
+
         /// <summary>このエリアの定義。</summary>
         public AreaDefinition Definition => _definition;
 
@@ -31,6 +34,9 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>Scene 上の入口（読み取り専用）。</summary>
         public IReadOnlyList<AreaEntryPoint> EntryPoints => _entryPoints;
+
+        /// <summary>開放出入口（読み取り専用）。</summary>
+        public IReadOnlyList<AreaExitGate> ExitGates => _exitGates;
 
         /// <summary>指定 ID の入口を Scene から引く。</summary>
         public bool TryGetEntryPoint(StableId entryId, out AreaEntryPoint point)
@@ -51,10 +57,12 @@ namespace Momotaro.Gameplay.Session
 
 #if UNITY_EDITOR
         /// <summary>Builder から組み立てるための設定入口（Editor 専用）。</summary>
-        public void EditorSet(AreaDefinition definition, List<AreaEntryPoint> entryPoints)
+        public void EditorSet(
+            AreaDefinition definition, List<AreaEntryPoint> entryPoints, List<AreaExitGate> exitGates = null)
         {
             _definition = definition;
             _entryPoints = entryPoints ?? new List<AreaEntryPoint>();
+            _exitGates = exitGates ?? new List<AreaExitGate>();
         }
 #endif
     }

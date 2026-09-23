@@ -59,8 +59,16 @@ namespace Momotaro.Gameplay.Player
         /// <inheritdoc />
         public void BeginHurt() => State.Begin();
 
-        /// <summary>時間を進める（テストから直接駆動できるよう分離）。</summary>
-        public void Tick(float deltaTime) => State.Tick(deltaTime);
+        /// <summary>時間を進める（テストから直接駆動できるよう分離）。遷移中は進めない（P5-E07）。</summary>
+        public void Tick(float deltaTime)
+        {
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
+            State.Tick(deltaTime);
+        }
 
         /// <summary>
         /// Hurt 硬直・被弾後無敵を即時解除する（Phase3.5 P3.5-07。Wave 間の Player 中立化 §8.3）。OnDisable と同じ

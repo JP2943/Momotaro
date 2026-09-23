@@ -254,6 +254,12 @@ namespace Momotaro.Gameplay.Companion
         /// <summary>探索を 1 Tick 進める（Update から呼ばれるが、テストは決定的に直接呼べる）。</summary>
         public void TickInvestigation(float deltaTime)
         {
+            // 遷移中は Gameplay 時計を進めない。Update からでも直接呼ばれても同じ（§6.2 手順 3、P5-E07）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
             if (_request == null)
             {
                 return;

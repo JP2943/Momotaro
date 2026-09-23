@@ -100,6 +100,12 @@ namespace Momotaro.Gameplay.Enemy.Defense
         /// <summary>防御を 1 Tick 進める（Update から、またはテストが決定的に呼ぶ）。能力の時間経過と危険反応を行う。</summary>
         public void TickDefense(float deltaTime)
         {
+            // 遷移中は Gameplay 時計を進めない。Update からでも直接呼ばれても同じ（§6.2 手順 3、P5-E07）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
             Build();
             if (_actor == null || (!_canGuard && !_canEvade))
             {

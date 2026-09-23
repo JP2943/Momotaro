@@ -3,6 +3,7 @@ using Momotaro.Core.Logging;
 using Momotaro.Gameplay.Player;
 using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.SceneFlow;
+using Momotaro.Infrastructure.World;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
@@ -34,6 +35,7 @@ namespace Momotaro.Infrastructure.Bootstrap
         private readonly ServiceRegistry _registry = new ServiceRegistry();
         private ISceneFlow _sceneFlow;
         private InputBootService _inputBootService;
+        private GameSessionBootService _sessionBootService;
         private GameModeBootService _gameModeBootService;
 
         /// <summary>Player 向け入力（P1-02）。未初期化・アセット未設定時は null。</summary>
@@ -41,6 +43,12 @@ namespace Momotaro.Infrastructure.Bootstrap
 
         /// <summary>初期化が完了し Launcher 遷移可能となったか（テスト・診断用）。</summary>
         public bool BootstrapSucceeded { get; private set; }
+
+        /// <summary>登録済みサービスを型で引く（P5-03b。<see cref="BootstrapServices"/> の実体）。</summary>
+        public T GetService<T>() where T : class, IGameService => _registry.Get<T>();
+
+        /// <summary>起動を止めた理由（診断・テスト用。成功なら空）。</summary>
+        public string BootstrapFailure => _registry.LastFailure;
 
         private void Awake()
         {
@@ -71,6 +79,10 @@ namespace Momotaro.Infrastructure.Bootstrap
             // GameMode 提供点の注入を解除する。
             _gameModeBootService?.Dispose();
             _gameModeBootService = null;
+
+            // Session を捨てる（Play 終了・アプリ終了。保存はしない。§9.2）。
+            _sessionBootService?.Dispose();
+            _sessionBootService = null;
 
             if (_instance == this)
             {
@@ -128,6 +140,16 @@ namespace Momotaro.Infrastructure.Bootstrap
             var input = new InputBootService(_inputActions, gameMode.Modes);
             _inputBootService = input;
             _registry.Register(input);
+
+            // 本編型 Session の所有（P5-03b。§4.2）。ここでは State を作らず、
+            // 本編型 Area の初期化が要求したときだけ作る（試遊 Scene へ自動注入しないため。§5.2）。
+            var sessions = new GameSessionBootService();
+            _sessionBootService = sessions;
+            _registry.Register(sessions);
+
+            // エリア遷移（P5-03b。§6.2）。判断は Gameplay の調停役、実行はこのサービス。
+            var transitions = gameObject.AddComponent<AreaTransitionService>();
+            _registry.Register(transitions);
         }
     }
 }

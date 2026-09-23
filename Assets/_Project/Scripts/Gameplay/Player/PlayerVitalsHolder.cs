@@ -108,6 +108,12 @@ namespace Momotaro.Gameplay.Player
         /// </summary>
         public void Tick(float deltaTime)
         {
+            // 遷移中は Gameplay 時計を進めない。Update からでも直接呼ばれても同じ（§6.2 手順 3、P5-E07）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
             EnsureVitals();
             if (_stamina == null)
             {

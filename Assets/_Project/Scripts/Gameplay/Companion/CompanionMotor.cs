@@ -66,6 +66,12 @@ namespace Momotaro.Gameplay.Companion
         /// <summary>目標地点へ移動する（XZ）。停止半径以内では速度を出さない。</summary>
         public void SetMoveTarget(Vector3 target)
         {
+            // 遷移中は新しい移動指示を受けない（P5-E07）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
             _moveTarget = target;
             _hasMoveTarget = true;
         }
@@ -87,6 +93,12 @@ namespace Momotaro.Gameplay.Companion
         /// </summary>
         public void WarpTo(Vector3 position)
         {
+            // 遷移中の Warp を禁止する（§10.2 の配置処理とは別物。P5-E07）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
             EnsureBody();
             Vector3 destination = new Vector3(position.x, transform.position.y, position.z);
 
@@ -113,7 +125,7 @@ namespace Momotaro.Gameplay.Companion
             // Pause は timeScale を 1 のまま行う場合があり、それだけでは Rigidbody は動き続ける。
             // 移動指示（_hasMoveTarget）は消さずに速度だけゼロにするので、復帰時は同じ目標へ普通に歩き出す
             // （速度を溜め込まないので、復帰の瞬間に飛び出すこともない）。
-            if (!CompanionActivityProvider.Activity.ClocksRun)
+            if (Session.GameplayClockProvider.IsFrozen || !CompanionActivityProvider.Activity.ClocksRun)
             {
                 _body.linearVelocity = Vector3.zero;
                 return;

@@ -15,6 +15,7 @@ using Momotaro.Data.World;
 using Momotaro.Gameplay.Enemy.Defense;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Threat;
+using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Transfer;
 using Momotaro.Gameplay.Vitals;
@@ -39,9 +40,21 @@ namespace Momotaro.Tests.EditMode
     {
         private readonly List<UnityEngine.Object> _spawned = new List<UnityEngine.Object>();
 
+        [SetUp]
+        public void SetUp()
+        {
+            // 前のテストの登録を持ち込まない。
+            PerceptionTargetRegistry.Clear();
+        }
+
         [TearDown]
         public void TearDown()
         {
+            // 静的な提供点・レジストリは次のテストへ持ち越さない（`CLAUDE.md` の静的状態の注意）。
+            // 破棄した GameObject の登録が残ると、次のテストが MissingReferenceException で落ちる（実際に踏んだ）。
+            GameplayClockProvider.Current = null;
+            PerceptionTargetRegistry.Clear();
+
             foreach (UnityEngine.Object o in _spawned)
             {
                 if (o != null)
@@ -425,6 +438,13 @@ namespace Momotaro.Tests.EditMode
 
             // ---- 中断で生じた攻撃 CD を実物の Controller で確認する（§4.4 の落とし穴） ----
             AssertCancelledAttackCooldownIsCaptured();
+
+            // ---- 遷移の窓口（Port）も同じ順序を守る ----
+            //
+            // Controller 単体で順序を確かめても、実際に採取するのは Port なので、
+            // Port が「止める」を飛ばしていれば同じ欠陥がそのまま残る。
+            // 実際、Port の CancelAttack を外しても本テストは緑のままだった（後から足した検査）。
+            AssertTransferPortCancelsBeforeCapture();
         }
 
         private const float RigStartup = 0.2f;
@@ -486,8 +506,6 @@ namespace Momotaro.Tests.EditMode
             CompanionCombatTransferSnapshot cancelled = combat.ExportTransferSnapshot();
             Assert.AreEqual(RigCooldown, cancelled.CooldownRemaining, 1e-3f,
                 "中断完了後に採れば、中断で生じた CD が Snapshot に乗る。");
-
-            PerceptionTargetRegistry.Clear();
         }
 
         private sealed class TransferFakeEnemy : MonoBehaviour, ICombatActor, IDamageable, IThreatTarget
@@ -1052,6 +1070,465 @@ namespace Momotaro.Tests.EditMode
                     UnityEditor.SceneManagement.NewSceneSetup.EmptyScene,
                     UnityEditor.SceneManagement.NewSceneMode.Single);
             }
+        }
+
+        // ================================================================ P5-03b
+
+        /// <summary>受付条件の Fake（§6.1）。既定は「遷移してよい」。</summary>
+        private sealed class FakeConditions : IAreaTransitionConditions
+        {
+            public bool IsAreaReady { get; set; } = true;
+            public GameMode Mode { get; set; } = GameMode.Exploration;
+            public bool IsPlayerAlive { get; set; } = true;
+            public bool IsPlayerBusy { get; set; }
+            public bool IsEncounterActive { get; set; }
+        }
+
+        /// <summary>非同期ロードの Fake。完了・失敗を明示的に切り替える。</summary>
+        private sealed class FakeLoad : IAreaLoadOperation
+        {
+            public bool IsDone { get; set; }
+            public bool HasError { get; set; }
+        }
+
+        private AreaCatalog BuildTestCatalog()
+        {
+            AreaDefinition a = NewArea("area_p5_a", "Assets/A.unity", 0, new[]
+            {
+                ("area_p5_a_start", CardinalDirection.North),
+                ("area_p5_a_from_b", CardinalDirection.West),
+            }, "area_p5_a_start");
+            AreaDefinition b = NewArea("area_p5_b", "Assets/B.unity", 0, new[]
+            {
+                ("area_p5_b_from_a", CardinalDirection.East),
+            }, "area_p5_b_from_a");
+            AreaCatalogData data = NewCatalog(new List<AreaDefinition> { a, b }, "area_p5_a", "area_p5_a_start");
+            Assert.IsTrue(AreaCatalog.TryBuild(data, out AreaCatalog catalog, out _), "前提：カタログが作れる。");
+            return catalog;
+        }
+
+        private static AreaTransitionRequest ToB() =>
+            new AreaTransitionRequest(new StableId("area_p5_b"), new StableId("area_p5_b_from_a"));
+
+        // ---------------------------------------------------------------- E07
+
+        /// <summary>
+        /// P5-E07：Loading 中は<b>直接 Tick を呼んでも</b>時計・Move・Warp・攻撃が進まない（§6.2 手順 3）。
+        ///
+        /// 駆動系は「Update は Tick を呼ぶだけ」という形なので、Update 側だけで止めても
+        /// 直接 Tick すれば進んでしまう。判定を各 Tick の入口に置いたことをここで固定する。
+        /// 純粋クラス（StaminaState 等）は渡された deltaTime をそのまま進めるのが契約なので、対象にしない。
+        /// </summary>
+        [Test]
+        public void LoadingGate_FreezesClocksAndStopsDirectTicks()
+        {
+            var gate = new GameplayClockGate();
+
+            // 供給元が無ければ凍結しない。P3.5／P4 の試遊 Scene がゲートを知らなくても動く（既定の向き）。
+            Assert.IsFalse(GameplayClockProvider.HasSource);
+            Assert.IsFalse(GameplayClockProvider.IsFrozen, "未設定は「遷移していない」。");
+
+            GameplayClockProvider.Current = gate;
+            Assert.IsFalse(GameplayClockProvider.IsFrozen, "差しただけでは止まらない。");
+
+            // ---- 時計：被弾後無敵 ----
+            var hitGo = new GameObject("Player_HitReaction");
+            _spawned.Add(hitGo);
+            var reaction = hitGo.AddComponent<PlayerHitReaction>();
+            reaction.BeginHurt();
+            float invincibleBefore = reaction.PostHitInvincibleRemaining;
+            Assert.Greater(invincibleBefore, 0f, "前提：無敵が動いている。");
+
+            gate.Freeze();
+            Assert.IsTrue(GameplayClockProvider.IsFrozen);
+            reaction.Tick(0.2f);
+            reaction.Tick(0.2f);
+            Assert.AreEqual(invincibleBefore, reaction.PostHitInvincibleRemaining, 1e-4f,
+                "凍結中は直接 Tick しても時計が進まない。");
+
+            gate.Thaw();
+            reaction.Tick(0.2f);
+            Assert.Less(reaction.PostHitInvincibleRemaining, invincibleBefore, "解除すれば進む。");
+
+            // ---- 攻撃：仲間の通常攻撃 ----
+            CompanionRig rig = MakeCompanionRig();
+            rig.Tracker.TickTargeting();
+            rig.Combat.TickCombat(0f);
+            Assert.IsTrue(rig.Combat.IsAttacking, "前提：攻撃が始まっている。");
+            float elapsedBefore = rig.Combat.AttackState.Elapsed;
+
+            gate.Freeze();
+            rig.Tracker.TickTargeting();
+            rig.Combat.TickCombat(RigStartup);
+            rig.Combat.TickCombat(RigStartup);
+            Assert.AreEqual(elapsedBefore, rig.Combat.AttackState.Elapsed, 1e-4f,
+                "凍結中は攻撃の進捗が進まない。");
+
+            // ---- Move と Warp ----
+            Vector3 positionBefore = rig.Motor.transform.position;
+            rig.Motor.WarpTo(positionBefore + new Vector3(5f, 0f, 5f));
+            Assert.AreEqual(positionBefore, rig.Motor.transform.position, "凍結中は Warp しない。");
+
+            gate.Thaw();
+            rig.Motor.WarpTo(positionBefore + new Vector3(5f, 0f, 5f));
+            Assert.AreNotEqual(positionBefore, rig.Motor.transform.position, "解除すれば Warp する。");
+
+            // ---- 索敵 ----
+            gate.Freeze();
+            rig.Tracker.TickTargeting();
+            // 凍結中の索敵は何も掴まない（掴んだまま次の Scene へ入らない）。
+            Assert.AreEqual(3, gate.FreezeCount, "Freeze は 3 回呼んでいる。");
+            Assert.AreEqual(2, gate.ThawCount, "Thaw は 2 回呼んでいる。");
+
+            GameplayClockProvider.Current = null;
+            Assert.IsFalse(GameplayClockProvider.IsFrozen, "供給元を外せば凍結は解ける。");
+        }
+
+        private sealed class CompanionRig
+        {
+            public CompanionActor Actor;
+            public CompanionMotor Motor;
+            public CompanionTargetTracker Tracker;
+            public CompanionCombatController Combat;
+        }
+
+        private CompanionRig MakeCompanionRig()
+        {
+            var attack = ScriptableObject.CreateInstance<AttackData>();
+            _spawned.Add(attack);
+            SetPrivate(attack, "_useRange", 2f);
+            SetPrivate(attack, "_useAngle", 90f);
+            SetPrivate(attack, "_cooldownSeconds", RigCooldown);
+            SetPrivate(attack, "_startupSeconds", RigStartup);
+            SetPrivate(attack, "_activeSeconds", RigActive);
+            SetPrivate(attack, "_recoverySeconds", RigRecovery);
+            SetPrivate(attack, "_hpMultiplier", 0.8f);
+
+            var data = ScriptableObject.CreateInstance<CompanionData>();
+            _spawned.Add(data);
+            SetPrivate(data, "_attackPower", 60f);
+            SetPrivate(data, "_basicAttack", attack);
+
+            var go = new GameObject("Inumaru_Gate");
+            _spawned.Add(go);
+            var actor = go.AddComponent<CompanionActor>();
+            actor.SetData(data);
+            actor.ResetState(CompanionState.Follow);
+            actor.SetFacing(Vector3.forward);
+            var motor = go.AddComponent<CompanionMotor>();
+            var tracker = go.AddComponent<CompanionTargetTracker>();
+            tracker.Bind(actor);
+            var combat = go.AddComponent<CompanionCombatController>();
+            combat.Bind(actor, motor, tracker);
+            InvokePrivate(combat, "OnEnable");
+
+            var enemyGo = new GameObject("Enemy_Gate");
+            _spawned.Add(enemyGo);
+            enemyGo.transform.position = new Vector3(0f, 0f, 1f);
+            var enemy = enemyGo.AddComponent<TransferFakeEnemy>();
+            enemy.Forward = Vector3.back;
+            PerceptionTargetRegistry.Register(enemy);
+
+            return new CompanionRig { Actor = actor, Motor = motor, Tracker = tracker, Combat = combat };
+        }
+
+        // ---------------------------------------------------------------- E08
+
+        /// <summary>
+        /// P5-E08：§6.1 の受付条件どおりに拒否する。戦闘・Pause 等のモード、主人公の攻撃／防御／被弾中、
+        /// 死亡、AreaReady 前、解決できない目的地を、それぞれ別の理由で落とす。
+        ///
+        /// <b>受付条件の正本は §6.1 ひとつ</b>にしてある（裁定 6）。§4.5 の Capture 前提はその帰結で、
+        /// 別の受付判定を持たない。だから検査もここへ集約する。
+        /// </summary>
+        [Test]
+        public void AreaTransition_RejectsInvalidModesAndActions()
+        {
+            AreaCatalog catalog = BuildTestCatalog();
+            var conditions = new FakeConditions();
+            var clock = new GameplayClockGate();
+            var coordinator = new AreaTransitionCoordinator(catalog, conditions, clock);
+
+            // 解決できない目的地は受理前に落ちる。その場に留まり進行を変えない（§6.3）。
+            AreaTransitionDecision unknown = coordinator.TryRequest(
+                new AreaTransitionRequest(new StableId("area_p5_z"), new StableId("nope")));
+            Assert.IsFalse(unknown.Accepted);
+            Assert.AreEqual(AreaTransitionRejection.UnknownDestination, unknown.Rejection);
+            Assert.AreEqual(AreaTransitionPhase.Idle, coordinator.Phase);
+            Assert.IsFalse(clock.IsFrozen, "拒否では時計を止めない。");
+
+            // 同じエリアでも入口 ID が違えば解決できない。
+            Assert.AreEqual(AreaTransitionRejection.UnknownDestination,
+                coordinator.TryRequest(new AreaTransitionRequest(
+                    new StableId("area_p5_b"), new StableId("area_p5_a_start"))).Rejection,
+                "入口はエリアに属する。他エリアの入口 ID では解決しない。");
+
+            // モード別（§6.1 の拒否条件）。
+            foreach (GameMode mode in new[]
+                     {
+                         GameMode.Combat, GameMode.Paused, GameMode.Dialogue,
+                         GameMode.Event, GameMode.Loading, GameMode.GameOver,
+                     })
+            {
+                conditions.Mode = mode;
+                Assert.AreEqual(AreaTransitionRejection.WrongMode,
+                    coordinator.TryRequest(ToB()).Rejection, mode + " では遷移しない。");
+            }
+
+            conditions.Mode = GameMode.Exploration;
+
+            // AreaReady 前。
+            conditions.IsAreaReady = false;
+            Assert.AreEqual(AreaTransitionRejection.NotReady, coordinator.TryRequest(ToB()).Rejection);
+            conditions.IsAreaReady = true;
+
+            // 主人公が死亡。
+            conditions.IsPlayerAlive = false;
+            Assert.AreEqual(AreaTransitionRejection.PlayerDefeated, coordinator.TryRequest(ToB()).Rejection);
+            conditions.IsPlayerAlive = true;
+
+            // 主人公が行動中（攻撃・Guard・Step・Hurt・GuardBreak）。
+            conditions.IsPlayerBusy = true;
+            Assert.AreEqual(AreaTransitionRejection.PlayerBusy, coordinator.TryRequest(ToB()).Rejection);
+            conditions.IsPlayerBusy = false;
+
+            // 戦闘開始予約中・戦闘中・勝敗処理中は、主人公の行動中より先に落とす（§8.3 は戦闘開始を優先）。
+            conditions.IsEncounterActive = true;
+            conditions.IsPlayerBusy = true;
+            Assert.AreEqual(AreaTransitionRejection.EncounterActive, coordinator.TryRequest(ToB()).Rejection,
+                "戦闘開始が移動より先に確定する（§8.3）。");
+            conditions.IsEncounterActive = false;
+            conditions.IsPlayerBusy = false;
+
+            Assert.AreEqual(AreaTransitionPhase.Idle, coordinator.Phase, "ここまで一度も受理していない。");
+            Assert.AreEqual(0, coordinator.CurrentTransitionId, "拒否では世代が進まない。");
+            Assert.IsFalse(clock.IsFrozen);
+
+            // 条件が揃えば受理し、世代が 1 つ進んで時計が止まる。
+            AreaTransitionDecision accepted = coordinator.TryRequest(ToB());
+            Assert.IsTrue(accepted.Accepted);
+            Assert.AreEqual(1, accepted.TransitionId);
+            Assert.AreEqual(AreaTransitionPhase.Preparing, coordinator.Phase);
+            Assert.IsTrue(clock.IsFrozen, "受理したら Gameplay 時計を止める（§6.2 手順 3）。");
+
+            // 遷移中は、ほかの条件より先に「もう遷移している」を返す（§6.2 手順 2）。
+            // 受理で活動を閉じる＝ AreaReady が false になるため、条件を先に見ると
+            // 再入の理由が NotReady になって原因を取り違える。実 Scene の P13 で踏んだ。
+            conditions.IsAreaReady = false;
+            Assert.AreEqual(AreaTransitionRejection.AlreadyTransitioning,
+                coordinator.TryRequest(ToB()).Rejection,
+                "遷移中の再入は AlreadyTransitioning で返す（NotReady ではない）。");
+            Assert.AreEqual(AreaTransitionRejection.AlreadyTransitioning,
+                coordinator.TryRequest(new AreaTransitionRequest(
+                    new StableId("area_p5_z"), new StableId("nope"))).Rejection,
+                "解決できない目的地より先に排他を返す。");
+        }
+
+        // ---------------------------------------------------------------- E09
+
+        /// <summary>
+        /// P5-E09：二重要求・古い完了・通知からの再入・旧 finally から新世代を守る（§6.2 末尾）。
+        ///
+        /// 遷移は「完了通知 → その中から次の遷移要求」という再入が普通に起きる。
+        /// 世代を持たないと、<b>前の遷移の後始末が新しい遷移の排他を解除してしまう</b>。
+        /// </summary>
+        [Test]
+        public void Transition_ReentryAndStaleCompletionCannotReleaseNewRun()
+        {
+            AreaCatalog catalog = BuildTestCatalog();
+            var conditions = new FakeConditions();
+            var clock = new GameplayClockGate();
+            var coordinator = new AreaTransitionCoordinator(catalog, conditions, clock);
+
+            // 1 回目を受理して最後まで進める。
+            AreaTransitionDecision first = coordinator.TryRequest(ToB());
+            Assert.IsTrue(first.Accepted);
+            int firstId = first.TransitionId;
+
+            // 遷移中の二重要求は拒否する（外部通知より先に再入を拒否する。§6.2 手順 2）。
+            Assert.AreEqual(AreaTransitionRejection.AlreadyTransitioning,
+                coordinator.TryRequest(ToB()).Rejection);
+
+            var load = new FakeLoad();
+            Assert.IsTrue(coordinator.NotifyLoadStarted(firstId, load));
+            Assert.IsTrue(coordinator.NotifyBinding(firstId));
+            Assert.IsTrue(coordinator.NotifyReady(firstId));
+            Assert.IsTrue(coordinator.Release(firstId));
+            Assert.AreEqual(AreaTransitionPhase.Idle, coordinator.Phase);
+            Assert.AreEqual(1, coordinator.CompletedCount);
+            Assert.IsFalse(clock.IsFrozen, "完了で時計が戻る。");
+
+            // 2 回目を受理する（完了通知の中から次の遷移を要求した状況）。
+            AreaTransitionDecision second = coordinator.TryRequest(
+                new AreaTransitionRequest(new StableId("area_p5_a"), new StableId("area_p5_a_from_b")));
+            Assert.IsTrue(second.Accepted);
+            int secondId = second.TransitionId;
+            Assert.AreNotEqual(firstId, secondId, "世代が進む。");
+            Assert.IsTrue(clock.IsFrozen);
+
+            // ---- ここが要。古い世代からの通知・解除は新しい遷移を壊さない ----
+            //
+            // 各通知を「段階が合っているのに世代だけ古い」状況でぶつける。段階が違う状態で投げると
+            // 段階の判定だけで弾かれてしまい、<b>世代の判定が外れていても気付けない</b>。
+            // 実際、最初はまとめて Preparing の時点で投げていて、世代判定を外す欠陥を捕まえられなかった。
+            int staleBefore = coordinator.StaleNotificationCount;
+
+            // 段階 Preparing：ロード開始の世代違い。
+            Assert.AreEqual(AreaTransitionPhase.Preparing, coordinator.Phase);
+            Assert.IsFalse(coordinator.NotifyLoadStarted(firstId, new FakeLoad()), "古い世代のロード開始は効かない。");
+            Assert.IsFalse(coordinator.NotifyFailed(firstId), "古い世代の失敗通知は効かない。");
+            Assert.AreEqual(AreaTransitionPhase.Preparing, coordinator.Phase);
+
+            Assert.IsTrue(coordinator.NotifyLoadStarted(secondId, new FakeLoad()));
+
+            // 段階 Loading：Binding 通知の世代違い。
+            Assert.AreEqual(AreaTransitionPhase.Loading, coordinator.Phase);
+            Assert.IsFalse(coordinator.NotifyBinding(firstId), "古い世代の Binding 通知は効かない。");
+            Assert.AreEqual(AreaTransitionPhase.Loading, coordinator.Phase, "段階が進んでしまわない。");
+
+            Assert.IsTrue(coordinator.NotifyBinding(secondId));
+
+            // 段階 Binding：Ready 通知の世代違い。
+            Assert.AreEqual(AreaTransitionPhase.Binding, coordinator.Phase);
+            Assert.IsFalse(coordinator.NotifyReady(firstId), "古い世代の Ready 通知は効かない。");
+            Assert.AreEqual(AreaTransitionPhase.Binding, coordinator.Phase);
+
+            Assert.IsTrue(coordinator.NotifyReady(secondId));
+
+            // 段階 Ready：<b>旧 finally の解除</b>。ここが本丸で、世代を見ないと新しい遷移を完了させてしまう。
+            Assert.AreEqual(AreaTransitionPhase.Ready, coordinator.Phase);
+            Assert.IsFalse(coordinator.Release(firstId), "旧 finally は新世代の排他を解除しない。");
+            Assert.AreEqual(AreaTransitionPhase.Ready, coordinator.Phase, "段階が Idle へ落ちない。");
+            Assert.IsTrue(clock.IsFrozen, "旧世代の解除で時計が戻ってしまわない。");
+            Assert.AreEqual(1, coordinator.CompletedCount, "完了数が増えない。");
+            Assert.AreEqual(secondId, coordinator.CurrentTransitionId);
+
+            // 世代 0（既定値）でも解除できない。
+            Assert.IsFalse(coordinator.Release(0), "既定値の世代で解除できない。");
+            Assert.AreEqual(AreaTransitionPhase.Ready, coordinator.Phase);
+            Assert.IsTrue(clock.IsFrozen);
+
+            Assert.AreEqual(staleBefore + 6, coordinator.StaleNotificationCount, "無視した通知を数えている。");
+
+            // 正しい世代なら通る。
+            Assert.IsTrue(coordinator.Release(secondId));
+            Assert.AreEqual(2, coordinator.CompletedCount);
+            Assert.IsFalse(clock.IsFrozen);
+
+            // ---- 段階を飛ばした通知も効かない（sceneLoaded だけで Ready 扱いにしない。§6.2 手順 7） ----
+            AreaTransitionDecision third = coordinator.TryRequest(ToB());
+            Assert.IsTrue(third.Accepted);
+            Assert.IsFalse(coordinator.NotifyReady(third.TransitionId), "Loading を経ずに Ready へ跳べない。");
+            Assert.IsFalse(coordinator.Release(third.TransitionId), "Ready でないのに解除できない。");
+            Assert.AreEqual(AreaTransitionPhase.Preparing, coordinator.Phase);
+            Assert.AreEqual(2, coordinator.CompletedCount, "飛ばした通知で完了しない。");
+        }
+
+        // ---------------------------------------------------------------- E10
+
+        /// <summary>
+        /// P5-E10：監視がタイムアウトしても<b>同じロード操作を保持して観測し続け</b>、
+        /// 遅れて完了したら復旧を 1 回だけ行う。未完了中に再ロードも活動再開もしない（§6.3）。
+        ///
+        /// Unity の非同期ロードはキャンセルできないので、「キャンセルできたことにして排他を解除する」と
+        /// 生きている古いロードの上に新しいロードが乗る。タイムアウトは停止表示であって解除ではない。
+        /// </summary>
+        [Test]
+        public void TransitionFailure_HasBoundedRecoveryWithoutDuplicateLoads()
+        {
+            AreaCatalog catalog = BuildTestCatalog();
+            var conditions = new FakeConditions();
+            var clock = new GameplayClockGate();
+            var coordinator = new AreaTransitionCoordinator(catalog, conditions, clock, timeoutSeconds: 30f);
+
+            AreaTransitionDecision accepted = coordinator.TryRequest(ToB());
+            Assert.IsTrue(accepted.Accepted);
+            int id = accepted.TransitionId;
+
+            var load = new FakeLoad();
+            Assert.IsTrue(coordinator.NotifyLoadStarted(id, load));
+            Assert.AreEqual(1, coordinator.LoadStartCount);
+
+            // 正常系に固定の待ち時間を足していない（監視だけが進む）。
+            coordinator.TickUnscaled(10f);
+            Assert.IsFalse(coordinator.TimedOut);
+            Assert.AreEqual(AreaTransitionPhase.Loading, coordinator.Phase);
+
+            // タイムアウト。
+            coordinator.TickUnscaled(25f);
+            Assert.IsTrue(coordinator.TimedOut, "30 秒で監視が切れる。");
+            Assert.AreEqual(AreaTransitionPhase.Loading, coordinator.Phase,
+                "タイムアウトしても段階は Loading のまま。排他を解除しない。");
+            Assert.IsTrue(clock.IsFrozen, "未完了のあいだ活動を再開しない。");
+            Assert.AreEqual(0, coordinator.RecoveryCount, "まだ復旧しない（古い操作が終端していない）。");
+
+            // 未完了のあいだは新しい要求も通らない（重複ロードを作らない）。
+            Assert.AreEqual(AreaTransitionRejection.AlreadyTransitioning,
+                coordinator.TryRequest(ToB()).Rejection);
+            Assert.AreEqual(1, coordinator.LoadStartCount, "ロード開始は 1 回のまま。");
+
+            // 監視を進め続けても復旧は始まらない。
+            coordinator.TickUnscaled(60f);
+            Assert.AreEqual(0, coordinator.RecoveryCount);
+
+            // ---- 遅れてロードが完了した。ここで初めて復旧を 1 回だけ始める ----
+            load.IsDone = true;
+            coordinator.TickUnscaled(1f);
+            Assert.AreEqual(1, coordinator.RecoveryCount, "終端後に復旧を 1 回開始する。");
+            Assert.IsTrue(coordinator.RecoveryPending);
+
+            // 何度 Tick しても 2 回目は始まらない（無限再試行しない。§6.3）。
+            coordinator.TickUnscaled(1f);
+            coordinator.TickUnscaled(10f);
+            Assert.AreEqual(1, coordinator.RecoveryCount, "復旧は 1 回だけ。");
+            Assert.AreEqual(1, coordinator.LoadStartCount, "復旧の判断だけでは再ロードしない。");
+
+            // 復旧先も失敗したら Error に留める。時計は止めたまま（壊れた状態で動かさない）。
+            Assert.IsTrue(coordinator.NotifyFailed(id));
+            Assert.AreEqual(AreaTransitionPhase.Failed, coordinator.Phase);
+            Assert.IsTrue(clock.IsFrozen, "失敗したまま Gameplay を動かさない。");
+            Assert.IsFalse(coordinator.IsTransitioning, "Failed は遷移中ではない（新しい要求を受けられる）。");
+
+            // ---- 旧 Scene が生きている時点での失敗は、元の活動へ戻せる ----
+            var clock2 = new GameplayClockGate();
+            var recoverable = new AreaTransitionCoordinator(catalog, conditions, clock2);
+            AreaTransitionDecision a2 = recoverable.TryRequest(ToB());
+            Assert.IsTrue(clock2.IsFrozen);
+            Assert.IsTrue(recoverable.NotifyFailed(a2.TransitionId));
+            Assert.AreEqual(AreaTransitionPhase.Failed, recoverable.Phase);
+            Assert.AreEqual(0, recoverable.LoadStartCount, "ロード前の失敗では 1 度もロードしていない。");
+        }
+
+        /// <summary>
+        /// <see cref="AreaActorTransferPort.Capture"/> が<b>止めてから採る</b>ことを実物で確かめる（§4.4／§6.2 手順 4→5）。
+        /// 順序を間違えると、中断で生じた攻撃 CD が Snapshot に乗らない。
+        /// </summary>
+        private void AssertTransferPortCancelsBeforeCapture()
+        {
+            CompanionRig rig = MakeCompanionRig();
+            rig.Tracker.TickTargeting();
+            rig.Combat.TickCombat(0f);
+            Assert.IsTrue(rig.Combat.IsAttacking, "前提：攻撃が始まっている。");
+            rig.Tracker.TickTargeting();
+            rig.Combat.TickCombat(RigStartup);
+
+            Assert.AreEqual(0f, rig.Combat.ExportTransferSnapshot().CooldownRemaining, 1e-4f,
+                "前提：攻撃中なので CD はまだ 0。");
+
+            var portGo = new GameObject("TransferPort");
+            _spawned.Add(portGo);
+            var port = portGo.AddComponent<AreaActorTransferPort>();
+            port.Bind(null, null, rig.Actor, null, rig.Combat, null, null,
+                rig.Actor.GetComponent<CompanionStateArbiter>());
+
+            AreaTransferSnapshot snapshot = port.Capture(
+                CompanionIds.Inumaru, new StableId("area_p5_a"), new StableId("area_p5_a_start"));
+
+            Assert.IsFalse(rig.Combat.IsAttacking, "採取の前に攻撃が止まっている。");
+            Assert.AreEqual(RigCooldown, snapshot.CompanionCombat.CooldownRemaining, 1e-3f,
+                "中断で生じた CD が Snapshot に乗る（Port が止めてから採っている）。");
+            Assert.IsTrue(snapshot.HasCompanion);
+            Assert.AreEqual(CompanionIds.Inumaru.Value, snapshot.CompanionId.Value);
         }
     }
 }
