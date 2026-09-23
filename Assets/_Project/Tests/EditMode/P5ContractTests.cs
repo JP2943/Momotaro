@@ -22,7 +22,9 @@ using Momotaro.Gameplay.Vitals;
 using Momotaro.Tests.Support;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Progression;
+using Momotaro.Gameplay.Interaction;
 using Momotaro.Gameplay.Session;
+using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.World;
 using NUnit.Framework;
 using UnityEngine;
@@ -1508,6 +1510,490 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(0, recoverable.LoadStartCount, "ロード前の失敗では 1 度もロードしていない。");
             Assert.IsFalse(clock2.IsFrozen,
                 "旧 Scene が生きている失敗では時計を戻す。戻さないと留まったまま何も操作できない。");
+        }
+
+        // ---------------------------------------------------------------- E11〜E14・E30（Interact）
+
+        /// <summary>
+        /// P5-E11：Interact の候補は<b>近い順、同距離なら StableId の辞書順</b>で決まり、
+        /// 表示した対象と実行する対象が一致する（§7.1 の 3・4）。
+        ///
+        /// 同距離の決着を ID で固定するのは、並び順や登録順で結果が変わらないようにするため。
+        /// 「たまたま先に登録された方」が選ばれる実装は、Scene を作り直すたびに挙動が変わる。
+        /// </summary>
+        [Test]
+        public void Interaction_SelectsNearestThenStableId()
+        {
+            var area = new StableId("area_p5_a");
+            var probe = new AlwaysClearProbe();
+
+            var far = new FakeInteractable("door_far", area, new Vector3(1.2f, 0f, 0f));
+            var near = new FakeInteractable("door_near", area, new Vector3(0.4f, 0f, 0f));
+            var candidates = new List<IAreaInteractable> { far, near };
+
+            Assert.IsTrue(AreaInteractionSelector.TrySelect(
+                candidates, Vector3.zero, area, 0, 1.6f, probe,
+                out IAreaInteractable chosen, out AreaInteractionRejection reason));
+            Assert.AreEqual(AreaInteractionRejection.None, reason);
+            Assert.AreSame(near, chosen, "近い方が選ばれる。");
+
+            // 登録順を入れ替えても結果は変わらない。
+            candidates.Reverse();
+            Assert.IsTrue(AreaInteractionSelector.TrySelect(
+                candidates, Vector3.zero, area, 0, 1.6f, probe, out chosen, out _));
+            Assert.AreSame(near, chosen, "登録順で結果が変わらない。");
+
+            // ---- 同距離は StableId の辞書順で決める ----
+            var tieB = new FakeInteractable("lever_b", area, new Vector3(0.8f, 0f, 0f));
+            var tieA = new FakeInteractable("lever_a", area, new Vector3(0f, 0f, 0.8f));
+            var tied = new List<IAreaInteractable> { tieB, tieA };
+
+            Assert.IsTrue(AreaInteractionSelector.TrySelect(
+                tied, Vector3.zero, area, 0, 1.6f, probe, out chosen, out _));
+            Assert.AreSame(tieA, chosen, "同距離は StableId の辞書順（lever_a < lever_b）。");
+
+            tied.Reverse();
+            Assert.IsTrue(AreaInteractionSelector.TrySelect(
+                tied, Vector3.zero, area, 0, 1.6f, probe, out chosen, out _));
+            Assert.AreSame(tieA, chosen, "順番を変えても同じ対象が選ばれる。");
+
+            // ---- 表示と実行が一致する（窓口を通して見る） ----
+            Rig rig = MakeInteractionRig(area);
+            AreaInteractableRegistry.Register(tieA);
+            AreaInteractableRegistry.Register(tieB);
+
+            Assert.IsTrue(rig.Controller.Peek(out IAreaInteractable shown, out _));
+            Assert.AreSame(tieA, shown, "表示される候補。");
+            Assert.IsTrue(rig.Controller.TryInteract(out AreaInteractionOutcome outcome));
+            Assert.IsTrue(outcome.Handled);
+            Assert.AreEqual(1, tieA.InteractCount, "表示した対象が実行される。");
+            Assert.AreEqual(0, tieB.InteractCount, "別の対象は実行されない。");
+        }
+
+        /// <summary>
+        /// P5-E12：壁越し・別エリア・別 Floor・距離の外は候補にしない（§7.1 の 1・2）。
+        ///
+        /// 距離は<b>境界</b>で見る。「だいたい近い」で通す実装は、
+        /// 表示だけ出て押せない／押せるのに表示が出ないという食い違いを生む。
+        /// 対象固有の受付距離が短い場合に<b>短い方</b>を使うことも併せて固定する。
+        /// </summary>
+        [Test]
+        public void Interaction_RejectsOccludedWrongAreaOrFloor()
+        {
+            var area = new StableId("area_p5_a");
+            var other = new StableId("area_p5_b");
+            var clear = new AlwaysClearProbe();
+
+            var target = new FakeInteractable("door_a", area, new Vector3(1.0f, 0f, 0f));
+            var list = new List<IAreaInteractable> { target };
+
+            // ---- 壁越しは除外 ----
+            Assert.IsFalse(AreaInteractionSelector.TrySelect(
+                list, Vector3.zero, area, 0, 1.6f, new NeverClearProbe(),
+                out _, out AreaInteractionRejection reason));
+            Assert.AreEqual(AreaInteractionRejection.NoTargetInRange, reason, "壁越しは候補にしない。");
+            Assert.IsTrue(AreaInteractionSelector.TrySelect(list, Vector3.zero, area, 0, 1.6f, clear, out _, out _),
+                "遮蔽が無ければ選ばれる（前提）。");
+
+            // ---- 別エリア・別 Floor ----
+            Assert.IsFalse(AreaInteractionSelector.TrySelect(list, Vector3.zero, other, 0, 1.6f, clear, out _, out _),
+                "別エリアの対象は候補にしない。");
+            Assert.IsFalse(AreaInteractionSelector.TrySelect(list, Vector3.zero, area, 1, 1.6f, clear, out _, out _),
+                "別 Floor の対象は候補にしない。");
+
+            // ---- 無効な対象 ----
+            target.Available = false;
+            Assert.IsFalse(AreaInteractionSelector.TrySelect(list, Vector3.zero, area, 0, 1.6f, clear, out _, out _),
+                "無効な対象は候補にしない。");
+            target.Available = true;
+
+            // ---- 距離の境界（水平距離だけで見る。高さは無視する） ----
+            var edge = new FakeInteractable("door_edge", area, new Vector3(1.6f, 3f, 0f));
+            var edgeList = new List<IAreaInteractable> { edge };
+            Assert.IsTrue(AreaInteractionSelector.TrySelect(edgeList, Vector3.zero, area, 0, 1.6f, clear, out _, out _),
+                "ちょうど受付距離なら入る（高さは見ない）。");
+
+            edge.Anchor = new Vector3(1.6001f, 0f, 0f);
+            Assert.IsFalse(AreaInteractionSelector.TrySelect(edgeList, Vector3.zero, area, 0, 1.6f, clear, out _, out _),
+                "受付距離を超えたら入らない。");
+
+            // ---- 対象固有の受付距離が短ければ短い方を使う ----
+            var strict = new FakeInteractable("point_strict", area, new Vector3(1.0f, 0f, 0f)) { Radius = 0.5f };
+            var strictList = new List<IAreaInteractable> { strict };
+            Assert.IsFalse(AreaInteractionSelector.TrySelect(strictList, Vector3.zero, area, 0, 1.6f, clear, out _, out _),
+                "対象固有の受付距離が短ければ、そちらで弾く。");
+
+            // 逆に固有の値が長くても、窓口の既定値は超えられない。
+            var loose = new FakeInteractable("point_loose", area, new Vector3(2.0f, 0f, 0f)) { Radius = 9f };
+            var looseList = new List<IAreaInteractable> { loose };
+            Assert.IsFalse(AreaInteractionSelector.TrySelect(looseList, Vector3.zero, area, 0, 1.6f, clear, out _, out _),
+                "対象固有の値で受付距離を伸ばせない。");
+        }
+
+        /// <summary>
+        /// P5-E13：押下 1 回は<b>1 回だけ</b>使われ、次の候補にも次のフレームにも流れない（§7.1 末尾）。
+        ///
+        /// ここが崩れると「押したら手前の扉が断り、そのまま奥のレバーが動く」が起きる。
+        /// 断りも実行のうちで、押下はそこで使い切られる。
+        /// </summary>
+        [Test]
+        public void Interaction_ConsumesOneEdgeWithoutFallbackToSecondTarget()
+        {
+            var area = new StableId("area_p5_a");
+            Rig rig = MakeInteractionRig(area);
+
+            var refuser = new FakeInteractable("door_near", area, new Vector3(0.4f, 0f, 0f)) { Accept = false };
+            var second = new FakeInteractable("door_far", area, new Vector3(0.9f, 0f, 0f));
+            AreaInteractableRegistry.Register(refuser);
+            AreaInteractableRegistry.Register(second);
+
+            // ---- 断られても次点へ流さない ----
+            rig.Input.InteractPressed = true;
+            Assert.IsTrue(rig.Mediator.TickInput(), "押下は実行まで通る。");
+            Assert.AreEqual(1, refuser.InteractCount, "手前の対象が 1 回だけ実行される。");
+            Assert.AreEqual(0, second.InteractCount, "断られても次点は実行されない。");
+            Assert.IsFalse(rig.Mediator.LastOutcome.Handled, "結果は「断られた」。");
+            Assert.IsFalse(rig.Input.InteractPressed, "押下は使い切られている。");
+
+            // ---- 押しっぱなし（新しいエッジが無い）では繰り返さない ----
+            Assert.IsFalse(rig.Mediator.TickInput());
+            Assert.IsFalse(rig.Mediator.TickInput());
+            Assert.AreEqual(1, refuser.InteractCount, "押しっぱなしで連続実行しない。");
+
+            // ---- 対象が無い押下は捨てる（次のフレームへ持ち越さない） ----
+            AreaInteractableRegistry.Clear();
+            rig.Input.InteractPressed = true;
+            Assert.IsFalse(rig.Mediator.TickInput(), "対象が無ければ実行しない。");
+            Assert.AreEqual(1, rig.Mediator.DiscardedCount, "捨てたことを数える。");
+            Assert.IsFalse(rig.Input.InteractPressed, "捨てた押下は残らない。");
+
+            AreaInteractableRegistry.Register(second);
+            Assert.IsFalse(rig.Mediator.TickInput(), "捨てた押下が、あとから現れた対象に当たらない。");
+            Assert.AreEqual(0, second.InteractCount);
+
+            // ---- AreaReady でない・探索モードでない間は実行しない ----
+            rig.Context.CloseForTransition();
+            rig.Input.InteractPressed = true;
+            Assert.IsFalse(rig.Mediator.TickInput(), "AreaReady でなければ実行しない。");
+            Assert.AreEqual(AreaInteractionRejection.AreaNotReady, rig.Controller.LastRejection);
+            rig.Context.ReopenAfterFailedTransition();
+
+            rig.Modes.ChangeMode(GameMode.Combat);
+            rig.Input.InteractPressed = true;
+            Assert.IsFalse(rig.Mediator.TickInput(), "探索モードでなければ実行しない。");
+            Assert.AreEqual(AreaInteractionRejection.WrongMode, rig.Controller.LastRejection);
+        }
+
+        /// <summary>
+        /// P5-E14：レバーは Flag を<b>1 回だけ</b>確定し、門はその Flag から復元される（§7.3）。
+        ///
+        /// 順序は「内部 Flag → 通行・見た目 → 通知」。通知を先に出すと、購読者が見る世界がまだ閉じている。
+        /// 通知の中から引き直されても変更は 1 回で済むことも、ここで固定する。
+        /// </summary>
+        [Test]
+        public void Lever_CommitsOnceAndRestoresDoorFromSameFlag()
+        {
+            var area = new StableId("area_p5_a");
+            var flag = new StableId("flag_p5_a_gate");
+
+            var session = new GameSessionState();
+            GameSessionProvider.Current = session;
+            AreaRuntimeState record = session.GetOrCreateArea(area);
+
+            var doorGo = new GameObject("Door");
+            _spawned.Add(doorGo);
+            var blocker = doorGo.AddComponent<BoxCollider>();
+            var closedVisual = new GameObject("ClosedVisual");
+            _spawned.Add(closedVisual);
+            var door = doorGo.AddComponent<AreaFlagDoor>();
+            door.Bind(flag, blocker, closedVisual);
+
+            var leverGo = new GameObject("Lever");
+            _spawned.Add(leverGo);
+            var lever = leverGo.AddComponent<AreaFlagLever>();
+            lever.Bind(flag, area, door, leverGo.transform);
+
+            // 通知の中から引き直す購読者を付ける（再入でも変更は 1 回）。
+            //
+            // 再入は<b>1 回だけ</b>にする。無制限に再入させると、守られていない実装は
+            // StackOverflow で落ちるだけになり、「変更が 2 回起きた」という核心を見ないまま
+            // 「とにかく落ちた」で通ってしまう（欠陥注入でそうなった）。
+            int notified = 0;
+            bool reentered = false;
+            lever.Opened += _ =>
+            {
+                notified++;
+                if (reentered)
+                {
+                    return;
+                }
+
+                reentered = true;
+                lever.Interact(); // 通知の中から引き直す。
+            };
+
+            // ---- 1 回目：開通する ----
+            AreaInteractionOutcome outcome = lever.Interact();
+            Assert.IsTrue(outcome.Handled, "開通する。");
+            Assert.AreEqual(1, lever.OpenedCount, "開通は 1 回。");
+            Assert.IsTrue(reentered, "前提：通知の中から引き直している。");
+            Assert.AreEqual(1, notified, "通知も 1 回（再入で二重に発火しない）。");
+            Assert.AreEqual(1, door.AppliedCount, "門への適用も 1 回。");
+            Assert.IsTrue(record.IsOpen(flag), "記録が正本として開通している。");
+            Assert.IsFalse(blocker.enabled, "通行が開いている。");
+            Assert.IsFalse(closedVisual.activeSelf, "閉じている見た目が消えている。");
+
+            // ---- 2 回目：開通済みなので状態も通知も動かさない ----
+            outcome = lever.Interact();
+            Assert.IsFalse(outcome.Handled, "開通済みは断る。");
+            Assert.AreEqual("開通済み", outcome.Message);
+            Assert.AreEqual(1, lever.OpenedCount, "開通回数は増えない。");
+            Assert.AreEqual(1, notified, "通知を再発火しない。");
+            Assert.AreEqual(1, door.AppliedCount, "門への適用も増えない。");
+
+            // ---- 別 Scene の門でも、同じ Flag から復元される ----
+            var doorGo2 = new GameObject("Door2");
+            _spawned.Add(doorGo2);
+            var blocker2 = doorGo2.AddComponent<BoxCollider>();
+            var door2 = doorGo2.AddComponent<AreaFlagDoor>();
+            door2.Bind(flag, blocker2, null);
+
+            Assert.IsTrue(blocker2.enabled, "前提：作り直した門は閉じている。");
+            Assert.IsTrue(door2.RestoreFrom(record), "記録から復元する。");
+            Assert.IsFalse(blocker2.enabled, "復元後は通行できる。");
+            Assert.AreEqual(1, door2.AppliedCount);
+
+            // ---- 通行を開けられない門は、見た目だけ開かない ----
+            var brokenGo = new GameObject("BrokenDoor");
+            _spawned.Add(brokenGo);
+            var brokenVisual = new GameObject("BrokenVisual");
+            _spawned.Add(brokenVisual);
+            var broken = brokenGo.AddComponent<AreaFlagDoor>();
+            broken.Bind(new StableId("flag_p5_a_broken"), null, brokenVisual);
+
+            LogAssert.Expect(LogType.Error, new Regex("Door could not be opened"));
+            Assert.IsFalse(broken.TryApplyOpened(out string error), "Collider が無ければ失敗させる。");
+            Assert.IsNotEmpty(error);
+            Assert.IsFalse(broken.IsOpened);
+            Assert.IsTrue(brokenVisual.activeSelf, "失敗したら見た目も変えない（開いて見えて通れない、を作らない）。");
+
+            GameSessionProvider.Current = null;
+        }
+
+        /// <summary>
+        /// P5-E30：P5 では<b>地点を指定しない調査依頼を拒否</b>し、指定した地点がそのまま依頼される（§7.1）。
+        ///
+        /// P4 の選択は「距離 → 前方 → ID」、P5 の共通窓口は「距離 → ID」で、向きを見ない。
+        /// だから<b>前方順位と ID 順位が逆転する配置</b>では両者の答えが違う。
+        /// 共通窓口が選んだ地点をそのまま渡していれば表示と依頼は一致し、
+        /// 依頼先が選び直していれば食い違う。ここで見ているのはその差。
+        /// </summary>
+        [Test]
+        public void ExplicitInvestigation_RejectsImplicitSelectionAndKeepsChosenId()
+        {
+            var area = new StableId("area_p5_a");
+
+            // ---- 引数なし入口は、選択も開始もせずに拒否する ----
+            var go = new GameObject("Coordinator");
+            _spawned.Add(go);
+            var coordinator = go.AddComponent<InvestigationCoordinator>();
+            coordinator.ExplicitTargetOnly = true;
+
+            InvestigationRequestResult implicitResult = coordinator.TryRequest();
+            Assert.IsFalse(implicitResult.Accepted, "引数なしの依頼は通らない。");
+            Assert.AreEqual(InvestigationRejectReason.ImplicitSelectionDisabled, implicitResult.Reason,
+                "誤呼出と分かる理由で拒否する（NotWired 等に紛れさせない）。");
+            Assert.AreEqual(0, implicitResult.RequestId, "依頼を開始していない。");
+            Assert.IsNull(implicitResult.Point, "地点を選んでもいない。");
+            Assert.AreEqual(1, coordinator.ImplicitRequestRefusedCount, "誤呼出を数える（Validator が見る）。");
+
+            Assert.AreEqual(InvestigationRejectReason.ImplicitSelectionDisabled,
+                coordinator.Peek(out IInvestigationPoint peeked), "表示側の入口も同じ扱い。");
+            Assert.IsNull(peeked);
+
+            // P4 Scene の既存互換：モードを外せば従来どおり動く（未配線なので NotWired まで進む）。
+            coordinator.ExplicitTargetOnly = false;
+            Assert.AreEqual(InvestigationRejectReason.NotWired, coordinator.TryRequest().Reason,
+                "P4 構成では従来どおり評価へ進む。");
+
+            // ---- 前方順位と ID 順位が逆転する配置で、表示対象がそのまま依頼される ----
+            //
+            // 主人公は +Z を向いている。前方にあるのは forward 側だが ID は後ろ（point_z）。
+            // P4 の規則なら前方が勝ち、P5 の規則なら ID が勝つ。P5 の窓口は後者を選ぶ。
+            var forward = new FakeInteractable("point_z_forward", area, new Vector3(0f, 0f, 0.8f));
+            var side = new FakeInteractable("point_a_side", area, new Vector3(0.8f, 0f, 0f));
+
+            Assert.IsTrue(AreaInteractionSelector.TrySelect(
+                new List<IAreaInteractable> { forward, side }, Vector3.zero, area, 0, 1.6f,
+                new AlwaysClearProbe(), out IAreaInteractable chosen, out _));
+            Assert.AreSame(side, chosen, "P5 は向きを見ないので、同距離は ID 順で決まる。");
+
+            // 選ばれた対象を、地点指定の狭い入口へそのまま渡す。
+            var requests = new RecordingExplicitRequest();
+            var adapterGo = new GameObject("Adapter");
+            _spawned.Add(adapterGo);
+            var adapter = adapterGo.AddComponent<InvestigationInteractable>();
+            var point = new FakeInvestigationPoint(chosen.InteractableId);
+            adapter.Bind(point, requests, area);
+
+            Assert.AreEqual(chosen.InteractableId.Value, adapter.InteractableId.Value,
+                "Adapter は担当地点をそのまま名乗る。");
+            adapter.Interact();
+            Assert.AreEqual(1, requests.Calls, "依頼は 1 回。");
+            Assert.AreEqual(chosen.InteractableId.Value, requests.LastPointId.Value,
+                "表示した PointId と実依頼の PointId が一致する（近くの別地点へすり替わらない）。");
+        }
+
+        // ---------------------------------------------------------------- Interact の道具
+
+        private sealed class Rig
+        {
+            public AreaContext Context;
+            public AreaInteractionController Controller;
+            public AreaInteractInput Mediator;
+            public FakeInteractInput Input;
+            public GameModeService Modes;
+        }
+
+        /// <summary>窓口・仲介・Context を組んだ最小構成（Scene を作らずに押下の流れだけを見る）。</summary>
+        private Rig MakeInteractionRig(StableId areaId)
+        {
+            AreaInteractableRegistry.Clear();
+
+            var modes = new GameModeService(GameMode.Exploration);
+            GameModeProvider.Current = modes;
+
+            var contextGo = new GameObject("AreaContext");
+            _spawned.Add(contextGo);
+            var context = contextGo.AddComponent<AreaContext>();
+            context.BeginInitialize(areaId, new StableId("area_p5_a_start"));
+            context.MarkPrepared();
+            context.Activate();
+
+            var playerGo = new GameObject("PlayerAnchor");
+            _spawned.Add(playerGo);
+            playerGo.transform.position = Vector3.zero;
+
+            var controllerGo = new GameObject("Interaction");
+            _spawned.Add(controllerGo);
+            var controller = controllerGo.AddComponent<AreaInteractionController>();
+            controller.Bind(context, playerGo.transform);
+            controller.SetObstacleProbe(new AlwaysClearProbe());
+
+            var mediator = controllerGo.AddComponent<AreaInteractInput>();
+            mediator.Bind(controller);
+            var input = new FakeInteractInput();
+            mediator.SetInput(input);
+
+            return new Rig
+            {
+                Context = context,
+                Controller = controller,
+                Mediator = mediator,
+                Input = input,
+                Modes = modes,
+            };
+        }
+
+        private sealed class FakeInteractable : IAreaInteractable
+        {
+            private readonly string _id;
+
+            public FakeInteractable(string id, StableId areaId, Vector3 anchor)
+            {
+                _id = id;
+                AreaId = areaId;
+                Anchor = anchor;
+            }
+
+            public Vector3 Anchor { get; set; }
+            public bool Available { get; set; } = true;
+            public bool Accept { get; set; } = true;
+            public float Radius { get; set; }
+            public int InteractCount { get; private set; }
+
+            public StableId InteractableId => new StableId(_id);
+            public StableId AreaId { get; }
+            public int FloorId => 0;
+            public Vector3 InteractionAnchor => Anchor;
+            public float InteractionRadius => Radius;
+            public bool IsAvailable => Available;
+            public string Prompt => _id;
+
+            public AreaInteractionOutcome Interact()
+            {
+                InteractCount++;
+                return Accept
+                    ? AreaInteractionOutcome.Accepted(_id)
+                    : AreaInteractionOutcome.Refused("いまはできない");
+            }
+        }
+
+        private sealed class AlwaysClearProbe : IObstacleProbe
+        {
+            public bool IsClear(Vector3 from, Vector3 to) => true;
+        }
+
+        private sealed class NeverClearProbe : IObstacleProbe
+        {
+            public bool IsClear(Vector3 from, Vector3 to) => false;
+        }
+
+        private sealed class FakeInteractInput : IInteractInput
+        {
+            public bool InteractPressed { get; set; }
+
+            public bool ConsumeInteractPressed()
+            {
+                if (!InteractPressed)
+                {
+                    return false;
+                }
+
+                InteractPressed = false;
+                return true;
+            }
+
+            public void DiscardInteractPressed() => InteractPressed = false;
+        }
+
+        private sealed class RecordingExplicitRequest : MonoBehaviour, IExplicitInvestigationRequest
+        {
+            public int Calls { get; private set; }
+            public StableId LastPointId { get; private set; }
+
+            public InvestigationRequestResult RequestAt(StableId pointId)
+            {
+                Calls++;
+                LastPointId = pointId;
+                return new InvestigationRequestResult(true, Calls, InvestigationRejectReason.None, null);
+            }
+
+            public InvestigationRejectReason PeekAt(StableId pointId, out IInvestigationPoint point)
+            {
+                point = null;
+                return InvestigationRejectReason.None;
+            }
+        }
+
+        private sealed class FakeInvestigationPoint : IInvestigationPoint
+        {
+            public FakeInvestigationPoint(StableId pointId)
+            {
+                PointId = pointId;
+            }
+
+            public StableId PointId { get; }
+            public StableId RequiredCompanion => CompanionIds.Inumaru;
+            public StableId DiscoveryId => new StableId("discovery_test");
+            public Vector3 Position => Vector3.zero;
+            public Vector3 ApproachPosition => Vector3.zero;
+            public Vector3 ApproachFacing => Vector3.forward;
+            public bool IsAvailable => true;
+            public InvestigationSettings Settings => new InvestigationSettings(1.6f, 3f, 0.5f, 5f, 1f, 2f);
+            public string Prompt => "調べる";
+            public string MissingCompanionHint => "未加入";
+            public string CompletedText => "調査済み";
         }
 
         // ---------------------------------------------------------------- E09（到着トークンの世代）

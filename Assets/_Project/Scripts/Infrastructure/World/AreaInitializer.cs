@@ -210,6 +210,22 @@ namespace Momotaro.Infrastructure.World
                 }
             }
 
+            // 6a. 門の開通を記録から復元する（§4.3／§7.3）。
+            //     復元は「すでに開いていた」のであって、いま開通したのではないので通知は出さない。
+            //     ここで失敗したら Ready を確定しない：見た目だけ開いて通れない状態を受入にしない。
+            foreach (Momotaro.Gameplay.Interaction.AreaFlagDoor door in _areaRoot.Doors)
+            {
+                if (door == null || !area.IsOpen(door.FlagId))
+                {
+                    continue;
+                }
+
+                if (!door.TryApplyOpened(out string doorError))
+                {
+                    return Fail("開通済みの門を復元できませんでした: " + doorError);
+                }
+            }
+
             // 6b. 到着直後の跳ね返りを止める（§6.1 末尾）。
             //     入口 Trigger の中に立った状態で到着するのが普通なので、
             //     一度出るまで出入口は要求を出さない。押しっぱなしを新しい押下と解釈しない。

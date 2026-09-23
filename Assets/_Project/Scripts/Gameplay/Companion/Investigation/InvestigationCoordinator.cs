@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
+using Momotaro.Core.Logging;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Player;
 using UnityEngine;
@@ -35,7 +36,8 @@ namespace Momotaro.Gameplay.Companion.Investigation
     /// 欠けていれば未配線として拒否し、Validator が検出する（§5.1）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class InvestigationCoordinator : MonoBehaviour, IInvestigationOutcomeSink, IInvestigationReachability,
+    public sealed class InvestigationCoordinator : MonoBehaviour, IExplicitInvestigationRequest,
+        IInvestigationOutcomeSink, IInvestigationReachability,
         IIncomingHitObserver
     {
         [Tooltip("主人公（位置・向き・いま Interact を実行できる状態か）。")]
@@ -154,14 +156,49 @@ namespace Momotaro.Gameplay.Companion.Investigation
         /// </summary>
         public InvestigationRejectReason Peek(out IInvestigationPoint point)
         {
+            if (_explicitTargetOnly)
+            {
+                point = null;
+                return InvestigationRejectReason.ImplicitSelectionDisabled;
+            }
+
             return Evaluate(out point, out _);
         }
+
+        [Header("P5")]
+        [Tooltip("指定地点モード（§7.1）。true なら地点を指定しない入口は選択も開始もせず拒否する。")]
+        [SerializeField] private bool _explicitTargetOnly;
+
+        /// <summary>
+        /// 指定地点モード（P5-04。仕様書 v1.1 §7.1）。
+        ///
+        /// P5 Scene はこれを立てて構成する。共通の選択窓口が選んだ地点と別の地点へ
+        /// 依頼がすり替わる経路を<b>実行時に塞ぐ</b>。P4 Scene は false のまま既存互換。
+        /// </summary>
+        public bool ExplicitTargetOnly
+        {
+            get => _explicitTargetOnly;
+            set => _explicitTargetOnly = value;
+        }
+
+        /// <summary>地点を指定しない入口を拒否した回数（診断・Validator・テスト用）。</summary>
+        public int ImplicitRequestRefusedCount { get; private set; }
 
         /// <summary>
         /// Interact 1 回に対する依頼。押下 1 回で 1 依頼（連続実行しない）。受理・拒否のどちらも通知を 1 回出す。
         /// </summary>
         public InvestigationRequestResult TryRequest()
         {
+            if (_explicitTargetOnly)
+            {
+                // 選択も開始もしない。診断できる結果で拒否する（§7.1）。
+                ImplicitRequestRefusedCount++;
+                GameLog.WarningOnce(LogCategory.AI, "investigation_implicit_entry",
+                    "指定地点モードで、地点を指定しない調査依頼が呼ばれました（配線の誤りです）。");
+                LastPoint = null;
+                return Reject(null, InvestigationRejectReason.ImplicitSelectionDisabled);
+            }
+
             InvestigationRejectReason reason = Evaluate(out IInvestigationPoint point, out CompanionInvestigationController driver);
             LastPoint = point;
 
@@ -187,6 +224,42 @@ namespace Momotaro.Gameplay.Companion.Investigation
         /// 明示的な戦闘開始（P4-08R）。実行中の依頼をすべて同期的に中断し、表示代理と所有権を解放する。
         /// 呼び出し側はこのあとで敵生成／攻撃許可へ進む（§7.1）。
         /// </summary>
+        public InvestigationRejectReason PeekAt(StableId pointId, out IInvestigationPoint point)
+        {
+            return EvaluateAt(pointId, out point, out _);
+        }
+
+        /// <summary>
+        /// <b>地点を指定した</b>依頼（P5-04。§7.1）。単一選択窓口が選んだ地点をそのまま実行する。
+        ///
+        /// 指定された地点は<b>ここで検証し直す</b>（距離・遮蔽・調査済み・加入・仲間の状態）。
+        /// 選択と押下の間に状況が変わっていても、古い判断のまま始めない。
+        /// <b>近くの別の地点へ選び直したりはしない。</b>指定が通らなければ断るだけ。
+        /// </summary>
+        public InvestigationRequestResult RequestAt(StableId pointId)
+        {
+            InvestigationRejectReason reason =
+                EvaluateAt(pointId, out IInvestigationPoint point, out CompanionInvestigationController driver);
+            LastPoint = point;
+
+            if (reason != InvestigationRejectReason.None)
+            {
+                return Reject(point, reason);
+            }
+
+            int requestId = _nextRequestId + 1;
+            if (!driver.TryBegin(point, requestId, this, Interactor, out InvestigationRequest request, out reason))
+            {
+                return Reject(point, reason);
+            }
+
+            _nextRequestId = requestId;
+            LastRequestId = requestId;
+            LastRejectReason = InvestigationRejectReason.None;
+            Events.PublishAccepted(new InvestigationAccepted(requestId, request.PointId, request.CompanionId, request.PointPosition));
+            return new InvestigationRequestResult(true, requestId, InvestigationRejectReason.None, point);
+        }
+
         public void InterruptAllForCombat()
         {
             for (int i = 0; i < _companions.Length; i++)
@@ -357,6 +430,100 @@ namespace Momotaro.Gameplay.Companion.Investigation
 
             InvestigationRejectReason accept = driver.CanAccept(out _);
             return accept;
+        }
+
+        /// <summary>
+        /// 指定された地点だけを検証する（P5-04。§7.1「指定地点を再検証する狭い入口」）。
+        /// <see cref="Evaluate"/> と前提（配線・活動・主人公）は同じで、<b>選択だけを行わない</b>。
+        /// </summary>
+        private InvestigationRejectReason EvaluateAt(
+            StableId pointId, out IInvestigationPoint point, out CompanionInvestigationController driver)
+        {
+            point = null;
+            driver = null;
+
+            if (!IsWired)
+            {
+                return InvestigationRejectReason.NotWired;
+            }
+
+            CompanionActivity activity = CompanionActivityProvider.Activity;
+            if (!activity.ClocksRun || activity.DiscardOngoing)
+            {
+                return InvestigationRejectReason.InputClosed;
+            }
+
+            if (!activity.CanInvestigate)
+            {
+                return InvestigationRejectReason.InCombat;
+            }
+
+            IInteractActor player = Interactor;
+            if (!player.CanInteract)
+            {
+                return InvestigationRejectReason.PlayerBusy;
+            }
+
+            point = FindPoint(pointId);
+            if (point == null)
+            {
+                return InvestigationRejectReason.NoPointInRange; // 指定された地点が登録にいない。
+            }
+
+            InvestigationSettings settings = point.Settings;
+            if (!point.IsAvailable || !settings.IsUsable)
+            {
+                return InvestigationRejectReason.PointUnavailable;
+            }
+
+            if (FormationSlot.HorizontalDistance(player.Position, point.Position) > settings.InteractRange)
+            {
+                return InvestigationRejectReason.NoPointInRange;
+            }
+
+            if (_record.Record != null && _record.Record.IsInvestigated(point.PointId))
+            {
+                return InvestigationRejectReason.AlreadyInvestigated;
+            }
+
+            if (!IsReachable(point))
+            {
+                return InvestigationRejectReason.Unreachable;
+            }
+
+            if (!_roster.IsRecruited(point.RequiredCompanion))
+            {
+                return InvestigationRejectReason.CompanionNotRecruited;
+            }
+
+            driver = FindDriver(point.RequiredCompanion);
+            if (driver == null)
+            {
+                return InvestigationRejectReason.NotWired;
+            }
+
+            return driver.CanAccept(out _);
+        }
+
+        /// <summary>登録中の地点から ID で引く（<c>Find*</c> は使わない）。</summary>
+        private IInvestigationPoint FindPoint(StableId pointId)
+        {
+            if (pointId.IsEmpty)
+            {
+                return null;
+            }
+
+            InvestigationPointRegistry.CopyTo(_buffer);
+            for (int i = 0; i < _buffer.Count; i++)
+            {
+                IInvestigationPoint candidate = _buffer[i];
+                if (candidate != null && candidate.PointId.Equals(pointId))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
         }
 
         private InvestigationRequestResult Reject(IInvestigationPoint point, InvestigationRejectReason reason)

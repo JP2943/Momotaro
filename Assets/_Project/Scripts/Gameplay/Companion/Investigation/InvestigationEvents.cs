@@ -44,6 +44,13 @@ namespace Momotaro.Gameplay.Companion.Investigation
 
         /// <summary>仲間の戦闘 Actor が探索を始められない状態（攻撃・防御・ひるみ中）。</summary>
         CompanionNotReady = 12,
+
+        /// <summary>
+        /// 指定地点モードなのに、地点を指定しない入口が呼ばれた（P5-04。§7.1）。
+        /// <b>選択も開始もしていない。</b>誤呼出を黙って成功させないための拒否理由で、
+        /// これが出たら呼び出し側の配線が間違っている（Validator と E30 が見る）。
+        /// </summary>
+        ImplicitSelectionDisabled = 13,
     }
 
     /// <summary>未完了の依頼を中断した理由（v1.0 §6.4）。</summary>
