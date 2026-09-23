@@ -2,9 +2,12 @@ using System.Collections.Generic;
 using System.IO;
 using Momotaro.Core.Identification;
 using Momotaro.Core.World;
+using Momotaro.Data.Exploration;
 using Momotaro.Data.World;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Gameplay.Interaction;
+using Momotaro.Infrastructure.Input;
 using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Session;
@@ -399,14 +402,6 @@ namespace Momotaro.Editor.Phase5
             var markers = new GameObject("Markers");
             markers.transform.SetParent(root, false);
             Phase5Placeholder.CreateLabel("エリア A", markers.transform, new Vector3(0f, 0.2f, -1.5f), Color.white, 0.5f);
-            CreateMarker(markers.transform, "Gate", Phase5Layout.AreaAGate,
-                Phase5Placeholder.GateColor, "門", new Vector3(Phase5Layout.CorridorWidth, 1.6f, 0.4f));
-            CreateMarker(markers.transform, "Lever", Phase5Layout.AreaALever,
-                Phase5Placeholder.LeverColor, "レバー", new Vector3(0.5f, 1.2f, 0.5f));
-            CreateMarker(markers.transform, "Investigation", Phase5Layout.AreaAInvestigation,
-                Phase5Placeholder.InvestigationColor, "調査", new Vector3(0.8f, 0.6f, 0.8f));
-            CreateMarker(markers.transform, "InvestigationBlocked", Phase5Layout.AreaAInvestigationBlocked,
-                Phase5Placeholder.InvestigationColor, "調査(壁越し)", new Vector3(0.8f, 0.6f, 0.8f));
             CreateMarker(markers.transform, "ExitToB", Phase5Layout.AreaAExitToB,
                 Phase5Placeholder.EntryColor, "B へ", new Vector3(0.6f, 1.6f, Phase5Layout.CorridorWidth));
 
@@ -421,11 +416,25 @@ namespace Momotaro.Editor.Phase5
             AreaExitGate toB = CreateExitGate(root, "ExitGate_ToB", Phase5Layout.AreaAExitToB,
                 Phase5AreaIds.AreaB, Phase5AreaIds.AreaBFromA, Vector3.right);
 
+            // 仕掛け（§7）。目印ではなく実物を置く。
+            var fixtures = new Fixtures();
+            var fixtureRoot = new GameObject("Fixtures");
+            fixtureRoot.transform.SetParent(root, false);
+
+            fixtures.Door = CreateFlagDoor(fixtureRoot.transform, Phase5AreaIds.FlagAGate, Phase5Layout.AreaAGate);
+            fixtures.Lever = CreateFlagLever(fixtureRoot.transform, Phase5AreaIds.FlagAGate,
+                definition.Id, fixtures.Door, Phase5Layout.AreaALever);
+            fixtures.Points.Add(CreateInvestigationPoint(fixtureRoot.transform, "Investigation",
+                Phase5AreaIds.PointAOpen, Phase5AreaIds.DiscoveryAOpen, Phase5Layout.AreaAInvestigation));
+            fixtures.Points.Add(CreateInvestigationPoint(fixtureRoot.transform, "InvestigationBlocked",
+                Phase5AreaIds.PointABlocked, Phase5AreaIds.DiscoveryABlocked,
+                Phase5Layout.AreaAInvestigationBlocked));
+
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
             areaRoot.EditorSet(definition, new List<AreaEntryPoint> { start, fromB },
-                new List<AreaExitGate> { toB });
+                new List<AreaExitGate> { toB }, new List<AreaFlagDoor> { fixtures.Door });
 
-            CreateAreaSystems(root, areaRoot, definition);
+            CreateAreaSystems(root, areaRoot, definition, fixtures);
         }
 
         private static void PopulateAreaB(Transform root, AreaDefinition definition)
@@ -445,8 +454,6 @@ namespace Momotaro.Editor.Phase5
             var markers = new GameObject("Markers");
             markers.transform.SetParent(root, false);
             Phase5Placeholder.CreateLabel("エリア B", markers.transform, new Vector3(0f, 0.2f, -1.5f), Color.white, 0.5f);
-            CreateMarker(markers.transform, "DoorToA", Phase5Layout.AreaBDoorToA,
-                Phase5Placeholder.EntryColor, "A へ（扉）", new Vector3(0.6f, 1.8f, 2.4f));
             CreateMarker(markers.transform, "Investigation", Phase5Layout.AreaBInvestigation,
                 Phase5Placeholder.InvestigationColor, "調査", new Vector3(0.8f, 0.6f, 0.8f));
             CreateMarker(markers.transform, "EncounterTrigger", Phase5Layout.AreaBEncounterTrigger,
@@ -486,11 +493,21 @@ namespace Momotaro.Editor.Phase5
             AreaExitGate toA = CreateExitGate(root, "ExitGate_ToA", Phase5Layout.AreaBDoorToA,
                 Phase5AreaIds.AreaA, Phase5AreaIds.AreaAFromB, Vector3.left);
 
+            // A へ戻る扉（§6.1 の 2 行目。押下 1 回で要求する）。
+            // 同じ場所の開放出入口と併存させる：方向入力でも Interact でも戻れる。
+            var fixtures = new Fixtures();
+            var fixtureRoot = new GameObject("Fixtures");
+            fixtureRoot.transform.SetParent(root, false);
+            fixtures.TransitionDoor = CreateTransitionDoor(fixtureRoot.transform, "DoorToA",
+                Phase5AreaIds.DoorBToA, definition.Id,
+                Phase5AreaIds.AreaA, Phase5AreaIds.AreaAFromB, Phase5Layout.AreaBDoorToA);
+
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
             areaRoot.EditorSet(definition, new List<AreaEntryPoint> { fromA },
-                new List<AreaExitGate> { toA });
+                new List<AreaExitGate> { toA }, null,
+                new List<AreaTransitionDoor> { fixtures.TransitionDoor });
 
-            CreateAreaSystems(root, areaRoot, definition);
+            CreateAreaSystems(root, areaRoot, definition, fixtures);
         }
 
         /// <summary>
@@ -564,7 +581,105 @@ namespace Momotaro.Editor.Phase5
         /// 置くのは初期化状態・受付条件・注入先・初期化担当の 4 つだけ。
         /// 主人公・犬丸・HUD・Encounter は後続工程で載せる（先回りして空の配線を置かない）。
         /// </summary>
-        private static void CreateAreaSystems(Transform root, AreaRoot areaRoot, AreaDefinition definition)
+        /// <summary>この Area に置いた仕掛け（§7）。窓口への配線でまとめて使う。</summary>
+        private sealed class Fixtures
+        {
+            public AreaFlagDoor Door;
+            public AreaFlagLever Lever;
+            public AreaTransitionDoor TransitionDoor;
+            public readonly List<CompanionInvestigationPoint> Points = new List<CompanionInvestigationPoint>();
+        }
+
+        /// <summary>Flag で恒久開通する門（§7.3）。通行を止める Collider と、閉じている見た目を持つ。</summary>
+        private static AreaFlagDoor CreateFlagDoor(Transform parent, StableId flagId, Vector3 position)
+        {
+            var go = new GameObject("Door_" + flagId.Value);
+            go.transform.SetParent(parent, false);
+            go.transform.position = position;
+
+            // 通行止め。開通すると無効化される。
+            BoxCollider blocker = go.AddComponent<BoxCollider>();
+            blocker.center = new Vector3(0f, Phase5Layout.WallHeight * 0.5f, 0f);
+            blocker.size = new Vector3(0.6f, Phase5Layout.WallHeight, Phase5Layout.CorridorWidth);
+
+            // 閉じているときだけ見せる板。
+            Material mat = Phase5Placeholder.EnsureMaterial("M_P5_Gate", Phase5Placeholder.GateColor);
+            var visual = new GameObject("ClosedVisual");
+            visual.transform.SetParent(go.transform, false);
+            Phase5Placeholder.CreateBox("Body", visual.transform,
+                position + new Vector3(0f, Phase5Layout.WallHeight * 0.5f, 0f),
+                new Vector3(0.4f, Phase5Layout.WallHeight, Phase5Layout.CorridorWidth), mat, solid: false);
+            Phase5Placeholder.CreateLabel("門", visual.transform,
+                position + new Vector3(0f, Phase5Layout.WallHeight + 0.2f, 0f),
+                Phase5Placeholder.GateColor, 0.2f);
+
+            AreaFlagDoor door = go.AddComponent<AreaFlagDoor>();
+            door.Bind(flagId, blocker, visual);
+            return door;
+        }
+
+        /// <summary>門を開けるレバー（§7.3）。Interact の候補として登録される。</summary>
+        private static AreaFlagLever CreateFlagLever(
+            Transform parent, StableId flagId, StableId areaId, AreaFlagDoor door, Vector3 position)
+        {
+            var go = new GameObject("Lever_" + flagId.Value);
+            go.transform.SetParent(parent, false);
+            go.transform.position = position;
+
+            Material mat = Phase5Placeholder.EnsureMaterial("M_P5_Lever", Phase5Placeholder.LeverColor);
+            Phase5Placeholder.CreateBox("Body", go.transform, position + new Vector3(0f, 0.6f, 0f),
+                new Vector3(0.5f, 1.2f, 0.5f), mat, solid: false);
+            Phase5Placeholder.CreateLabel("レバー", go.transform, position + new Vector3(0f, 1.4f, 0f),
+                Phase5Placeholder.LeverColor, 0.16f);
+
+            AreaFlagLever lever = go.AddComponent<AreaFlagLever>();
+            lever.Bind(flagId, areaId, door, go.transform);
+            return lever;
+        }
+
+        /// <summary>犬丸の調査地点（§7.2）。設定は P4 の試遊と同じ Asset を使う。</summary>
+        private static CompanionInvestigationPoint CreateInvestigationPoint(
+            Transform parent, string name, StableId pointId, StableId discoveryId, Vector3 position)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.position = position;
+
+            Material mat = Phase5Placeholder.EnsureMaterial("M_P5_Investigation", Phase5Placeholder.InvestigationColor);
+            Phase5Placeholder.CreateBox("Body", go.transform, position + new Vector3(0f, 0.3f, 0f),
+                new Vector3(0.8f, 0.6f, 0.8f), mat, solid: false);
+            Phase5Placeholder.CreateLabel("調査", go.transform, position + new Vector3(0f, 0.9f, 0f),
+                Phase5Placeholder.InvestigationColor, 0.16f);
+
+            var settings = AssetDatabase.LoadAssetAtPath<InvestigationSettingsData>(
+                Phase5AreaIds.InvestigationSettingsPath);
+            CompanionInvestigationPoint point = go.AddComponent<CompanionInvestigationPoint>();
+            point.Configure(pointId, CompanionIds.Inumaru, discoveryId, settings);
+            return point;
+        }
+
+        /// <summary>Interact 1 回で遷移を要求する扉（§6.1 の 2 行目）。</summary>
+        private static AreaTransitionDoor CreateTransitionDoor(
+            Transform parent, string name, StableId doorId, StableId areaId,
+            StableId destinationArea, StableId destinationEntry, Vector3 position)
+        {
+            var go = new GameObject("Door_" + name);
+            go.transform.SetParent(parent, false);
+            go.transform.position = position;
+
+            Material mat = Phase5Placeholder.EnsureMaterial("M_P5_DoorToA", Phase5Placeholder.EntryColor);
+            Phase5Placeholder.CreateBox("Body", go.transform, position + new Vector3(0f, 0.9f, 0f),
+                new Vector3(0.6f, 1.8f, 2.4f), mat, solid: false);
+            Phase5Placeholder.CreateLabel("A へ（扉）", go.transform, position + new Vector3(0f, 2.0f, 0f),
+                Phase5Placeholder.EntryColor, 0.16f);
+
+            AreaTransitionDoor door = go.AddComponent<AreaTransitionDoor>();
+            door.Configure(doorId, areaId, destinationArea, destinationEntry, go.transform);
+            return door;
+        }
+
+        private static void CreateAreaSystems(
+            Transform root, AreaRoot areaRoot, AreaDefinition definition, Fixtures fixtures)
         {
             var systems = new GameObject("AreaSystems");
             systems.transform.SetParent(root, false);
@@ -654,6 +769,44 @@ namespace Momotaro.Editor.Phase5
 
             // 徳を映す HUD（§11 の必須 UI のうち、P5-03b で要る分）。
             CreateHud(systems.transform, vitals, player, progress);
+
+            // ---- Interact の単一選択窓口（§7.1）----
+            //
+            // 押下を消費するのはこの 1 本だけ。P4 の InvestigationInteractInput は<b>置かない</b>
+            // （両方生きていると、同じ押下が 2 回消費されるか、窓口が選んだ対象と別の地点へ依頼が飛ぶ）。
+            var interactionGo = new GameObject("Interaction");
+            interactionGo.transform.SetParent(systems.transform, false);
+            AreaInteractionController interaction = interactionGo.AddComponent<AreaInteractionController>();
+            interaction.Bind(context, playerRoot != null ? playerRoot.transform : null);
+            AreaInteractInput interactInput = interactionGo.AddComponent<AreaInteractInput>();
+            interactInput.Bind(interaction);
+
+            // ---- 調査（§7.2）。P5 は指定地点モードで構成する（§7.1）----
+            if (fixtures != null && fixtures.Points.Count > 0)
+            {
+                var rosterGo = new GameObject("CompanionRoster");
+                rosterGo.transform.SetParent(systems.transform, false);
+                CompanionRosterContext roster = rosterGo.AddComponent<CompanionRosterContext>();
+                roster.SetRecruited(CompanionIds.Inumaru);
+
+                CompanionInvestigationController driver = companionRoot != null
+                    ? companionRoot.GetComponentInChildren<CompanionInvestigationController>(true)
+                    : null;
+
+                var coordinatorGo = new GameObject("InvestigationCoordinator");
+                coordinatorGo.transform.SetParent(systems.transform, false);
+                InvestigationCoordinator coordinator = coordinatorGo.AddComponent<InvestigationCoordinator>();
+                coordinator.ExplicitTargetOnly = true;
+                coordinator.Bind(player, roster, record,
+                    driver != null ? new[] { driver } : new CompanionInvestigationController[0]);
+
+                // 地点ごとに Adapter を付ける。窓口が選んだ地点がそのまま依頼される。
+                foreach (CompanionInvestigationPoint point in fixtures.Points)
+                {
+                    InvestigationInteractable adapter = point.gameObject.AddComponent<InvestigationInteractable>();
+                    adapter.Bind(point, coordinator, definition.Id);
+                }
+            }
 
             var catalog = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase5AreaIds.CatalogDataPath);
             AreaInitializer initializer = systems.AddComponent<AreaInitializer>();

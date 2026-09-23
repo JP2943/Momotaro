@@ -136,7 +136,10 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Lever_CommitsOnceAndRestoresDoorFromSameFlag",
       "requirementIds": [],
-      "implemented": true
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ExplorationRoute_LeverOpensGateAndDoorTravelsBack"
+      ]
     },
     {
       "requirementId": "P5-E15",
@@ -356,7 +359,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.KeyboardAndGamepadInteract_ActOnceWithoutStep",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P11",

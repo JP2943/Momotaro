@@ -51,5 +51,28 @@ namespace Momotaro.Editor.Phase5
 
         /// <summary>カタログ Asset の安定 ID。</summary>
         public static readonly StableId Catalog = new StableId("area_catalog_p5");
+
+        // ---- P5-04：仕掛け（§7）----
+
+        /// <summary>A の門を開ける Flag（レバーと門が共有する正本。§7.3）。</summary>
+        public static readonly StableId FlagAGate = new StableId("flag_p5_a_gate");
+
+        /// <summary>A の調査地点（通行できる側）。</summary>
+        public static readonly StableId PointAOpen = new StableId("point_p5_a_01");
+
+        /// <summary>A の調査地点（衝立の向こう側。壁越しは拒否される。§7.2）。</summary>
+        public static readonly StableId PointABlocked = new StableId("point_p5_a_blocked");
+
+        /// <summary>A の調査で見つかるもの。</summary>
+        public static readonly StableId DiscoveryAOpen = new StableId("discovery_p5_a_01");
+
+        /// <summary>A の壁越し地点で見つかるもの。</summary>
+        public static readonly StableId DiscoveryABlocked = new StableId("discovery_p5_a_blocked");
+
+        /// <summary>B から A へ戻る扉（Interact 1 回で要求する。§6.1）。</summary>
+        public static readonly StableId DoorBToA = new StableId("door_p5_b_to_a");
+
+        /// <summary>調査の設定 Asset（P4 の試遊と同じものを使う）。</summary>
+        public const string InvestigationSettingsPath = "Assets/_Project/Data/Exploration/SO_Investigation_Trial.asset";
     }
 }

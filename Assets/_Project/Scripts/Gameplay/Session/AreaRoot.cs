@@ -29,6 +29,10 @@ namespace Momotaro.Gameplay.Session
         [Tooltip("Flag で恒久開通する門（§7.3）。到着時に記録から開通状態を復元する対象。")]
         [SerializeField] private List<Interaction.AreaFlagDoor> _doors = new List<Interaction.AreaFlagDoor>();
 
+        [Tooltip("Interact 1 回で遷移を要求する扉（§6.1 の 2 行目）。駆動側が要求を取りに来る対象。")]
+        [SerializeField] private List<Interaction.AreaTransitionDoor> _transitionDoors =
+            new List<Interaction.AreaTransitionDoor>();
+
         /// <summary>このエリアの定義。</summary>
         public AreaDefinition Definition => _definition;
 
@@ -43,6 +47,9 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>恒久開通する門（読み取り専用）。到着時の復元対象（§4.3／§7.3）。</summary>
         public IReadOnlyList<Interaction.AreaFlagDoor> Doors => _doors;
+
+        /// <summary>Interact で遷移を要求する扉（読み取り専用。§6.1）。</summary>
+        public IReadOnlyList<Interaction.AreaTransitionDoor> TransitionDoors => _transitionDoors;
 
         /// <summary>指定 ID の入口を Scene から引く。</summary>
         public bool TryGetEntryPoint(StableId entryId, out AreaEntryPoint point)
@@ -67,12 +74,14 @@ namespace Momotaro.Gameplay.Session
             AreaDefinition definition,
             List<AreaEntryPoint> entryPoints,
             List<AreaExitGate> exitGates = null,
-            List<Interaction.AreaFlagDoor> doors = null)
+            List<Interaction.AreaFlagDoor> doors = null,
+            List<Interaction.AreaTransitionDoor> transitionDoors = null)
         {
             _definition = definition;
             _entryPoints = entryPoints ?? new List<AreaEntryPoint>();
             _exitGates = exitGates ?? new List<AreaExitGate>();
             _doors = doors ?? new List<Interaction.AreaFlagDoor>();
+            _transitionDoors = transitionDoors ?? new List<Interaction.AreaTransitionDoor>();
         }
 #endif
     }

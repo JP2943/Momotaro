@@ -7,13 +7,17 @@ using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Gameplay.Interaction;
 using Momotaro.Gameplay.Session;
 using Momotaro.Gameplay.Transfer;
 using Momotaro.Presentation.Hud;
 using Momotaro.Infrastructure.Bootstrap;
+using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.World;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
@@ -56,6 +60,7 @@ namespace Momotaro.Tests.PlayMode
             GameSessionProvider.Current = null;
             AreaPendingArrival.Clear();
             AreaPendingArrival.ResetDiagnostics();
+            AreaInteractableRegistry.Clear();
         }
 
         [UnityTearDown]
@@ -92,8 +97,29 @@ namespace Momotaro.Tests.PlayMode
             GameplayClockProvider.Current = null;
             GameSessionProvider.Current = null;
             AreaPendingArrival.Clear();
+            AreaInteractableRegistry.Clear();
+            RemoveInputDevices();
             yield return null;
         }
+
+        /// <summary>テストで足した入力デバイスを外す（次のテストへ残さない）。</summary>
+        private void RemoveInputDevices()
+        {
+            if (_keyboard != null)
+            {
+                InputSystem.RemoveDevice(_keyboard);
+                _keyboard = null;
+            }
+
+            if (_gamepad != null)
+            {
+                InputSystem.RemoveDevice(_gamepad);
+                _gamepad = null;
+            }
+        }
+
+        private Keyboard _keyboard;
+        private Gamepad _gamepad;
 
         /// <summary>
         /// 統合起動 Scene の起動役を消す。待ち Coroutine を次のテストへ持ち越さないため
@@ -1653,6 +1679,265 @@ namespace Momotaro.Tests.PlayMode
 
                 public bool HasError => false;
             }
+        }
+
+        // ---------------------------------------------------------------- P10（実 Action 経路）
+
+        /// <summary>
+        /// P5-P10：キーボード E とゲームパッド South の<b>実 Action 経路</b>で Interact が各 1 回だけ効き、
+        /// 長押しでも複数対象でも二重に実行されず、Step を発動しない（§7.1。受入 P10）。
+        ///
+        /// ここまでの検査は仲介へ Fake の入力を差していた。それでは
+        /// <b>Action の割当（E ／南ボタン）が Step と重なっていないこと</b>も、
+        /// 押下エッジが実デバイスから 1 回だけ届くことも確かめられない。
+        /// 実デバイスを足して、生成された Scene の配線をそのまま通す。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator KeyboardAndGamepadInteract_ActOnceWithoutStep()
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+            Assert.IsNotNull(PlayerInputProvider.Current, "主人公入力の提供点が入っている（IA_Momotaro）。");
+
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5Keyboard");
+            _gamepad = InputSystem.AddDevice<Gamepad>("P5Gamepad");
+
+            var mediator = Object.FindFirstObjectByType<AreaInteractInput>();
+            Assert.IsNotNull(mediator, "生成された Scene に P5 の入力仲介がある。");
+            Assert.IsNull(Object.FindFirstObjectByType<InvestigationInteractInput>(),
+                "P4 の旧仲介は P5 Scene に居ない（§7.1。同じ押下を 2 回消費しない）。");
+
+            var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.IsNotNull(lever, "生成された Scene にレバーがある。");
+            Assert.IsNotNull(lever.Door, "レバーに門が配線されている。");
+
+            var player = Object.FindFirstObjectByType<PlayerStateController>();
+            Assert.IsNotNull(player);
+            yield return MovePlayerTo(lever.InteractionAnchor + new Vector3(0.6f, 0f, 0f));
+
+            // ---- キーボード E：押しっぱなしでも 1 回だけ ----
+            bool sawStep = false;
+            yield return PressKey(Key.E);
+            for (int i = 0; i < 12; i++)
+            {
+                sawStep |= player.Current == PlayerState.Step;
+                yield return null;
+            }
+
+            Assert.AreEqual(1, mediator.InteractCount, "E の押しっぱなしでも実行は 1 回。");
+            Assert.AreEqual(1, lever.OpenedCount, "門が 1 回だけ開く。");
+            Assert.IsTrue(lever.Door.IsOpened, "門が開いている。");
+            Assert.IsTrue(Object.FindFirstObjectByType<AreaFlagDoor>().IsOpened);
+            Assert.IsFalse(sawStep, "Interact で Step を発動しない（割当が重なっていない）。");
+
+            yield return ReleaseKeys();
+
+            // ---- ゲームパッド South：複数対象でも 1 回だけ ----
+            //
+            // 実行の回数を数えるだけの対象を 2 つ登録する。実物の仕掛けを 2 つ置くと
+            // 「どちらが選ばれたか」と「何回実行されたか」が混ざるので、ここは入力の側だけを見る。
+            // 主人公はレバーの +X 側 0.6m に立っている。near は 0.3m、far は 1.2m の位置に置く
+            // （+X 方向へ遠ざけると主人公に近づくので、主人公の位置から測って並べる）。
+            Vector3 playerSpot = lever.InteractionAnchor + new Vector3(0.6f, 0f, 0f);
+            var near = new CountingInteractable("aa_near", lever.AreaId,
+                playerSpot + new Vector3(0.3f, 0f, 0f));
+            var far = new CountingInteractable("zz_far", lever.AreaId,
+                playerSpot + new Vector3(1.2f, 0f, 0f));
+            AreaInteractableRegistry.Register(near);
+            AreaInteractableRegistry.Register(far);
+
+            int before = mediator.InteractCount;
+            yield return PressGamepadSouth();
+            for (int i = 0; i < 12; i++)
+            {
+                sawStep |= player.Current == PlayerState.Step;
+                yield return null;
+            }
+
+            Assert.AreEqual(before + 1, mediator.InteractCount, "South の押しっぱなしでも実行は 1 回。");
+            Assert.AreEqual(1, near.Calls, "選ばれた対象だけが 1 回実行される。");
+            Assert.AreEqual(0, far.Calls, "同じ押下が次点へ流れない。");
+            Assert.IsFalse(sawStep, "ゲームパッド South でも Step を発動しない。");
+
+            yield return ReleaseGamepad();
+
+            // ---- 離して押し直せば、また 1 回だけ効く ----
+            yield return PressGamepadSouth();
+            for (int i = 0; i < 6; i++)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(2, near.Calls, "押し直せば 1 回ぶん効く。");
+            Assert.AreEqual(0, far.Calls);
+            yield return ReleaseGamepad();
+        }
+
+        /// <summary>主人公を指定位置へ置く（根と Rigidbody の両方。子を動かすと引き戻される）。</summary>
+        private IEnumerator MovePlayerTo(Vector3 position)
+        {
+            var root = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(root, "主人公の根がある。");
+            root.transform.position = position;
+            if (root.Body != null)
+            {
+                root.Body.position = position;
+                root.Body.linearVelocity = Vector3.zero;
+            }
+
+            Physics.SyncTransforms();
+            yield return new WaitForFixedUpdate();
+            yield return null;
+        }
+
+        private IEnumerator PressKey(Key key)
+        {
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState(key));
+            yield return null;
+        }
+
+        private IEnumerator ReleaseKeys()
+        {
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+            yield return null;
+        }
+
+        private IEnumerator PressGamepadSouth()
+        {
+            InputSystem.QueueStateEvent(_gamepad, new GamepadState().WithButton(GamepadButton.South));
+            yield return null;
+        }
+
+        private IEnumerator ReleaseGamepad()
+        {
+            InputSystem.QueueStateEvent(_gamepad, new GamepadState());
+            yield return null;
+            yield return null;
+        }
+
+        /// <summary>実行された回数だけを数える対象（入力の側を見るための道具）。</summary>
+        private sealed class CountingInteractable : IAreaInteractable
+        {
+            private readonly string _id;
+
+            public CountingInteractable(string id, StableId areaId, Vector3 anchor)
+            {
+                _id = id;
+                AreaId = areaId;
+                InteractionAnchor = anchor;
+            }
+
+            public int Calls { get; private set; }
+
+            public StableId InteractableId => new StableId(_id);
+            public StableId AreaId { get; }
+            public int FloorId => 0;
+            public Vector3 InteractionAnchor { get; }
+            public float InteractionRadius => 0f;
+            public bool IsAvailable => true;
+            public string Prompt => _id;
+
+            public AreaInteractionOutcome Interact()
+            {
+                Calls++;
+                return AreaInteractionOutcome.Accepted(_id);
+            }
+        }
+
+        // ---------------------------------------------------------------- E14（実 Scene）／P05 の探索部分
+
+        /// <summary>
+        /// P5-E14（実 Scene）：レバーで開けた門が<b>Scene を往復しても開いたまま</b>で、
+        /// Interact の扉から移動できる（§7.3／§4.3／§6.1 の 2 行目）。
+        ///
+        /// 契約は EditMode で固めてあるが、実 Scene では別の失敗のしかたがある：
+        /// 記録が Area ごとに分かれていない、門が Scene の作り直しで閉じ直る、
+        /// 扉の要求を誰も取りに来ない。ここはその 3 つを実入力で通す。
+        /// P05（全行程）は Encounter（P5-07）が要るので、探索の部分だけをここで固定する。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ExplorationRoute_LeverOpensGateAndDoorTravelsBack()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5RouteKeyboard");
+
+            GameSessionState session = Sessions().Session;
+            AreaTransitionService service = Transitions();
+            AreaTransitionCoordinator coordinator = service.Coordinator;
+
+            // ---- レバーを引いて門を開ける（実入力） ----
+            var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.IsNotNull(lever);
+            AreaFlagDoor door = lever.Door;
+            Assert.IsNotNull(door);
+            Assert.IsFalse(door.IsOpened, "前提：門は閉じている。");
+
+            yield return MovePlayerTo(lever.InteractionAnchor + new Vector3(0.6f, 0f, 0f));
+            yield return PressKey(Key.E);
+            for (int i = 0; i < 8; i++)
+            {
+                yield return null;
+            }
+
+            yield return ReleaseKeys();
+
+            Assert.AreEqual(1, lever.OpenedCount, "レバーで 1 回だけ開通する。");
+            Assert.IsTrue(door.IsOpened, "門が開いている。");
+            Assert.IsTrue(session.TryGetArea(AreaA, out AreaRuntimeState areaA));
+            Assert.IsTrue(areaA.IsOpen(lever.FlagId), "記録が正本として開通を持つ。");
+
+            // ---- A → B ----
+            Assert.IsTrue(service.TryTravel(AreaB, AreaBFromA).Accepted);
+            yield return WaitForCompleted(coordinator, 1);
+            Assert.AreEqual(AreaB.Value, Object.FindFirstObjectByType<AreaContext>().AreaId.Value);
+
+            // ---- B の扉を Interact で押して A へ戻る（§6.1 の 2 行目） ----
+            var backDoor = Object.FindFirstObjectByType<AreaTransitionDoor>();
+            Assert.IsNotNull(backDoor, "B に A へ戻る扉がある。");
+            Assert.AreEqual(AreaA.Value, backDoor.DestinationAreaId.Value);
+
+            yield return MovePlayerTo(backDoor.InteractionAnchor + new Vector3(0.8f, 0f, 0f));
+            yield return PressKey(Key.E);
+            for (int i = 0; i < 8; i++)
+            {
+                yield return null;
+            }
+
+            yield return ReleaseKeys();
+            Assert.AreEqual(1, backDoor.RequestCount, "扉は押下 1 回で 1 件だけ要求する。");
+
+            yield return WaitForCompleted(coordinator, 2);
+            Assert.AreEqual(AreaA.Value, Object.FindFirstObjectByType<AreaContext>().AreaId.Value,
+                "扉から A へ戻っている。");
+            Assert.AreEqual(AreaAFromB.Value, Object.FindFirstObjectByType<AreaContext>().EntryId.Value,
+                "扉が指定した入口へ着く。");
+
+            // ---- 作り直された A で、門は開いたまま ----
+            var doorBack = Object.FindFirstObjectByType<AreaFlagDoor>();
+            Assert.IsNotNull(doorBack);
+            Assert.AreNotSame(door, doorBack, "Scene ごとに別の実体（運んでいない）。");
+            Assert.IsTrue(doorBack.IsOpened, "記録から開通が復元されている。");
+
+            var leverBack = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.AreEqual(0, leverBack.OpenedCount, "復元は「いま開通した」ではない（通知を再発行しない）。");
+
+            AreaInteractionOutcome again = leverBack.Interact();
+            Assert.IsFalse(again.Handled, "開通済みのレバーは断る。");
+            Assert.AreEqual("開通済み", again.Message);
+            Assert.AreEqual(0, leverBack.OpenedCount, "断りで開通回数は増えない。");
+            Assert.AreEqual(1, Sessions().CreatedCount, "Session を作り直さない。");
         }
     }
 }

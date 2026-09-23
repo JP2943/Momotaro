@@ -47,6 +47,20 @@ namespace Momotaro.Infrastructure.World
                 return;
             }
 
+            // Interact で置かれた扉の要求を先に取りに行く（§6.1 の 2 行目）。
+            // 押下は 1 フレームの出来事なので、連続入力の溜めより先に見る。
+            for (int i = 0; i < _areaRoot.TransitionDoors.Count; i++)
+            {
+                Momotaro.Gameplay.Interaction.AreaTransitionDoor door = _areaRoot.TransitionDoors[i];
+                if (door == null || !door.ConsumePendingRequest())
+                {
+                    continue;
+                }
+
+                transitions.TryTravel(door.DestinationAreaId, door.DestinationEntryId);
+                return; // 1 フレームに 1 件だけ。
+            }
+
             for (int i = 0; i < _areaRoot.ExitGates.Count; i++)
             {
                 AreaExitGate gate = _areaRoot.ExitGates[i];
