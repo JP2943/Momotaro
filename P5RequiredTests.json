@@ -335,7 +335,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.PauseAndLoading_StopActorsAndResumeWithoutResidue",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P08",
@@ -419,7 +419,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.CameraTransition_PreservesBoundsAndShakeBase",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P18",

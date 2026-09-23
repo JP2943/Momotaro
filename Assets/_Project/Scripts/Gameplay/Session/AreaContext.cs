@@ -48,7 +48,20 @@ namespace Momotaro.Gameplay.Session
         {
             PreparedCount++;
             IsPrepared = true;
+            Prepared?.Invoke();
         }
+
+        /// <summary>
+        /// 準備が整ったことの通知（§5.1 手順 7）。<b>カメラの即時配置はこれを購読して行う。</b>
+        ///
+        /// 初期化担当（Infrastructure）から Presentation のカメラを直接呼ばせない。
+        /// 層の向きが逆になるうえ、カメラを持たない Scene（試遊の起動 Scene・テスト用の最小構成）で
+        /// 「未配線なので失敗」と言い出す羽目になる。通知なら、聞いている者だけが反応する。
+        ///
+        /// 活動許可（<see cref="Activate"/>）ではなく<b>準備完了</b>に紐づけるのは、
+        /// 許可は遷移の所有者が後から出すもので、その間もカメラは到着位置を映していてほしいため。
+        /// </summary>
+        public event System.Action Prepared;
 
         /// <summary>
         /// 活動と入力を許可する（§5.1 手順 8）。<b>遷移の所有者だけが呼ぶ。</b>

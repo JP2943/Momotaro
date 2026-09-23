@@ -1,7 +1,9 @@
 using System.Collections;
 using System.Text.RegularExpressions;
 using Momotaro.Core.Identification;
+using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Companion.Investigation;
+using Momotaro.Gameplay.Enemy.Threat;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Player;
@@ -12,6 +14,8 @@ using Momotaro.Gameplay.Navigation;
 using Momotaro.Infrastructure.Navigation;
 using Momotaro.Gameplay.Session;
 using Momotaro.Gameplay.Transfer;
+using Momotaro.Presentation.Cameras;
+using Momotaro.Presentation.Combat;
 using Momotaro.Presentation.Hud;
 using Momotaro.Infrastructure.Bootstrap;
 using Momotaro.Infrastructure.Input;
@@ -2158,6 +2162,560 @@ namespace Momotaro.Tests.PlayMode
 
             motor.ClearReaction();
             Assert.Less(body.position.x, 12f, "押し出しでも外壁を越えない。x=" + body.position.x);
+        }
+
+        // ---------------------------------------------------------------- P17（カメラ）
+
+        /// <summary>
+        /// P5-P17：領域移動・Scene 到着・揺れのあとで<b>基準位置がずれない</b>。
+        /// Camera・AudioListener・入力・HUD は活動中<b>各 1 つ</b>（§11）。
+        ///
+        /// <b>「揺れても戻る」だけを見ない。</b> <c>CameraShakePresenter</c> は満了で基準へ戻すので、
+        /// 追従が同じ Transform を書いていても「戻った」ようには見える。壊れるのは
+        /// <b>基準そのもの</b>で、追従の書込みが揺れの基準を上書きすると、揺れ終わりに
+        /// Camera 子の局所位置が別の値になる。だから<b>Rig の位置＝収めた基準位置</b>と
+        /// <b>Camera 子の局所位置＝出荷時のオフセット</b>を別々に見る。
+        ///
+        /// 画面比は実行環境で変わるので、期待値は絶対値ではなく
+        /// <c>CameraBoundsMath.ClampFocus</c> という同じ純粋関数から作る。
+        /// 奥行きだけは俯角だけで決まる（<c>size / sin(俯角)</c>）ので、追従する軸として固定で使える。
+        ///
+        /// 補間の途中を見る区間は <b>Rig の LateUpdate を止めて時間を注入する</b>。
+        /// 実フレームの間隔は編集器の負荷で変わり、0.15 秒の補間が 1 フレームで終わることがある。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator CameraTransition_PreservesBoundsAndShakeBase()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            AssertSingleOwners("A 直開き");
+
+            var rig = Object.FindFirstObjectByType<AreaCameraRig>();
+            Assert.IsNotNull(rig, "エリアにカメラ Rig がある。");
+            Assert.IsTrue(rig.IsWired, "追従対象・カメラ・既定領域が配線されている。");
+
+            Camera camera = Camera.main;
+            Assert.IsNotNull(camera, "Main Camera がある。");
+            Assert.AreSame(rig.transform, camera.transform.parent,
+                "Camera は Rig の子（追従と揺れで書込み先を分ける。§11）。");
+
+            var shake = Object.FindFirstObjectByType<CameraShakePresenter>();
+            Assert.IsNotNull(shake, "既存の ShakePresenter を使う（§11。独自 HitStop を足さない）。");
+            Assert.AreSame(camera.transform, shake.Target, "揺れは Camera 子へ書く。");
+
+            Vector3 shakeBase = camera.transform.localPosition;
+            Assert.Greater(shakeBase.y, 0.1f, "前提：カメラは Rig の上にある。");
+
+            var playerRoot = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(playerRoot);
+
+            // ---- 到着では補間しない（§11「Scene 到着・死亡再開では補間せず即時配置」）----
+            Assert.IsFalse(rig.Blend.IsBlending, "到着の直後に補間が走っていない（前の部屋から滑ってこない）。");
+            AssertFocusIsClamped(rig, playerRoot.transform.position, "到着");
+            Assert.GreaterOrEqual(rig.SnapCount, 1, "到着で即時配置している。");
+
+            Vector2 half = rig.HalfFootprint();
+            Assert.Greater(9f, half.y, "前提：奥行きは部屋（半分 9m）より見える範囲が狭い＝追従する軸。");
+            Assert.Greater(half.x, 3f, "前提：東の通路（半分 3m）は横が入りきらない＝中央固定になる軸。");
+
+            // 範囲の内側なら主人公の位置そのもの。
+            yield return MovePlayerTo(new Vector3(-1f, 0f, 2f));
+            rig.Tick(1f);
+            Assert.AreEqual(2f, rig.transform.position.z, 0.02f,
+                "範囲の内側では主人公をそのまま追う。z=" + rig.transform.position.z);
+            AssertFocusIsClamped(rig, playerRoot.transform.position, "西の部屋・中央");
+
+            // 端では領域に収める（外＝仮背景を見せない）。
+            yield return MovePlayerTo(new Vector3(-1f, 0f, -7f));
+            rig.Tick(1f);
+            float southZ = rig.transform.position.z;
+            Assert.Greater(southZ, -7f + 1f, "南の端は領域に収める（主人公より手前で止まる）。z=" + southZ);
+            AssertFocusIsClamped(rig, playerRoot.transform.position, "西の部屋・南");
+
+            yield return MovePlayerTo(new Vector3(-1f, 0f, 7f));
+            rig.Tick(1f);
+            float northZ = rig.transform.position.z;
+            Assert.Greater(northZ, southZ + 1f,
+                "入りきる軸は主人公を追う（止まったままにしない）。南=" + southZ + " 北=" + northZ);
+            AssertFocusIsClamped(rig, playerRoot.transform.position, "西の部屋・北");
+
+            // ---- 領域移動：切替は補間し、<b>途中のフレームも範囲内</b>（§11）----
+            //
+            // 補間の途中を見る区間だけ切替時間を延ばす。実フレームの間隔は編集器の負荷で変わり、
+            // 0.15 秒の補間が 1 フレームで終わってしまうと「途中」が存在しなくなる。
+            var context = Object.FindFirstObjectByType<AreaContext>();
+            Assert.IsNotNull(context);
+            SetPrivate(rig, "_blendSeconds", 2f);
+
+            try
+            {
+                Assert.AreEqual("region_p5_a_west", rig.CurrentRegion.RegionId.Value, "いまは西の大部屋。");
+                int changesBefore = rig.Blend.RegionChangeCount;
+
+                yield return MovePlayerTo(new Vector3(9f, 0f, -6f));
+                rig.Tick(0.001f);
+                Assert.AreEqual("region_p5_a_east", rig.CurrentRegion.RegionId.Value, "東の通路へ移る。");
+                Assert.AreEqual(changesBefore + 1, rig.Blend.RegionChangeCount, "切替を 1 回数える。");
+                Assert.IsTrue(rig.Blend.IsBlending, "部屋の切替は補間する（§11）。");
+
+                for (int i = 0; i < 20; i++)
+                {
+                    rig.Tick(0.02f);
+
+                    // 補間の途中は「前の部屋の端」と「今の部屋の端」の間に居る。
+                    // 追従先と一致はしないが、<b>いまの領域の有効範囲からは出ない</b>（§11）。
+                    AssertFocusInsideRegion(rig, "補間の途中 " + i);
+                }
+
+                Assert.IsTrue(rig.Blend.IsBlending, "前提：まだ補間の途中（途中が存在している）。");
+
+                rig.Tick(5f);
+                Assert.IsFalse(rig.Blend.IsBlending, "補間は終わる。");
+                Assert.AreEqual(9f, rig.transform.position.x, 0.02f,
+                    "入りきらない軸は中央固定（東の通路の中心 x=9）。x=" + rig.transform.position.x);
+                AssertFocusIsClamped(rig, playerRoot.transform.position, "東の通路");
+
+                // ---- 準備完了の報告は<b>補間を打ち切って</b>即時配置する（§5.1 手順 7／§11）----
+                //
+                // Scene 到着・死亡再開でカメラが前の部屋から滑ってくると、居なかった場所に居たように見える。
+                // 初期化担当（Infrastructure）は Presentation を知らないので、この即時配置は
+                // AreaContext の準備完了通知を Rig が購読して行う。
+                yield return MovePlayerTo(new Vector3(-1f, 0f, 2f));
+                rig.Tick(0.001f);
+                Assert.IsTrue(rig.Blend.IsBlending, "前提：部屋を跨いだので補間が始まっている。");
+
+                int snapsBefore = rig.SnapCount;
+                context.MarkPrepared();
+
+                // まず<b>振る舞い</b>を見る。回数は「即時配置を通った」ことの裏取り。
+                Assert.IsFalse(rig.Blend.IsBlending, "即時配置は補間を打ち切る（前の部屋から滑ってこない）。");
+                AssertFocusIsClamped(rig, playerRoot.transform.position, "準備完了");
+                Assert.AreEqual(snapsBefore + 1, rig.SnapCount, "準備完了の報告で即時配置する。");
+            }
+            finally
+            {
+                SetPrivate(rig, "_blendSeconds", CameraFocusBlend.DefaultBlendSeconds);
+            }
+
+            // ---- 揺れ：追従と書込み先が分かれているので、基準がずれない ----
+            Assert.IsFalse(shake.IsShaking, "前提：揺れていない。");
+            shake.Shake(0.3f, 0.25f);
+            Assert.IsTrue(shake.IsShaking);
+
+            // 揺れている最中に部屋の中で動かす。同じ Transform を 2 人が書いていると、ここで基準が壊れる。
+            yield return MovePlayerTo(new Vector3(9f, 0f, 5f));
+            yield return WaitUntilOrTimeout(() => !shake.IsShaking, 3f);
+            Assert.IsFalse(shake.IsShaking, "揺れは満了で止まる。");
+            yield return null;
+
+            Assert.AreEqual(shakeBase.x, camera.transform.localPosition.x, 0.001f,
+                "揺れ終わりに Camera 子の基準が戻る（追従が基準を書いていない）。");
+            Assert.AreEqual(shakeBase.y, camera.transform.localPosition.y, 0.001f);
+            Assert.AreEqual(shakeBase.z, camera.transform.localPosition.z, 0.001f);
+
+            rig.Tick(1f); // 部屋を跨いだ分の補間を終わらせてから基準を見る。
+            AssertFocusIsClamped(rig, playerRoot.transform.position, "揺れのあと");
+            Vector3 expectedCamera = rig.transform.position + shakeBase;
+            Assert.Less(Vector3.Distance(expectedCamera, camera.transform.position), 0.01f,
+                "カメラの世界位置は Rig の基準＋出荷時のオフセット。期待=" + expectedCamera
+                + " 実際=" + camera.transform.position);
+
+            // ---- Scene 到着：旧 Scene の Camera・Listener を残さない ----
+            AreaTransitionService service = Transitions();
+            AreaTransitionCoordinator coordinator = service.Coordinator;
+            Assert.IsNotNull(coordinator);
+            Assert.IsTrue(service.TryTravel(AreaB, AreaBFromA).Accepted);
+
+            float waited = 0f;
+            while (coordinator.CompletedCount < 1 && waited < 15f)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            Assert.AreEqual(1, coordinator.CompletedCount, "B へ到着する。");
+            AssertSingleOwners("B 到着");
+
+            var rigB = Object.FindFirstObjectByType<AreaCameraRig>();
+            Assert.IsNotNull(rigB, "B にもカメラ Rig がある。");
+            Assert.AreNotSame(rig, rigB, "旧 Scene の Rig は残らない。");
+            Assert.IsTrue(rigB.IsWired);
+            Assert.GreaterOrEqual(rigB.SnapCount, 1, "到着で即時配置している（補間で滑ってこない）。");
+            Assert.IsFalse(rigB.Blend.IsBlending, "到着の直後に補間が走っていない。");
+
+            var playerB = Object.FindFirstObjectByType<PlayerRoot>();
+            AssertFocusIsClamped(rigB, playerB.transform.position, "B 到着");
+        }
+
+        /// <summary>
+        /// Rig の位置が「いまの領域に収めた基準位置」と一致することを見る。
+        /// 画面比が環境で変わるので、期待値は同じ純粋関数から作る（絶対値で書かない）。
+        /// </summary>
+        private static void AssertFocusIsClamped(AreaCameraRig rig, Vector3 target, string label)
+        {
+            Vector3 expected = CameraBoundsMath.ClampFocus(target, rig.CurrentRegion, rig.HalfFootprint());
+            Assert.AreEqual(expected.x, rig.transform.position.x, 0.02f,
+                label + "：基準の x が領域に収まっている。region=" + rig.CurrentRegion.RegionId.Value);
+            Assert.AreEqual(expected.z, rig.transform.position.z, 0.02f,
+                label + "：基準の z が領域に収まっている。region=" + rig.CurrentRegion.RegionId.Value);
+        }
+
+        /// <summary>
+        /// 基準位置が<b>いまの領域の有効範囲</b>に入っていることを見る（補間の途中でも成り立つ条件）。
+        /// 部屋の方が見える範囲より狭い軸は中央固定（§11「無理な min/max clamp をしない」）。
+        /// </summary>
+        private static void AssertFocusInsideRegion(AreaCameraRig rig, string label)
+        {
+            Vector2 half = rig.HalfFootprint();
+            CameraRegionDefinition region = rig.CurrentRegion;
+            Vector3 focus = rig.transform.position;
+
+            AssertAxisInside(focus.x, region.Min.x, region.Max.x, half.x, region.Center.x, label + "：x");
+            AssertAxisInside(focus.z, region.Min.y, region.Max.y, half.y, region.Center.y, label + "：z");
+        }
+
+        private static void AssertAxisInside(
+            float value, float min, float max, float half, float center, string label)
+        {
+            float low = min + half;
+            float high = max - half;
+
+            if (low > high)
+            {
+                Assert.AreEqual(center, value, 0.02f, label + "：入りきらない軸は中央固定。");
+                return;
+            }
+
+            Assert.GreaterOrEqual(value, low - 0.02f, label + "：領域の外を映さない（下限 " + low + "）。");
+            Assert.LessOrEqual(value, high + 0.02f, label + "：領域の外を映さない（上限 " + high + "）。");
+        }
+
+        /// <summary>
+        /// Camera・AudioListener・入力・HUD が活動中 1 つずつであることを見る（§11）。
+        /// 旧 Scene から持ち越すと、音が二重になったり押下が 2 回消費されたりする。
+        /// </summary>
+        private static void AssertSingleOwners(string label)
+        {
+            Assert.AreEqual(1, Object.FindObjectsByType<Camera>(FindObjectsSortMode.None).Length,
+                label + "：活動中の Camera は 1 つ。");
+            Assert.AreEqual(1, Object.FindObjectsByType<AudioListener>(FindObjectsSortMode.None).Length,
+                label + "：活動中の AudioListener は 1 つ。");
+            Assert.AreEqual(1, Object.FindObjectsByType<AreaInteractInput>(FindObjectsSortMode.None).Length,
+                label + "：Interact の押下を消費する入力は 1 つ（§7.1）。");
+            Assert.AreEqual(0, Object.FindObjectsByType<InvestigationInteractInput>(FindObjectsSortMode.None).Length,
+                label + "：P4 の調査専用入力は置かない（同じ押下を 2 回消費させない）。");
+            Assert.AreEqual(1, Object.FindObjectsByType<CombatPlayHud>(FindObjectsSortMode.None).Length,
+                label + "：HUD は 1 つ。");
+            Assert.AreEqual(1, Object.FindObjectsByType<AreaContext>(FindObjectsSortMode.None).Length,
+                label + "：AreaContext は 1 つ。");
+        }
+
+        // ---------------------------------------------------------------- P07（Pause／Loading）
+
+        /// <summary>
+        /// P5-P07：実行中の<b>経路・探索・戦闘</b>を Pause と Loading が止め、復帰で続く。
+        /// Loading へ<b>旧速度も Hitbox も残さない</b>（§6.2 手順 3〜5、§11、受入 P07）。
+        ///
+        /// <b>止まることだけを見ると、全部止まったままの実装が通る。</b> だからどの区間でも
+        /// 「動いている」ことを先に確かめ、止めて、<b>また動く</b>ところまで見る。
+        ///
+        /// Pause と Loading は<b>止め方が違う</b>（§12.1／<c>CompanionActivity</c>）。
+        /// Pause は<b>凍結</b>で、進行中の攻撃・調査を保ったまま時計だけ止める。
+        /// Loading は遷移の受理で<b>進行中の行動を同期的に打ち切って</b>から値を採る。
+        /// 同じ「止まった」で済ませると、どちらかが必ず壊れる。
+        ///
+        /// 入力は実デバイス（W）を通す。<b>凍結の窓口を差し替えない</b>のがここの要点で、
+        /// 偽の入力を刺すと GameMode のゲートを跨いでしまい、Pause で止まる理由が消える。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator PauseAndLoading_StopActorsAndResumeWithoutResidue()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            _keyboard = InputSystem.AddDevice<Keyboard>();
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            IGameModeService modes = GameModeProvider.Current;
+            Assert.IsNotNull(modes);
+            Assert.AreEqual(GameMode.Exploration, modes.Current, "前提：探索中。");
+
+            var playerRoot = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(playerRoot);
+            Rigidbody playerBody = playerRoot.Body;
+            Assert.IsNotNull(playerBody);
+
+            var companionMotor = Object.FindFirstObjectByType<CompanionMotor>();
+            Assert.IsNotNull(companionMotor, "犬丸の Motor がある。");
+            Rigidbody companionBody = companionMotor.GetComponent<Rigidbody>();
+            Assert.IsNotNull(companionBody);
+
+            var follow = Object.FindFirstObjectByType<CompanionFollowController>();
+            Assert.IsNotNull(follow);
+            var combat = Object.FindFirstObjectByType<CompanionCombatController>();
+            Assert.IsNotNull(combat);
+            var investigation = Object.FindFirstObjectByType<CompanionInvestigationController>();
+            Assert.IsNotNull(investigation);
+            var coordinator = Object.FindFirstObjectByType<InvestigationCoordinator>();
+            Assert.IsNotNull(coordinator);
+
+            // ================================ 1. 経路（追従）================================
+            yield return MovePlayerTo(new Vector3(0f, 0f, -6f));
+            yield return PressKey(Key.W);
+            yield return WaitUntilOrTimeout(() => PlanarSpeed(playerBody) > 0.5f, 3f);
+            Assert.Greater(PlanarSpeed(playerBody), 0.5f,
+                "前提：実キーで主人公が動いている。速度=" + PlanarSpeed(playerBody));
+
+            yield return WaitUntilOrTimeout(() => PlanarSpeed(companionBody) > 0.1f, 5f);
+            Assert.Greater(PlanarSpeed(companionBody), 0.1f,
+                "前提：犬丸が付いてきている。速度=" + PlanarSpeed(companionBody));
+
+            modes.ChangeMode(GameMode.Paused);
+            yield return new WaitForFixedUpdate();
+            yield return new WaitForFixedUpdate();
+
+            Assert.Less(PlanarSpeed(playerBody), 0.01f,
+                "Pause で主人公に旧速度が残らない。速度=" + PlanarSpeed(playerBody));
+            Assert.Less(PlanarSpeed(companionBody), 0.01f,
+                "Pause で犬丸に旧速度が残らない。速度=" + PlanarSpeed(companionBody));
+
+            Vector3 pausedPlayer = playerBody.position;
+            Vector3 pausedCompanion = companionBody.position;
+            for (int i = 0; i < 10; i++)
+            {
+                yield return new WaitForFixedUpdate();
+            }
+
+            Assert.Less(Vector3.Distance(pausedPlayer, playerBody.position), 0.05f,
+                "Pause 中は押しっぱなしでも進まない。");
+            Assert.Less(Vector3.Distance(pausedCompanion, companionBody.position), 0.05f,
+                "Pause 中は犬丸も進まない（経路の追従が止まる）。");
+
+            // 復帰。押下は Pause でゲートが閉じたときに落ちているので、押し直して同じ経路を通す。
+            modes.ChangeMode(GameMode.Exploration);
+            yield return ReleaseKeys();
+            yield return PressKey(Key.W);
+            yield return WaitUntilOrTimeout(() => PlanarSpeed(playerBody) > 0.5f, 3f);
+            Assert.Greater(PlanarSpeed(playerBody), 0.5f, "復帰すればまた動く（止めっぱなしにしない）。");
+            yield return ReleaseKeys();
+            yield return WaitUntilOrTimeout(() => PlanarSpeed(playerBody) < 0.01f, 2f);
+
+            // ================================ 2. 探索（調査）================================
+            // 調査地点は (-3, 0, 1)、受付距離は 1.5m（SO_Investigation_Trial）。余裕を持って内側に立つ。
+            yield return MovePlayerTo(new Vector3(-3f, 0f, -0.1f));
+            yield return WaitUntilOrTimeout(() => PlanarSpeed(companionBody) < 0.05f, 4f);
+
+            InvestigationRequestResult request = coordinator.RequestAt(new StableId("point_p5_a_01"));
+            Assert.IsTrue(request.Accepted, "調査を受け付ける。理由=" + request.Reason);
+            yield return WaitUntilOrTimeout(() => investigation.IsBusy, 3f);
+            Assert.IsTrue(investigation.IsBusy, "前提：調査が走っている。");
+
+            modes.ChangeMode(GameMode.Paused);
+            yield return null;
+            InvestigationPhase pausedPhase = investigation.Phase;
+            float pausedProgress = investigation.Progress;
+            int interruptedBefore = investigation.InterruptedCount;
+            Vector3 pausedAt = companionBody.position;
+
+            for (int i = 0; i < 12; i++)
+            {
+                yield return null;
+            }
+
+            Assert.IsTrue(investigation.IsBusy, "Pause は<b>凍結</b>。依頼を捨てない（§6.4）。");
+            Assert.AreEqual(interruptedBefore, investigation.InterruptedCount, "Pause は中断ではない。");
+            Assert.AreEqual(pausedPhase, investigation.Phase, "Pause 中は段が進まない。");
+            Assert.AreEqual(pausedProgress, investigation.Progress, 1e-4f, "Pause 中は進捗が進まない。");
+            Assert.Less(Vector3.Distance(pausedAt, companionBody.position), 0.05f,
+                "Pause 中は調査へ歩かない。");
+
+            modes.ChangeMode(GameMode.Exploration);
+            yield return WaitUntilOrTimeout(
+                () => investigation.Progress > pausedProgress + 1e-3f
+                    || investigation.Phase != pausedPhase
+                    || Vector3.Distance(pausedAt, companionBody.position) > 0.1f,
+                5f);
+            Assert.IsTrue(
+                investigation.Progress > pausedProgress + 1e-3f
+                || investigation.Phase != pausedPhase
+                || Vector3.Distance(pausedAt, companionBody.position) > 0.1f,
+                "復帰すれば<b>同じ依頼の続き</b>が進む。段=" + investigation.Phase
+                + " 進捗=" + investigation.Progress);
+
+            // 次の区間のために調査を畳む（戦闘が始まれば §8.3 の調停で中断される経路と同じ）。
+            coordinator.InterruptAllForCombat();
+            yield return null;
+            Assert.IsFalse(investigation.IsBusy, "前提：調査は終わっている。");
+
+            // ================================ 3. 戦闘 ================================
+            yield return WaitUntilOrTimeout(() => PlanarSpeed(companionBody) < 0.05f, 4f);
+
+            var enemyGo = new GameObject("P07_FakeEnemy");
+            var enemy = enemyGo.AddComponent<PauseFakeEnemy>();
+            enemyGo.transform.position = companionBody.position + new Vector3(0.9f, 0f, 0f);
+            PerceptionTargetRegistry.Register(enemy);
+
+            try
+            {
+                yield return WaitUntilOrTimeout(() => combat.IsAttacking, 6f);
+                Assert.IsTrue(combat.IsAttacking,
+                    "前提：犬丸が攻撃を始めている。対象=" + (combat.CurrentTarget != null ? "有" : "無"));
+
+                modes.ChangeMode(GameMode.Paused);
+                float elapsedBefore = combat.AttackState.Elapsed;
+                CompanionAttackPhase phaseBefore = combat.AttackState.Phase;
+
+                for (int i = 0; i < 12; i++)
+                {
+                    yield return null;
+                }
+
+                Assert.IsTrue(combat.IsAttacking, "Pause は<b>凍結</b>。段を捨てない（§12.1）。");
+                Assert.AreEqual(phaseBefore, combat.AttackState.Phase, "Pause 中は段が進まない。");
+                Assert.AreEqual(elapsedBefore, combat.AttackState.Elapsed, 1e-4f, "Pause 中は攻撃時間が進まない。");
+
+                modes.ChangeMode(GameMode.Exploration);
+                yield return WaitUntilOrTimeout(
+                    () => combat.AttackState.Elapsed > elapsedBefore + 1e-3f || !combat.IsAttacking, 3f);
+                Assert.IsTrue(combat.AttackState.Elapsed > elapsedBefore + 1e-3f || !combat.IsAttacking,
+                    "復帰すれば攻撃の続きが進む。");
+
+                // ================================ 4. Loading ================================
+                //
+                // 主人公も犬丸も動いている状態で遷移を始める。
+                yield return PressKey(Key.S);
+                yield return WaitUntilOrTimeout(() => PlanarSpeed(playerBody) > 0.5f, 3f);
+                Assert.Greater(PlanarSpeed(playerBody), 0.5f, "前提：遷移の直前に主人公が動いている。");
+                yield return WaitUntilOrTimeout(() => combat.AttackState.IsHitboxActive, 6f);
+                Assert.IsTrue(combat.AttackState.IsHitboxActive,
+                    "前提：判定が出ている最中に遷移する（残るなら残る条件で見る）。");
+
+                AreaTransitionService service = Transitions();
+                AreaTransitionCoordinator coordinator2 = service.Coordinator;
+                Assert.IsNotNull(coordinator2);
+
+                Assert.IsTrue(service.TryTravel(AreaB, AreaBFromA).Accepted, "遷移が受理される。");
+
+                // 受理した「その場で」止まっている（次のフレームまで判定が生き残らない。§6.2 手順 4）。
+                Assert.IsTrue(service.Clock.IsFrozen, "受理で Gameplay 時計が止まる。");
+                Assert.AreEqual(GameMode.Loading, modes.Current, "GameMode は Loading。");
+                Assert.IsFalse(combat.AttackState.IsHitboxActive,
+                    "Loading へ Hitbox を持ち越さない（段=" + combat.AttackState.Phase + "）。");
+                Assert.IsFalse(combat.IsAttacking, "進行中の攻撃は同期的に打ち切られる。");
+
+                // 対象の登録は Scene と一緒に消える前に外す（静的登録を次のテストへ残さない）。
+                PerceptionTargetRegistry.Unregister(enemy);
+
+                yield return new WaitForFixedUpdate();
+                yield return new WaitForFixedUpdate();
+                Assert.Less(PlanarSpeed(playerBody), 0.01f,
+                    "Loading 中は旧速度が残らない（旧 Scene が生きている間も滑らない）。速度="
+                    + PlanarSpeed(playerBody));
+                Assert.Less(PlanarSpeed(companionBody), 0.01f,
+                    "犬丸にも旧速度が残らない。速度=" + PlanarSpeed(companionBody));
+                Assert.IsFalse(investigation.IsBusy, "Loading へ調査を持ち越さない。");
+
+                float waited = 0f;
+                while (coordinator2.CompletedCount < 1 && waited < 15f)
+                {
+                    waited += Time.unscaledDeltaTime;
+                    yield return null;
+                }
+
+                Assert.AreEqual(1, coordinator2.CompletedCount, "B へ到着する。");
+            }
+            finally
+            {
+                PerceptionTargetRegistry.Unregister(enemy);
+                if (enemyGo != null)
+                {
+                    Object.DestroyImmediate(enemyGo);
+                }
+            }
+
+            yield return ReleaseKeys();
+
+            // ---- 到着側：残留なしで再開できる ----
+            Assert.IsFalse(GameplayClockProvider.IsFrozen, "到着で凍結が解ける。");
+            Assert.AreEqual(GameMode.Exploration, modes.Current, "探索へ戻る。");
+
+            var playerB = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(playerB);
+            var companionMotorB = Object.FindFirstObjectByType<CompanionMotor>();
+            Assert.IsNotNull(companionMotorB);
+            Rigidbody companionBodyB = companionMotorB.GetComponent<Rigidbody>();
+            var combatB = Object.FindFirstObjectByType<CompanionCombatController>();
+            var investigationB = Object.FindFirstObjectByType<CompanionInvestigationController>();
+
+            yield return new WaitForFixedUpdate();
+            Assert.Less(PlanarSpeed(playerB.Body), 0.01f,
+                "到着した主人公に旧速度が残らない（押しっぱなしを新しい押下と解釈もしない）。");
+
+            // 犬丸は到着した瞬間から追従を始めてよい（速度 0 を求めるのは「動かない犬丸」を通してしまう）。
+            // ここで見たいのは<b>旧 Scene の位置と行動を引きずっていないこと</b>。
+            Assert.Less(Vector3.Distance(companionBodyB.position, playerB.transform.position), 3f,
+                "犬丸は入口の隣へ置き直される（旧 Scene の位置から滑ってこない）。距離="
+                + Vector3.Distance(companionBodyB.position, playerB.transform.position));
+            Assert.IsFalse(combatB.AttackState.IsHitboxActive, "到着側に Hitbox が残らない。");
+            Assert.IsFalse(combatB.IsAttacking, "到着側で攻撃が続いていない。");
+            Assert.IsFalse(investigationB.IsBusy, "中断した調査を自動で再開しない（§6.3）。");
+
+            // 到着後もちゃんと動く（止めっぱなしにしない）。
+            yield return PressKey(Key.S);
+            yield return WaitUntilOrTimeout(() => PlanarSpeed(playerB.Body) > 0.5f, 3f);
+            Assert.Greater(PlanarSpeed(playerB.Body), 0.5f, "到着後は実キーでまた動く。");
+            yield return ReleaseKeys();
+        }
+
+        /// <summary>XZ 平面の速さ（Y は重力・接地の話なので見ない）。</summary>
+        private static float PlanarSpeed(Rigidbody body)
+        {
+            if (body == null)
+            {
+                return 0f;
+            }
+
+            Vector3 v = body.linearVelocity;
+            return new Vector2(v.x, v.z).magnitude;
+        }
+
+        /// <summary>P07 用の敵役。犬丸に攻撃を始めさせるためだけの登録先で、被弾は受け流す。</summary>
+        private sealed class PauseFakeEnemy : MonoBehaviour, ICombatActor, IDamageable, IThreatTarget
+        {
+            public CombatFaction Faction => CombatFaction.Enemy;
+
+            public int FloorId => 0;
+
+            public Vector3 WorldPosition => transform.position;
+
+            public Vector3 Forward => Vector3.back;
+
+            public int DamageableId => GetInstanceID();
+
+            public int ActorId => GetInstanceID();
+
+            public Vector3 Position => transform.position;
+
+            public bool IsActive => true;
+
+            public bool IsDown => false;
+
+            public float BaseThreat => 0f;
+
+            public float AcquiredThreatMultiplier => 1f;
+
+            public void ReceiveHit(in HitInfo hit)
+            {
+            }
         }
 
         /// <summary>移動入力を倒したまま物理を進める（通常移動の経路をそのまま通す）。</summary>

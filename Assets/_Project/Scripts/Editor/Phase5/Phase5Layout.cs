@@ -82,6 +82,43 @@ namespace Momotaro.Editor.Phase5
         /// <summary>水場の広がり（X, Z）。</summary>
         public static readonly Vector2 AreaAWaterSize = new Vector2(7f, 5f);
 
+        // ---- カメラ（P5-06。仕様書 §11）----
+        //
+        // <b>暫定値。</b> §11 は「最終カメラサイズは P10b で決める」としている。
+        // ここでは「部屋より見える範囲の方が狭い軸は追従し、広い軸は中央固定になる」ことを
+        // 実際に起こす大きさを選んである（両方の枝が実 Scene で通る）。
+
+        /// <summary>カメラの俯角（度）。真上が 90。固定（§11。P5 でズーム演出は足さない）。</summary>
+        public const float CameraPitchDegrees = 55f;
+
+        /// <summary>Orthographic の縦半分。暫定値（§11。最終値は P10b）。</summary>
+        public const float CameraOrthographicSize = 5f;
+
+        /// <summary>基準位置から見たカメラの高さ。</summary>
+        public const float CameraHeight = 14f;
+
+        /// <summary>
+        /// Rig から見たカメラの局所位置。俯角と高さから決める。
+        /// 目分量の固定オフセットにすると、俯角を変えたときに注視点がずれる。
+        /// </summary>
+        public static Vector3 CameraLocalOffset =>
+            new Vector3(0f, CameraHeight, -CameraHeight / Mathf.Tan(CameraPitchDegrees * Mathf.Deg2Rad));
+
+        /// <summary>A の既定領域（エリア全体）。どの部屋にも入らないときに使う。</summary>
+        public static readonly Vector2 AreaADefaultRegionSize = new Vector2(AreaAWidth, AreaADepth);
+
+        /// <summary>A 西の大部屋（仕切り x=6 より西）。</summary>
+        public static readonly Vector3 AreaAWestRegionCenter = new Vector3(-3f, 0f, 0f);
+
+        /// <summary>A 西の大部屋の広がり。</summary>
+        public static readonly Vector2 AreaAWestRegionSize = new Vector2(18f, AreaADepth);
+
+        /// <summary>A 東の通路（仕切りと外壁の間）。横が入りきらないので中央固定になる。</summary>
+        public static readonly Vector3 AreaAEastRegionCenter = new Vector3(9f, 0f, 0f);
+
+        /// <summary>A 東の通路の広がり。</summary>
+        public static readonly Vector2 AreaAEastRegionSize = new Vector2(6f, AreaADepth);
+
         // ---- エリア B ----
 
         /// <summary>B の床の広がり（X）。</summary>
@@ -125,5 +162,8 @@ namespace Momotaro.Editor.Phase5
 
         /// <summary>入口と重ならない安全な戦闘復帰点（§3.2）。</summary>
         public static readonly Vector3 AreaBCombatReturn = new Vector3(0f, 0f, -8f);
+
+        /// <summary>B の既定領域（エリア全体）。B は 1 部屋なので領域を分けない。</summary>
+        public static readonly Vector2 AreaBDefaultRegionSize = new Vector2(AreaBWidth, AreaBDepth);
     }
 }
