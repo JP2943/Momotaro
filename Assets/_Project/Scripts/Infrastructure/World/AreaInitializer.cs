@@ -1,3 +1,4 @@
+using System.Collections;
 using Momotaro.Core.Identification;
 using Momotaro.Core.Logging;
 using Momotaro.Core.World;
@@ -68,8 +69,46 @@ namespace Momotaro.Infrastructure.World
         /// <summary>このエリアの安定 ID。</summary>
         public StableId AreaId => _areaRoot != null ? _areaRoot.AreaId : default;
 
+        /// <summary>起動待ちが終わったか（診断・テスト用）。</summary>
+        public bool WaitFinished { get; private set; }
+
+        /// <summary>
+        /// 初期化を始めた時点で捕まえた到着トークン（診断・テスト用）。
+        /// 0 は「遷移を伴わない直開き」。
+        /// </summary>
+        public int ArrivalToken { get; private set; }
+
         private void Start()
         {
+            // すでに起動の成否が確定しているなら待たない。
+            // <b>正常系に固定の待ちを足さない</b>（§6.3 末尾）。待つのは確定していないときだけ。
+            if (BootstrapWait.IsReadyNow)
+            {
+                WaitFinished = true;
+                Initialize();
+                return;
+            }
+
+            StartCoroutine(InitializeWhenBootstrapReady());
+        }
+
+        /// <summary>
+        /// 常駐の起動完了を待ってから初期化する（GPT レビュー R2 の指摘 2）。
+        /// Bootstrap も Scene 側も <c>Start()</c> で動くので、順序に頼ると
+        /// 「先に動いた側が諦めて、あとから常駐が立っても何も起きない」が起きる。
+        /// </summary>
+        private IEnumerator InitializeWhenBootstrapReady()
+        {
+            bool ok = false;
+            yield return BootstrapWait.Wait(r => ok = r);
+            WaitFinished = true;
+
+            if (!ok)
+            {
+                Fail("常駐サービスが起動しなかったため初期化できません。");
+                yield break;
+            }
+
             Initialize();
         }
 
@@ -93,6 +132,11 @@ namespace Momotaro.Infrastructure.World
             }
 
             StableId areaId = _areaRoot.AreaId;
+
+            // 初期化を「始めた時点の」到着要求を捕まえる（GPT レビュー R2 の指摘 4）。
+            // 完了時に共有領域から読み直すと自分自身との比較になり、照合の意味が無くなる。
+            int arrivalToken = CaptureArrivalToken(areaId);
+            ArrivalToken = arrivalToken;
 
             // 2. 到着先の入口を決める。遷移で来たならその入口、直開きなら既定入口（§5.2）。
             StableId entryId = ResolveEntryId(areaId);
@@ -171,21 +215,43 @@ namespace Momotaro.Infrastructure.World
                 }
             }
 
-            // 7. モードを決めるのは初期化担当（§12.1「Loading 中に Exploration へ戻す自動適用をしない」）。
-            GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
+            // 7. 準備できたことを報告する。<b>活動の許可はここで出さない</b>（GPT レビュー R2 の指摘 1）。
+            //    許可は世代・対象・タイムアウトを確認した所有者＝遷移サービスが出す。
+            _context.MarkPrepared();
 
-            // 8. Ready を確定して活動・入力を許可する。
-            _context.ConfirmReady();
-
-            // 完了は「自分が処理しているエリア・入口・世代」でだけ記録できる。
-            // 無条件に完了にできると、古い Scene の初期化担当が新しい遷移を完了させてしまう。
-            AreaPendingArrival.TryMarkCompleted(AreaPendingArrival.TransitionId, areaId, entryId);
+            if (arrivalToken != 0)
+            {
+                // 遷移で来た。開始時に捕まえたトークンで報告し、所有者の許可を待つ。
+                AreaPendingArrival.TryMarkPrepared(arrivalToken, areaId, entryId);
+            }
+            else
+            {
+                // 直開き（遷移を伴わない起動）。所有者が居ないので自分で許可する。
+                // 遷移していない＝捨てられた到着になりようがないので、ここに穴は無い。
+                _context.Activate();
+                GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
+            }
 
             Initialized = true;
             FailureReason = string.Empty;
             GameLog.Info(LogCategory.Scene, "Area ready: " + areaId.Value + " / " + entryId.Value);
             return true;
         }
+
+        /// <summary>
+        /// 初期化の<b>開始時点</b>の到着トークンを捕まえる（§6.2 末尾。GPT レビュー R2 の指摘 4）。
+        ///
+        /// 報告のときに <see cref="AreaPendingArrival.TransitionId"/> を読み直すと、
+        /// 渡す値と比べる値が同じものになり、照合が常に成立してしまう。
+        /// 初期化の途中で新しい遷移が始まっていた場合、<b>古い Scene の初期化担当が
+        /// 新しい世代を「準備できた」ことにしてしまう</b>。だから開始時に捕まえて持ち回る。
+        ///
+        /// 自分宛てでない（別エリア宛ての）要求は 0 を返す＝直開き扱い。
+        /// </summary>
+        public static int CaptureArrivalToken(StableId areaId) =>
+            AreaPendingArrival.HasPending && AreaPendingArrival.AreaId.Equals(areaId)
+                ? AreaPendingArrival.TransitionId
+                : 0;
 
         /// <summary>
         /// 到着する入口を決める。遷移で来たならその入口、直開きなら Data の既定入口（§5.2）。

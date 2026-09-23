@@ -25,7 +25,7 @@ namespace Momotaro.Gameplay.Session
         private readonly AreaCatalog _catalog;
         private readonly IAreaTransitionConditions _conditions;
         private readonly GameplayClockGate _clock;
-        private readonly float _timeoutSeconds;
+        private float _timeoutSeconds;
 
         private IAreaLoadOperation _operation;
         private float _elapsedUnscaled;
@@ -40,7 +40,20 @@ namespace Momotaro.Gameplay.Session
             _catalog = catalog;
             _conditions = conditions;
             _clock = clock;
-            _timeoutSeconds = timeoutSeconds > 0f ? timeoutSeconds : DefaultTimeoutSeconds;
+            TimeoutSeconds = timeoutSeconds;
+        }
+
+        /// <summary>
+        /// ロード監視の上限（unscaled 秒。§6.3 の初期値は 30）。
+        ///
+        /// <b>途中で差し替えてよい。</b> 差し替えは次の判定から効き、経過時間は巻き戻さない。
+        /// 「作る前に設定しないと効かない」形だと、設定と生成の順序が入れ替わったことに
+        /// 誰も気づけないまま既定値で動く（実際にテストの並びで踏んだ）。0 以下は既定値として扱う。
+        /// </summary>
+        public float TimeoutSeconds
+        {
+            get => _timeoutSeconds;
+            set => _timeoutSeconds = value > 0f ? value : DefaultTimeoutSeconds;
         }
 
         /// <summary>現在の段階。</summary>

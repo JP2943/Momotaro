@@ -50,6 +50,20 @@ namespace Momotaro.Infrastructure.Bootstrap
         /// <summary>起動を止めた理由（診断・テスト用。成功なら空）。</summary>
         public string BootstrapFailure => _registry.LastFailure;
 
+        /// <summary>
+        /// 起動の<b>成否が確定したか</b>（P5-03b 修正。GPT レビュー R2 の指摘 2）。
+        ///
+        /// <see cref="BootstrapSucceeded"/> だけでは「まだ走っていない」と「失敗した」を区別できず、
+        /// 待つ側が固定フレーム待ちに頼ることになる。確定したかどうかを別に持つ。
+        /// </summary>
+        public bool BootstrapFinished { get; private set; }
+
+        /// <summary>
+        /// 起動の成否が確定したときに 1 度だけ発火する。引数は成功したか。
+        /// 確定済みのときに購読しても発火しないので、購読側は <see cref="BootstrapFinished"/> を先に見る。
+        /// </summary>
+        public event Action<bool> BootstrapFinishedEvent;
+
         private void Awake()
         {
             if (_instance != null && _instance != this)
@@ -100,6 +114,8 @@ namespace Momotaro.Infrastructure.Bootstrap
 
             bool ok = _registry.InitializeAll();
             BootstrapSucceeded = ok;
+            BootstrapFinished = true;
+            BootstrapFinishedEvent?.Invoke(ok);
 
             if (!ok)
             {

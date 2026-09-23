@@ -2,6 +2,7 @@ using Momotaro.Core.Identification;
 using Momotaro.Core.Logging;
 using Momotaro.Data.World;
 using Momotaro.Gameplay.Session;
+using System.Collections;
 using Momotaro.Infrastructure.Bootstrap;
 using UnityEngine;
 
@@ -31,12 +32,45 @@ namespace Momotaro.Infrastructure.World
         /// <summary>要求が拒否された理由（診断・テスト用）。</summary>
         public AreaTransitionRejection LastRejection { get; private set; }
 
+        /// <summary>起動待ちが終わったか（診断・テスト用）。</summary>
+        public bool WaitFinished { get; private set; }
+
         private void Start()
         {
-            if (_travelOnStart)
+            if (!_travelOnStart)
             {
-                TryEnterFirstArea();
+                return;
             }
+
+            // すでに起動の成否が確定しているなら待たない（正常系に固定の待ちを足さない）。
+            if (BootstrapWait.IsReadyNow)
+            {
+                WaitFinished = true;
+                TryEnterFirstArea();
+                return;
+            }
+
+            StartCoroutine(EnterWhenBootstrapReady());
+        }
+
+        /// <summary>
+        /// 常駐の起動完了を待ってから進む。<b>どちらが先に Start しても成立する</b>
+        /// （GPT レビュー R2 の指摘 2）。固定フレーム待ちではなく成否の確定を待つ。
+        /// </summary>
+        private IEnumerator EnterWhenBootstrapReady()
+        {
+            bool ok = false;
+            yield return BootstrapWait.Wait(r => ok = r);
+            WaitFinished = true;
+
+            if (!ok)
+            {
+                GameLog.WarningOnce(LogCategory.Boot, "p5_trial_no_bootstrap",
+                    "Phase5TrialLauncher: 常駐サービスが起動しなかったため、エリアへは移動しません。");
+                yield break;
+            }
+
+            TryEnterFirstArea();
         }
 
         /// <summary>
@@ -51,8 +85,7 @@ namespace Momotaro.Infrastructure.World
             }
 
             // Bootstrap が居ないのは「この Scene を単体で開いた」という正常な状態で、異常ではない。
-            // Error にすると、常駐を持たずにこの Scene を開いただけで異常扱いになる。
-            if (!BootstrapServices.IsReady)
+            if (!BootstrapWait.IsReadyNow)
             {
                 GameLog.WarningOnce(LogCategory.Boot, "p5_trial_no_bootstrap",
                     "Phase5TrialLauncher: 常駐サービスが起動していないため、エリアへは移動しません"
@@ -66,6 +99,13 @@ namespace Momotaro.Infrastructure.World
                 GameLog.WarningOnce(LogCategory.Boot, "p5_trial_no_transition",
                     "Phase5TrialLauncher: 遷移サービスが登録されていないため、エリアへは移動しません。");
                 return false;
+            }
+
+            // 終端失敗したときの戻り先は「この Scene」。パスを外から差すのではなく、
+            // 起動役が自分の居場所を名乗る（§6.3「既存 Launcher へ戻る操作を提示」）。
+            if (!string.IsNullOrEmpty(gameObject.scene.path))
+            {
+                transitions.LauncherScenePath = gameObject.scene.path;
             }
 
             // 統合起動 Scene には Area が無いので、受付条件は「起動直後の素通し」を使う。

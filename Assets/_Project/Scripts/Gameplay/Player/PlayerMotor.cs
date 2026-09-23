@@ -58,6 +58,13 @@ namespace Momotaro.Gameplay.Player
 
         private void FixedUpdate()
         {
+            // 遷移中は物理でも動かさない（P5-E07）。時計を止めるだけでは Rigidbody は動き続ける
+            // ため、仲間の Motor と同じくここでも判定する（GPT レビュー R2 の指摘 1）。
+            if (Session.GameplayClockProvider.IsFrozen)
+            {
+                return;
+            }
+
             if (_root == null || _root.Body == null)
             {
                 return;

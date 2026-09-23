@@ -35,6 +35,15 @@ namespace Momotaro.Infrastructure.World
         private AreaTransferSnapshot _pendingTransfer;
         private bool _hasPendingTransfer;
 
+        /// <summary>
+        /// いま生きているロード操作。<b>1 つしか持たない。</b>
+        ///
+        /// Unity の非同期ロードはキャンセルできないので、監視を諦めても操作自体は走り続ける（§6.3）。
+        /// 終端していない操作の上に新しいロードを重ねると、どちらが最後に Scene を置き換えるか決まらない。
+        /// 「古い操作が終端するまで新たなロードを開始しない」をここ 1 か所で守る。
+        /// </summary>
+        private IAreaLoadOperation _liveOperation;
+
         /// <inheritdoc />
         public string ServiceName => "AreaTransition";
 
@@ -72,9 +81,38 @@ namespace Momotaro.Infrastructure.World
 
         /// <summary>
         /// ロード監視の上限（unscaled 秒。§6.3 の初期値は 30）。
-        /// 調停役を作る前に設定する。テストは短くして復旧経路を実時間で通す。
+        /// <b>いつ設定しても効く</b>（調停役が既にあれば伝える）。テストは短くして復旧経路を実時間で通す。
         /// </summary>
-        public float TimeoutSeconds { get; set; } = AreaTransitionCoordinator.DefaultTimeoutSeconds;
+        public float TimeoutSeconds
+        {
+            get => _timeoutSeconds;
+            set
+            {
+                _timeoutSeconds = value;
+                if (_coordinator != null)
+                {
+                    _coordinator.TimeoutSeconds = value;
+                }
+            }
+        }
+
+        private float _timeoutSeconds = AreaTransitionCoordinator.DefaultTimeoutSeconds;
+
+        /// <summary>
+        /// 到着側の準備完了を待つ上限（unscaled 秒）。超えたら Bind 失敗として復旧へ回す（§6.3 の 3 行目）。
+        /// テストは短くして失敗経路を実時間で通す。
+        /// </summary>
+        public float BindTimeoutSeconds { get; set; } = 10f;
+
+        /// <summary>
+        /// 復旧ロードの監視上限（unscaled 秒）。
+        ///
+        /// <b>復旧にも監視が要る</b>（GPT レビュー R2 の指摘 3）。ここが無界だと、復旧先の Scene が
+        /// 返ってこないときに暗転のまま永久に待ち、理由も戻り道も出ない。
+        /// 超えたら終端失敗として理由を残し、Launcher へ戻る操作を提示する（§6.3 の最終行）。
+        /// ただし<b>ここで新しいロードは始めない</b>。生きている操作が終端するまで戻り操作も待たせる。
+        /// </summary>
+        public float RecoveryTimeoutSeconds { get; set; } = AreaTransitionCoordinator.DefaultTimeoutSeconds;
 
         /// <summary>
         /// Scene の読込実装（GPT レビュー R1）。<b>本番もテストも同じ経路を通る。</b>
@@ -114,7 +152,7 @@ namespace Momotaro.Infrastructure.World
             if (_coordinator == null)
             {
                 _coordinator = new AreaTransitionCoordinator(
-                    _catalog, new ConditionsRelay(this), _clock, TimeoutSeconds);
+                    _catalog, new ConditionsRelay(this), _clock, _timeoutSeconds);
             }
 
             return true;
@@ -137,6 +175,10 @@ namespace Momotaro.Infrastructure.World
                 return decision;
             }
 
+            // 新しい遷移が始まったので、前回の終端失敗の表示は畳む。
+            HasTerminalFailure = false;
+            TerminalFailureReason = null;
+
             // 受理した。活動を閉じ、GameMode を Loading へ（§6.2 手順 3）。
             CloseCurrentArea();
             GameModeProvider.Current?.ChangeMode(GameMode.Loading);
@@ -158,7 +200,14 @@ namespace Momotaro.Infrastructure.World
 
             AreaPendingArrival.Set(transitionId, request.AreaId, request.EntryId);
 
-            IAreaLoadOperation watched = (Loader ?? new UnitySceneLoader()).Load(entry.ScenePath);
+            if (!TryStartLoad(entry.ScenePath, out IAreaLoadOperation watched))
+            {
+                // 前のロードがまだ終端していない。重ねずに終端失敗にする（§6.3）。
+                AreaPendingArrival.Clear();
+                FailTerminal(transitionId, "前のロードが終端していないため、目的地のロードを開始できませんでした。");
+                yield break;
+            }
+
             if (!_coordinator.NotifyLoadStarted(transitionId, watched))
             {
                 // 世代が進んでいた。この Coroutine はもう自分のものではない。
@@ -190,7 +239,7 @@ namespace Momotaro.Infrastructure.World
                 }
                 else
                 {
-                    FailTerminal(transitionId);
+                    FailTerminal(transitionId, "ロードが監視上限を超え、復旧も開始できませんでした。");
                 }
 
                 yield break;
@@ -204,7 +253,7 @@ namespace Momotaro.Infrastructure.World
                 }
                 else
                 {
-                    FailTerminal(transitionId);
+                    FailTerminal(transitionId, "目的地のロードが失敗し、復旧も開始できませんでした。");
                 }
 
                 yield break;
@@ -218,13 +267,13 @@ namespace Momotaro.Infrastructure.World
 
             // 到着側の AreaInitializer が Ready を確定するまで待つ。
             float waited = 0f;
-            while (!AreaPendingArrival.IsCompletedFor(transitionId) && waited < 10f)
+            while (!AreaPendingArrival.IsPreparedFor(transitionId) && waited < BindTimeoutSeconds)
             {
                 waited += Time.unscaledDeltaTime;
                 yield return null;
             }
 
-            if (!AreaPendingArrival.IsCompletedFor(transitionId))
+            if (!AreaPendingArrival.IsPreparedFor(transitionId))
             {
                 // 旧 Scene は破棄済み。元 Area を 1 回だけ再ロードして復旧する（§6.3 の 3 行目）。
                 if (_coordinator.TryBeginRecovery(transitionId))
@@ -233,7 +282,7 @@ namespace Momotaro.Infrastructure.World
                 }
                 else
                 {
-                    FailTerminal(transitionId);
+                    FailTerminal(transitionId, "到着側の準備が完了せず、復旧も開始できませんでした。");
                 }
 
                 yield break;
@@ -244,12 +293,50 @@ namespace Momotaro.Infrastructure.World
                 yield break;
             }
 
+            // ---- ここで初めて活動を許可する（GPT レビュー R2 の指摘 1） ----
+            //
+            // 到着側は「準備できた」と言うだけで、活動してよいかは判断しない。
+            // 世代・対象・タイムアウトを確認した所有者＝ここが許可を出す。
+            // 到着側が自分で Ready にしてしまうと、監視がタイムアウトしたあとに遅れて届いた
+            // 目的地が、そのまま操作可能になってしまう。
+            AreaContext arrived = FindCurrentContext();
+            if (arrived == null)
+            {
+                FailTerminal(transitionId, "到着先に AreaContext がありません。");
+                yield break;
+            }
+
+            arrived.Activate();
             GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
-            _coordinator.Release(transitionId);
-            ClearPendingTransfer();
-            AreaPendingArrival.Clear();
-            _running = null;
+
+            // 後始末は世代一致でだけ行う。通知の中で次の遷移が始まっていたら、
+            // この世代の Release は成立せず、共有領域も触らない。
+            bool released = _coordinator.Release(transitionId);
+            if (released)
+            {
+                ClearPendingTransfer();
+                AreaPendingArrival.Clear();
+                _running = null;
+            }
+
+            // 完了を通知する。<b>後始末をすべて終えてから出す</b>（§6.2 末尾）。
+            //
+            // 購読者はこの中から次の遷移を要求してよい。通知を先に出すと、
+            // 排他がまだ Ready のままなので要求が「遷移中」で弾かれるし、
+            // 要求が通ったとしても、戻ってきた先の後始末が新しい遷移の
+            // 到着要求（AreaPendingArrival）を消してしまう。順序がそのまま正しさになる。
+            if (released)
+            {
+                ArrivalCompleted?.Invoke(request.AreaId);
+            }
         }
+
+        /// <summary>
+        /// 到着して活動が許可された直後に 1 度だけ発火する（§6.2 手順 9）。
+        /// <b>購読者はこの中から次の遷移を要求してよい。</b>後始末は世代一致でのみ行うので、
+        /// 新しい遷移が始まっていれば旧世代の後始末は成立しない。
+        /// </summary>
+        public event System.Action<StableId> ArrivalCompleted;
 
         /// <summary>
         /// 旧 Scene が破棄されたあとの失敗から、<b>元 Area を 1 回だけ再ロードして復旧する</b>（§6.3 の 3 行目）。
@@ -266,7 +353,7 @@ namespace Momotaro.Infrastructure.World
                 || !_catalog.TryGetEntry(
                     _pendingTransfer.OriginAreaId, _pendingTransfer.OriginEntryId, out AreaEntryInfo origin))
             {
-                FailTerminal(transitionId);
+                FailTerminal(transitionId, "復旧元のエリア・入口を解決できませんでした。");
                 yield break;
             }
 
@@ -274,33 +361,58 @@ namespace Momotaro.Infrastructure.World
                 "Recovering to the origin area: " + _pendingTransfer.OriginAreaId.Value);
 
             AreaPendingArrival.Set(transitionId, _pendingTransfer.OriginAreaId, _pendingTransfer.OriginEntryId);
-            IAreaLoadOperation recovery = (Loader ?? new UnitySceneLoader()).Load(origin.ScenePath);
 
-            while (!recovery.IsDone)
+            if (!TryStartLoad(origin.ScenePath, out IAreaLoadOperation recovery))
             {
+                // 失敗したロードがまだ終端していない。重ねて読み込まない（§6.3）。
+                FailTerminal(transitionId, "前のロードが終端していないため、復旧ロードを開始できませんでした。");
+                yield break;
+            }
+
+            // 復旧にも監視を置く。無界に待つと、戻れないまま暗転が続く（GPT レビュー R2 の指摘 3）。
+            float watchedSeconds = 0f;
+            while (!recovery.IsDone && watchedSeconds < RecoveryTimeoutSeconds)
+            {
+                watchedSeconds += Time.unscaledDeltaTime;
                 yield return null;
+            }
+
+            if (!recovery.IsDone)
+            {
+                // 監視は切れたが操作は生きている。捨てず、終端するまで Launcher へも戻さない。
+                FailTerminal(transitionId,
+                    "復旧ロードが " + RecoveryTimeoutSeconds.ToString("0.##") + " 秒以内に完了しませんでした。");
+                yield break;
             }
 
             if (recovery.HasError)
             {
-                FailTerminal(transitionId);
+                FailTerminal(transitionId, "復旧ロードが失敗しました。");
                 yield break;
             }
 
             float waited = 0f;
-            while (!AreaPendingArrival.IsCompletedFor(transitionId) && waited < 10f)
+            while (!AreaPendingArrival.IsPreparedFor(transitionId) && waited < BindTimeoutSeconds)
             {
                 waited += Time.unscaledDeltaTime;
                 yield return null;
             }
 
-            if (!AreaPendingArrival.IsCompletedFor(transitionId))
+            if (!AreaPendingArrival.IsPreparedFor(transitionId))
             {
-                FailTerminal(transitionId);
+                FailTerminal(transitionId, "復旧先の初期化が完了しませんでした。");
                 yield break;
             }
 
-            // 復旧できた。元の場所で活動を再開する。
+            // 復旧できた。元の場所で活動を再開する（許可はここが出す）。
+            AreaContext recovered = FindCurrentContext();
+            if (recovered == null)
+            {
+                FailTerminal(transitionId, "復旧先に AreaContext がありません。");
+                yield break;
+            }
+
+            recovered.Activate();
             _coordinator.NotifyFailed(transitionId, oldSceneUsable: true);
             GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
             ClearPendingTransfer();
@@ -309,12 +421,117 @@ namespace Momotaro.Infrastructure.World
             _running = null;
         }
 
-        /// <summary>復旧もできない。Error 表示に留める（§6.3 の最終行）。Gameplay 時計は止めたまま。</summary>
-        private void FailTerminal(int transitionId)
+        /// <summary>
+        /// 復旧もできない（§6.3 の最終行）。<b>凍結したまま黙って放置しない。</b>
+        ///
+        /// Gameplay 時計は止めたままにする（壊れた状態で世界を動かさない）が、
+        /// 理由を残して <see cref="TerminalFailed"/> で知らせ、
+        /// <see cref="TryReturnToLauncher"/> という戻り道を用意する。
+        /// 以前は理由も戻り道も無く、暗転のまま何もできなかった（GPT レビュー R2 の指摘 3）。
+        ///
+        /// <b>自動で再試行はしない。</b>戻るかどうかはプレイヤーが決める（§6.3「無限再試行しない」）。
+        /// </summary>
+        private void FailTerminal(int transitionId, string reason)
         {
             AreaPendingArrival.Clear();
             _coordinator.NotifyFailed(transitionId, oldSceneUsable: false);
             _running = null;
+
+            HasTerminalFailure = true;
+            TerminalFailureReason = reason;
+            TerminalFailureCount++;
+
+            GameLog.Error(LogCategory.Scene, "Area transition failed terminally: " + reason);
+            TerminalFailed?.Invoke(reason);
+        }
+
+        /// <summary>終端失敗の状態にあるか（Error 表示の条件。§6.3 の最終行）。</summary>
+        public bool HasTerminalFailure { get; private set; }
+
+        /// <summary>終端失敗の理由（表示・診断用）。失敗していなければ null。</summary>
+        public string TerminalFailureReason { get; private set; }
+
+        /// <summary>終端失敗に至った回数（診断・テスト用）。</summary>
+        public int TerminalFailureCount { get; private set; }
+
+        /// <summary>終端失敗を知らせる（表示側が購読して Error UI を出す）。</summary>
+        public event System.Action<string> TerminalFailed;
+
+        /// <summary>重複ロードを断った回数（診断・テスト用）。0 でない＝重ね掛けを防いだということ。</summary>
+        public int DuplicateLoadBlockedCount { get; private set; }
+
+        /// <summary>Launcher へ戻した回数（診断・テスト用）。</summary>
+        public int ReturnedToLauncherCount { get; private set; }
+
+        /// <summary>差されていないときの戻り先（P5 の統合起動 Scene。§13.1）。</summary>
+        public const string DefaultLauncherScenePath =
+            "Assets/_Project/Scenes/Tests/Phase5/SCN_Phase5_ExplorationTrial.unity";
+
+        /// <summary>
+        /// 戻る Scene のパス（§6.3「既存 Launcher へ戻る操作を提示」）。
+        /// 起動役が自分の Scene のパスを差す。差されていなければ P5 の統合起動 Scene を使う。
+        /// </summary>
+        public string LauncherScenePath { get; set; } = DefaultLauncherScenePath;
+
+        /// <summary>
+        /// いま Launcher へ戻れるか。
+        ///
+        /// <b>生きているロード操作が終端するまでは戻れない。</b> 戻り操作も Scene のロードなので、
+        /// 終端していない操作の上に重ねれば同じ事故になる
+        /// （§6.3「古い操作が終端するまで新たなロードを開始しない」）。
+        /// 表示側はこれが false の間、戻る操作を押せない状態にする。
+        /// </summary>
+        public bool CanReturnToLauncher =>
+            HasTerminalFailure
+            && !string.IsNullOrEmpty(LauncherScenePath)
+            && (_liveOperation == null || _liveOperation.IsDone);
+
+        /// <summary>
+        /// 既存 Launcher へ戻す（§6.3 の最終行）。<b>自動では呼ばない。</b>
+        /// 戻れない状態（終端失敗していない・生きているロードがある）では何もせず false を返す。
+        /// </summary>
+        public bool TryReturnToLauncher()
+        {
+            if (!HasTerminalFailure || string.IsNullOrEmpty(LauncherScenePath))
+            {
+                return false;
+            }
+
+            if (!TryStartLoad(LauncherScenePath, out _))
+            {
+                return false;
+            }
+
+            // 戻るので、運んでいた Actor 値と到着要求は捨てる。世界状態（Session）はそのまま残す。
+            ClearPendingTransfer();
+            AreaPendingArrival.Clear();
+
+            HasTerminalFailure = false;
+            TerminalFailureReason = null;
+
+            // 受理の時点で止めた時計を戻す。止めたままだと、戻った先でも何も動かない。
+            _clock.Thaw();
+            GameModeProvider.Current?.ChangeMode(GameMode.Loading);
+            ReturnedToLauncherCount++;
+            return true;
+        }
+
+        /// <summary>
+        /// ロード操作の唯一の入口（§6.3）。<b>前の操作が終端していなければ新しく始めない。</b>
+        /// 断った回数は <see cref="DuplicateLoadBlockedCount"/> に数える。
+        /// </summary>
+        private bool TryStartLoad(string scenePath, out IAreaLoadOperation operation)
+        {
+            if (_liveOperation != null && !_liveOperation.IsDone)
+            {
+                DuplicateLoadBlockedCount++;
+                operation = null;
+                return false;
+            }
+
+            operation = (Loader ?? new UnitySceneLoader()).Load(scenePath);
+            _liveOperation = operation;
+            return true;
         }
 
         /// <summary>復旧ロードで元の場所へ戻れた回数（診断・テスト用）。</summary>
@@ -434,7 +651,7 @@ namespace Momotaro.Infrastructure.World
         /// <summary>要求が入っているか。</summary>
         public static bool HasPending => TransitionId != 0;
 
-        private static bool _completed;
+        private static bool _prepared;
 
         /// <summary>遷移の開始時に設定する。</summary>
         public static void Set(int transitionId, StableId areaId, StableId entryId)
@@ -442,14 +659,19 @@ namespace Momotaro.Infrastructure.World
             TransitionId = transitionId;
             AreaId = areaId;
             EntryId = entryId;
-            _completed = false;
+            _prepared = false;
         }
 
         /// <summary>
-        /// 到着側が Ready を確定したときに呼ぶ。<b>エリア・入口・世代がすべて一致するときだけ</b>効く。
-        /// 一致しない呼び出しは無視して数える（古い Scene の初期化担当が新しい遷移を完了させない）。
+        /// 到着側が<b>準備完了</b>を報告する。エリア・入口・世代がすべて一致するときだけ効く。
+        ///
+        /// 渡す世代は、到着側が<b>初期化を始めた時点で受け取ったトークン</b>であること。
+        /// ここで <see cref="TransitionId"/> を読み直すと自分自身との比較になり、照合の意味が無くなる
+        /// （GPT レビュー R2 の指摘 4）。
+        ///
+        /// これは「準備できた」の報告であって、活動の許可ではない。許可は所有者が出す。
         /// </summary>
-        public static bool TryMarkCompleted(int transitionId, StableId areaId, StableId entryId)
+        public static bool TryMarkPrepared(int transitionId, StableId areaId, StableId entryId)
         {
             if (transitionId == 0 || transitionId != TransitionId
                 || !areaId.Equals(AreaId) || !entryId.Equals(EntryId))
@@ -458,13 +680,13 @@ namespace Momotaro.Infrastructure.World
                 return false;
             }
 
-            _completed = true;
+            _prepared = true;
             return true;
         }
 
-        /// <summary>指定の世代について完了しているか。</summary>
-        public static bool IsCompletedFor(int transitionId) =>
-            _completed && transitionId != 0 && transitionId == TransitionId;
+        /// <summary>指定の世代について準備できているか。</summary>
+        public static bool IsPreparedFor(int transitionId) =>
+            _prepared && transitionId != 0 && transitionId == TransitionId;
 
         /// <summary>一致しない完了要求を無視した回数（診断・テスト用）。</summary>
         public static int MismatchedCompletionCount { get; private set; }
@@ -475,7 +697,7 @@ namespace Momotaro.Infrastructure.World
             TransitionId = 0;
             AreaId = default;
             EntryId = default;
-            _completed = false;
+            _prepared = false;
         }
 
         /// <summary>診断カウンタを戻す（テストの後始末）。</summary>

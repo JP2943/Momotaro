@@ -23,6 +23,7 @@ using Momotaro.Tests.Support;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Session;
+using Momotaro.Infrastructure.World;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -1507,6 +1508,59 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(0, recoverable.LoadStartCount, "ロード前の失敗では 1 度もロードしていない。");
             Assert.IsFalse(clock2.IsFrozen,
                 "旧 Scene が生きている失敗では時計を戻す。戻さないと留まったまま何も操作できない。");
+        }
+
+        // ---------------------------------------------------------------- E09（到着トークンの世代）
+
+        /// <summary>
+        /// P5-E09（補強）：到着側が報告に使うのは<b>初期化を始めた時点で捕まえたトークン</b>であって、
+        /// 報告のときに共有領域を読み直した値ではない（§6.2 末尾）。
+        ///
+        /// 読み直すと「渡す値」と「比べる値」が同じものになり、照合が常に成立してしまう。
+        /// すると、初期化の途中で次の遷移が始まっていた場合に
+        /// <b>古い Scene の初期化担当が、まだ読み込んでもいない新しい世代を「準備できた」ことにする</b>。
+        /// 同じエリア・同じ入口への再遷移（死亡再開）で現実に起きる形なので、そこを固定する。
+        /// </summary>
+        [Test]
+        public void ArrivalToken_CapturedAtStart_DoesNotMarkANewerGeneration()
+        {
+            var areaA = new StableId("area_p5_a");
+            var entry = new StableId("area_p5_a_start");
+
+            AreaPendingArrival.Clear();
+            AreaPendingArrival.ResetDiagnostics();
+            try
+            {
+                // 世代 11 の到着が始まり、A の初期化担当がトークンを捕まえる。
+                AreaPendingArrival.Set(11, areaA, entry);
+                int captured = AreaInitializer.CaptureArrivalToken(areaA);
+                Assert.AreEqual(11, captured, "開始時点の世代を捕まえる。");
+
+                // 初期化の途中で、同じエリア・同じ入口への新しい遷移が始まった。
+                AreaPendingArrival.Set(12, areaA, entry);
+
+                // 捕まえたトークンで報告する＝効かない。読み直していたらここが通ってしまう。
+                Assert.IsFalse(AreaPendingArrival.TryMarkPrepared(captured, areaA, entry),
+                    "古い世代の準備完了は効かない。");
+                Assert.IsFalse(AreaPendingArrival.IsPreparedFor(12),
+                    "新しい世代が、古い Scene の報告で準備済みにならない。");
+                Assert.AreEqual(1, AreaPendingArrival.MismatchedCompletionCount, "無視して数える。");
+
+                // 自分の世代なら通る（拒否するだけの実装にしていない）。
+                Assert.IsTrue(AreaPendingArrival.TryMarkPrepared(12, areaA, entry));
+                Assert.IsTrue(AreaPendingArrival.IsPreparedFor(12));
+                Assert.IsFalse(AreaPendingArrival.IsPreparedFor(11), "世代が違えば準備済みにならない。");
+
+                // 別エリア宛ての要求は自分のものではない＝直開き扱い（0）。
+                AreaPendingArrival.Set(13, new StableId("area_p5_b"), new StableId("area_p5_b_from_a"));
+                Assert.AreEqual(0, AreaInitializer.CaptureArrivalToken(areaA),
+                    "別エリア宛ての要求を自分の到着と取り違えない。");
+            }
+            finally
+            {
+                AreaPendingArrival.Clear();
+                AreaPendingArrival.ResetDiagnostics();
+            }
         }
 
         /// <summary>

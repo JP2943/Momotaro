@@ -34,17 +34,38 @@ namespace Momotaro.Gameplay.Session
             AreaId = areaId;
             EntryId = entryId;
             IsAreaReady = false;
+            IsPrepared = false;
         }
 
         /// <summary>
-        /// 初期化の完了を確定する（§5.1 手順 8）。Bind・復元・配置・カメラ・HUD の確認が
-        /// すべて終わってから 1 回だけ呼ぶ。二重呼び出しは数えるが状態は変えない。
+        /// 到着側が「準備できた」と報告する（§5.1 手順 1〜7 の完了）。
+        ///
+        /// <b>これだけでは活動を許可しない。</b> 準備が整っていても、その到着が
+        /// 「もう捨てられた遷移のもの」かもしれないため（監視がタイムアウトしたあとに
+        /// 遅れて届いた目的地など）。許可の判断は遷移の所有者が行う（GPT レビュー R2）。
         /// </summary>
-        public void ConfirmReady()
+        public void MarkPrepared()
+        {
+            PreparedCount++;
+            IsPrepared = true;
+        }
+
+        /// <summary>
+        /// 活動と入力を許可する（§5.1 手順 8）。<b>遷移の所有者だけが呼ぶ。</b>
+        /// 世代・対象・タイムアウト状態を確認したうえでの許可なので、ここは確定だけを行う。
+        /// 直開き（遷移を伴わない起動）では所有者が居ないため、初期化担当が自分で呼ぶ。
+        /// </summary>
+        public void Activate()
         {
             ReadyCount++;
             IsAreaReady = true;
         }
+
+        /// <summary>準備が整ったか（活動許可とは別）。</summary>
+        public bool IsPrepared { get; private set; }
+
+        /// <summary>準備完了を報告した回数（診断・テスト用）。</summary>
+        public int PreparedCount { get; private set; }
 
         /// <summary>遷移の受理時に活動を閉じる（§6.2 手順 3）。</summary>
         public void CloseForTransition()
