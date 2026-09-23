@@ -24,6 +24,7 @@ using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Interaction;
 using Momotaro.Gameplay.Navigation;
+using Momotaro.Presentation.Cameras;
 using Momotaro.Gameplay.Session;
 using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.World;
@@ -2262,6 +2263,150 @@ namespace Momotaro.Tests.EditMode
 
             public bool IsConnectedToLeader(Vector3 position, Vector3 leaderPosition) =>
                 !Disconnected.Contains(position);
+        }
+
+        // ---------------------------------------------------------------- E24（カメラ範囲）
+
+        /// <summary>
+        /// P5-E24：斜め見下ろしの<b>床での見える範囲</b>を俯角と画面比から正しく出し、
+        /// 部屋へ収める。部屋が狭い軸は中央固定。領域の重なりは決まった順で決着する（§11）。
+        ///
+        /// ここを間違えると、部屋の端でカメラが寄りすぎる／床の外（仮背景）が見える、という
+        /// 見ればすぐ分かる壊れ方をする。だが「どのくらい伸びるか」は目分量では詰められないので、
+        /// 数で固定しておく。
+        /// </summary>
+        [Test]
+        public void CameraBounds_HandlePitchAspectAndSmallRooms()
+        {
+            // ---- 俯角で奥行きが伸びる（Z 幅を orthographicSize と同じにしない） ----
+            //
+            // 真上（90 度）なら縦はそのまま。45 度なら 1/sin45 ≒ 1.414 倍、30 度なら 2 倍。
+            const float size = 10f;
+            const float aspect169 = 16f / 9f;
+
+            Vector2 top = CameraBoundsMath.HalfFootprint(size, aspect169, 90f);
+            Assert.AreEqual(size * aspect169, top.x, 1e-3f, "横は orthographicSize × aspect。");
+            Assert.AreEqual(size, top.y, 1e-3f, "真上なら奥行きは伸びない。");
+
+            Vector2 tilted45 = CameraBoundsMath.HalfFootprint(size, aspect169, 45f);
+            Assert.AreEqual(size / Mathf.Sin(45f * Mathf.Deg2Rad), tilted45.y, 1e-3f,
+                "45 度では 1/sin45 倍に伸びる。");
+            Assert.Greater(tilted45.y, size * 1.4f, "実際に伸びている（素通しになっていない）。");
+
+            Vector2 tilted30 = CameraBoundsMath.HalfFootprint(size, aspect169, 30f);
+            Assert.AreEqual(size * 2f, tilted30.y, 1e-3f, "30 度では 2 倍。");
+            Assert.AreEqual(tilted45.x, tilted30.x, 1e-3f, "俯角で横幅は変わらない（横軸は床と平行）。");
+
+            // ---- 画面比で変わるのは横だけ ----
+            Vector2 a43 = CameraBoundsMath.HalfFootprint(size, 4f / 3f, 45f);
+            Vector2 a219 = CameraBoundsMath.HalfFootprint(size, 21f / 9f, 45f);
+
+            Assert.AreEqual(size * (4f / 3f), a43.x, 1e-3f, "4:3 の横。");
+            Assert.AreEqual(size * (21f / 9f), a219.x, 1e-3f, "21:9 の横。");
+            Assert.AreEqual(tilted45.y, a43.y, 1e-3f, "奥行きは画面比で変わらない。");
+            Assert.AreEqual(tilted45.y, a219.y, 1e-3f);
+            Assert.Less(a43.x, tilted45.x, "4:3 は 16:9 より狭い。");
+            Assert.Greater(a219.x, tilted45.x, "21:9 は 16:9 より広い。");
+
+            // ---- 部屋へ収める ----
+            //
+            // 40 × 40 の部屋に、半分が 8 × 6 の見える範囲。端へ寄っても外が見えない位置で止まる。
+            var room = new CameraRegionDefinition(
+                new StableId("region_room"), 0, new Vector2(0f, 0f), new Vector2(40f, 40f));
+            var half = new Vector2(8f, 6f);
+
+            Vector3 inside = CameraBoundsMath.ClampFocus(new Vector3(3f, 0f, -2f), room, half);
+            Assert.AreEqual(3f, inside.x, 1e-3f, "内側なら動かさない。");
+            Assert.AreEqual(-2f, inside.z, 1e-3f);
+
+            Vector3 edge = CameraBoundsMath.ClampFocus(new Vector3(100f, 0f, -100f), room, half);
+            Assert.AreEqual(20f - 8f, edge.x, 1e-3f, "右端は 部屋の端 − 見える半分。");
+            Assert.AreEqual(-20f + 6f, edge.z, 1e-3f, "奥行きも同じ考え方。");
+
+            // 高さ（y）は触らない。カメラの高さは別に決まる。
+            Assert.AreEqual(0f, edge.y, 1e-3f);
+
+            // ---- 部屋が見える範囲より小さい軸は中央固定（無理な clamp をしない） ----
+            var small = new CameraRegionDefinition(
+                new StableId("region_small"), 0, new Vector2(5f, -3f), new Vector2(6f, 40f));
+
+            Vector3 centered = CameraBoundsMath.ClampFocus(new Vector3(100f, 0f, 0f), small, half);
+            Assert.AreEqual(5f, centered.x, 1e-3f,
+                "横が入りきらないので中央固定（min が max を超えて跳ねたりしない）。");
+            Assert.AreEqual(0f, centered.z, 1e-3f, "入る軸は普通に収める。");
+
+            Vector3 centeredOther = CameraBoundsMath.ClampFocus(new Vector3(-100f, 0f, 0f), small, half);
+            Assert.AreEqual(centered.x, centeredOther.x, 1e-3f,
+                "どちら側から来ても同じ位置（境目で往復しない）。");
+
+            // ---- 領域の重なりは Priority 降順 → RegionId 辞書順 ----
+            var low = new CameraRegionDefinition(
+                new StableId("region_a_low"), 0, Vector2.zero, new Vector2(20f, 20f));
+            var high = new CameraRegionDefinition(
+                new StableId("region_z_high"), 5, Vector2.zero, new Vector2(20f, 20f));
+            var sameHigh = new CameraRegionDefinition(
+                new StableId("region_b_high"), 5, Vector2.zero, new Vector2(20f, 20f));
+
+            var overlapping = new List<CameraRegionDefinition> { low, high, sameHigh };
+            Assert.IsTrue(CameraRegionSelector.TrySelect(overlapping, Vector3.zero, out CameraRegionDefinition chosen));
+            Assert.AreEqual(sameHigh.RegionId.Value, chosen.RegionId.Value,
+                "優先度が同じなら RegionId の辞書順（region_b_high < region_z_high）。");
+
+            overlapping.Reverse();
+            Assert.IsTrue(CameraRegionSelector.TrySelect(overlapping, Vector3.zero, out chosen));
+            Assert.AreEqual(sameHigh.RegionId.Value, chosen.RegionId.Value, "並び順で結果が変わらない。");
+
+            // 1 つしか含まないなら、優先度に関わらずそれを使う。
+            Assert.IsTrue(CameraRegionSelector.TrySelect(
+                new List<CameraRegionDefinition> { low, high }, new Vector3(0f, 0f, 0f), out chosen));
+            Assert.AreEqual(high.RegionId.Value, chosen.RegionId.Value, "重なっていれば優先度が高い方。");
+
+            var far = new CameraRegionDefinition(
+                new StableId("region_far"), 9, new Vector2(100f, 100f), new Vector2(10f, 10f));
+            Assert.IsTrue(CameraRegionSelector.TrySelect(
+                new List<CameraRegionDefinition> { far, low }, Vector3.zero, out chosen));
+            Assert.AreEqual(low.RegionId.Value, chosen.RegionId.Value,
+                "含んでいない領域は、優先度が高くても選ばない。");
+
+            // どこにも入らなければ false（呼び出し側が Area の既定領域を使う）。
+            Assert.IsFalse(CameraRegionSelector.TrySelect(
+                new List<CameraRegionDefinition> { low }, new Vector3(1000f, 0f, 0f), out _));
+            Assert.IsFalse(CameraRegionSelector.TrySelect(null, Vector3.zero, out _));
+
+            // ---- 部屋切替の補間：途中も範囲内、到着は即時 ----
+            var blend = new CameraFocusBlend();
+            var roomA = new CameraRegionDefinition(
+                new StableId("region_a"), 0, new Vector2(0f, 0f), new Vector2(40f, 40f));
+            var roomB = new CameraRegionDefinition(
+                new StableId("region_b"), 0, new Vector2(100f, 0f), new Vector2(40f, 40f));
+
+            blend.Tick(new Vector3(0f, 0f, 0f), roomA, half, 0.016f);
+            Assert.IsFalse(blend.IsBlending, "最初のフレームは補間しない（流れて見えるものが無い）。");
+
+            // 部屋が変わった。0.15 秒かけて寄る。
+            Vector3 mid = blend.Tick(new Vector3(100f, 0f, 0f), roomB, half, 0.05f);
+            Assert.IsTrue(blend.IsBlending, "切替で補間が始まる。");
+            Assert.AreEqual(1, blend.RegionChangeCount);
+            Assert.Greater(mid.x, roomB.Min.x + half.x - 1e-3f,
+                "補間の途中でも新しい部屋の範囲内に居る（はみ出さない）。x=" + mid.x);
+
+            // 残りを進めれば終点に落ち着く。
+            for (int i = 0; i < 10; i++)
+            {
+                blend.Tick(new Vector3(100f, 0f, 0f), roomB, half, 0.05f);
+            }
+
+            Assert.IsFalse(blend.IsBlending, "時間が経てば補間は終わる。");
+            Assert.AreEqual(100f, blend.Current.x, 1e-2f, "終点に落ち着く。");
+
+            // Scene 到着・死亡再開は補間しない。ただし範囲は守る（到着の 1 フレームだけ外が見える、を作らない）。
+            blend.SnapTo(new Vector3(-50f, 0f, 7f), roomA, half);
+            Assert.IsFalse(blend.IsBlending, "到着では補間しない。");
+            Assert.AreEqual(-20f + 8f, blend.Current.x, 1e-3f, "即時配置でも部屋からはみ出さない。");
+
+            Vector3 afterSnap = blend.Tick(new Vector3(-50f, 0f, 7f), roomA, half, 0.016f);
+            Assert.AreEqual(-20f + 8f, afterSnap.x, 1e-3f, "直後のフレームで切替と誤判定しない。");
+            Assert.AreEqual(1, blend.RegionChangeCount, "SnapTo は切替として数えない。");
         }
 
         // ---------------------------------------------------------------- E09（到着トークンの世代）

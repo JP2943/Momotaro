@@ -219,7 +219,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.CameraBounds_HandlePitchAspectAndSmallRooms",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E25",
