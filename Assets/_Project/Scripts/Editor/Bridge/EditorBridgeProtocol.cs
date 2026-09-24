@@ -56,6 +56,14 @@ namespace Momotaro.EditorBridge
         /// カンマ区切りで複数指定できる（EditMode と PlayMode を 1 回の判定にまとめるため）。
         /// </summary>
         public string runIds;
+
+        /// <summary>
+        /// run-op（<c>verify-required-tests</c>）：照合に使う必須テスト一覧（P5-09。仕様書 §16.1）。
+        ///
+        /// <b>許可リストの鍵だけ</b>を受け付ける（"P4" / "P5"）。任意のパスは読まない。
+        /// 空なら既定の P4 で、既存の照合はそのまま動く。
+        /// </summary>
+        public string manifest;
     }
 
     /// <summary>コマンドの実行結果。</summary>

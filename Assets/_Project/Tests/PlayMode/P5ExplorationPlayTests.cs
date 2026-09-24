@@ -1805,7 +1805,8 @@ namespace Momotaro.Tests.PlayMode
                 + " mode=" + (GameModeProvider.Current != null ? GameModeProvider.Current.Current.ToString() : "null")
                 + " ready=" + Object.FindFirstObjectByType<AreaContext>().IsAreaReady
                 + " input=" + (PlayerInputProvider.Current != null ? PlayerInputProvider.Current.GetType().Name : "null")
-                + " interactPressed=" + ((PlayerInputProvider.Current as IInteractInput)?.InteractPressed));
+                + " interactPressed=" + ((PlayerInputProvider.Current as IInteractInput)?.InteractPressed)
+                + " " + DescribeInputAsset());
             Assert.AreEqual(1, lever.OpenedCount, "門が 1 回だけ開く。");
             Assert.IsTrue(lever.Door.IsOpened, "門が開いている。");
             Assert.IsTrue(Object.FindFirstObjectByType<AreaFlagDoor>().IsOpened);
@@ -4250,6 +4251,40 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsFalse(sawStep, label + "：Step にもならない。");
         }
 
+        /// <summary>
+        /// 入力 Asset の状態を読める文にする。
+        /// <b>この症状は 2 回踏んでいる</b>（Action Map が PlayMode をまたいで無効のまま残る／
+        /// 外れたデバイスの参照で入力が止まる）。どちらも「キーが届かない」としか見えないので、
+        /// 失敗時に必ず Map の有効・無効が出るようにしておく。
+        /// </summary>
+        private static string DescribeInputAsset()
+        {
+            InputActionAsset asset = InputSystem.actions;
+            if (asset == null)
+            {
+                return "asset=(project-wide 未設定)";
+            }
+
+            var text = new System.Text.StringBuilder("asset=" + asset.name + " maps=");
+            foreach (InputActionMap map in asset.actionMaps)
+            {
+                text.Append(map.name).Append(map.enabled ? "[有効] " : "[無効] ");
+            }
+
+            InputAction interact = asset.FindAction("Gameplay/Interact", false);
+            text.Append(" Interact=")
+                .Append(interact == null ? "(見つからない)" :
+                    (interact.enabled ? "有効" : "無効") + " controls=" + interact.controls.Count
+                    + " pressed=" + interact.IsPressed())
+                .Append(" 入力ゲート=")
+                .Append(PlayerInputProvider.Current != null ? PlayerInputProvider.Current.Active.ToString() : "(なし)");
+
+            text.Append(" 解放待ち=")
+                .Append(InputReleaseGateProvider.Current != null
+                    ? InputReleaseGateProvider.Current.RequiresRelease.ToString() : "(なし)");
+            return text.ToString();
+        }
+
         /// <summary>再開入力の様子を読める文にする（失敗時の手掛かり）。</summary>
         private static string DescribeSubmit()
         {
@@ -4276,6 +4311,151 @@ namespace Momotaro.Tests.PlayMode
             var target = new CountingInteractable(id, AreaA, root.transform.position + new Vector3(0.3f, 0f, 0f));
             AreaInteractableRegistry.Register(target);
             return target;
+        }
+
+
+        /// <summary>
+        /// P5-P16：<b>Builder の出力だけで一周が立ち上がる</b>（§13.1「初回だけ手で接続する工程を残さない」）。
+        ///
+        /// このテストは<b>自分では一切 Bind しない</b>。それがこの検査の全部で、
+        /// ほかの受入テストが必要な参照を自分で注入してしまうために見えなくなる穴を、ここだけが塞ぐ。
+        /// 統合起動 Scene から入って A を確かめ、B へ渡って戦闘まで、すべて出荷物の配線で通す。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RebuiltScenes_RunWithoutManualWiring()
+        {
+            AssertSceneRegistered(TrialScene);
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+
+            if (BootstrapRoot.HasInstance)
+            {
+                Object.DestroyImmediate(BootstrapRoot.Instance.gameObject);
+            }
+
+            // ================================ 1. 統合起動 Scene から入る ================================
+            yield return SceneManager.LoadSceneAsync(TrialScene, LoadSceneMode.Single);
+            yield return null;
+
+            var launcher = Object.FindFirstObjectByType<Phase5TrialLauncher>();
+            Assert.IsNotNull(launcher, "統合起動 Scene に起動役がある（出荷物）。");
+
+            _bootstrap = new GameObject("BootstrapRoot_P5Test");
+            _bootstrap.AddComponent<BootstrapRoot>();
+
+            // 起動役が自分で A を要求して到着し、<b>活動の許可まで出る</b>のを待つ
+            // （テスト側からは何も要求しない）。初期化の成立だけでは到着の後始末がまだ終わっていない。
+            yield return WaitUntilOrTimeout(
+                () => BootstrapRoot.HasInstance
+                    && BootstrapRoot.Instance.GetService<AreaTransitionService>()?.Coordinator != null
+                    && BootstrapRoot.Instance.GetService<AreaTransitionService>().Coordinator.CompletedCount >= 1,
+                20f);
+
+            AreaTransitionCoordinator transitions = Transitions().Coordinator;
+            Assert.IsNotNull(transitions, "常駐の遷移サービスが立つ。");
+            Assert.AreEqual(1, transitions.CompletedCount,
+                "起動役が A へ入れる（手で遷移を要求しない）。理由=" + launcher.LastRejection);
+
+            // ---- 注入（Provider）がそろっている ----
+            Assert.IsNotNull(GameModeProvider.Current, "GameMode の提供点が入る。");
+            Assert.IsNotNull(PlayerInputProvider.Current, "主人公入力の提供点が入る。");
+            Assert.IsNotNull(RespawnSubmitProvider.Current, "再開操作の提供点が入る（§9.1 手順 3）。");
+            Assert.IsNotNull(GameplayClockProvider.Current, "Gameplay 時計の提供点が入る。");
+            Assert.IsNotNull(CompanionActivityProvider.Current, "仲間の活動 Context が提供点へ入る。");
+            Assert.IsNotNull(GameSessionProvider.Current, "本編型 Session が提供点へ入る。");
+
+            AreaInitializer initA = FindInitializer();
+            Assert.IsTrue(initA.Initialized, "A が初期化される。理由=" + initA.FailureReason);
+            Assert.AreEqual(AreaA.Value, initA.AreaId.Value);
+            Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current);
+
+            // ---- A の配線（HUD・調査・Interact・カメラ・再開）----
+            AssertAreaWiredWithoutHelp("A");
+
+            var coordinator = Object.FindFirstObjectByType<InvestigationCoordinator>();
+            Assert.IsNotNull(coordinator, "A に調査の調停役がある。");
+            Assert.IsTrue(coordinator.IsWired, "調査が配線済みで立ち上がる。");
+            Assert.IsTrue(coordinator.ExplicitTargetOnly, "P5 は指定地点モード（§7.1）。");
+            Assert.Greater(AreaInteractableRegistry.Count, 0,
+                "Interact 候補が自分で登録される（テストが登録しない）。");
+
+            // ================================ 2. B へ渡って戦闘まで ================================
+            AreaTransitionDecision toB = Transitions().TryTravel(AreaB, AreaBFromA);
+            Assert.IsTrue(toB.Accepted, "出荷物の配線だけで移動できる。理由=" + toB.Rejection);
+            yield return WaitForArrival(transitions, 2);
+
+            AreaInitializer initB = FindInitializer();
+            Assert.IsTrue(initB.Initialized, "B が初期化される。理由=" + initB.FailureReason);
+            AssertAreaWiredWithoutHelp("B");
+
+            var runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            Assert.IsNotNull(runner, "B に遭遇戦の調停がある。");
+            Assert.IsTrue(runner.IsWired, "遭遇戦が配線済みで立ち上がる。");
+            Assert.AreEqual(0, Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None).Length,
+                "到着時点の敵は 0（§13.2）。");
+
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5Keyboard");
+            yield return MovePlayerTo(EncounterTriggerPoint);
+            yield return WaitUntilOrTimeout(() => runner.State == AreaEncounterState.Playing, 5f);
+            Assert.AreEqual(AreaEncounterState.Playing, runner.State,
+                "Trigger を踏むだけで戦闘が始まる（手で開始しない）。拒否=" + runner.LastRejection
+                + " " + runner.LastFailureDetail);
+            Assert.AreEqual(2, Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None).Length,
+                "敵が出荷物の表から湧く。");
+
+            var dispatcher = Object.FindFirstObjectByType<CombatFeedbackDispatcher>();
+            Assert.IsNotNull(dispatcher, "命中 Feedback の配信役も出荷物に含まれる。");
+            var binder = Object.FindFirstObjectByType<EncounterFeedbackBinder>();
+            Assert.IsNotNull(binder);
+            Assert.IsTrue(binder.IsWired);
+            Assert.AreEqual(1, binder.RescanCount, "生成直後に購読し直している（§8.2 手順 7）。");
+
+            yield return ReleaseKeys();
+        }
+
+        /// <summary>出荷 Scene が「置いてあるだけ」でなく繋がっていることを見る（テスト側は Bind しない）。</summary>
+        private static void AssertAreaWiredWithoutHelp(string label)
+        {
+            var context = Object.FindFirstObjectByType<AreaContext>();
+            Assert.IsNotNull(context, label + "：エリアの初期化状態がある。");
+            Assert.IsTrue(context.IsAreaReady, label + "：活動が許可されている。");
+
+            var interaction = Object.FindFirstObjectByType<AreaInteractionController>();
+            Assert.IsNotNull(interaction, label + "：Interact の単一窓口がある。");
+            Assert.IsTrue(interaction.IsWired, label + "：Interact 窓口が配線されている。");
+
+            var mediator = Object.FindFirstObjectByType<AreaInteractInput>();
+            Assert.IsNotNull(mediator, label + "：Interact の入力仲介がある。");
+            Assert.IsNotNull(mediator.Controller, label + "：仲介が窓口へ配線されている。");
+
+            var progress = Object.FindFirstObjectByType<PlayerProgressHolder>();
+            Assert.IsNotNull(progress, label + "：進行の書込先がある。");
+            Assert.IsTrue(progress.IsBound, label + "：進行が共有 State へ束ねられている（§4.2）。");
+
+            var rig = Object.FindFirstObjectByType<AreaCameraRig>();
+            Assert.IsNotNull(rig, label + "：カメラの Rig がある。");
+            Assert.IsTrue(rig.IsWired, label + "：カメラが配線されている。");
+            Assert.GreaterOrEqual(rig.SnapCount, 1, label + "：到着で即時配置されている（§11）。");
+
+            var hud = Object.FindFirstObjectByType<CombatPlayHud>();
+            Assert.IsNotNull(hud, label + "：HUD がある（§11 の必須 UI）。");
+
+            var respawnView = Object.FindFirstObjectByType<CampaignRespawnView>();
+            Assert.IsNotNull(respawnView, label + "：再開操作の表示がある。");
+            Assert.IsTrue(respawnView.IsWired, label + "：再開の表示が配線されている。");
+
+            var respawnInput = Object.FindFirstObjectByType<RespawnSubmitInput>();
+            Assert.IsNotNull(respawnInput, label + "：再開操作の仲介がある。");
+            Assert.IsTrue(respawnInput.IsWired, label + "：再開の仲介が配線されている。");
+
+            var navigation = Object.FindFirstObjectByType<AreaNavigationBinder>();
+            Assert.IsNotNull(navigation, label + "：経路 Adapter の配線役がある。");
+            Assert.IsTrue(navigation.IsWired, label + "：経路の配線役が繋がっている。");
+
+            var follow = Object.FindFirstObjectByType<CompanionFollowController>();
+            Assert.IsNotNull(follow, label + "：犬丸が居る。");
+            Assert.IsTrue(follow.HasPathProvider,
+                label + "：経路の供給元が実際に注入されている（§10.1。未注入なら経路追従が止まる）。");
         }
 
     }

@@ -49,6 +49,9 @@ namespace Momotaro.Gameplay.Encounter
         /// <summary>出現点の数（Validator・診断用）。</summary>
         public int SpawnPointCount => _spawnPoints != null ? _spawnPoints.Count : 0;
 
+        /// <summary>出現点（Scene 検査用。位置の重なりを静的に見るために公開する）。</summary>
+        public IReadOnlyList<Transform> SpawnPoints => _spawnPoints;
+
         /// <summary>EnemyId→Prefab 表（Validator・診断用）。</summary>
         public EnemyPrefabTable Table => _table;
 

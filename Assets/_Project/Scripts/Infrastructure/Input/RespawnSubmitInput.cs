@@ -22,6 +22,9 @@ namespace Momotaro.Infrastructure.Input
         private IRespawnSubmitInput _input;
         private bool _inputInjected;
 
+        /// <summary>仲介先が配線されているか（Scene 検査・診断用）。</summary>
+        public bool IsWired => _runner != null;
+
         /// <summary>再開を要求した回数（診断・テスト用）。</summary>
         public int SubmitCount { get; private set; }
 

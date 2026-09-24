@@ -47,11 +47,15 @@ namespace Momotaro.EditorBridge
         /// <summary>P5 の探索試遊（3 Scene・Data カタログ・仮地形）を再生成する（P5-02。仕様書 §16.1）。</summary>
         public const string BuildExplorationTrial = "build-exploration-trial";
 
+        /// <summary>P5 の探索試遊を Scene・Asset の両面から検査する（P5-09。仕様書 §16.1）。</summary>
+        public const string ValidateExplorationTrial = "validate-exploration-trial";
+
         /// <summary>実行できる操作の一覧（エラーメッセージにそのまま出す）。</summary>
         public static readonly string[] All =
         {
             BuildInumaru, ValidateProjectData, VerifyRequiredTests,
             BuildCompanionField, BuildCompanionTrial, BuildExplorationTrial,
+            ValidateExplorationTrial,
         };
 
         /// <summary>実行結果。</summary>
@@ -78,7 +82,8 @@ namespace Momotaro.EditorBridge
         public static bool IsKnown(string op)
         {
             return op == BuildInumaru || op == ValidateProjectData || op == VerifyRequiredTests
-                || op == BuildCompanionField || op == BuildCompanionTrial || op == BuildExplorationTrial;
+                || op == BuildCompanionField || op == BuildCompanionTrial || op == BuildExplorationTrial
+                || op == ValidateExplorationTrial;
         }
 
         /// <summary>操作を実行する。未知の操作・呼び出し失敗は <see cref="OperationResult.Success"/> false で返す。</summary>
@@ -101,6 +106,9 @@ namespace Momotaro.EditorBridge
 
                     case BuildExplorationTrial:
                         return RunBuildExplorationTrial();
+
+                    case ValidateExplorationTrial:
+                        return RunValidateExplorationTrial();
 
                     case BuildCompanionField:
                         return RunBuildCompanionField();
@@ -135,7 +143,9 @@ namespace Momotaro.EditorBridge
         /// </summary>
         private static OperationResult RunVerifyRequiredTests(BridgeCommand command)
         {
-            Phase4RequiredTests.Manifest manifest = Phase4RequiredTests.Load(out string loadError);
+            // 一覧は許可リストから選ぶ（§16.1）。空なら既定の P4 で、既存の照合は変わらない。
+            string manifestKey = command?.manifest;
+            Phase4RequiredTests.Manifest manifest = Phase4RequiredTests.Load(manifestKey, out string loadError);
             if (manifest == null)
             {
                 return new OperationResult(false, loadError);
@@ -202,6 +212,8 @@ namespace Momotaro.EditorBridge
                 Phase4RequiredTestGate.Check(required, allowedSkips, leaves);
 
             var details = new List<string>();
+            Phase4RequiredTests.TryResolveFileName(manifestKey, out string manifestFile, out _);
+            details.Add("必須一覧: " + manifestFile);
             details.Add("工程: " + (string.IsNullOrEmpty(stage) ? "（全工程）" : stage));
             foreach (string source in sources)
             {
@@ -275,6 +287,8 @@ namespace Momotaro.EditorBridge
         private const string CompanionTrialBuilderType = "Momotaro.Editor.Phase4.Phase4CompanionTrialBuilder";
         private const string CompanionTrialValidatorType = "Momotaro.Editor.Phase4.Phase4CompanionTrialValidator";
         private const string ExplorationBuilderType = "Momotaro.Editor.Phase5.Phase5ExplorationBuilder";
+        private const string ExplorationValidatorType = "Momotaro.Editor.Phase5.Phase5ExplorationValidator";
+        private const string ExplorationAssetValidatorType = "Momotaro.Editor.Phase5.Phase5AssetValidator";
 
         private static OperationResult RunBuildInumaru()
         {
@@ -544,6 +558,119 @@ namespace Momotaro.EditorBridge
             }
 
             return new OperationResult(success, message, details);
+        }
+
+        /// <summary>
+        /// P5 の探索試遊を検査する（P5-09。仕様書 §13.2／§16.1）。
+        ///
+        /// <b>Scene を開く操作なので、未保存の変更があれば断る</b>。生成と同じ扱いにする
+        /// （`CLAUDE.md`「手で加えた変更を黙って消さない」）。
+        ///
+        /// 検査は 2 本立て（§13.2）。Asset／Build は Scene を開かずに済むので先に走らせ、
+        /// そのあと Area Scene を 1 つずつ開いて Scene Validator にかける。
+        /// 片方だけ通っても合格にしない。
+        /// </summary>
+        private static OperationResult RunValidateExplorationTrial()
+        {
+            for (int i = 0; i < UnityEditor.SceneManagement.EditorSceneManager.sceneCount; i++)
+            {
+                UnityEngine.SceneManagement.Scene open =
+                    UnityEditor.SceneManagement.EditorSceneManager.GetSceneAt(i);
+                if (open.isDirty)
+                {
+                    return new OperationResult(false,
+                        "未保存の変更がある Scene が開いているため検査しません（"
+                        + (string.IsNullOrEmpty(open.path) ? "(無題 Scene)" : open.path)
+                        + "）。保存するか破棄してから再実行してください。");
+                }
+            }
+
+            Type assetValidator = FindType(ExplorationAssetValidatorType);
+            if (assetValidator == null)
+            {
+                return new OperationResult(false, "型が見つかりません: " + ExplorationAssetValidatorType);
+            }
+
+            MethodInfo assetValidate = assetValidator.GetMethod(
+                "Validate", BindingFlags.Public | BindingFlags.Static, null,
+                new[] { typeof(List<string>), typeof(List<string>) }, null);
+            if (assetValidate == null)
+            {
+                return new OperationResult(false,
+                    ExplorationAssetValidatorType + ".Validate(List<string>, List<string>) が見つかりません。");
+            }
+
+            Type sceneValidator = FindType(ExplorationValidatorType);
+            if (sceneValidator == null)
+            {
+                return new OperationResult(false, "型が見つかりません: " + ExplorationValidatorType);
+            }
+
+            MethodInfo sceneValidate = sceneValidator.GetMethod(
+                "Validate", BindingFlags.Public | BindingFlags.Static, null,
+                new[] { typeof(UnityEngine.SceneManagement.Scene), typeof(List<string>), typeof(List<string>) }, null);
+            if (sceneValidate == null)
+            {
+                return new OperationResult(false,
+                    ExplorationValidatorType + ".Validate(Scene, List<string>, List<string>) が見つかりません。");
+            }
+
+            if (!(sceneValidator.GetField("AreaScenePaths", BindingFlags.Public | BindingFlags.Static)
+                    ?.GetValue(null) is string[] scenePaths) || scenePaths.Length == 0)
+            {
+                return new OperationResult(false, ExplorationValidatorType + ".AreaScenePaths が読めません。");
+            }
+
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            var details = new List<string>();
+
+            var assetErrors = new List<string>();
+            var assetWarnings = new List<string>();
+            assetValidate.Invoke(null, new object[] { assetErrors, assetWarnings });
+            Collect("Asset/Build", assetErrors, assetWarnings, errors, warnings, details);
+
+            foreach (string scenePath in scenePaths)
+            {
+                UnityEngine.SceneManagement.Scene scene =
+                    UnityEditor.SceneManagement.EditorSceneManager.OpenScene(
+                        scenePath, UnityEditor.SceneManagement.OpenSceneMode.Single);
+
+                var sceneErrors = new List<string>();
+                var sceneWarnings = new List<string>();
+                sceneValidate.Invoke(null, new object[] { scene, sceneErrors, sceneWarnings });
+                Collect(scenePath, sceneErrors, sceneWarnings, errors, warnings, details);
+            }
+
+            // 検査のあとに P5 Scene を開いたままにしない（次の操作が「開いている Scene」を前提にしないため）。
+            UnityEditor.SceneManagement.EditorSceneManager.NewScene(
+                UnityEditor.SceneManagement.NewSceneSetup.EmptyScene,
+                UnityEditor.SceneManagement.NewSceneMode.Single);
+
+            return new OperationResult(
+                errors.Count == 0,
+                errors.Count == 0
+                    ? "P5 探索試遊の検査を通りました（警告 " + warnings.Count + " 件）。"
+                    : "P5 探索試遊の検査でエラー " + errors.Count + " 件（警告 " + warnings.Count + " 件）。",
+                details);
+        }
+
+        /// <summary>1 つの検査の結果を、出どころ付きでまとめる。</summary>
+        private static void Collect(
+            string source, List<string> sourceErrors, List<string> sourceWarnings,
+            List<string> errors, List<string> warnings, List<string> details)
+        {
+            foreach (string w in sourceWarnings)
+            {
+                warnings.Add(w);
+                details.Add("[警告] " + source + ": " + w);
+            }
+
+            foreach (string e in sourceErrors)
+            {
+                errors.Add(e);
+                details.Add("[エラー] " + source + ": " + e);
+            }
         }
     }
 }

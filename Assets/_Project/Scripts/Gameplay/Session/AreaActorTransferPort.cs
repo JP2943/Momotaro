@@ -46,6 +46,9 @@ namespace Momotaro.Gameplay.Session
         /// <summary>直近の適用が成功したか（診断・テスト用）。</summary>
         public bool LastApplySucceeded { get; private set; }
 
+        /// <summary>配置対象と Actor がそろっているか（Scene 検査・診断用）。</summary>
+        public bool IsWired => _playerRoot != null && _companionRoot != null && _playerVitals != null;
+
         /// <summary>直近の適用の失敗理由（診断・テスト用。成功なら空）。</summary>
         public string LastApplyFailure { get; private set; } = string.Empty;
 

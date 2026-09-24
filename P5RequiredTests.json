@@ -425,7 +425,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RebuiltScenes_RunWithoutManualWiring",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P17",
@@ -457,7 +457,14 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ValidatorTests.GeneratedAreas_PassSceneDataAndAssetValidators",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P5RequiredTestsManifestTests.Manifest_DefaultsToPhase4AndSelectsPhase5ByKey",
+        "Momotaro.Tests.EditMode.P5RequiredTestsManifestTests.Manifest_UnknownKeyIsRefusedWithoutReadingAPath",
+        "Momotaro.Tests.EditMode.P5RequiredTestsManifestTests.Phase5Manifest_LoadsAndCoversEveryRequirement",
+        "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.BuildExplorationTrial_TargetExists",
+        "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.ValidateExplorationTrial_TargetsExist"
+      ]
     },
     {
       "requirementId": "P5-V02",
@@ -465,7 +472,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ValidatorTests.BrokenFixtures_FailWithSpecificDiagnostics",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-V03",
@@ -473,7 +480,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ValidatorTests.Rebuild_IsRepeatableAndDoesNotModifySharedAssets",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-V04",
@@ -481,7 +488,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ValidatorTests.DirtyScene_BlocksDestructiveGeneration",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-V05",
@@ -489,7 +496,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ValidatorTests.ProjectDataValidation_IncludesPhase5GeneratedFolder",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     }
   ],
   "allowedSkips": [],

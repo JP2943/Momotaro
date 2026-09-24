@@ -49,6 +49,9 @@ namespace Momotaro.Gameplay.Session
         private bool _defeatPending;
         private int _travelTransitionId;
 
+        /// <summary>供給元がそろっているか（Scene 検査・診断用）。</summary>
+        public bool IsWired => _playerVitals != null && _catalogData != null;
+
         /// <summary>死亡を受理した回数（診断・テスト用）。</summary>
         public int DefeatCount { get; private set; }
 

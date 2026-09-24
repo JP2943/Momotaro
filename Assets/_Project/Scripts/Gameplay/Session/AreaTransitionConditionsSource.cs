@@ -59,6 +59,9 @@ namespace Momotaro.Gameplay.Session
             _encounterResolved = _encounter != null;
         }
 
+        /// <summary>供給元がそろっているか（Scene 検査・診断用）。</summary>
+        public bool IsWired => _area != null && _player != null && _vitals != null;
+
         /// <inheritdoc />
         public bool IsAreaReady => _area != null && _area.IsAreaReady;
 

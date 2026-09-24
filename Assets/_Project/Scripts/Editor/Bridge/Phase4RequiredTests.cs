@@ -16,8 +16,27 @@ namespace Momotaro.EditorBridge
     /// </summary>
     public static class Phase4RequiredTests
     {
-        /// <summary>正本のファイル名（プロジェクト直下）。</summary>
+        /// <summary>正本のファイル名（プロジェクト直下。既定は P4）。</summary>
         public const string FileName = "P4RequiredTests.json";
+
+        /// <summary>P5 の必須テスト一覧（P5-09。仕様書 §16.1）。</summary>
+        public const string Phase5FileName = "P5RequiredTests.json";
+
+        /// <summary>
+        /// 選べる一覧は<b>ここに書いたものだけ</b>（§16.1「ユーザー入力の任意パスをそのまま読み込む仕組みにしない」）。
+        /// 鍵は大文字小文字を区別しない短い名前にする。空・未指定は既定（P4）。
+        /// </summary>
+        private static readonly Dictionary<string, string> KnownManifests =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "p4", FileName },
+                { FileName, FileName },
+                { "p5", Phase5FileName },
+                { Phase5FileName, Phase5FileName },
+            };
+
+        /// <summary>選べる一覧の鍵（エラーメッセージにそのまま出す）。</summary>
+        public static readonly string[] KnownManifestKeys = { "P4", "P5" };
 
         /// <summary>1 件の必須テスト。</summary>
         [Serializable]
@@ -234,23 +253,64 @@ namespace Momotaro.EditorBridge
             }
         }
 
-        /// <summary>正本を読む。読めなければ <paramref name="error"/> に理由を入れて null を返す。</summary>
-        public static Manifest Load(out string error)
+        /// <summary>指定した一覧のファイル名を解決する（許可リスト。未指定は既定の P4）。</summary>
+        public static bool TryResolveFileName(string key, out string fileName, out string error)
         {
             error = null;
+            if (string.IsNullOrEmpty(key))
+            {
+                fileName = FileName; // 既定を変えない：既存の P4 照合を壊さないため（§16.1）。
+                return true;
+            }
+
+            if (KnownManifests.TryGetValue(key.Trim(), out fileName))
+            {
+                return true;
+            }
+
+            fileName = null;
+            error = "未知の必須テスト一覧: " + key
+                + "（使えるのは " + string.Join(" / ", KnownManifestKeys) + "）。任意のパスは読みません。";
+            return false;
+        }
+
+        /// <summary>一覧のファイル名からプロジェクト直下のパスを作る。</summary>
+        public static string PathOf(string fileName)
+        {
+            string projectRoot = Directory.GetParent(Application.dataPath)?.FullName ?? Application.dataPath;
+            return System.IO.Path.Combine(projectRoot, fileName);
+        }
+
+        /// <summary>既定（P4）の正本を読む。読めなければ <paramref name="error"/> に理由を入れて null を返す。</summary>
+        public static Manifest Load(out string error)
+        {
+            return Load(null, out error);
+        }
+
+        /// <summary>
+        /// 許可リストの鍵で一覧を選んで読む（P5-09。§16.1）。
+        /// <paramref name="key"/> が空なら既定の P4。未知の鍵は読まずに断る。
+        /// </summary>
+        public static Manifest Load(string key, out string error)
+        {
+            if (!TryResolveFileName(key, out string fileName, out error))
+            {
+                return null;
+            }
 
             try
             {
-                if (!File.Exists(Path))
+                string path = PathOf(fileName);
+                if (!File.Exists(path))
                 {
-                    error = "必須テスト一覧が見つかりません: " + FileName;
+                    error = "必須テスト一覧が見つかりません: " + fileName;
                     return null;
                 }
 
-                var manifest = JsonUtility.FromJson<Manifest>(File.ReadAllText(Path));
+                var manifest = JsonUtility.FromJson<Manifest>(File.ReadAllText(path));
                 if (manifest == null)
                 {
-                    error = "必須テスト一覧を解析できません: " + FileName;
+                    error = "必須テスト一覧を解析できません: " + fileName;
                     return null;
                 }
 

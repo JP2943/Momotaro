@@ -1,6 +1,7 @@
 using System.Reflection;
 using Momotaro.Data;
 using Momotaro.Editor.Phase4;
+using Momotaro.Editor.Phase5;
 using Momotaro.Editor.Validation;
 using NUnit.Framework;
 
@@ -129,6 +130,61 @@ namespace Momotaro.Tests.EditMode
                 },
                 null);
             Assert.IsNotNull(validate, "Validate(Scene, List<string>, List<string>) をブリッジが呼ぶ。");
+        }
+
+        [Test]
+        public void BuildExplorationTrial_TargetExists()
+        {
+            System.Type builder = typeof(Phase5ExplorationBuilder);
+
+            Assert.AreEqual("Momotaro.Editor.Phase5.Phase5ExplorationBuilder", builder.FullName,
+                "ブリッジは完全修飾名で型を探す。名前空間・型名を変えたらブリッジ側も直すこと。");
+
+            MethodInfo build = builder.GetMethod(
+                "BuildAll", BindingFlags.Public | BindingFlags.Static, null, System.Type.EmptyTypes, null);
+            Assert.IsNotNull(build, "BuildAll() をブリッジが呼ぶ。引数の形を変えたらブリッジ側も直すこと。");
+
+            System.Type resultType = typeof(Phase5ExplorationBuilder.BuildResult);
+            Assert.IsNotNull(resultType.GetProperty("Success", BindingFlags.Public | BindingFlags.Instance));
+            Assert.IsNotNull(resultType.GetProperty("Message", BindingFlags.Public | BindingFlags.Instance));
+            Assert.IsNotNull(resultType.GetProperty("Outputs", BindingFlags.Public | BindingFlags.Instance),
+                "生成物の一覧をブリッジが詳細として読む。");
+        }
+
+        [Test]
+        public void ValidateExplorationTrial_TargetsExist()
+        {
+            System.Type sceneValidator = typeof(Phase5ExplorationValidator);
+            Assert.AreEqual("Momotaro.Editor.Phase5.Phase5ExplorationValidator", sceneValidator.FullName);
+
+            MethodInfo sceneValidate = sceneValidator.GetMethod(
+                "Validate", BindingFlags.Public | BindingFlags.Static, null,
+                new[]
+                {
+                    typeof(UnityEngine.SceneManagement.Scene),
+                    typeof(System.Collections.Generic.List<string>),
+                    typeof(System.Collections.Generic.List<string>),
+                },
+                null);
+            Assert.IsNotNull(sceneValidate, "Validate(Scene, List<string>, List<string>) をブリッジが呼ぶ。");
+
+            FieldInfo paths = sceneValidator.GetField("AreaScenePaths", BindingFlags.Public | BindingFlags.Static);
+            Assert.IsNotNull(paths, "検査対象の Scene 一覧をブリッジが読む。");
+            Assert.IsInstanceOf<string[]>(paths.GetValue(null));
+
+            System.Type assetValidator = typeof(Phase5AssetValidator);
+            Assert.AreEqual("Momotaro.Editor.Phase5.Phase5AssetValidator", assetValidator.FullName);
+
+            MethodInfo assetValidate = assetValidator.GetMethod(
+                "Validate", BindingFlags.Public | BindingFlags.Static, null,
+                new[]
+                {
+                    typeof(System.Collections.Generic.List<string>),
+                    typeof(System.Collections.Generic.List<string>),
+                },
+                null);
+            Assert.IsNotNull(assetValidate,
+                "Validate(List<string>, List<string>) をブリッジが呼ぶ。Scene を取らないのは §13.2 で検査を分けているため。");
         }
 
         [Test]

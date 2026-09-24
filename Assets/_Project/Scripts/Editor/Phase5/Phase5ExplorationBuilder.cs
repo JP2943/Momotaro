@@ -421,35 +421,51 @@ namespace Momotaro.Editor.Phase5
                 color, 0.16f);
         }
 
+        /// <summary>
+        /// Build Settings に追記・更新する（§13.1「既存項目を維持して追記・更新する」）。
+        ///
+        /// <b>「登録はあるが無効」を登録済みと数えない。</b> 無効な登録では
+        /// <c>SceneManager.LoadScene</c> が通らず、症状は未登録とまったく同じなのに、
+        /// Inspector を見た人は「入っている」と読む。既存の並び順は変えない。
+        /// </summary>
+        /// <returns>追記または有効化した件数。</returns>
         private static int EnsureBuildSettings(string[] paths)
         {
             var scenes = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
-            int added = 0;
+            int changed = 0;
             foreach (string path in paths)
             {
                 bool exists = false;
-                foreach (EditorBuildSettingsScene s in scenes)
+                for (int i = 0; i < scenes.Count; i++)
                 {
-                    if (s.path == path)
+                    if (scenes[i] == null || scenes[i].path != path)
                     {
-                        exists = true;
-                        break;
+                        continue;
                     }
+
+                    exists = true;
+                    if (!scenes[i].enabled)
+                    {
+                        scenes[i] = new EditorBuildSettingsScene(path, true);
+                        changed++;
+                    }
+
+                    break;
                 }
 
                 if (!exists)
                 {
                     scenes.Add(new EditorBuildSettingsScene(path, true));
-                    added++;
+                    changed++;
                 }
             }
 
-            if (added > 0)
+            if (changed > 0)
             {
                 EditorBuildSettings.scenes = scenes.ToArray();
             }
 
-            return added;
+            return changed;
         }
 
         // ---------------------------------------------------------------- 地形
