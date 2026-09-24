@@ -2026,16 +2026,35 @@ namespace Momotaro.Tests.EditMode
             Vector3 self = Vector3.zero;
             Vector3 target = new Vector3(10f, 0f, 0f);
 
-            // ---- 近い・直線で通れるなら経路を使わない（§10.1 の 1 行目） ----
+            // ---- 直線で通れる近距離は既存追従（§10.1 の 1 行目） ----
             Assert.AreEqual(PathFollowDecision.Direct,
-                model.Tick(new PathFollowInput(self, new Vector3(1f, 0f, 0f), false), settings, provider, 0.1f),
-                "近ければ経路を使わない。");
+                model.Tick(new PathFollowInput(self, new Vector3(1f, 0f, 0f), true), settings, provider, 0.1f),
+                "近くて直線が通るなら経路を使わない。");
+            Assert.IsTrue(model.LastDirectWasNear, "それが §10.1 の 1 行目の「近距離」。");
             Assert.AreEqual(0, provider.Calls, "問い合わせもしない。");
 
             Assert.AreEqual(PathFollowDecision.Direct,
                 model.Tick(new PathFollowInput(self, target, true), settings, provider, 0.1f),
-                "直線で通れるなら経路を使わない。");
+                "遠くても直線で通れるなら経路は要らない。");
+            Assert.IsFalse(model.LastDirectWasNear, "こちらは「近距離」ではない。");
             Assert.AreEqual(0, provider.Calls);
+
+            // ---- <b>近くても壁に遮られていれば経路を使う</b>（§10.1 の 2 行目。GPT レビュー R4 の指摘 3）----
+            //
+            // 距離だけで遮蔽を無視すると、薄い壁を挟んだ 1m で直進し続けて張り付く。
+            // 「近い」は通れることの保証ではない。
+            var nearBlocked = new CompanionPathFollowModel();
+            var nearProvider = new FakePathProvider
+            {
+                Result = PathQueryResult.Complete(new[] { new Vector3(0f, 0f, 1.5f), new Vector3(1f, 0f, 0f) }),
+            };
+
+            Assert.AreEqual(PathFollowDecision.MoveToCorner,
+                nearBlocked.Tick(
+                    new PathFollowInput(self, new Vector3(1f, 0f, 0f), false), settings, nearProvider, 0.1f),
+                "近くても遮られていれば迂回する。");
+            Assert.AreEqual(1, nearProvider.Calls, "近距離でも問い合わせる。");
+            Assert.AreEqual(new Vector3(0f, 0f, 1.5f), nearBlocked.NextCorner, "角へ向かう。");
 
             // ---- Complete：角へ向かう ----
             provider.Result = PathQueryResult.Complete(new[] { new Vector3(0f, 0f, 5f), target });
@@ -2515,6 +2534,9 @@ namespace Momotaro.Tests.EditMode
             public CombatRewardCollector Rewards;
             public PlayerProgressHolder Progress;
             public GameSessionState Session5;
+            public AreaInteractionController Interaction;
+            public FakeInteractable Interactable;
+            public GameModeService Modes;
         }
 
         private sealed class FakeEncounterConditions : IAreaEncounterConditions
@@ -2562,27 +2584,49 @@ namespace Momotaro.Tests.EditMode
         private sealed class RecordingInterrupts : IEncounterInterruptSink
         {
             public AreaEncounterRunner Runner;
+            public AreaInteractionController Interaction;
             public bool RequestStartAgain;
             public int Count { get; private set; }
             public int RunIdSeenAtInterrupt { get; private set; } = -1;
+            public GameMode ModeSeenAtInterrupt { get; private set; } = GameMode.GameOver;
             public EncounterStartRejection ReentryRejection { get; private set; } = EncounterStartRejection.None;
             public bool ReentryStarted { get; private set; }
+
+            /// <summary>撤収の通知から<b>実 Interact 窓口</b>へ再入したときの結果。</summary>
+            public bool ReentryInteractExecuted { get; private set; }
+
+            public AreaInteractionRejection ReentryInteractRejection { get; private set; } =
+                AreaInteractionRejection.None;
 
             public void InterruptForEncounter()
             {
                 Count++;
                 RunIdSeenAtInterrupt = Runner != null ? Runner.RunId : -1;
+                ModeSeenAtInterrupt = GameModeProvider.Current != null
+                    ? GameModeProvider.Current.Current
+                    : GameMode.GameOver;
 
-                // 再要求は<b>1 回だけ</b>にする。門が閉じていない実装では再要求がまた撤収を呼ぶので、
+                // 再入は<b>1 回だけ</b>にする。門が閉じていない実装では再要求がまた撤収を呼ぶので、
                 // 無制限にすると StackOverflow で落ちて「何が壊れたか」が読めなくなる（P5-04 で踏んだ形）。
-                if (!RequestStartAgain || Runner == null || Count > 1)
+                if (!RequestStartAgain || Count > 1)
                 {
                     return;
                 }
 
-                EncounterStartDecision again = Runner.TryStart();
-                ReentryStarted = again.Started;
-                ReentryRejection = again.Rejection;
+                // ① 実 Interact 窓口から（扉・レバー・調査はすべてここを通る）。
+                if (Interaction != null)
+                {
+                    ReentryInteractExecuted = Interaction.TryInteract(out _);
+                    ReentryInteractRejection = Interaction.LastRejection;
+                }
+
+                // ② 開始要求そのものから。
+                if (Runner != null)
+                {
+                    EncounterStartDecision again = Runner.TryStart();
+                    ReentryStarted = again.Started;
+                    ReentryRejection = again.Rejection;
+                }
             }
         }
 
@@ -2682,10 +2726,14 @@ namespace Momotaro.Tests.EditMode
                 return true;
             }
 
+            /// <summary>生成直後の Feedback 接続の通知（§8.2 手順 7）。</summary>
+            public event Action SpawnedActivated;
+
             public void ActivateSpawned()
             {
                 ActivateCount++;
                 SpawnedActive = true;
+                SpawnedActivated?.Invoke();
                 for (int i = 0; i < _enemies.Count; i++)
                 {
                     _enemies[i].Active = true;
@@ -2752,8 +2800,17 @@ namespace Momotaro.Tests.EditMode
             var interrupts = new RecordingInterrupts();
             var playerDefeats = new PlayerDefeatChannel();
 
+            // 実 Interact 窓口。§8.3 の「戦闘開始を先に確定し、Interact を拒否する」を
+            // <b>本物の窓口で</b>確かめるために組む（開始要求を直接叩くだけでは窓口を通らない）。
+            var areaId = new StableId("area_p5_b");
+            Rig interactRig = MakeInteractionRig(areaId);
+            var interactable = new FakeInteractable("door_p5_b_to_a", areaId, new Vector3(0.5f, 0f, 0f));
+            AreaInteractableRegistry.Register(interactable);
+
             AreaEncounterRunner runner = go.AddComponent<AreaEncounterRunner>();
+            interactRig.Controller.BindEncounter(runner);
             interrupts.Runner = runner;
+            interrupts.Interaction = interactRig.Controller;
             runner.Bind(encounter, session, conditions, spawner, arena, interrupts, () => area, () => session5.RespawnCycle);
             runner.BindPlayerDefeat(playerDefeats);
             InvokePrivate(runner, "OnEnable");
@@ -2771,6 +2828,9 @@ namespace Momotaro.Tests.EditMode
                 Rewards = rewards,
                 Progress = progress,
                 Session5 = session5,
+                Interaction = interactRig.Controller,
+                Interactable = interactable,
+                Modes = interactRig.Modes,
             };
         }
 
@@ -2807,6 +2867,12 @@ namespace Momotaro.Tests.EditMode
         public void Encounter_StartGatePrecedesInvestigationCallbacks()
         {
             EncounterRig rig = MakeEncounterRig();
+
+            // 前提：戦闘が始まる前なら、この Interact は通る。
+            // ここが通らないと、あとで「拒否された」ことに意味が無くなる。
+            Assert.IsTrue(rig.Interaction.TryInteract(out _), "前提：探索中は Interact が通る。");
+            Assert.AreEqual(1, rig.Interactable.InteractCount);
+
             rig.Interrupts.RequestStartAgain = true;
 
             EncounterStartDecision decision = rig.Runner.TryStart();
@@ -2815,6 +2881,19 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, rig.Interrupts.Count, "撤収は 1 回だけ呼ぶ。");
             Assert.AreEqual(1, rig.Interrupts.RunIdSeenAtInterrupt,
                 "撤収の時点で世代が確定している（手順 3 が手順 4 より前）。");
+
+            // <b>撤収の時点ではまだ Exploration</b>。GameMode を Combat へ変えるのは手順 6 なので、
+            // モードだけで閉じている実装はここで素通りする（GPT レビュー R4 の指摘 2）。
+            Assert.AreEqual(GameMode.Exploration, rig.Interrupts.ModeSeenAtInterrupt,
+                "前提：撤収の時点のモードはまだ探索。");
+
+            // ---- 実 Interact 窓口からの再入も閉じる（§8.3 の競合表）----
+            Assert.IsFalse(rig.Interrupts.ReentryInteractExecuted,
+                "撤収の通知からの Interact は実行されない。");
+            Assert.AreEqual(AreaInteractionRejection.EncounterStarting,
+                rig.Interrupts.ReentryInteractRejection,
+                "理由は「戦闘が始まっている」（モードではなく開始の確定で閉じる）。");
+            Assert.AreEqual(1, rig.Interactable.InteractCount, "対象は 1 回しか実行されていない。");
 
             Assert.IsFalse(rig.Interrupts.ReentryStarted, "撤収の通知からの再要求は始まらない。");
             Assert.AreEqual(EncounterStartRejection.AlreadyRunning, rig.Interrupts.ReentryRejection,
@@ -2828,6 +2907,18 @@ namespace Momotaro.Tests.EditMode
             // 外からの追加要求も同じく閉じる（Interact・別 Trigger）。
             Assert.AreEqual(EncounterStartRejection.AlreadyRunning, rig.Runner.TryStart().Rejection);
             Assert.AreEqual(1, rig.Runner.RunId);
+            Assert.IsFalse(rig.Interaction.TryInteract(out _), "戦闘中の Interact も閉じたまま。");
+            Assert.AreEqual(1, rig.Interactable.InteractCount);
+
+            // 解放されれば Interact は戻る（閉じっぱなしにしない）。
+            rig.Spawner.Enemies[0].Defeat();
+            rig.Spawner.Enemies[1].Defeat();
+            rig.Runner.ResolvePending();
+            Assert.AreEqual(AreaEncounterState.Cleared, rig.Runner.State);
+
+            rig.Modes.ChangeMode(GameMode.Exploration);
+            Assert.IsTrue(rig.Interaction.TryInteract(out _), "戦闘が終われば Interact は戻る。");
+            Assert.AreEqual(2, rig.Interactable.InteractCount);
         }
 
         /// <summary>
@@ -2884,6 +2975,173 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(2, rig.Spawner.SpawnedCount);
             Assert.IsTrue(rig.Spawner.SpawnedActive, "全数そろって初めて活動を許可する。");
             Assert.AreEqual(1, rig.Spawner.ActivateCount);
+        }
+
+
+        /// <summary>
+        /// P5-E16 の補助：アリーナ内部への再配置は<b>通常 Follow の Warp とは別の配置処理</b>
+        /// （§8.2 手順 5、§10.2 末尾。GPT レビュー R4 の指摘 1）。
+        ///
+        /// §10.2 末尾は「Down／Away を含む HP・復帰残り・CD・表示資格を維持したまま、
+        /// 安全なアリーナ内部候補へ配置する。Away を出撃扱いに変えない。
+        /// 内部候補がなければ Encounter 開始を失敗とし、境界外に Down の本体を置き去りにしない」と決めている。
+        ///
+        /// <b>「要求を出した」で成功にしない。</b> Down 中に Warp 状態への遷移を要求すれば不正遷移になるし、
+        /// 強制停止のラッチで移動要求が握り潰されることもある。それを成功と読むと、
+        /// 境界の外に倒れた犬丸を置き去りにしたまま封鎖してしまう。
+        /// </summary>
+        [Test]
+        public void ArenaRelocation_KeepsDownAwayValuesAndPlacesInside()
+        {
+            var bounds = new Bounds(new Vector3(4f, 0f, 0f), new Vector3(14f, 2f, 14f));
+
+            foreach (CompanionState state in new[] { CompanionState.Down, CompanionState.Away })
+            {
+                RelocationRig rig = MakeRelocationRig(state, outsideAt: new Vector3(-20f, 0f, 0f));
+
+                int hpBefore = rig.Vitals.CurrentHp;
+                float recoveryBefore = rig.Vitals.Vitals.RecoveryRemaining;
+                float cooldownBefore = rig.Combat.CooldownRemaining;
+                int warpsBefore = rig.Motor.WarpCount;
+
+                Assert.IsFalse(bounds.Contains(new Vector3(rig.Actor.transform.position.x, 0f,
+                    rig.Actor.transform.position.z)), "前提：境界の外に居る。");
+
+                bool placed = rig.Follow.TryRelocateInside(bounds, out SafeWarpRejection rejection);
+
+                Assert.IsTrue(placed, "内側へ配置できる。理由=" + rejection);
+                Vector3 after = rig.Actor.transform.position;
+                Assert.IsTrue(
+                    after.x >= bounds.min.x && after.x <= bounds.max.x
+                    && after.z >= bounds.min.z && after.z <= bounds.max.z,
+                    state + "：実位置が内側に収まる。位置=" + after);
+
+                // <b>状態は触らない。</b> Away を出撃扱いに変えない。Down のまま置き直す。
+                Assert.AreEqual(state, rig.Actor.State, state + "：状態を変えない。");
+                Assert.AreEqual(0, rig.Actor.IllegalTransitionCount, state + "：不正遷移を出さない。");
+
+                // 値は保持する。
+                Assert.AreEqual(hpBefore, rig.Vitals.CurrentHp, state + "：HP を保つ。");
+                Assert.AreEqual(recoveryBefore, rig.Vitals.Vitals.RecoveryRemaining, 1e-4f,
+                    state + "：復帰残りを保つ。");
+                Assert.AreEqual(cooldownBefore, rig.Combat.CooldownRemaining, 1e-4f, state + "：CD を保つ。");
+
+                // 通常 Follow の Warp とは別の口を通る（診断が混ざらない）。
+                Assert.AreEqual(warpsBefore, rig.Motor.WarpCount, state + "：通常 Warp には数えない。");
+                Assert.AreEqual(1, rig.Motor.PlaceCount, state + "：配置の口を 1 回だけ通る。");
+            }
+        }
+
+        /// <summary>
+        /// P5-E16 の補助：強制停止で移動要求が握り潰される構成でも、<b>配置は成立する</b>。
+        /// 逆に安全な内部候補が無ければ<b>成立しない</b>（境界外に置き去りにしない）。
+        /// </summary>
+        [Test]
+        public void ArenaRelocation_SucceedsWhenMovementIsLatchedAndFailsWithoutSafeCandidate()
+        {
+            var bounds = new Bounds(new Vector3(4f, 0f, 0f), new Vector3(14f, 2f, 14f));
+
+            // ---- 同じフレームに強制停止されていても置ける ----
+            RelocationRig latched = MakeRelocationRig(CompanionState.Follow, new Vector3(-20f, 0f, 0f));
+            latched.Arbiter.ForceStop(); // 以後の移動要求は所有者を問わず止められる。
+
+            Assert.IsTrue(latched.Follow.TryRelocateInside(bounds, out SafeWarpRejection latchedReason),
+                "移動要求が止まっていても配置はできる。理由=" + latchedReason);
+            Vector3 placed = latched.Actor.transform.position;
+            Assert.IsTrue(
+                placed.x >= bounds.min.x && placed.x <= bounds.max.x
+                && placed.z >= bounds.min.z && placed.z <= bounds.max.z,
+                "実位置が内側に収まる。位置=" + placed);
+            Assert.AreEqual(1, latched.Motor.PlaceCount);
+
+            // ---- 内部の安全候補が無ければ失敗する ----
+            RelocationRig unsafeRig = MakeRelocationRig(CompanionState.Down, new Vector3(-20f, 0f, 0f));
+            unsafeRig.Probe.AllSafe = false;
+
+            Vector3 before = unsafeRig.Actor.transform.position;
+            Assert.IsFalse(unsafeRig.Follow.TryRelocateInside(bounds, out SafeWarpRejection reason),
+                "安全な内部候補が無ければ配置しない。");
+            Assert.AreEqual(SafeWarpRejection.AllUnsafe, reason);
+            Assert.AreEqual(before, unsafeRig.Actor.transform.position, "壁内へ押し込まない（動かさない）。");
+            Assert.AreEqual(0, unsafeRig.Motor.PlaceCount);
+            Assert.AreEqual(CompanionState.Down, unsafeRig.Actor.State, "状態も変えない。");
+            Assert.AreEqual(0, unsafeRig.Actor.IllegalTransitionCount);
+        }
+
+        /// <summary>あれば拾い、無ければ足す（RequireComponent の自動追加と競合させない）。</summary>
+        private static T Ensure<T>(GameObject go) where T : Component
+        {
+            T existing = go.GetComponent<T>();
+            return existing != null ? existing : go.AddComponent<T>();
+        }
+
+        private sealed class RelocationRig
+        {
+            public CompanionActor Actor;
+            public CompanionMotor Motor;
+            public CompanionFollowController Follow;
+            public CompanionHitReceiver Vitals;
+            public CompanionCombatController Combat;
+            public CompanionMovementArbiter Arbiter;
+            public ConfigurableWarpProbe Probe;
+            public Transform Leader;
+        }
+
+        /// <summary>安全性の答えを切り替えられる候補 probe（実 Scene を使わずに §10.2 の分岐を通す）。</summary>
+        private sealed class ConfigurableWarpProbe : IWarpCandidateProbe
+        {
+            public bool AllSafe { get; set; } = true;
+
+            public bool IsOnNavigableGround(Vector3 position) => AllSafe;
+
+            public bool IsBlocked(Vector3 position) => !AllSafe;
+
+            public bool IsConnectedToLeader(Vector3 position, Vector3 leaderPosition) => AllSafe;
+        }
+
+        private RelocationRig MakeRelocationRig(CompanionState state, Vector3 outsideAt)
+        {
+            var data = ScriptableObject.CreateInstance<CompanionData>();
+            _spawned.Add(data);
+            SetPrivate(data, "_maxHp", 60);
+
+            var leaderGo = new GameObject("Leader");
+            _spawned.Add(leaderGo);
+            leaderGo.transform.position = new Vector3(4f, 0f, 0f); // 境界の中心＝主人公。
+
+            var go = new GameObject("Inumaru_Relocate");
+            _spawned.Add(go);
+            go.transform.position = outsideAt;
+
+            var actor = go.AddComponent<CompanionActor>();
+            actor.SetData(data);
+            actor.ResetState(state);
+
+            // RequireComponent で自動追加される型がある。DisallowMultipleComponent の二重追加は
+            // null を返すので、必ず「あれば拾う・無ければ足す」で取る。
+            CompanionMotor motor = Ensure<CompanionMotor>(go);
+            CompanionMovementArbiter arbiter = Ensure<CompanionMovementArbiter>(go);
+            CompanionHitReceiver vitals = Ensure<CompanionHitReceiver>(go);
+            vitals.Bind(actor);
+            CompanionCombatController combat = Ensure<CompanionCombatController>(go);
+            combat.Bind(actor, motor);
+
+            CompanionFollowController follow = Ensure<CompanionFollowController>(go);
+            follow.Bind(leaderGo.transform, actor, motor);
+            var probe = new ConfigurableWarpProbe();
+            follow.BindWarpProbe(probe);
+
+            return new RelocationRig
+            {
+                Actor = actor,
+                Motor = motor,
+                Follow = follow,
+                Vitals = vitals,
+                Combat = combat,
+                Arbiter = arbiter,
+                Probe = probe,
+                Leader = leaderGo.transform,
+            };
         }
 
         /// <summary>

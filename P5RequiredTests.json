@@ -155,7 +155,11 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Encounter_SpawnFailureDoesNotWinOrGrantRewards",
       "requirementIds": [],
-      "implemented": true
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P5ContractTests.ArenaRelocation_KeepsDownAwayValuesAndPlacesInside",
+        "Momotaro.Tests.EditMode.P5ContractTests.ArenaRelocation_SucceedsWhenMovementIsLatchedAndFailsWithoutSafeCandidate"
+      ]
     },
     {
       "requirementId": "P5-E17",
@@ -171,7 +175,10 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Encounter_SameTickPlayerDeathWinsOverClear",
       "requirementIds": [],
-      "implemented": true
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.SameFramePlayerDeath_WinsOverClearInRealUpdateOrder"
+      ]
     },
     {
       "requirementId": "P5-E19",
@@ -335,7 +342,10 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.PauseAndLoading_StopActorsAndResumeWithoutResidue",
       "requirementIds": [],
-      "implemented": true
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.PauseAndLoadingRejectNewOperationsAndStaleInput"
+      ]
     },
     {
       "requirementId": "P5-P08",
@@ -343,7 +353,10 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.SpawnAndCombatCleanup_LeaveNoProjectileOrBoundary",
       "requirementIds": [],
-      "implemented": true
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.EncounterFeedback_IsConnectedBeforeTheFirstHit"
+      ]
     },
     {
       "requirementId": "P5-P09",

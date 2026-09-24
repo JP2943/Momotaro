@@ -18,6 +18,7 @@ using Momotaro.Infrastructure.Navigation;
 using Momotaro.Infrastructure.World;
 using Unity.AI.Navigation;
 using Momotaro.Presentation.Cameras;
+using Momotaro.Presentation.Diagnostics;
 using Momotaro.Presentation.Combat;
 using Momotaro.Presentation.Hud;
 using UnityEditor;
@@ -1058,6 +1059,39 @@ namespace Momotaro.Editor.Phase5
 
                 fixtures.EncounterTrigger.Bind(encounterRunner,
                     playerRoot != null ? playerRoot.GetComponent<PlayerRoot>() : null);
+
+                // ---- 命中 Feedback（§8.2 手順 7「報酬と Feedback の購読を接続する」）----
+                //
+                // 既存の配信役・演出をそのまま組む（新しい Feedback 経路を作らない）。
+                // 揺れは Camera 子の ShakePresenter を使い回す（§11 の書込み先の分離を崩さない）。
+                var feedbackGo = new GameObject("CombatFeedback");
+                feedbackGo.transform.SetParent(systems.transform, false);
+
+                // 揺れは Camera 子に付いている既存の ShakePresenter（§11）。新しく足さない。
+                CameraShakePresenter cameraShake = rig != null
+                    ? rig.GetComponentInChildren<CameraShakePresenter>(true)
+                    : null;
+
+                CombatFeedbackDispatcher dispatcher = feedbackGo.AddComponent<CombatFeedbackDispatcher>();
+                HitStopController hitStop = feedbackGo.AddComponent<HitStopController>();
+                HitFlashPresenter flash = feedbackGo.AddComponent<HitFlashPresenter>();
+                CombatFeedbackPresenter feedback = feedbackGo.AddComponent<CombatFeedbackPresenter>();
+                feedback.HitStop = hitStop;
+                feedback.Flash = flash;
+                feedback.CameraShake = cameraShake;
+
+                // 生成直後の最初の命中を取りこぼさない（周期の再探索を待たせない）。
+                EncounterFeedbackBinder feedbackBinder = feedbackGo.AddComponent<EncounterFeedbackBinder>();
+                feedbackBinder.Bind(spawner, dispatcher);
+
+                // ---- 結果の短文（§8.4 手順 8）----
+                var resultGo = new GameObject("EncounterResult");
+                resultGo.transform.SetParent(systems.transform, false);
+                AreaEncounterResultView resultView = resultGo.AddComponent<AreaEncounterResultView>();
+                resultView.Bind(encounterRunner);
+
+                // Interact も Starting から閉じる（§8.3 の競合表）。
+                interaction.BindEncounter(encounterRunner);
 
                 // 仲間の活動は<b>区画 Encounter</b>が正本（§8.4 末尾）。
                 activity.BindAreaEncounter(encounterRunner);

@@ -25,7 +25,12 @@ namespace Momotaro.Gameplay.Navigation
     /// <summary>経路追従の設定（§10.1 の受入用初期値）。</summary>
     public readonly struct PathFollowSettings
     {
-        /// <summary>この距離より近ければ経路を使わない（既存の直線追従で足りる）。</summary>
+        /// <summary>
+        /// 直線が通るときに、既存追従で足りるとみなす距離（§10.1 の 1 行目「直線で通れる近距離」）。
+        ///
+        /// <b>これ単独で経路を省く理由にはならない。</b> 薄い壁を挟んだ 1m は、開けた 10m より通れない。
+        /// 距離だけで遮蔽を無視すると、壁の向こうの隊列位置へ直進し続けて張り付く。
+        /// </summary>
         public float DirectDistance { get; }
 
         /// <summary>再探索の最短間隔（秒）。§10.1 の初期値は 0.5。</summary>
@@ -133,6 +138,12 @@ namespace Momotaro.Gameplay.Navigation
         public bool IsPathActive => Decision == PathFollowDecision.MoveToCorner;
 
         /// <summary>
+        /// 直近の Direct が「直線が通る<b>近距離</b>」だったか（診断・テスト用）。
+        /// 直線が通る遠距離も Direct にはなるので、§10.1 の 1 行目そのものを見分けるために持つ。
+        /// </summary>
+        public bool LastDirectWasNear { get; private set; }
+
+        /// <summary>
         /// 世界の通行状態が変わったことを伝える（門の開通など。§10.1）。
         /// 次の Tick で、間隔を待たずに探し直す。
         /// </summary>
@@ -154,11 +165,19 @@ namespace Momotaro.Gameplay.Navigation
 
             float distance = FormationSlot.HorizontalDistance(input.SelfPosition, input.TargetPosition);
 
-            // 近い、または直線で通れるなら経路は要らない（§10.1 の 1 行目）。
-            if (distance <= settings.DirectDistance || input.StraightLineClear)
+            // 直線で通れるなら経路は要らない（§10.1 の 1 行目「直線で通れる近距離は既存追従を使える」）。
+            //
+            // <b>「近い」だけでは足りない。</b> 以前は距離が近ければ遮蔽を見ずに直線追従へ倒していたが、
+            // それだと薄い壁を挟んで 2.5m 以内に居るときも直進し続け、壁に張り付いたまま動かない。
+            // §10.1 の 2 行目は「壁に遮られた追従は経路の Corner へ移動要求を出す」であって、
+            // 距離による例外を置いていない（GPT レビュー R4 の指摘 3）。
+            //
+            // 距離は「通れるときに、どこまでを既存追従で済ませてよいか」の目安として残す。
+            if (input.StraightLineClear)
             {
                 ResetPath();
                 Decision = PathFollowDecision.Direct;
+                LastDirectWasNear = distance <= settings.DirectDistance;
                 return Decision;
             }
 

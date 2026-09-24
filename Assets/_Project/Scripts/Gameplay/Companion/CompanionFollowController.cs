@@ -404,30 +404,37 @@ namespace Momotaro.Gameplay.Companion
         }
 
         /// <summary>
-        /// 指定範囲の<b>内側へ</b>安全に置き直す（P5-07。仕様書 v1.1 §8.2 手順 5）。
+        /// 指定範囲の<b>内側へ配置する</b>（P5-07。仕様書 v1.1 §8.2 手順 5、§10.2 末尾）。
         ///
-        /// 戦闘開始でアリーナを封鎖するとき、犬丸が外に居たら内側へ入れる。
-        /// <b>値（HP・Down・CD）は触らない。</b>直すのは位置だけで、状態を初期化しない。
+        /// <b>通常 Follow の Warp とは別の配置処理</b>（§10.2 末尾が名指しで分けている）。だから
+        /// 状態を <c>Warp</c> へ変えないし、移動所有権の調停も通さない。理由は 2 つある。
+        /// <list type="number">
+        /// <item><description>Down／Away の犬丸に <c>Warp</c> への遷移を要求すると<b>不正遷移</b>になる。
+        /// §10.2 末尾は「Down／Away を含む HP・復帰残り・CD・表示資格を維持したまま」配置せよと言っている。
+        /// Away を出撃扱いに変えてもいけない。</description></item>
+        /// <item><description>強制停止のラッチや別の所有者が居ると移動要求は握り潰される。
+        /// それを「配置できた」と読むと、<b>境界の外に Down の本体を置き去りにしたまま封鎖する</b>
+        /// （§10.2 末尾が禁じている形）。</description></item>
+        /// </list>
         ///
         /// 候補の選び方は P5-05 の安全ワープ規則をそのまま使う（固定順・危険候補は拒否・
-        /// 主人公と繋がっている側だけ）。<b>範囲内の候補が 1 つも安全でなければ跳ばさない</b>：
-        /// 壁内へ押し込むくらいなら封鎖を諦める方が正しい（§10.2）。
+        /// 主人公と繋がっている側だけ）。<b>置いたあとに実位置が内側に収まったことを確かめてから</b>成功を返す。
+        /// 範囲内の安全候補が 1 つも無ければ跳ばさない：壁内へ押し込むくらいなら封鎖を諦める方が正しい。
         ///
-        /// すでに内側なら何もせず true。呼び出しの直前に §8.2 手順 4 で所有権は解放されているので、
-        /// 通常 Follow のワープ可否（攻撃中など）ではなく、Down／Away だけを見る。
+        /// すでに内側なら何もせず true。
         /// </summary>
         public bool TryRelocateInside(Bounds bounds, out Navigation.SafeWarpRejection rejection)
         {
             rejection = Navigation.SafeWarpRejection.None;
+            ResolveComponents();
 
-            if (_actor == null || _leader == null)
+            if (_actor == null || _leader == null || _motor == null)
             {
                 rejection = Navigation.SafeWarpRejection.NotAllowed;
                 return false;
             }
 
-            Vector3 current = _actor.transform.position;
-            if (IsInside(bounds, current))
+            if (IsInside(bounds, _actor.transform.position))
             {
                 return true; // すでに内側。動かさない。
             }
@@ -448,24 +455,31 @@ namespace Momotaro.Gameplay.Companion
                 return false;
             }
 
+            Vector3 chosen;
             if (_warpProbe == null)
             {
-                // 安全性を確かめる手立てが無い構成は、先頭候補へ跳ぶ（従来どおり）。
-                BeginFollowAction(CompanionState.Warp, CompanionStateChangeReason.Warped);
-                SubmitMove(CompanionMoveRequest.Warp(_warpCandidates[0]));
-                _pathModel.Reset();
-                return true;
+                // 安全性を確かめる手立てが無い構成（P4 の試遊など）は先頭候補へ置く。
+                chosen = _warpCandidates[0];
             }
-
-            if (!Navigation.SafeWarpSelector.TrySelect(
-                    _warpCandidates, leaderPosition, warpAllowed: true, _warpProbe,
-                    out Vector3 chosen, out rejection))
+            else if (!Navigation.SafeWarpSelector.TrySelect(
+                         _warpCandidates, leaderPosition, warpAllowed: true, _warpProbe,
+                         out chosen, out rejection))
             {
                 return false;
             }
 
-            BeginFollowAction(CompanionState.Warp, CompanionStateChangeReason.Warped);
-            SubmitMove(CompanionMoveRequest.Warp(chosen));
+            // 配置は Motor の専用口で行う（状態・所有権に触れない）。
+            Vector3 placed = _motor.PlaceAt(chosen);
+
+            // <b>置けたことを実位置で確かめる。</b> 要求を出しただけで成功にすると、
+            // 握り潰された場合に境界の外へ置き去りにしたまま封鎖してしまう。
+            if (!IsInside(bounds, placed) || !IsInside(bounds, _actor.transform.position))
+            {
+                rejection = Navigation.SafeWarpRejection.AllUnsafe;
+                return false;
+            }
+
+            // 経路の途中状態は捨てる（配置後の位置から評価し直す）。状態・値は触らない。
             _pathModel.Reset();
             return true;
         }

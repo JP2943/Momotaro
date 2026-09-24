@@ -187,6 +187,14 @@ namespace Momotaro.Gameplay.Encounter
 
         /// <summary>登録した敵（勝利判定の突き合わせ用）。</summary>
         IReadOnlyList<IEnemyDefeatSource> Spawned { get; }
+
+        /// <summary>
+        /// 生成した敵の活動を許可した<b>直後</b>に発火する（§8.2 手順 7「報酬と Feedback の購読を接続する」）。
+        ///
+        /// 命中 Feedback の配信役は周期的に対象を探し直すが、その周期を待つと
+        /// <b>生成直後の最初の命中を取りこぼす</b>。生成の側から「いま増えた」と伝える。
+        /// </summary>
+        event System.Action SpawnedActivated;
     }
 
     /// <summary>

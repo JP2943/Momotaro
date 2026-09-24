@@ -31,8 +31,13 @@ namespace Momotaro.Gameplay.Interaction
         [Tooltip("受付距離の既定値（§7.1 の InteractionRadius 初期値は 1.6）。")]
         [SerializeField] private float _interactionRadius = AreaInteractionSelector.DefaultInteractionRadius;
 
+        [Tooltip("この区画の戦闘（§8.2 の Starting〜Resolving）。未配線なら「戦闘の無い区画」として扱う。")]
+        [SerializeField] private MonoBehaviour _encounterSource;
+
         private readonly List<IAreaInteractable> _buffer = new List<IAreaInteractable>();
         private IObstacleProbe _probe;
+        private IAreaEncounterState _encounter;
+        private bool _encounterResolved;
 
         /// <summary>直近に選ばれた対象（表示用。選べていなければ null）。</summary>
         public IAreaInteractable LastTarget { get; private set; }
@@ -67,6 +72,32 @@ namespace Momotaro.Gameplay.Interaction
             if (playerAnchor != null)
             {
                 _playerAnchor = playerAnchor;
+            }
+        }
+
+        /// <summary>
+        /// この区画の戦闘を配線する（§8.3。null は無視）。
+        /// 戦闘の無い区画では未配線のままでよく、そのときは Interact を閉じない。
+        /// </summary>
+        public void BindEncounter(IAreaEncounterState encounter)
+        {
+            if (encounter == null)
+            {
+                return;
+            }
+
+            _encounter = encounter;
+            _encounterSource = encounter as MonoBehaviour;
+            _encounterResolved = true;
+        }
+
+        /// <summary>配線された戦闘（Scene 検査・診断用）。</summary>
+        public IAreaEncounterState Encounter
+        {
+            get
+            {
+                ResolveEncounter();
+                return _encounter;
             }
         }
 
@@ -148,6 +179,14 @@ namespace Momotaro.Gameplay.Interaction
                 return false;
             }
 
+            // 戦闘の開始が確定していれば、モードがまだ Exploration でも閉じる（§8.2 手順 3、§8.3）。
+            ResolveEncounter();
+            if (_encounter != null && _encounter.IsEncounterActive)
+            {
+                reason = AreaInteractionRejection.EncounterStarting;
+                return false;
+            }
+
             AreaInteractableRegistry.CopyTo(_buffer);
             return AreaInteractionSelector.TrySelect(
                 _buffer,
@@ -158,6 +197,17 @@ namespace Momotaro.Gameplay.Interaction
                 Probe,
                 out target,
                 out reason);
+        }
+
+        private void ResolveEncounter()
+        {
+            if (_encounterResolved)
+            {
+                return;
+            }
+
+            _encounterResolved = true;
+            _encounter = _encounterSource as IAreaEncounterState;
         }
 
         /// <summary>P5 の Floor は 0 固定（§3.1）。Floor を持つ日が来たら Context から引く。</summary>

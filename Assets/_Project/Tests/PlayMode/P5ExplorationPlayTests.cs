@@ -20,6 +20,9 @@ using Momotaro.Infrastructure.Navigation;
 using Momotaro.Gameplay.Session;
 using Momotaro.Gameplay.Transfer;
 using Momotaro.Presentation.Cameras;
+using Momotaro.Data.Characters;
+using Momotaro.Gameplay.Scenes;
+using Momotaro.Presentation.Diagnostics;
 using Momotaro.Presentation.Combat;
 using Momotaro.Presentation.Hud;
 using Momotaro.Infrastructure.Bootstrap;
@@ -77,6 +80,20 @@ namespace Momotaro.Tests.PlayMode
         [UnityTearDown]
         public IEnumerator TearDownRoutine()
         {
+            // <b>探索モードへ戻してから常駐を消す。</b>
+            //
+            // 入力は project-wide の `InputActionAsset`（`InputSystem.actions`）を直接 Enable／Disable する。
+            // これは<b>プロジェクトの Asset</b>なので、Action Map の有効・無効が PlayMode を抜けても残る。
+            // Loading・Paused・GameOver のまま常駐を壊すと Gameplay マップが無効のまま据え置かれ、
+            // <b>以降に走る実キーのテストが全部無反応になる</b>——このクラスだけでなく P4 の試遊 Scene も含めて。
+            // 実際に踏んだ：全件実行が 123 秒／1 失敗から 211 秒／10 失敗へ変わり、
+            // 「主人公が攻撃に入らない」「E が届かない」が一斉に出た。
+            if (GameModeProvider.Current != null && GameModeProvider.Current.Current != GameMode.Exploration)
+            {
+                GameModeProvider.Current.ChangeMode(GameMode.Exploration);
+                yield return null;
+            }
+
             // 先に Area Scene から抜けてから常駐を消す。逆にすると、残った AreaInitializer が
             // サービス不在で初期化に失敗し、後始末中にエラーログが出る（実際に踏んだ）。
             yield return SceneManager.LoadSceneAsync(TrialScene, LoadSceneMode.Single);
@@ -2339,6 +2356,18 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(AreaEncounterState.Cleared, runner.State, "勝利で終わる。");
             Assert.AreEqual(GameMode.Exploration, modes.Current, "探索へ戻る（§8.4 手順 6）。");
             Assert.AreEqual("戦闘終了", runner.ResultMessage, "短文だけを出す（§8.4 手順 8）。");
+
+            // <b>値を公開しただけでは表示したことにならない</b>（遷移の Error 表示と同じ）。
+            var resultView = Object.FindFirstObjectByType<AreaEncounterResultView>();
+            Assert.IsNotNull(resultView, "結果の短文を出す表示が Scene にある。");
+            Assert.IsTrue(resultView.IsWired);
+            Assert.IsTrue(resultView.IsShowing, "実際に出ている（§8.4 手順 8）。");
+            Assert.AreEqual("戦闘終了", resultView.Message);
+            Assert.AreEqual(1, resultView.ShowCount);
+
+            // 結果パネルや Enter 待ちで止めない：時間で消える。
+            resultView.Tick(10f);
+            Assert.IsFalse(resultView.IsShowing, "短文は自動で消える（入力待ちで止めない）。");
             Assert.IsFalse(arena.IsEnabled, "一時境界を解放する（§8.4 手順 5）。");
             Assert.AreEqual(0, arena.ActiveBlockerCount,
                 "封鎖 Collider が実際に無効へ戻る（探索中に通れない壁を残さない）。");
@@ -2529,6 +2558,10 @@ namespace Momotaro.Tests.PlayMode
                 return false;
             }
 
+#pragma warning disable 67 // 生成に失敗するので発火しない。
+            public event System.Action SpawnedActivated;
+#pragma warning restore 67
+
             public void ActivateSpawned()
             {
                 Assert.Fail("生成に失敗したのに活動を許可している。");
@@ -2666,6 +2699,379 @@ namespace Momotaro.Tests.PlayMode
             }
 
             Assert.AreEqual(expected, coordinator.CompletedCount, "遷移が完了する。");
+        }
+
+        // ------------------------------------------- R4：実 Update 順・Feedback・結果表示・Pause／Loading
+
+        /// <summary>
+        /// 同じフレームの死亡が勝利に優先することを、<b>実 Update 順を挟んで</b>確かめる
+        /// （§8.3 末尾。GPT レビュー R4 の指摘 2。P5-E18 の補助）。
+        ///
+        /// E18 は両方の通知を手で渡してから確定を呼ぶので、<b>確定がどの実行段で走るか</b>を見ていない。
+        /// 実機では命中の解決が各 Actor の <c>Update</c> に散っており、その順序は Unity が決める。
+        /// 確定を <c>Update</c> の段で行うと、自分より後に走る Actor の命中を取りこぼす。
+        ///
+        /// ここでは<b>必ず後に走る</b>注入役（実行順 1000）を置き、最後の敵が倒れた同じフレームの
+        /// あとの方で主人公の死亡を通知する。確定が刻みの終わり（LateUpdate）なら死亡が勝つ。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator SameFramePlayerDeath_WinsOverClearInRealUpdateOrder()
+        {
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaBScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5Keyboard");
+
+            GameSessionState session = Sessions().Session;
+            var runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            var arena = Object.FindFirstObjectByType<AreaArenaBoundary>();
+            var combatSession = Object.FindFirstObjectByType<CombatSessionController>();
+            var playerVitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            Assert.IsNotNull(runner);
+            Assert.IsNotNull(combatSession);
+            Assert.IsNotNull(playerVitals);
+
+            yield return MovePlayerTo(EncounterTriggerPoint);
+            yield return WaitUntilOrTimeout(() => runner.State == AreaEncounterState.Playing, 5f);
+            Assert.AreEqual(AreaEncounterState.Playing, runner.State,
+                "前提：戦闘が始まる。拒否=" + runner.LastRejection + " " + runner.LastFailureDetail);
+
+            EnemyActor[] enemies = Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None);
+            Assert.AreEqual(2, enemies.Length);
+
+            // 1 体目は実 Hitbox で倒す（本物の戦闘の途中であることを保つ）。
+            yield return KillWithRealHitbox(enemies[0]);
+            Assert.AreEqual(1, combatSession.AliveEnemyCount, "前提：あと 1 体。");
+
+            // どちらの敵が先に倒れるかは列挙順しだいなので、額ではなく「変わらないこと」を見る。
+            int virtueAfterRealKill = session.Progress.Virtue;
+            Assert.Greater(virtueAfterRealKill, 0, "前提：実撃破で徳が入っている。");
+
+            // <b>確定の前後を挟む</b>。実行順 -1000 の注入役が最後の敵の撃破を通知し、
+            // 実行順 1000 の注入役が同じフレームのあとの方で主人公の死亡を通知する。
+            // 確定が Update の段にあると、この 2 つの<b>間</b>で勝利が確定してしまう。
+            var earlyGo = new GameObject("EarlyEnemyDefeatInjector");
+            var early = earlyGo.AddComponent<EarlyEnemyDefeatInjector>();
+            early.Bind(enemies[1]);
+
+            var lateGo = new GameObject("LateDefeatInjector");
+            var late = lateGo.AddComponent<LateDefeatInjector>();
+            late.Bind(early, playerVitals.Defeats);
+
+            try
+            {
+                early.Armed = true;
+                late.Armed = true;
+
+                yield return WaitUntilOrTimeout(
+                    () => early.FiredCount > 0 && late.FiredCount > 0, 5f);
+                yield return null;
+
+                Assert.AreEqual(1, early.FiredCount, "最後の敵の撃破を 1 回だけ通知している（前提）。");
+                Assert.AreEqual(1, late.FiredCount, "同じフレームの後の方で死亡を通知している（前提）。");
+                Assert.AreEqual(AreaEncounterState.Defeated, runner.State,
+                    "同じフレームの死亡が勝利に優先する（処理順だけで相打ちを勝利にしない）。");
+            }
+            finally
+            {
+                Object.DestroyImmediate(earlyGo);
+                Object.DestroyImmediate(lateGo);
+            }
+
+            Assert.IsTrue(session.TryGetArea(AreaB, out AreaRuntimeState areaB));
+            Assert.IsFalse(areaB.IsEncounterCleared(new StableId("encounter_p5_b_road"), session.RespawnCycle),
+                "勝利記録は付けない。");
+            Assert.IsFalse(arena.IsEnabled, "一時境界は解放する。");
+            Assert.AreEqual(0, arena.ActiveBlockerCount);
+            // 実際に倒した 1 体ぶんの徳は、あとで死んでも取り消さない（§8.5）。
+            // 2 体目は順序を作るために通知だけを注入しているので、報酬は載せていない。
+            Assert.AreEqual(virtueAfterRealKill, session.Progress.Virtue,
+                "撃破済みの徳は取り消さない（§8.5）。");
+
+            yield return ReleaseKeys();
+        }
+
+        /// <summary>
+        /// 最後の敵の撃破を、実行順の<b>先頭側</b>（-1000）で実チャネルへ通知する注入役（テスト専用）。
+        ///
+        /// 撃破の通知経路（<c>EnemyDefeatChannel</c> → <c>CombatSessionController</c>）はそのまま通す。
+        /// 通知の<b>タイミング</b>だけを固定したいので、HP の削りは行わない
+        /// （実 Hitbox の撃破は同じテストの 1 体目と、P05／P08 が通している）。
+        /// </summary>
+        [DefaultExecutionOrder(-1000)]
+        private sealed class EarlyEnemyDefeatInjector : MonoBehaviour
+        {
+            private EnemyActor _enemy;
+
+            public bool Armed { get; set; }
+
+            public int FiredCount { get; private set; }
+
+            public void Bind(EnemyActor enemy)
+            {
+                _enemy = enemy;
+            }
+
+            private void Update()
+            {
+                if (!Armed || FiredCount > 0 || _enemy == null)
+                {
+                    return;
+                }
+
+                FiredCount++;
+                _enemy.Defeats.Publish(new EnemyDefeatedEvent(
+                    _enemy.DamageableId,
+                    new EnemyRewardRequest(_enemy.DamageableId, EnemyRole.Ranged, null, _enemy.transform.position)));
+            }
+        }
+
+        /// <summary>
+        /// 生存が 0 になったフレームの<b>後の方</b>で主人公の死亡を通知する注入役（テスト専用）。
+        ///
+        /// 実行順を 1000 に固定してあるので、既定順（0）の <c>AreaEncounterRunner.Update</c> より必ず後に走る。
+        /// 死亡条件の設定はテスト専用の公開経路で行ってよい（仕様書 §15.3 の但し書き）。
+        /// </summary>
+        [DefaultExecutionOrder(1000)]
+        private sealed class LateDefeatInjector : MonoBehaviour
+        {
+            private EarlyEnemyDefeatInjector _early;
+            private PlayerDefeatChannel _channel;
+
+            public bool Armed { get; set; }
+
+            public int FiredCount { get; private set; }
+
+            /// <summary>
+            /// 撃破を通知した側を見て、<b>同じフレームの後の方</b>で死亡を通知する。
+            ///
+            /// 生存数のような<b>結果</b>を条件にすると、確定が早すぎる実装では
+            /// その結果が先に消されてしまい（登録の解放）、「前提が満たせない」という形で落ちる。
+            /// それでは何が壊れたのか読めないので、条件は<b>撃破を通知したか</b>だけにする。
+            /// </summary>
+            public void Bind(EarlyEnemyDefeatInjector early, PlayerDefeatChannel channel)
+            {
+                _early = early;
+                _channel = channel;
+            }
+
+            private void Update()
+            {
+                if (!Armed || FiredCount > 0 || _early == null || _channel == null || _early.FiredCount == 0)
+                {
+                    return;
+                }
+
+                FiredCount++;
+                _channel.Publish(new PlayerDefeatedEvent(1, Vector3.zero));
+            }
+        }
+
+        /// <summary>
+        /// 命中 Feedback が P5 の Scene へ接続されていて、<b>生成直後の最初の命中</b>も拾える
+        /// （§8.2 手順 7。GPT レビュー R4 の指摘 4。P5-P08 の補助）。
+        ///
+        /// 配信役は周期（既定 1 秒）で対象を探し直す。その周期を待つ実装だと、
+        /// 湧いた直後の数発が「当たったのに手応えが無い」状態になる。
+        /// <b>最初の命中のフレームまでに購読が済んでいること</b>をフレーム番号で見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator EncounterFeedback_IsConnectedBeforeTheFirstHit()
+        {
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaBScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5Keyboard");
+
+            var dispatcher = Object.FindFirstObjectByType<CombatFeedbackDispatcher>();
+            Assert.IsNotNull(dispatcher, "命中 Feedback の配信役が Scene にある（§8.2 手順 7）。");
+
+            var presenter = Object.FindFirstObjectByType<CombatFeedbackPresenter>();
+            Assert.IsNotNull(presenter, "手応え演出の調停役がある。");
+            Assert.IsNotNull(presenter.CameraShake, "揺れは Camera 子の既存 ShakePresenter を使う（§11）。");
+
+            var binder = Object.FindFirstObjectByType<EncounterFeedbackBinder>();
+            Assert.IsNotNull(binder, "生成直後に購読し直す橋渡しがある。");
+            Assert.IsTrue(binder.IsWired);
+            Assert.AreEqual(0, binder.RescanCount, "前提：まだ生成していない。");
+
+            var runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            var log = new FeedbackFrameLog();
+            dispatcher.Feedback.AddListener(log);
+
+            try
+            {
+                yield return MovePlayerTo(EncounterTriggerPoint);
+                yield return WaitUntilOrTimeout(() => runner.State == AreaEncounterState.Playing, 5f);
+                Assert.AreEqual(AreaEncounterState.Playing, runner.State,
+                    "前提：戦闘が始まる。拒否=" + runner.LastRejection + " " + runner.LastFailureDetail);
+                Assert.AreEqual(1, binder.RescanCount, "活動許可の直後に購読し直す（周期を待たない）。");
+
+                EnemyActor[] enemies = Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None);
+                Assert.AreEqual(2, enemies.Length);
+
+                var hits = new EnemyFirstDamageLog();
+                for (int i = 0; i < enemies.Length; i++)
+                {
+                    enemies[i].Results.AddListener(hits);
+                }
+
+                try
+                {
+                    yield return KillWithRealHitbox(enemies[0]);
+                }
+                finally
+                {
+                    for (int i = 0; i < enemies.Length; i++)
+                    {
+                        if (enemies[i] != null)
+                        {
+                            enemies[i].Results.RemoveListener(hits);
+                        }
+                    }
+                }
+
+                Assert.Greater(hits.FirstDamageFrame, 0, "前提：敵に実際の命中が届いている。");
+                Assert.Greater(log.Count, 0, "命中が Feedback へ届く。");
+                Assert.LessOrEqual(log.FirstFrame, hits.FirstDamageFrame,
+                    "<b>最初の命中</b>の時点で購読済み（周期の再探索を待っていない）。"
+                    + " 最初の Feedback=" + log.FirstFrame + " 最初の命中=" + hits.FirstDamageFrame);
+            }
+            finally
+            {
+                dispatcher.Feedback.RemoveListener(log);
+            }
+
+            yield return ReleaseKeys();
+        }
+
+        /// <summary>Feedback が最初に届いたフレームを覚える。</summary>
+        private sealed class FeedbackFrameLog : ICombatFeedbackListener
+        {
+            public int Count { get; private set; }
+
+            public int FirstFrame { get; private set; } = int.MaxValue;
+
+            public void OnCombatFeedback(in CombatFeedbackEvent feedback)
+            {
+                Count++;
+                if (FirstFrame == int.MaxValue)
+                {
+                    FirstFrame = Time.frameCount;
+                }
+            }
+        }
+
+        /// <summary>敵に最初のダメージが届いたフレームを覚える。</summary>
+        private sealed class EnemyFirstDamageLog : IHitResultListener
+        {
+            public int FirstDamageFrame { get; private set; }
+
+            public void OnHitResult(in HitResult result)
+            {
+                if (result.Kind == HitResultKind.Damage && FirstDamageFrame == 0)
+                {
+                    FirstDamageFrame = Time.frameCount;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Pause と受理済み Loading は<b>新規操作を受け付けない</b>。解除後は新しい押下が要る
+        /// （§8.3 の競合表。GPT レビュー R4 への追加。P5-P07 の補助）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator PauseAndLoadingRejectNewOperationsAndStaleInput()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5Keyboard");
+
+            IGameModeService modes = GameModeProvider.Current;
+            var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+            var mediator = Object.FindFirstObjectByType<AreaInteractInput>();
+            var interaction = Object.FindFirstObjectByType<AreaInteractionController>();
+            Assert.IsNotNull(lever);
+            Assert.IsNotNull(mediator);
+            Assert.IsNotNull(interaction);
+
+            yield return MovePlayerTo(lever.InteractionAnchor + new Vector3(0.6f, 0f, 0f));
+
+            // ---- Pause 中は新規操作を受け付けない ----
+            modes.ChangeMode(GameMode.Paused);
+            yield return null;
+            yield return PressKey(Key.E);
+            for (int i = 0; i < 12; i++)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(0, lever.OpenedCount, "Pause 中の押下では開通しない。");
+            Assert.AreEqual(0, mediator.InteractCount, "窓口まで通さない。");
+
+            // ---- 解除しても、押しっぱなしの旧入力では動かない ----
+            modes.ChangeMode(GameMode.Exploration);
+            for (int i = 0; i < 12; i++)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(0, lever.OpenedCount,
+                "解除しただけでは動かない（Pause で落ちた押下を復活させない）。");
+            Assert.AreEqual(0, mediator.InteractCount);
+
+            // ---- 押し直せば動く ----
+            yield return ReleaseKeys();
+            yield return PressKey(Key.E);
+            yield return WaitUntilOrTimeout(() => lever.OpenedCount >= 1, 3f);
+            yield return ReleaseKeys();
+            Assert.AreEqual(1, lever.OpenedCount, "新しい押下でだけ動く。");
+
+            // ---- 受理済み Loading 中は、古い Trigger の要求を捨てる ----
+            yield return SceneManager.LoadSceneAsync(AreaBScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            var runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            var arena = Object.FindFirstObjectByType<AreaArenaBoundary>();
+            Assert.IsNotNull(runner);
+            Assert.AreEqual(AreaEncounterState.Dormant, runner.State);
+
+            AreaTransitionService service = Transitions();
+            Assert.IsTrue(service.TryTravel(AreaA, AreaAFromB).Accepted, "遷移を受理させる。");
+            Assert.IsTrue(service.Clock.IsFrozen, "受理で Gameplay 時計が止まる（前提）。");
+
+            EncounterStartDecision stale = runner.TryStart();
+
+            Assert.IsFalse(stale.Started, "Loading 中の古い Trigger 要求は通さない。");
+
+            // 断り方は 3 通りありうる。§6.2 手順 3 が受理の時点で活動を閉じ（AreaNotReady）、
+            // モードを Loading へ変え（WrongMode）、Gameplay 時計を止める（Transitioning）ためで、
+            // どれも「遷移側を維持する」同じ判断の別の面。<b>通らないこと</b>が要点なので 3 つとも受ける。
+            Assert.IsTrue(
+                stale.Rejection == EncounterStartRejection.Transitioning
+                || stale.Rejection == EncounterStartRejection.WrongMode
+                || stale.Rejection == EncounterStartRejection.AreaNotReady,
+                "遷移側を維持して断る。理由=" + stale.Rejection);
+            Assert.AreEqual(AreaEncounterState.Dormant, runner.State, "状態も動かさない。");
+            Assert.AreEqual(0, Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None).Length,
+                "敵も湧かない。");
+            Assert.IsFalse(arena.IsEnabled, "境界も閉じない。");
+
+            AreaTransitionCoordinator coordinator = service.Coordinator;
+            yield return WaitForArrival(coordinator, 1);
+            yield return ReleaseKeys();
         }
 
         // ---------------------------------------------------------------- P17（カメラ）

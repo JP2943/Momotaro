@@ -142,6 +142,9 @@ namespace Momotaro.Gameplay.Encounter
         }
 
         /// <inheritdoc />
+        public event System.Action SpawnedActivated;
+
+        /// <inheritdoc />
         public void ActivateSpawned()
         {
             if (_root == null || _spawned.Count == 0)
@@ -151,6 +154,9 @@ namespace Momotaro.Gameplay.Encounter
 
             _root.gameObject.SetActive(true);
             SpawnedActive = true;
+
+            // 起こしてから伝える。購読側は「もう居る」敵を探せる（§8.2 手順 7）。
+            SpawnedActivated?.Invoke();
         }
 
         /// <inheritdoc />

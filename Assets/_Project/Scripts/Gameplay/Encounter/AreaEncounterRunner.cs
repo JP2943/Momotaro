@@ -115,6 +115,12 @@ namespace Momotaro.Gameplay.Encounter
         public string ResultMessage { get; private set; } = string.Empty;
 
         /// <summary>
+        /// 結果の短文を<b>表示せよ</b>という通知（§8.4 手順 8）。
+        /// 値を公開しただけでは「表示した」ことにならないので、表示側はこれを購読する。
+        /// </summary>
+        public event Action<string> ResultAnnounced;
+
+        /// <summary>
         /// 開始予約中・戦闘中・勝敗処理中か（§6.1 の遷移受付が読む）。
         /// 戦闘の最中にエリア遷移が通ると、敵と境界を残したまま次の Scene へ行ってしまう。
         /// </summary>
@@ -354,12 +360,17 @@ namespace Momotaro.Gameplay.Encounter
         }
 
         /// <summary>
-        /// 1 フレーム進める。<b>勝敗の確定はここで行う</b>（§8.3 末尾）。
+        /// <b>勝敗を確定する実行段階</b>（§8.3 末尾）。
         ///
-        /// 最後の敵の通知でその場で勝利を確定すると、同じ刻みに届いた主人公の死亡通知を
-        /// 取りこぼして相打ちが勝利になる。候補を溜めて、刻みの終わりに死亡優先で決める。
+        /// このフレームの命中・死亡通知が<b>すべて出そろってから</b>呼ぶ。
+        /// 命中の解決は各 Actor の <c>Update</c> で走り、その順序は Unity が決めるので、
+        /// 同じ <c>Update</c> の段で確定すると「自分より後に走る Actor の命中」を取りこぼす。
+        /// 最後の敵の撃破で即座に勝利を確定すると、同じフレームの後続処理で主人公が死んでも
+        /// 勝利のままになる（§8.3 が禁じている「処理順だけで相打ちを勝利にする」形）。
+        ///
+        /// そのため実機では <see cref="LateUpdate"/> から呼ぶ。テストは決定的に直接呼べる。
         /// </summary>
-        public void Tick(float deltaTime)
+        public void ResolvePending()
         {
             if (!_victoryPending && !_defeatPending)
             {
@@ -433,6 +444,7 @@ namespace Momotaro.Gameplay.Encounter
 
             // ---- 手順 8：短文。結果パネルや Enter 待ちで止めない ----
             ResultMessage = "戦闘終了";
+            ResultAnnounced?.Invoke(ResultMessage);
         }
 
         private void ResolveDefeat()
@@ -568,9 +580,15 @@ namespace Momotaro.Gameplay.Encounter
             ReleaseRuntime();
         }
 
-        private void Update()
+        /// <summary>
+        /// 互換の別名（時間は使わない）。既存の呼び出し・テストのために残す。
+        /// </summary>
+        public void Tick(float deltaTime) => ResolvePending();
+
+        private void LateUpdate()
         {
-            Tick(Time.deltaTime);
+            // <b>Update ではなく LateUpdate</b>。このフレームの命中・死亡がすべて出そろった後で決める（§8.3 末尾）。
+            ResolvePending();
         }
     }
 }

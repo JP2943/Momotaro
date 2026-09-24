@@ -87,6 +87,15 @@ namespace Momotaro.Gameplay.Interaction
 
         /// <summary>範囲内・同 Floor・遮蔽なしの対象が無い。押下は捨てる。</summary>
         NoTargetInRange = 4,
+
+        /// <summary>
+        /// この区画の戦闘が始まっている（§8.2 手順 3 の Starting 〜 §8.4 の Resolving）。
+        ///
+        /// <b>GameMode だけでは閉じられない。</b> 手順 3 で Starting を確定してから手順 6 で Combat へ
+        /// 変えるまでの間、モードはまだ Exploration である。その間に走る探索の撤収通知（手順 4）から
+        /// Interact が再入できてしまうと、§8.3 の「戦闘開始を先に確定し、移動／Interact を拒否する」が破れる。
+        /// </summary>
+        EncounterStarting = 5,
     }
 
     /// <summary>

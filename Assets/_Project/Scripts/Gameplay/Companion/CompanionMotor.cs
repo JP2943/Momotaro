@@ -88,6 +88,41 @@ namespace Momotaro.Gameplay.Companion
         }
 
         /// <summary>
+        /// <b>配置</b>する（P5-07。仕様書 v1.1 §10.2 末尾「Scene 遷移時および Encounter 開始時の再配置は、
+        /// 通常 Follow Warp とは別の配置処理」）。
+        ///
+        /// 通常 Follow の Warp（<see cref="WarpTo"/>）との違いは 3 つ。
+        /// <list type="bullet">
+        /// <item><description>状態（Down／Away／攻撃中）を<b>見ないし変えない</b>。位置だけを直す。</description></item>
+        /// <item><description>移動所有権の調停を通らない。強制停止のラッチで握り潰されない。</description></item>
+        /// <item><description>Warp 回数に数えない（通常 Follow の診断を汚さない）。</description></item>
+        /// </list>
+        ///
+        /// 呼ぶのは<b>開始調停が旧行動を同期解放し、活動を止めている間</b>だけ（§10.2 末尾）。
+        /// 置けたかどうかは呼び出し側が実位置で確かめる。
+        /// </summary>
+        /// <returns>置いたあとの実位置（高さは現在値を保つ）。</returns>
+        public Vector3 PlaceAt(Vector3 position)
+        {
+            EnsureBody();
+            Vector3 destination = new Vector3(position.x, transform.position.y, position.z);
+
+            if (_body != null)
+            {
+                _body.linearVelocity = Vector3.zero;
+                _body.position = destination;
+            }
+
+            transform.position = destination;
+            _hasMoveTarget = false;
+            PlaceCount++;
+            return destination;
+        }
+
+        /// <summary>配置した回数（診断・テスト用。通常 Follow の Warp とは別に数える）。</summary>
+        public int PlaceCount { get; private set; }
+
+        /// <summary>
         /// 指定位置へ瞬間移動する（距離超過・経路失敗からの復帰）。高さは現在値を保ち（接地を崩さない）、
         /// 速度と移動指示を必ず消す（ワープ直後に残速度で滑らない）。
         /// </summary>
