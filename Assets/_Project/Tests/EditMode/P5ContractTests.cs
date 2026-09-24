@@ -3002,7 +3002,20 @@ namespace Momotaro.Tests.EditMode
                 int hpBefore = rig.Vitals.CurrentHp;
                 float recoveryBefore = rig.Vitals.Vitals.RecoveryRemaining;
                 float cooldownBefore = rig.Combat.CooldownRemaining;
+                float flinchBefore = rig.Vitals.Vitals.FlinchAccumulation;
                 int warpsBefore = rig.Motor.WarpCount;
+
+                // 前提：初期値ではない（ここが初期値だと、以降の「保つ」検査に意味が無い）。
+                bool down = state == CompanionState.Down;
+                Assert.AreEqual(down ? 0 : WoundedHp, hpBefore, state + "：前提の HP が途中値。");
+                Assert.Less(hpBefore, rig.Vitals.MaxHp, state + "：前提として満タンではない。");
+                Assert.AreEqual(down ? WoundedRecoveryRemaining : 0f, recoveryBefore, 1e-4f,
+                    state + "：前提の復帰残りが復元表どおり。");
+                Assert.AreEqual(WoundedCooldownRemaining, cooldownBefore, 1e-4f,
+                    state + "：前提の CD が途中値。");
+                Assert.AreEqual(WoundedFlinchAccumulation, flinchBefore, 1e-4f,
+                    state + "：前提のひるみ蓄積が途中値。");
+                Assert.AreEqual(down, rig.Vitals.Vitals.IsDown, state + "：前提の Down が復元されている。");
 
                 Assert.IsFalse(bounds.Contains(new Vector3(rig.Actor.transform.position.x, 0f,
                     rig.Actor.transform.position.z)), "前提：境界の外に居る。");
@@ -3025,6 +3038,9 @@ namespace Momotaro.Tests.EditMode
                 Assert.AreEqual(recoveryBefore, rig.Vitals.Vitals.RecoveryRemaining, 1e-4f,
                     state + "：復帰残りを保つ。");
                 Assert.AreEqual(cooldownBefore, rig.Combat.CooldownRemaining, 1e-4f, state + "：CD を保つ。");
+                Assert.AreEqual(flinchBefore, rig.Vitals.Vitals.FlinchAccumulation, 1e-4f,
+                    state + "：ひるみ蓄積も保つ。");
+                Assert.AreEqual(down, rig.Vitals.Vitals.IsDown, state + "：Down の別も保つ（出撃扱いに変えない）。");
 
                 // 通常 Follow の Warp とは別の口を通る（診断が混ざらない）。
                 Assert.AreEqual(warpsBefore, rig.Motor.WarpCount, state + "：通常 Warp には数えない。");
@@ -3074,6 +3090,17 @@ namespace Momotaro.Tests.EditMode
             T existing = go.GetComponent<T>();
             return existing != null ? existing : go.AddComponent<T>();
         }
+
+        /// <summary>再配置の検査で使う「途中の値」（初期値と区別できる値にする）。</summary>
+        private const int WoundedHp = 23;
+
+        private const float WoundedRecoveryRemaining = 1.75f;
+
+        private const float WoundedInvincibleRemaining = 0.4f;
+
+        private const float WoundedCooldownRemaining = 2.5f;
+
+        private const float WoundedFlinchAccumulation = 12f;
 
         private sealed class RelocationRig
         {
@@ -3130,6 +3157,24 @@ namespace Momotaro.Tests.EditMode
             follow.Bind(leaderGo.transform, actor, motor);
             var probe = new ConfigurableWarpProbe();
             follow.BindWarpProbe(probe);
+
+            // <b>初期値のまま検査しない。</b> HP 満タン・残り 0・CD 0 だと、
+            // 値がリセットされる不具合が「たまたま一致」で素通りする（GPT レビュー R5 の指摘 1）。
+            // 持ち越しの公開経路（§4.5 の Import）で、意味のある途中値を入れてから配置する。
+            //
+            // Down は HP 0 ＋ 復帰残りあり、それ以外は負傷 HP ＋ 復帰残り 0（§4.6 の復元表）。
+            // どちらの形でも「初期値ではない値」が最低 2 つ入るようにしてある。
+            bool down = state == CompanionState.Down;
+            Assert.IsTrue(vitals.Vitals.TryImportTransferSnapshot(new CompanionVitalsTransferSnapshot(
+                    hp: down ? 0 : WoundedHp,
+                    isDown: down,
+                    recoveryRemaining: down ? WoundedRecoveryRemaining : 0f,
+                    postHitInvincibleRemaining: WoundedInvincibleRemaining,
+                    flinch: new FlinchTransferSnapshot(WoundedFlinchAccumulation, 0f, 0f, 0f))),
+                "前提：負傷・復帰待ちの値を入れられる。");
+            Assert.IsTrue(combat.TryImportTransferSnapshot(
+                    new CompanionCombatTransferSnapshot(WoundedCooldownRemaining)),
+                "前提：CD の途中値を入れられる。");
 
             return new RelocationRig
             {

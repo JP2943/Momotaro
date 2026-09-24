@@ -2938,7 +2938,21 @@ namespace Momotaro.Tests.PlayMode
                 }
 
                 Assert.Greater(hits.FirstDamageFrame, 0, "前提：敵に実際の命中が届いている。");
+                Assert.IsNotNull(hits.FirstTarget, "前提：最初の命中の被弾対象が取れる。");
                 Assert.Greater(log.Count, 0, "命中が Feedback へ届く。");
+
+                // <b>同じ命中</b>で照合する。件数や「どれか 1 件」では、別の敵・別の結果種別の
+                // Feedback をもって「最初の命中も拾えた」と誤読しうる。
+                // 敵側で観測した最初のダメージ（HitId・被弾対象・種別・フレーム）と
+                // 同一のものが Feedback 側にも出ていることを求める。
+                Assert.IsTrue(log.TryFind(hits.FirstHitId, hits.FirstTarget, out int matchedFrame, out HitResultKind matchedKind),
+                    "<b>最初の命中そのもの</b>が Feedback へ届く（別の敵・別の攻撃で代用しない）。"
+                    + " 命中=" + Describe(hits.FirstHitId, hits.FirstTarget)
+                    + " Feedback 側=" + log.Describe());
+                Assert.AreEqual(HitResultKind.Damage, matchedKind, "結果種別も同じ（ダメージがダメージとして届く）。");
+                Assert.AreEqual(hits.FirstDamageFrame, matchedFrame,
+                    "同じフレームで届く（周期の再探索を待って遅れていない）。"
+                    + " Feedback=" + matchedFrame + " 命中=" + hits.FirstDamageFrame);
                 Assert.LessOrEqual(log.FirstFrame, hits.FirstDamageFrame,
                     "<b>最初の命中</b>の時点で購読済み（周期の再探索を待っていない）。"
                     + " 最初の Feedback=" + log.FirstFrame + " 最初の命中=" + hits.FirstDamageFrame);
@@ -2951,33 +2965,109 @@ namespace Momotaro.Tests.PlayMode
             yield return ReleaseKeys();
         }
 
-        /// <summary>Feedback が最初に届いたフレームを覚える。</summary>
+        /// <summary>命中の同一性を読める文にする（失敗時の手掛かり）。</summary>
+        private static string Describe(HitId hitId, IDamageable target)
+        {
+            string name = target is Component component && component != null ? component.gameObject.name : "(不明)";
+            return "HitId=" + hitId.InstanceId + ":" + hitId.Stage + " 対象=" + name;
+        }
+
+        /// <summary>
+        /// 届いた Feedback を<b>命中ごと</b>に覚える。件数だけでは「別の敵の別の攻撃」を
+        /// 取り違えるため、HitId と被弾対象で引けるようにしておく。
+        /// </summary>
         private sealed class FeedbackFrameLog : ICombatFeedbackListener
         {
-            public int Count { get; private set; }
+            private readonly List<Entry> _entries = new List<Entry>();
+
+            public int Count => _entries.Count;
 
             public int FirstFrame { get; private set; } = int.MaxValue;
 
             public void OnCombatFeedback(in CombatFeedbackEvent feedback)
             {
-                Count++;
+                _entries.Add(new Entry(feedback.Result.HitId, feedback.Result.Target, feedback.Result.Kind, Time.frameCount));
                 if (FirstFrame == int.MaxValue)
                 {
                     FirstFrame = Time.frameCount;
                 }
             }
+
+            /// <summary>同じ命中（HitId＋被弾対象）の Feedback を探す。</summary>
+            public bool TryFind(HitId hitId, IDamageable target, out int frame, out HitResultKind kind)
+            {
+                for (int i = 0; i < _entries.Count; i++)
+                {
+                    Entry entry = _entries[i];
+                    if (entry.HitId == hitId && ReferenceEquals(entry.Target, target))
+                    {
+                        frame = entry.Frame;
+                        kind = entry.Kind;
+                        return true;
+                    }
+                }
+
+                frame = 0;
+                kind = HitResultKind.Rejected;
+                return false;
+            }
+
+            /// <summary>診断用に届いた分を並べる。</summary>
+            public string Describe()
+            {
+                var text = new System.Text.StringBuilder();
+                for (int i = 0; i < _entries.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        text.Append(" / ");
+                    }
+
+                    Entry entry = _entries[i];
+                    text.Append(P5ExplorationPlayTests.Describe(entry.HitId, entry.Target))
+                        .Append(" 種別=").Append(entry.Kind)
+                        .Append(" F=").Append(entry.Frame);
+                }
+
+                return text.Length == 0 ? "(なし)" : text.ToString();
+            }
+
+            private readonly struct Entry
+            {
+                public Entry(HitId hitId, IDamageable target, HitResultKind kind, int frame)
+                {
+                    HitId = hitId;
+                    Target = target;
+                    Kind = kind;
+                    Frame = frame;
+                }
+
+                public HitId HitId { get; }
+
+                public IDamageable Target { get; }
+
+                public HitResultKind Kind { get; }
+
+                public int Frame { get; }
+            }
         }
 
-        /// <summary>敵に最初のダメージが届いたフレームを覚える。</summary>
+        /// <summary>敵に最初のダメージが届いた命中（同一性・対象・フレーム）を覚える。</summary>
         private sealed class EnemyFirstDamageLog : IHitResultListener
         {
             public int FirstDamageFrame { get; private set; }
+
+            public HitId FirstHitId { get; private set; }
+
+            public IDamageable FirstTarget { get; private set; }
 
             public void OnHitResult(in HitResult result)
             {
                 if (result.Kind == HitResultKind.Damage && FirstDamageFrame == 0)
                 {
                     FirstDamageFrame = Time.frameCount;
+                    FirstHitId = result.HitId;
+                    FirstTarget = result.Target;
                 }
             }
         }
