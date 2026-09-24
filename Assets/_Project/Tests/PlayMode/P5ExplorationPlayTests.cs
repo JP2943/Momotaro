@@ -55,6 +55,9 @@ namespace Momotaro.Tests.PlayMode
             "Assets/_Project/Scenes/Tests/Phase5/SCN_Phase5_ExplorationTrial.unity";
         private const string LauncherScene = "Assets/_Project/Scenes/SCN_System_Launcher.unity";
 
+        /// <summary>既存試遊（P4）の Scene。本編型と進行の持ち場が別であることを見るために読む。</summary>
+        private const string LegacyTrialScene = "Assets/_Project/Scenes/Tests/SCN_Phase4_CompanionTrial.unity";
+
         private static readonly StableId AreaA = new StableId("area_p5_a");
         private static readonly StableId AreaB = new StableId("area_p5_b");
         private static readonly StableId AreaAStart = new StableId("area_p5_a_start");
@@ -67,8 +70,17 @@ namespace Momotaro.Tests.PlayMode
         public void SetUp()
         {
             // 前のテストの静的状態を持ち込まない（`CLAUDE.md` の PlayMode の落とし穴）。
+            // <b>Action Map の後始末は「モードを戻す」だけでは足りない。</b>
+            //
+            // モードの提供点が別のテストや Scene に差し替えられていると、上の復帰は素通りする。
+            // project-wide の Asset は PlayMode を抜けても状態が残るので、最後に<b>直接</b>
+            // Gameplay マップを有効へ戻しておく（P5-08 で 11 件が一斉に無反応になって踏んだ）。
+            RestoreGameplayActionMap();
+
             GameModeProvider.Current = null;
             PlayerInputProvider.Current = null;
+            RespawnSubmitProvider.Current = null;
+            InputReleaseGateProvider.Current = null;
             PerceptionTargetRegistry.Clear();
             GameplayClockProvider.Current = null;
             GameSessionProvider.Current = null;
@@ -128,6 +140,31 @@ namespace Momotaro.Tests.PlayMode
             AreaInteractableRegistry.Clear();
             RemoveInputDevices();
             yield return null;
+        }
+
+        /// <summary>
+        /// project-wide の Action Asset で Gameplay マップを有効へ戻す。
+        /// Asset の Enable／Disable は PlayMode を抜けても残るので、ここで必ず戻す。
+        /// </summary>
+        private static void RestoreGameplayActionMap()
+        {
+            InputActionAsset asset = InputSystem.actions;
+            if (asset == null)
+            {
+                return;
+            }
+
+            foreach (InputActionMap map in asset.actionMaps)
+            {
+                if (map.name == "Gameplay")
+                {
+                    map.Enable();
+                }
+                else if (map.enabled)
+                {
+                    map.Disable();
+                }
+            }
         }
 
         /// <summary>テストで足した入力デバイスを外す（次のテストへ残さない）。</summary>
@@ -2539,7 +2576,18 @@ namespace Momotaro.Tests.PlayMode
             Assert.Greater(Vector3.Distance(before, companionBody.position), 1f,
                 "犬丸が追従を再開する。移動量=" + Vector3.Distance(before, companionBody.position)
                 + " 状態=" + companionActor.State
-                + " 活動=" + CompanionActivityProvider.Activity);
+                + " 活動=" + CompanionActivityProvider.Activity
+                + " 時計停止=" + GameplayClockProvider.IsFrozen
+                + " 移動所有=" + companionMotor.GetComponent<CompanionMovementArbiter>()?.Owner
+                + " 追従判断=" + companionMotor.GetComponent<CompanionFollowController>()?.Decision
+                + " 戦闘に譲る=" + companionMotor.GetComponent<CompanionFollowController>()?.IsYieldingToCombat
+                + " 調査に譲る=" + companionMotor.GetComponent<CompanionFollowController>()?.IsYieldingToInvestigation
+                + " 距離=" + Vector3.Distance(
+                    companionBody.position, Object.FindFirstObjectByType<PlayerRoot>().transform.position)
+                + " 犬丸位置=" + companionBody.position
+                + " 主人公位置=" + Object.FindFirstObjectByType<PlayerRoot>().transform.position
+                + " 危険で止めたWarp=" + companionMotor.GetComponent<CompanionFollowController>()?.UnsafeWarpBlockedCount
+                + " Warp回数=" + companionMotor.WarpCount);
 
             yield return ReleaseKeys();
         }
@@ -3757,5 +3805,478 @@ namespace Momotaro.Tests.PlayMode
                 GuardCanceled?.Invoke();
             }
         }
+
+        // ---------------------------------------------------------------- P09・P15・P18（本編型死亡再開）
+
+        /// <summary>死亡させるためだけの攻撃者（実 Hitbox を持たないので、被弾の入口だけを実物で通す）。</summary>
+        private sealed class LethalAttacker : MonoBehaviour, ICombatActor
+        {
+            public CombatFaction Faction => CombatFaction.Enemy;
+
+            public int FloorId => 0;
+
+            public int ActorId => GetInstanceID();
+
+            public Vector3 WorldPosition => transform.position;
+
+            public Vector3 Forward => transform.forward;
+        }
+
+        /// <summary>
+        /// 主人公を<b>実際の被弾経路</b>で死なせる（§15 の注記「処理結果を直接セットしない」）。
+        /// 死亡確定の一度性・通知も本番の <c>ReceiveHit</c> が行う。
+        /// </summary>
+        private IEnumerator KillPlayerWithRealHit()
+        {
+            var vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            Assert.IsNotNull(vitals, "主人公の生存がある。");
+
+            var attackerGo = new GameObject("P5LethalAttacker");
+            var attacker = attackerGo.AddComponent<LethalAttacker>();
+            attackerGo.transform.position = vitals.transform.position + Vector3.forward;
+
+            // <b>1 発で死ぬとは限らない。</b> 探索中は犬丸が「かばう」で肩代わりし、被弾後無敵も挟まる。
+            // どちらも本番の防御経路なので、飛ばさずに<b>届くまで実際に殴り続ける</b>。
+            var companion = Object.FindFirstObjectByType<CompanionHitReceiver>();
+            int hits = 0;
+            float deadline = Time.realtimeSinceStartup + 10f;
+            while (!vitals.IsDefeated && Time.realtimeSinceStartup < deadline)
+            {
+                hits++;
+                vitals.ReceiveHit(new HitInfo(
+                    attacker, vitals, Vector3.back, vitals.transform.position,
+                    new HitDamage(9999, 0f, 0f), guardable: false, justGuardable: false,
+                    hitId: HitId.Single(7700 + hits)));
+                yield return null;
+            }
+
+            Object.Destroy(attackerGo);
+            yield return null;
+
+            Assert.IsTrue(vitals.IsDefeated,
+                "前提：主人公が死んでいる。打った数=" + hits
+                + " HP=" + vitals.Vitals.Health.Current
+                + " 犬丸=" + (companion != null ? companion.Vitals.IsDown.ToString() : "(なし)")
+                + " mode=" + (GameModeProvider.Current != null ? GameModeProvider.Current.Current.ToString() : "null"));
+        }
+
+        /// <summary>死亡が受理され、再開画面が出るまで待つ。</summary>
+        private IEnumerator WaitForRespawnPrompt()
+        {
+            var view = Object.FindFirstObjectByType<CampaignRespawnView>();
+            Assert.IsNotNull(view, "再開操作の表示が Scene にある（§11 の必須 UI）。");
+            Assert.IsTrue(view.IsWired, "再開操作の表示が配線されている。");
+
+            yield return WaitUntilOrTimeout(() => view.IsShowing, 5f);
+
+            Assert.IsTrue(view.IsShowing,
+                "死亡したら再開操作が出る（値を持つだけでは表示したことにならない）。");
+            Assert.AreEqual(CampaignRespawnView.RespawnLabel, view.Message,
+                "ラベルは「再開する」（既存試遊の Retry とは別物。§9.1 の 1 行目）。");
+            Assert.AreEqual(GameMode.GameOver, GameModeProvider.Current.Current, "GameOver になる（手順 1）。");
+        }
+
+        /// <summary>
+        /// P5-P09：<b>撃破で得た徳は死んでも失われず、通常敵だけが再出現する</b>
+        /// （§8.5／§9.1 手順 5〜7）。近接 1 体で 10 → 死亡再開しても 10 → 再戦の全滅で 32。
+        ///
+        /// ここが崩れると試遊の意味が変わる。徳が消える再開は「やり直し」であって本編型ではないし、
+        /// 逆に通常敵が湧き直さなければ、死んだあとに戦う相手がいなくなる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator DeathAfterOneKill_PreservesVirtueAndReopensNormalEncounter()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaBScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5Keyboard");
+
+            IGameModeService modes = GameModeProvider.Current;
+            GameSessionState session = Sessions().Session;
+            Assert.AreEqual(0, session.Progress.Virtue, "前提：まだ何も得ていない。");
+
+            // A 側の恒久進行を前提として置く（開通・調査の<b>記録経路</b>そのものは P10／FullRoute が実物で見ている。
+            // ここで見たいのは「死んでも残るか」なので、記録の出どころは問わない）。
+            AreaRuntimeState areaA = session.GetOrCreateArea(AreaA);
+            var gateFlag = new StableId("flag_p5_a_gate");
+            var investigated = new StableId("point_p5_a_trial");
+            Assert.IsTrue(areaA.TryOpen(gateFlag), "前提：門の開通を記録できる。");
+            Assert.IsTrue(areaA.Investigation.TryMarkInvestigated(investigated), "前提：調査済みを記録できる。");
+
+            // ================================ 1. 近接 1 体を実 Hitbox で倒す ================================
+            var runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            Assert.IsNotNull(runner);
+            yield return MovePlayerTo(EncounterTriggerPoint);
+            yield return WaitUntilOrTimeout(() => runner.State == AreaEncounterState.Playing, 5f);
+            Assert.AreEqual(AreaEncounterState.Playing, runner.State,
+                "前提：戦闘が始まる。拒否=" + runner.LastRejection + " " + runner.LastFailureDetail);
+
+            EnemyActor[] enemies = Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None);
+            Assert.AreEqual(2, enemies.Length, "前提：骸骨剣士 1 ＋ 骸骨弓兵 1。");
+            EnemyActor melee = FindMelee(enemies);
+            Assert.IsNotNull(melee, "近接の敵が居る。名前=" + DescribeEnemies(enemies));
+
+            yield return KillWithRealHitbox(melee);
+            yield return WaitUntilOrTimeout(() => session.Progress.Virtue >= 10, 5f);
+            Assert.AreEqual(10, session.Progress.Virtue, "近接 1 体の撃破で 10（§8.5）。");
+            Assert.AreEqual(AreaEncounterState.Playing, runner.State, "前提：まだ戦闘中（1 体残っている）。");
+
+            // ================================ 2. 死ぬ ================================
+            yield return KillPlayerWithRealHit();
+            yield return WaitForRespawnPrompt();
+
+            Assert.AreEqual(10, session.Progress.Virtue, "撃破した瞬間の徳は、その戦闘で死んでも取り消さない（§8.5）。");
+            Assert.IsTrue(session.TryGetArea(AreaB, out AreaRuntimeState areaB));
+            Assert.IsFalse(areaB.IsEncounterCleared(new StableId("encounter_p5_b_road"), session.RespawnCycle),
+                "前提：勝っていないのでクリア記録は付いていない。");
+
+            int cycleBefore = session.RespawnCycle;
+            AreaTransitionCoordinator transitions = Transitions().Coordinator;
+            int completedBefore = transitions.CompletedCount;
+
+            // ================================ 3. 実キーで再開する ================================
+            yield return PressKey(Key.Enter);
+            yield return WaitUntilOrTimeout(() => transitions.CompletedCount > completedBefore, 20f);
+            yield return ReleaseKeys();
+
+            Assert.AreEqual(completedBefore + 1, transitions.CompletedCount,
+                "実キーの Submit で再開のロードが完了する。段階=" + session.Respawn.Phase
+                + " 再開の拒否=" + Object.FindFirstObjectByType<CampaignRespawnRunner>()?.LastRejection
+                + " 遷移の拒否=" + Object.FindFirstObjectByType<CampaignRespawnRunner>()?.LastTravelRejection);
+            yield return WaitUntilOrTimeout(() => modes.Current == GameMode.Exploration, 5f);
+            Assert.AreEqual(GameMode.Exploration, modes.Current, "到着して探索へ戻る（手順 7）。");
+
+            AreaInitializer arrived = FindInitializer();
+            Assert.IsTrue(arrived.Initialized);
+            Assert.AreEqual(AreaA.Value, arrived.AreaId.Value, "再開地点は A（§3.1）。");
+            Assert.AreEqual(cycleBefore + 1, session.RespawnCycle, "再出現周期が 1 進む（手順 5）。");
+            Assert.AreEqual(CampaignRespawnPhase.Idle, session.Respawn.Phase, "到着で再開は終わる。");
+            Assert.AreEqual(1, session.Respawn.AdvanceCount, "周期の更新は再開要求につき 1 回。");
+
+            // ---- 進行 State は残り、Actor だけが初期化される ----
+            Assert.AreEqual(10, session.Progress.Virtue, "死亡再開でも既得の徳は 10 のまま。");
+            Assert.IsTrue(areaA.IsOpen(gateFlag), "門の開通は保持する。");
+            Assert.IsTrue(areaA.Investigation.IsInvestigated(investigated), "調査済みは保持する。");
+
+            var vitalsAfter = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            Assert.IsNotNull(vitalsAfter);
+            Assert.IsFalse(vitalsAfter.IsDefeated, "主人公は生き返っている。");
+            Assert.AreEqual(vitalsAfter.Vitals.Health.Max, vitalsAfter.Vitals.Health.Current, "全回復して再開する。");
+
+            var companion = Object.FindFirstObjectByType<CompanionHitReceiver>();
+            Assert.IsNotNull(companion, "加入済みの犬丸が居る。");
+            Assert.IsFalse(companion.Vitals.IsDown, "犬丸も復帰している。");
+
+            // ================================ 4. B へ戻ると通常敵が再出現する ================================
+            var playerActor = Object.FindFirstObjectByType<PlayerStateController>();
+            yield return WaitUntilOrTimeout(() => playerActor == null || playerActor.IsFreeToTravel, 3f);
+
+            AreaTransitionService service = Transitions();
+            AreaTransitionDecision toB = service.TryTravel(AreaB, AreaBFromA);
+            Assert.IsTrue(toB.Accepted, "探索へ戻っているので移動できる。理由=" + toB.Rejection);
+            yield return WaitForArrival(transitions, completedBefore + 2);
+
+            var runnerAgain = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            Assert.IsNotNull(runnerAgain);
+            Assert.AreEqual(AreaEncounterState.Dormant, runnerAgain.State,
+                "死亡再開でクリア記録が消えているので、また戦える（§9.1 手順 5）。");
+
+            yield return MovePlayerTo(EncounterTriggerPoint);
+            yield return WaitUntilOrTimeout(() => runnerAgain.State == AreaEncounterState.Playing, 5f);
+            Assert.AreEqual(AreaEncounterState.Playing, runnerAgain.State,
+                "通常敵が再出現する。拒否=" + runnerAgain.LastRejection + " " + runnerAgain.LastFailureDetail);
+
+            EnemyActor[] again = Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None);
+            Assert.AreEqual(2, again.Length, "再戦でも 2 体。");
+
+            for (int i = 0; i < again.Length; i++)
+            {
+                yield return KillWithRealHitbox(again[i]);
+            }
+
+            yield return WaitUntilOrTimeout(() => runnerAgain.State == AreaEncounterState.Cleared, 8f);
+            Assert.AreEqual(AreaEncounterState.Cleared, runnerAgain.State, "再戦に勝つ。");
+            Assert.AreEqual(32, session.Progress.Virtue,
+                "10 ＋ 再戦の 22 ＝ 32（GrantOnce=false は再撃破で再付与する。§8.5）。");
+
+            yield return ReleaseKeys();
+        }
+
+        /// <summary>敵の並びを読める文にする（失敗時の手掛かり）。</summary>
+        private static string DescribeEnemies(EnemyActor[] enemies)
+        {
+            var text = new System.Text.StringBuilder();
+            for (int i = 0; i < enemies.Length; i++)
+            {
+                if (i > 0)
+                {
+                    text.Append(" / ");
+                }
+
+                text.Append(enemies[i] != null ? enemies[i].name : "(null)");
+            }
+
+            return text.Length == 0 ? "(なし)" : text.ToString();
+        }
+
+        /// <summary>近接の敵を選ぶ（弓兵でない方）。</summary>
+        private static EnemyActor FindMelee(EnemyActor[] enemies)
+        {
+            for (int i = 0; i < enemies.Length; i++)
+            {
+                if (enemies[i] != null && enemies[i].name.IndexOf("Ranged", System.StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    return enemies[i];
+                }
+            }
+
+            return null;
+        }
+
+
+        /// <summary>
+        /// P5-P15：進行の<b>持ち場</b>を取り違えない（§4.2／§5.2／§9.2）。
+        /// P5 の新規開始は 0 から、P5 の往復では保持、既存試遊は最初からローカルで、その Retry も 0 に戻る。
+        ///
+        /// 混ざると被害が大きい方向に非対称になる。試遊の Retry が本編の徳を消したら取り返せないし、
+        /// 逆に試遊が本編の徳を増やせたら受入の数字が信用できなくなる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator NewGameAndLegacyTrial_UseCorrectProgressScope()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            Assert.IsTrue(Application.CanStreamedLevelBeLoaded(LegacyTrialScene),
+                "既存試遊 Scene が Build Settings に登録されている: " + LegacyTrialScene);
+
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            GameSessionBootService sessions = Sessions();
+            GameSessionState first = sessions.Session;
+            Assert.IsNotNull(first);
+            Assert.AreEqual(1, sessions.CreatedCount, "本編型 Area の初期化で Session が 1 つできる（§5.2）。");
+            Assert.AreEqual(0, first.Progress.Virtue, "P5 の新規開始は 0 から。");
+
+            // 既得の進行を置く（記録の出どころは P09／FullRoute が実物で見ている）。
+            first.Progress.TryGrant(new RewardSnapshot(new StableId("reward_p5_scope_case"), 21, default, true), out _);
+            Assert.AreEqual(21, first.Progress.Virtue, "前提：徳を得た。");
+
+            // ---- 本編の進行は Scene 側から初期化できない（§4.2 の「共有 State を Scene からリセットさせない」）----
+            var boundHolder = Object.FindFirstObjectByType<PlayerProgressHolder>();
+            Assert.IsNotNull(boundHolder, "A に進行の窓口がある。");
+            Assert.IsTrue(boundHolder.IsBound, "P5 の窓口は共有 State に束ねられている。");
+            Assert.IsFalse(boundHolder.ResetProgress(), "束ねられた進行を Scene 側から初期化できない。");
+            Assert.AreEqual(21, first.Progress.Virtue, "拒否したのだから値も動かない。");
+
+            // ================================ 1. P5 の往復では保持する ================================
+            AreaTransitionService service = Transitions();
+            AreaTransitionCoordinator transitions = service.Coordinator;
+            Assert.IsTrue(service.TryTravel(AreaB, AreaBFromA).Accepted);
+            yield return WaitForArrival(transitions, 1);
+            Assert.IsTrue(service.TryTravel(AreaA, AreaAFromB).Accepted);
+            yield return WaitForArrival(transitions, 2);
+
+            Assert.AreSame(first, sessions.Session, "往復で Session を作り直さない（§5.2）。");
+            Assert.AreEqual(1, sessions.CreatedCount);
+            Assert.AreEqual(21, first.Progress.Virtue, "A↔B の往復で徳は保持される（§4.1 の表）。");
+
+            // ================================ 2. 明示的な New Game だけが 0 へ戻す ================================
+            GameSessionState fresh = sessions.StartNewSession();
+            Assert.AreNotSame(first, fresh, "New Game は新しい Session を作る（§9.2）。");
+            Assert.AreEqual(2, sessions.CreatedCount);
+            Assert.AreEqual(0, fresh.Progress.Virtue, "徳が初期値へ戻る。");
+            Assert.AreEqual(0, fresh.VisitedAreaCount, "訪問済みも戻る。");
+            Assert.AreEqual(0, fresh.RecruitedCount, "加入設定も戻る。");
+            Assert.AreEqual(0, fresh.RespawnCycle, "再出現周期も戻る。");
+            Assert.AreSame(fresh, GameSessionProvider.Current, "提供点も差し替わる。");
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+            Assert.AreSame(fresh, sessions.Session, "New Game のあとの Area 初期化は新しい Session を使い回す。");
+            Assert.AreEqual(2, sessions.CreatedCount, "Scene を読み直しただけで Session は増えない。");
+            Assert.AreEqual(0, fresh.Progress.Virtue, "新規開始の続きなので 0 のまま。");
+
+            // P5 の Scene には既存試遊の Retry 経路を置かない（§9.1 の 1 行目）。
+            Assert.IsNull(Object.FindFirstObjectByType<CombatRetryInput>(),
+                "P5 Scene に既存試遊の Retry 入力は居ない。");
+            Assert.IsNotNull(Object.FindFirstObjectByType<CampaignRespawnView>(),
+                "代わりに本編型の再開操作が居る。");
+
+            // ================================ 3. 既存試遊はローカル。Retry も 0 へ ================================
+            yield return SceneManager.LoadSceneAsync(LegacyTrialScene, LoadSceneMode.Single);
+            yield return null;
+            yield return null;
+
+            var trialHolder = Object.FindFirstObjectByType<PlayerProgressHolder>();
+            Assert.IsNotNull(trialHolder, "既存試遊にも進行の窓口がある。");
+            Assert.IsFalse(trialHolder.IsBound,
+                "既存試遊は共有 State に束ねない（§5.2。試遊 Scene へ本編 Session を自動注入しない）。");
+
+            trialHolder.Grant(new RewardSnapshot(new StableId("reward_legacy_case"), 33, default, false), out _);
+            Assert.AreEqual(33, trialHolder.Virtue, "試遊の徳はローカルに積まれる。");
+            Assert.AreEqual(0, fresh.Progress.Virtue, "試遊で本編の徳は増えない。");
+
+            Assert.IsTrue(trialHolder.ResetProgress(), "束ねていない進行は Scene 側から初期化できる（試遊の Retry）。");
+            Assert.AreEqual(0, trialHolder.Virtue, "試遊の Retry はローカルを 0 に戻す。");
+            Assert.AreEqual(0, fresh.Progress.Virtue, "本編側は触られない。");
+            Assert.AreEqual(2, sessions.CreatedCount, "試遊へ切り替えても Session は作られない。");
+
+            // 既存試遊の Scene を<b>自分で畳む</b>。読み込んだまま終わると、その Scene の常駐物と
+            // Action Map の状態が次のテストへ残る（実際に踏んだ：実キーのテストが一斉に無反応になった）。
+            yield return SceneManager.LoadSceneAsync(TrialScene, LoadSceneMode.Single);
+            yield return null;
+            DestroyTrialLaunchers();
+            if (GameModeProvider.Current != null && GameModeProvider.Current.Current != GameMode.Exploration)
+            {
+                GameModeProvider.Current.ChangeMode(GameMode.Exploration);
+                yield return null;
+            }
+        }
+
+        /// <summary>
+        /// P5-P18：再開に使った物理ボタンは、<b>一度離すまで</b>到着先の操作にならない（§9.1 末尾）。
+        ///
+        /// ラッチを 1 回消すだけでは足りない。Action Map を閉じてから開き直すと、押しっぱなしの
+        /// ボタンが「新しい押下」として立ち上がる。キーボードとゲームパッドの両方で見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RespawnSubmit_DoesNotBecomeArrivalInteract()
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5Keyboard");
+            _gamepad = InputSystem.AddDevice<Gamepad>("P5Gamepad");
+
+            IGameModeService modes = GameModeProvider.Current;
+            AreaTransitionCoordinator transitions = Transitions().Coordinator;
+
+            // ================================ 1. ゲームパッド South を押しっぱなしで再開 ================================
+            //
+            // South は UI/Submit と Gameplay/Interact の<b>同じ物理ボタン</b>（IA_Momotaro）。
+            // ここが P18 の本番で、押しっぱなしのまま到着すると Interact が 1 回走ってしまう。
+            yield return KillPlayerWithRealHit();
+            yield return WaitForRespawnPrompt();
+
+            int completed = transitions.CompletedCount;
+            yield return PressGamepadSouth();
+            yield return WaitUntilOrTimeout(() => transitions.CompletedCount > completed, 20f);
+            yield return WaitUntilOrTimeout(() => modes.Current == GameMode.Exploration, 5f);
+            Assert.AreEqual(completed + 1, transitions.CompletedCount,
+                "South の押下で再開が完了する。段階=" + Sessions().Session.Respawn.Phase);
+            Assert.AreEqual(GameMode.Exploration, modes.Current, "到着して探索へ戻る。");
+
+            // <b>押したまま</b>到着後を観測する。
+            yield return AssertHeldButtonDoesNotAct("ゲームパッド South");
+
+            // 離して押し直せば、ふつうに 1 回効く（塞ぎっぱなしにしない）。
+            yield return ReleaseGamepad();
+            yield return null;
+            Assert.IsFalse(InputReleaseGateProvider.Current.RequiresRelease,
+                "離したら解放待ちが解ける（最初の 1 回を飲み込まない）。");
+
+            CountingInteractable padTarget = RegisterTargetNearPlayer("p18_pad");
+            yield return PressGamepadSouth();
+            yield return WaitUntilOrTimeout(() => padTarget.Calls >= 1, 3f);
+            Assert.AreEqual(1, padTarget.Calls,
+                "離して押し直せば Interact が 1 回効く（解放待ちが解ける）。"
+                + " 仲介=" + Object.FindFirstObjectByType<AreaInteractInput>()?.InteractCount);
+            yield return ReleaseGamepad();
+
+            // ================================ 2. 実キー Enter を押しっぱなしで再開 ================================
+            yield return KillPlayerWithRealHit();
+            yield return WaitForRespawnPrompt();
+
+            completed = transitions.CompletedCount;
+            yield return PressKey(Key.Enter);
+            yield return WaitUntilOrTimeout(() => transitions.CompletedCount > completed, 20f);
+            yield return WaitUntilOrTimeout(() => modes.Current == GameMode.Exploration, 5f);
+            Assert.AreEqual(completed + 1, transitions.CompletedCount,
+                "Enter の押下でも再開が完了する。" + DescribeSubmit());
+
+            yield return AssertHeldButtonDoesNotAct("実キー Enter");
+
+            yield return ReleaseKeys();
+            CountingInteractable keyTarget = RegisterTargetNearPlayer("p18_key");
+            yield return PressKey(Key.E);
+            yield return WaitUntilOrTimeout(() => keyTarget.Calls >= 1, 3f);
+            Assert.AreEqual(1, keyTarget.Calls, "離して E を押せば Interact が 1 回効く。");
+            yield return ReleaseKeys();
+        }
+
+        /// <summary>押しっぱなしのまま到着した直後を観測する（Interact も Step も起きない）。</summary>
+        private IEnumerator AssertHeldButtonDoesNotAct(string label)
+        {
+            var mediator = Object.FindFirstObjectByType<AreaInteractInput>();
+            Assert.IsNotNull(mediator, "到着先に Interact の入力仲介がある。");
+            var player = Object.FindFirstObjectByType<PlayerStateController>();
+            Assert.IsNotNull(player);
+
+            // 仕組みも固定する。<b>「たまたま起きなかった」では受入にならない。</b>
+            // 押している間は解放待ちが立っていること自体を見る（§9.1 末尾が求めているのはこれ）。
+            Assert.IsNotNull(InputReleaseGateProvider.Current, "解放待ちの提供点が入っている。");
+            Assert.IsTrue(InputReleaseGateProvider.Current.RequiresRelease,
+                label + "：押している間は「離すまで使わせない」が立っている。"
+                + " ボタン=" + (InputReleaseGateProvider.Current as PlayerInputAdapter)?.HeldSubmitDiagnostics
+                + " " + DescribeSubmit());
+
+            bool sawStep = false;
+            for (int i = 0; i < 24; i++)
+            {
+                sawStep |= player.Current == PlayerState.Step;
+                yield return null;
+            }
+
+            Assert.IsTrue(InputReleaseGateProvider.Current.RequiresRelease,
+                label + "：押し続けている間は解けない。");
+            Assert.AreEqual(0, mediator.InteractCount,
+                label + "：再開の押しっぱなしが到着先の Interact にならない（§9.1 末尾）。"
+                + " 捨てた=" + mediator.DiscardedCount
+                + " 解放待ち=" + ((PlayerInputProvider.Current as PlayerInputState)?.RequiresRelease)
+                + " ラッチ=" + ((PlayerInputProvider.Current as IInteractInput)?.InteractPressed));
+            Assert.IsFalse(sawStep, label + "：Step にもならない。");
+        }
+
+        /// <summary>再開入力の様子を読める文にする（失敗時の手掛かり）。</summary>
+        private static string DescribeSubmit()
+        {
+            var input = Object.FindFirstObjectByType<RespawnSubmitInput>();
+            var runner = Object.FindFirstObjectByType<CampaignRespawnRunner>();
+            return "段階=" + (GameSessionProvider.Current != null
+                    ? GameSessionProvider.Current.Respawn.Phase.ToString() : "(Session なし)")
+                + " mode=" + (GameModeProvider.Current != null ? GameModeProvider.Current.Current.ToString() : "null")
+                + " 仲介=" + (input != null
+                    ? "submit=" + input.SubmitCount + " 捨てた=" + input.DiscardedCount
+                    : "(なし)")
+                + " 押下ラッチ=" + (RespawnSubmitProvider.Current != null
+                    ? RespawnSubmitProvider.Current.SubmitPressed.ToString() : "(提供点なし)")
+                + " 再開の拒否=" + (runner != null ? runner.LastRejection.ToString() : "-")
+                + " 遷移の拒否=" + (runner != null ? runner.LastTravelRejection.ToString() : "-")
+                + " 待ち=" + (runner != null ? runner.IsAwaitingRespawn.ToString() : "-");
+        }
+
+        /// <summary>主人公のすぐ隣に、実行回数だけを数える対象を登録する。</summary>
+        private CountingInteractable RegisterTargetNearPlayer(string id)
+        {
+            var root = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(root);
+            var target = new CountingInteractable(id, AreaA, root.transform.position + new Vector3(0.3f, 0f, 0f));
+            AreaInteractableRegistry.Register(target);
+            return target;
+        }
+
     }
 }

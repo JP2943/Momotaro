@@ -959,7 +959,7 @@ namespace Momotaro.Editor.Phase5
             AreaActorTransferPort port = systems.AddComponent<AreaActorTransferPort>();
             port.Bind(vitals, vitals != null ? vitals.GetComponentInChildren<PlayerHitReaction>(true) : null,
                 companionActor, companionVitals, companionCombat, companionDefense,
-                companionGuardian, companionStates);
+                companionGuardian, companionStates, player);
 
             // 配置対象は Prefab の根。PlayerStateController は子に居ることがあるので、
             // 根を明示的に渡す（子の transform を動かしても Rigidbody に引き戻される）。
@@ -1130,6 +1130,28 @@ namespace Momotaro.Editor.Phase5
             }
 
             var catalog = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase5AreaIds.CatalogDataPath);
+
+            // ---- 本編型死亡再開（§9.1）----
+            //
+            // <b>両エリアに置く。</b> 死は遭遇戦の中だけで起きるものではないので（飛び道具の残り、
+            // 将来の地形ダメージ）、Encounter を置かない A にも同じ経路を用意する。
+            var respawnGo = new GameObject("CampaignRespawn");
+            respawnGo.transform.SetParent(systems.transform, false);
+            CampaignRespawnRunner respawn = respawnGo.AddComponent<CampaignRespawnRunner>();
+            respawn.Bind(vitals, context, investigationCoordinator, catalog);
+            if (vitals != null)
+            {
+                respawn.BindPlayerDefeat(vitals.Defeats);
+            }
+
+            // 再開操作（UI/Submit）。押下の読み取りだけを行い、一度限りの判断は Session が持つ。
+            RespawnSubmitInput respawnInput = respawnGo.AddComponent<RespawnSubmitInput>();
+            respawnInput.Bind(respawn);
+
+            // 「再開する」の仮表示（§9.1 の 1 行目。既存試遊の Retry とは別物）。
+            CampaignRespawnView respawnView = respawnGo.AddComponent<CampaignRespawnView>();
+            respawnView.Bind(respawn);
+
             AreaInitializer initializer = systems.AddComponent<AreaInitializer>();
 
             // private な SerializeField は SerializedObject で配線する（Builder の既存の作法）。
@@ -1142,6 +1164,7 @@ namespace Momotaro.Editor.Phase5
             so.FindProperty("_progress").objectReferenceValue = progress;
             so.FindProperty("_record").objectReferenceValue = record;
             so.FindProperty("_catalog").objectReferenceValue = catalog;
+            so.FindProperty("_respawn").objectReferenceValue = respawn;
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 

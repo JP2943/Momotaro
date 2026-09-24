@@ -287,6 +287,14 @@ namespace Momotaro.Gameplay.Companion
                     {
                         SubmitStop();
                         ReleaseMovement();
+
+                        // <b>状態の券も返す</b>（P5-08 で発覚）。移動だけ返して Chase の券を握ったままだと、
+                        // 追従側の Follow 要求が所有権で弾かれ、犬丸は Chase のまま固まる。
+                        // その状態では <c>IsWarpAllowed</c> が false なので、離れた位置で戦闘が終わると
+                        // 追い付く手段が無くなる（実際に踏んだ：主人公まで 18m、Warp が毎フレーム拒否）。
+                        // §8.4 手順 6「犬丸は状態を保持して追従を再開」はここが返ることを前提にしている。
+                        _states?.Release(_action);
+                        _action = default;
                     }
 
                     break;

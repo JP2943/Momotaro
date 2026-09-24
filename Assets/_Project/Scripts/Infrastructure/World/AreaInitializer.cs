@@ -60,6 +60,9 @@ namespace Momotaro.Infrastructure.World
         [Tooltip("この区画の Encounter（§8。戦闘の無い区画は未割当でよい）。")]
         [SerializeField] private AreaEncounterRunner _encounter;
 
+        [Tooltip("本編型死亡再開の実行役（P5-08。§9.1）。")]
+        [SerializeField] private CampaignRespawnRunner _respawn;
+
         [Header("カタログ")]
         [Tooltip("P5 のエリアカタログ。遷移サービスへ渡す。")]
         [SerializeField] private AreaCatalogData _catalog;
@@ -201,7 +204,24 @@ namespace Momotaro.Infrastructure.World
             //    値の復元は AreaReady より前。1 つでも失敗したら Ready を確定しない。
             PlaceArrivals(entryPoint, definitionFacing: ResolveFacing(entryId));
 
-            if (transitions.TryPeekPendingTransfer(out AreaTransferSnapshot transfer))
+            // 死亡再開で着いたなら、運ばれてきた値ではなく<b>全回復</b>を適用する（§9.1 手順 6）。
+            //
+            // 「再開は Scene を作り直すのだから Actor は新品」で済ませない。P5 では実際にそうでも、
+            // それは偶然で、復帰の中身がどこにも書かれていない状態になる。
+            // 到着の種類で分岐を 1 つ置き、再開のときだけ全回復を通す。
+            bool respawnArrival = session.Respawn.Phase == CampaignRespawnPhase.Requested;
+            if (respawnArrival)
+            {
+                if (_transferPort == null)
+                {
+                    return Fail("死亡再開で到着しましたが、Actor を復帰させる窓口が未配線です。");
+                }
+
+                transitions.ClearPendingTransfer();
+                _transferPort.RestoreForCampaignRespawn();
+                session.Respawn.NotifyArrived(session.Respawn.CurrentRequestId);
+            }
+            else if (transitions.TryPeekPendingTransfer(out AreaTransferSnapshot transfer))
             {
                 if (_transferPort == null)
                 {
@@ -237,6 +257,14 @@ namespace Momotaro.Infrastructure.World
             {
                 _encounter.BindSession(() => area, () => session.RespawnCycle);
                 _encounter.RestoreFromRecord();
+            }
+
+            // 6d. 死亡再開の実行役へ Session と遷移役を渡す（§9.1）。
+            //     判断（一度限り・段階）は Session 側が持ち、ここは配線だけを行う。
+            if (_respawn != null)
+            {
+                _respawn.BindSession(() => session);
+                _respawn.BindTravel(transitions);
             }
 
             // 6b. 到着直後の跳ね返りを止める（§6.1 末尾）。

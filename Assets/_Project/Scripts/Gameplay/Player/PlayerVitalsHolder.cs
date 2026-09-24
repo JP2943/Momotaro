@@ -202,6 +202,21 @@ namespace Momotaro.Gameplay.Player
         }
 
         /// <summary>
+        /// 本編型死亡再開の全回復（P5-08。仕様書 v1.1 §9.1 手順 6）。HP・スタミナを最大へ戻し、
+        /// GuardBreak と押し出しを解除したうえで、<b>死亡確定そのものを解く</b>。
+        ///
+        /// <see cref="RestoreForWaveRecovery"/> と分けてあるのは、あちらが
+        /// 「死体のまま HP だけ戻す」試遊専用の回復だからで（Retry は Scene 再読込で初期化する）、
+        /// 本編型の再開は Scene の作り直しに頼らず<b>同じ実体を生き返らせる</b>必要がある。
+        /// 片方を書き換えて共用すると、試遊の Wave 間回復が死亡を勝手に取り消す。
+        /// </summary>
+        public void RestoreForCampaignRespawn()
+        {
+            RestoreForWaveRecovery();
+            _defeated = false;
+        }
+
+        /// <summary>
         /// 条件付きスタミナ消費（Phase2 P2-09。ステップ等）。残量が <paramref name="amount"/> 以上でブレイク中でないときだけ消費し
         /// true を返す。不足時は消費せず false（ステップ不発）。ステップ消費はガードブレイクを誘発しない（<c>canTriggerBreak:false</c>）。
         /// </summary>

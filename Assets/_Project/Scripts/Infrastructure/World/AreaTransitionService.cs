@@ -24,9 +24,12 @@ namespace Momotaro.Infrastructure.World
     /// 一致しなければ何も起きない（古い Coroutine が新しい遷移を壊さない）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class AreaTransitionService : MonoBehaviour, IGameService
+    public sealed class AreaTransitionService : MonoBehaviour, IGameService, IAreaRespawnTravel
     {
         private readonly GameplayClockGate _clock = new GameplayClockGate();
+
+        /// <summary>いま飛んでいる遷移が死亡再開のものなら、その世代（0 は通常の移動）。</summary>
+        private int _respawnTransitionId;
 
         private AreaCatalog _catalog;
         private AreaTransitionCoordinator _coordinator;
@@ -190,6 +193,57 @@ namespace Momotaro.Infrastructure.World
             return decision;
         }
 
+        /// <summary>
+        /// 死亡再開の遷移を要求する（P5-08。§9.1 手順 4）。
+        ///
+        /// 通常の移動と<b>2 つだけ違う</b>。受付条件が §9.1 のもの（GameOver から出る）になること、
+        /// そして<b>Actor 値を運ばないこと</b>。§9.1 手順 6 は到着先で全回復・CD 解除を求めているので、
+        /// 死ぬ直前の HP や CD を持ち越しては意味が逆になる。保留中の持ち越しも捨てる。
+        /// </summary>
+        public AreaTransitionDecision TryRespawnTravel(StableId areaId, StableId entryId)
+        {
+            if (_coordinator == null)
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
+            }
+
+            var request = new AreaTransitionRequest(areaId, entryId, isRespawn: true);
+            AreaTransitionDecision decision = _coordinator.TryRequest(request);
+            if (!decision.Accepted)
+            {
+                return decision;
+            }
+
+            HasTerminalFailure = false;
+            TerminalFailureReason = null;
+            _respawnTransitionId = decision.TransitionId;
+
+            CloseCurrentArea();
+            GameModeProvider.Current?.ChangeMode(GameMode.Loading);
+
+            // 死んだときの値は運ばない（手順 6）。前の移動の持ち越しが残っていたら捨てる。
+            ClearPendingTransfer();
+
+            _running = StartCoroutine(TravelRoutine(request, decision.TransitionId));
+            return decision;
+        }
+
+        /// <summary>この遷移が死亡再開のものなら、再開画面へ戻す処理を行う。</summary>
+        private bool HandleRespawnFailure(int transitionId)
+        {
+            if (_respawnTransitionId == 0 || transitionId != _respawnTransitionId)
+            {
+                return false;
+            }
+
+            _respawnTransitionId = 0;
+
+            // 主人公は死んだままなので、探索へは戻さない（§9.1 末尾「失敗時は再開画面から再試行可能」）。
+            GameModeProvider.Current?.ChangeMode(GameMode.GameOver);
+            Object.FindFirstObjectByType<CampaignRespawnRunner>()?.NotifyTravelFailed(transitionId);
+            return true;
+        }
+
         private IEnumerator TravelRoutine(AreaTransitionRequest request, int transitionId)
         {
             if (!_catalog.TryGetEntry(request.AreaId, request.EntryId, out AreaEntryInfo entry))
@@ -317,6 +371,11 @@ namespace Momotaro.Infrastructure.World
                 ClearPendingTransfer();
                 AreaPendingArrival.Clear();
                 _running = null;
+
+                if (transitionId == _respawnTransitionId)
+                {
+                    _respawnTransitionId = 0;
+                }
             }
 
             // 完了を通知する。<b>後始末をすべて終えてから出す</b>（§6.2 末尾）。
@@ -446,6 +505,8 @@ namespace Momotaro.Infrastructure.World
 
             GameLog.Error(LogCategory.Scene, "Area transition failed terminally: " + reason);
             TerminalFailed?.Invoke(reason);
+
+            HandleRespawnFailure(transitionId);
         }
 
         /// <summary>終端失敗の状態にあるか（Error 表示の条件。§6.3 の最終行）。</summary>
@@ -613,6 +674,9 @@ namespace Momotaro.Infrastructure.World
             ClearPendingTransfer();
             AreaPendingArrival.Clear();
             _running = null;
+
+            // 死亡再開の失敗なら、上で戻した探索モードを打ち消して再開画面へ返す。
+            HandleRespawnFailure(transitionId);
         }
 
         /// <summary>

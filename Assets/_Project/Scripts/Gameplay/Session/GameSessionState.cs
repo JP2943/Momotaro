@@ -79,6 +79,15 @@ namespace Momotaro.Gameplay.Session
         }
 
         /// <summary>
+        /// 本編型死亡再開の受付と一度限りの保証（§9.1）。
+        ///
+        /// <b>Area ではなく Session が持つ。</b> 再開は Scene をまたぐ操作で、受理から到着までの間に
+        /// 元の Area は破棄される。Area 側に置くと「周期を進めたか」の記録ごと消え、
+        /// 読込失敗からの再試行で周期が二度進む（§9.1 末尾が禁じている挙動）。
+        /// </summary>
+        public CampaignRespawnCoordinator Respawn { get; } = new CampaignRespawnCoordinator();
+
+        /// <summary>
         /// 本編型死亡再開のときに呼ぶ（§9.1 手順 5）。再出現周期を 1 進め、
         /// <b>全エリアの通常 Encounter クリア記録だけ</b>を初期化する。
         ///

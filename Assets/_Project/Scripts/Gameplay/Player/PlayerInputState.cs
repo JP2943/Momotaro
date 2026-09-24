@@ -20,6 +20,7 @@ namespace Momotaro.Gameplay.Player
         private bool _specialHeld;
         private bool _interactHeldRaw;
         private bool _interactLatched;
+        private bool _requiresRelease;
 
         /// <inheritdoc />
         public Vector2 Move { get; private set; }
@@ -29,6 +30,46 @@ namespace Momotaro.Gameplay.Player
 
         /// <inheritdoc />
         public bool Active => _active;
+
+        /// <summary>
+        /// 押しているボタンを一度離すまで、攻撃・ステップ・Interact を受け付けない状態か（P5-08。§9.1 末尾）。
+        /// </summary>
+        public bool RequiresRelease => _requiresRelease;
+
+        /// <summary>
+        /// 「一度離すまで使わせない」を立てる（P5-08。仕様書 v1.1 §9.1 末尾）。
+        ///
+        /// 再開に使った物理ボタンが、到着先の Gameplay 操作へそのまま化けるのを止める。
+        /// <b>ラッチを 1 回消すだけでは足りない。</b> Action Map を閉じてから開き直すと、
+        /// 押しっぱなしのボタンが「新しい押下」として立ち上がるので、押下エッジ自体を
+        /// 離すまで無効にしておく必要がある（仕様書がそこまで指定している）。
+        /// </summary>
+        public void RequireRelease()
+        {
+            _requiresRelease = true;
+            _attackLatched = false;
+            _stepLatched = false;
+            _interactLatched = false;
+        }
+
+        /// <summary>解放待ちを解く（押していないことが分かっているとき）。</summary>
+        public void ClearRequireRelease()
+        {
+            _requiresRelease = false;
+        }
+
+        /// <summary>
+        /// 解放待ちなら、生の押下だけ追って押下エッジを捨てる。
+        ///
+        /// <b>ここでは解かない。</b> 解く条件は「再開に使った<b>そのボタン</b>が離れたこと」で、
+        /// それを知っているのは実デバイスを見られる入力ソースだけ。Gameplay 側のボタンが
+        /// 押されていないことを理由に解くと、Map を開き直した直後（どのボタンも押されていないと
+        /// 記録されている瞬間）に即座に解けてしまい、待ちの意味が無くなる（実際に踏んだ）。
+        /// </summary>
+        private bool ConsumeReleaseGate()
+        {
+            return _requiresRelease;
+        }
 
         /// <inheritdoc />
         public event Action GuardStarted;
@@ -73,6 +114,11 @@ namespace Momotaro.Gameplay.Player
             bool rising = pressed && !_attackHeldRaw;
             _attackHeldRaw = pressed;
 
+            if (ConsumeReleaseGate())
+            {
+                return; // 再開に使ったボタンを離すまでは受け付けない（§9.1 末尾）。
+            }
+
             if (_active && rising)
             {
                 _attackLatched = true;
@@ -100,6 +146,11 @@ namespace Momotaro.Gameplay.Player
             bool rising = pressed && !_stepHeldRaw;
             _stepHeldRaw = pressed;
 
+            if (ConsumeReleaseGate())
+            {
+                return; // 再開に使ったボタンを離すまでは受け付けない（§9.1 末尾）。
+            }
+
             if (_active && rising)
             {
                 _stepLatched = true;
@@ -126,6 +177,11 @@ namespace Momotaro.Gameplay.Player
         {
             bool rising = pressed && !_interactHeldRaw;
             _interactHeldRaw = pressed;
+
+            if (ConsumeReleaseGate())
+            {
+                return; // 再開に使ったボタンを離すまでは受け付けない（§9.1 末尾）。
+            }
 
             if (_active && rising)
             {

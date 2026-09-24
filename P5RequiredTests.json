@@ -194,7 +194,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.CampaignRespawn_PreservesEarnedProgressAndResetsVitals",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E21",
@@ -202,7 +202,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.RespawnRequest_IsOnceEvenWhenLoadingFails",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E22",
@@ -355,7 +355,8 @@
       "requirementIds": [],
       "implemented": true,
       "supportingTests": [
-        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.EncounterFeedback_IsConnectedBeforeTheFirstHit"
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.EncounterFeedback_IsConnectedBeforeTheFirstHit",
+        "Momotaro.Tests.EditMode.P5ContractTests.CombatDisengage_ReleasesStateSoFollowCanResume"
       ]
     },
     {
@@ -364,7 +365,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.DeathAfterOneKill_PreservesVirtueAndReopensNormalEncounter",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P10",
@@ -416,7 +417,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.NewGameAndLegacyTrial_UseCorrectProgressScope",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P16",
@@ -440,7 +441,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnSubmit_DoesNotBecomeArrivalInteract",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P19",

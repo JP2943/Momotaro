@@ -3346,5 +3346,351 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(10, once.Progress.State.Virtue, "GrantOnce=true は RewardId 単位で一度だけ。");
             Assert.AreEqual(1, once.Rewards.AlreadyGrantedCount);
         }
+
+        // ---------------------------------------------------------------- E20・E21（本編型死亡再開）
+
+        private const string Phase5CatalogPath = "Assets/_Project/Data/Tests/Phase5/SO_AreaCatalog_P5.asset";
+
+        /// <summary>死亡再開の受入で使う一式（主人公・犬丸・持ち越し窓口・Session）。</summary>
+        private sealed class RespawnRig
+        {
+            public GameSessionState Session;
+            public AreaRuntimeState Area;
+            public PlayerVitalsHolder PlayerVitals;
+            public CompanionActor Actor;
+            public CompanionHitReceiver CompanionVitals;
+            public CompanionCombatController Combat;
+            public AreaActorTransferPort Port;
+            public CampaignRespawnRunner Runner;
+            public FakeRespawnTravel Travel;
+            public GameModeService Modes;
+            public StableId RewardId;
+            public StableId FlagId;
+            public StableId EncounterId;
+        }
+
+        /// <summary>遷移の受理／拒否を切り替えられる再開経路（実 Scene ロードを使わずに §9.1 の分岐を通す）。</summary>
+        private sealed class FakeRespawnTravel : IAreaRespawnTravel
+        {
+            private int _id;
+
+            public bool Accept { get; set; } = true;
+
+            public int Count { get; private set; }
+
+            public StableId LastAreaId { get; private set; }
+
+            public StableId LastEntryId { get; private set; }
+
+            public AreaTransitionDecision TryRespawnTravel(StableId areaId, StableId entryId)
+            {
+                Count++;
+                LastAreaId = areaId;
+                LastEntryId = entryId;
+                return Accept
+                    ? AreaTransitionDecision.Accept(++_id)
+                    : AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
+            }
+        }
+
+        private RespawnRig MakeRespawnRig()
+        {
+            var modes = new GameModeService(GameMode.Exploration);
+            GameModeProvider.Current = modes;
+
+            var session = new GameSessionState();
+            GameSessionProvider.Current = session;
+
+            var areaId = new StableId("area_p5_a");
+            AreaRuntimeState area = session.GetOrCreateArea(areaId);
+            session.MarkVisited(areaId);
+            session.Recruit(CompanionIds.Inumaru);
+
+            // 既得の進行をひととおり作る。<b>初期値では「保持した」と「初期化された」が区別できない。</b>
+            var rewardId = new StableId("reward_p5_respawn_case");
+            session.Progress.TryGrant(new RewardSnapshot(rewardId, 17, default, grantOnce: true), out _);
+
+            var flagId = new StableId("flag_p5_a_gate");
+            Assert.IsTrue(area.TryOpen(flagId), "前提：門を開通できる。");
+            Assert.IsTrue(area.Investigation.TryMarkInvestigated(new StableId("point_p5_a_trial")),
+                "前提：調査済みを記録できる。");
+
+            var encounterId = new StableId("encounter_p5_b_road");
+            Assert.IsTrue(area.TryMarkEncounterCleared(encounterId, session.RespawnCycle),
+                "前提：この周期のクリアを記録できる。");
+
+            // ---- 主人公（実データ・実被弾で死なせる） ----
+            var playerData = ScriptableObject.CreateInstance<PlayerData>();
+            _spawned.Add(playerData);
+            SetPrivate(playerData, "_maxHp", 100);
+            SetPrivate(playerData, "_maxStamina", 100);
+
+            var playerGo = new GameObject("Player_Respawn");
+            _spawned.Add(playerGo);
+            var playerVitals = playerGo.AddComponent<PlayerVitalsHolder>();
+            SetPrivate(playerVitals, "_data", playerData);
+
+            // ---- 犬丸（負傷・Down・CD 途中の状態にしてから再開させる） ----
+            var companionData = ScriptableObject.CreateInstance<CompanionData>();
+            _spawned.Add(companionData);
+            SetPrivate(companionData, "_maxHp", 60);
+
+            var companionGo = new GameObject("Inumaru_Respawn");
+            _spawned.Add(companionGo);
+            var actor = companionGo.AddComponent<CompanionActor>();
+            actor.SetData(companionData);
+            actor.ResetState(CompanionState.Follow);
+
+            CompanionMotor motor = Ensure<CompanionMotor>(companionGo);
+            CompanionHitReceiver companionVitals = Ensure<CompanionHitReceiver>(companionGo);
+            companionVitals.Bind(actor);
+            CompanionCombatController combat = Ensure<CompanionCombatController>(companionGo);
+            combat.Bind(actor, motor);
+            CompanionStateArbiter states = Ensure<CompanionStateArbiter>(companionGo);
+            states.Bind(actor);
+
+            var portGo = new GameObject("TransferPort_Respawn");
+            _spawned.Add(portGo);
+            var port = portGo.AddComponent<AreaActorTransferPort>();
+            port.Bind(playerVitals, null, actor, companionVitals, combat, null, null, states);
+            port.BindRoots(playerGo.transform, companionGo.transform);
+
+            var catalogData = UnityEditor.AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase5CatalogPath);
+            Assert.IsNotNull(catalogData, "出荷カタログが見つかりません: " + Phase5CatalogPath);
+
+            var runnerGo = new GameObject("CampaignRespawn");
+            _spawned.Add(runnerGo);
+            var runner = runnerGo.AddComponent<CampaignRespawnRunner>();
+            runner.Bind(playerVitals, null, null, catalogData);
+            runner.BindSession(() => session);
+            var travel = new FakeRespawnTravel();
+            runner.BindTravel(travel);
+            runner.BindPlayerDefeat(playerVitals.Defeats);
+
+            return new RespawnRig
+            {
+                Session = session,
+                Area = area,
+                PlayerVitals = playerVitals,
+                Actor = actor,
+                CompanionVitals = companionVitals,
+                Combat = combat,
+                Port = port,
+                Runner = runner,
+                Travel = travel,
+                Modes = modes,
+                RewardId = rewardId,
+                FlagId = flagId,
+                EncounterId = encounterId,
+            };
+        }
+
+        /// <summary>主人公を実被弾で死なせる（結果を直接セットしない。§15 の注記）。</summary>
+        private void KillPlayer(PlayerVitalsHolder vitals)
+        {
+            var attackerGo = new GameObject("Attacker_Respawn");
+            _spawned.Add(attackerGo);
+            var attacker = attackerGo.AddComponent<TransferFakeEnemy>();
+
+            vitals.ReceiveHit(new HitInfo(
+                attacker, vitals, Vector3.forward, vitals.transform.position,
+                new HitDamage(9999, 0f, 0f), guardable: false, justGuardable: false,
+                hitId: HitId.Single(9001)));
+        }
+
+        /// <summary>犬丸を倒れさせ、CD を途中値にする（初期値どうしの比較にしない）。</summary>
+        private void WoundCompanion(RespawnRig rig)
+        {
+            Assert.IsTrue(rig.CompanionVitals.Vitals.TryImportTransferSnapshot(
+                    new CompanionVitalsTransferSnapshot(
+                        hp: 0, isDown: true, recoveryRemaining: 1.75f, postHitInvincibleRemaining: 0.4f,
+                        flinch: new FlinchTransferSnapshot(12f, 0f, 0f, 0f))),
+                "前提：倒れた犬丸の値を入れられる。");
+            Assert.IsTrue(rig.Actor.ForceHitState(CompanionState.Down, CompanionStateChangeReason.Defeated),
+                "前提：Down へ遷移できる。");
+            Assert.IsTrue(rig.Combat.TryImportTransferSnapshot(new CompanionCombatTransferSnapshot(2.5f)),
+                "前提：CD の途中値を入れられる。");
+        }
+
+        /// <summary>
+        /// P5-E20：本編型死亡再開は<b>既得の進行を保ち、Actor だけを初期化する</b>（§9.1 手順 5〜7／§4.1 の表）。
+        ///
+        /// ここが逆になると試遊が成り立たない。徳や開通が消える再開は「やり直し」であって
+        /// 本編型ではないし、HP が減ったまま再開すると再開地点で即死し続ける。
+        /// </summary>
+        [Test]
+        public void CampaignRespawn_PreservesEarnedProgressAndResetsVitals()
+        {
+            RespawnRig rig = MakeRespawnRig();
+            WoundCompanion(rig);
+
+            int virtueBefore = rig.Session.Progress.Virtue;
+            int grantedBefore = rig.Session.Progress.GrantedRewardCount;
+            int investigatedBefore = rig.Area.InvestigatedCount;
+            int cycleBefore = rig.Session.RespawnCycle;
+            Assert.AreEqual(17, virtueBefore, "前提：徳を得ている。");
+            Assert.IsTrue(rig.Area.IsEncounterCleared(rig.EncounterId, cycleBefore), "前提：通常戦をクリア済み。");
+            Assert.AreEqual(0, rig.CompanionVitals.Vitals.Health.Current, "前提：犬丸は倒れている。");
+            Assert.AreEqual(2.5f, rig.Combat.ExportTransferSnapshot().CooldownRemaining, 1e-3f, "前提：CD が残っている。");
+
+            // ---- 手順 1：実被弾で死なせ、GameOver にする ----
+            KillPlayer(rig.PlayerVitals);
+            Assert.IsTrue(rig.PlayerVitals.IsDefeated, "前提：主人公が死んでいる。");
+            rig.Runner.ResolvePendingDefeat();
+            Assert.AreEqual(GameMode.GameOver, rig.Modes.Current, "死亡を受理して GameOver にする（手順 1）。");
+            Assert.AreEqual(CampaignRespawnPhase.Dead, rig.Runner.Phase);
+
+            // ---- 手順 3〜5：再開を受理し、再出現周期を 1 進める ----
+            RespawnDecision decision = rig.Runner.RequestRespawn();
+            Assert.IsTrue(decision.Accepted, "再開を受理する。拒否=" + decision.Rejection);
+            Assert.AreEqual(1, rig.Travel.Count, "再開地点へのロードを 1 回要求する。");
+            Assert.AreEqual("area_p5_a", rig.Travel.LastAreaId.Value, "再開地点は A（§3.1）。");
+            Assert.AreEqual("area_p5_a_start", rig.Travel.LastEntryId.Value);
+            Assert.AreEqual(cycleBefore + 1, rig.Session.RespawnCycle, "再出現周期を 1 進める（手順 5）。");
+
+            // ---- 手順 6：到着先で全回復・CD 解除・短時間状態解除 ----
+            rig.Port.RestoreForCampaignRespawn();
+
+            Assert.IsFalse(rig.PlayerVitals.IsDefeated, "主人公は生き返る（死体のまま探索へ戻さない）。");
+            Assert.AreEqual(rig.PlayerVitals.Vitals.Health.Max, rig.PlayerVitals.Vitals.Health.Current, "主人公は全回復する。");
+            Assert.AreEqual(rig.PlayerVitals.Vitals.Stamina.Max, rig.PlayerVitals.CurrentStamina, "スタミナも戻る。");
+
+            Assert.IsFalse(rig.CompanionVitals.Vitals.IsDown, "加入済みの犬丸が復帰する（倒れたままにしない）。");
+            Assert.AreEqual(rig.CompanionVitals.MaxHp, rig.CompanionVitals.CurrentHp, "犬丸も全回復する。");
+            Assert.AreEqual(0f, rig.CompanionVitals.Vitals.RecoveryRemaining, 1e-4f, "復帰待ちも解除する。");
+            Assert.AreEqual(0f, rig.CompanionVitals.Vitals.FlinchAccumulation, 1e-4f, "ひるみ蓄積も解除する。");
+            Assert.AreEqual(0f, rig.Combat.ExportTransferSnapshot().CooldownRemaining, 1e-4f, "CD を解除する。");
+            Assert.AreEqual(CompanionState.Follow, rig.Actor.State, "配置状態は追従へ戻る。");
+            Assert.AreEqual(0, rig.Actor.IllegalTransitionCount, "不正遷移を出さない。");
+
+            // ---- 手順 7：進行 State は 1 つも失われない ----
+            Assert.AreEqual(virtueBefore, rig.Session.Progress.Virtue, "既得の徳は死んでも失わない（§8.5）。");
+            Assert.AreEqual(grantedBefore, rig.Session.Progress.GrantedRewardCount);
+            Assert.IsTrue(rig.Session.Progress.HasGranted(rig.RewardId), "GrantOnce の記録も残る。");
+            Assert.IsTrue(rig.Area.IsOpen(rig.FlagId), "門の開通は残る。");
+            Assert.AreEqual(investigatedBefore, rig.Area.InvestigatedCount, "調査済みは残る。");
+            Assert.IsTrue(rig.Session.HasVisited(new StableId("area_p5_a")), "訪問済みは残る。");
+            Assert.IsTrue(rig.Session.IsRecruited(CompanionIds.Inumaru), "加入は残る。");
+
+            // 通常戦だけは再出現する（§9.1 手順 5）。
+            Assert.IsFalse(rig.Area.IsEncounterCleared(rig.EncounterId, rig.Session.RespawnCycle),
+                "通常 Encounter のクリア記録だけ初期化する（再戦できる）。");
+        }
+
+        /// <summary>
+        /// P5-E21：再出現周期の更新は<b>再開要求 ID につき一度</b>（§9.1 末尾）。
+        ///
+        /// 連打でも、読込に失敗して再試行しても増えない。ここが緩いと、失敗のたびに
+        /// 倒したはずの敵が湧き直し、再開画面で粘るほど世界が敵で埋まる。
+        /// </summary>
+        [Test]
+        public void RespawnRequest_IsOnceEvenWhenLoadingFails()
+        {
+            RespawnRig rig = MakeRespawnRig();
+            KillPlayer(rig.PlayerVitals);
+            rig.Runner.ResolvePendingDefeat();
+            Assert.AreEqual(CampaignRespawnPhase.Dead, rig.Runner.Phase, "前提：再開待ち。");
+
+            int cycleBefore = rig.Session.RespawnCycle;
+            CampaignRespawnCoordinator respawn = rig.Session.Respawn;
+            int requestId = respawn.CurrentRequestId;
+            Assert.Greater(requestId, 0, "前提：再開要求 ID が発行されている。");
+
+            // ---- 連打：受理は 1 回だけ。周期も 1 回だけ ----
+            Assert.IsTrue(rig.Runner.RequestRespawn().Accepted);
+            for (int i = 0; i < 4; i++)
+            {
+                RespawnDecision extra = rig.Runner.RequestRespawn();
+                Assert.IsFalse(extra.Accepted, "読込中の追加押下は受理しない。");
+                Assert.AreEqual(RespawnRejection.AlreadyRequested, extra.Rejection);
+            }
+
+            Assert.AreEqual(1, rig.Travel.Count, "ロード要求も 1 回だけ（重ねて読み込まない）。");
+            Assert.AreEqual(cycleBefore + 1, rig.Session.RespawnCycle, "連打しても周期は 1 しか進まない。");
+            Assert.AreEqual(1, respawn.AdvanceCount);
+            Assert.AreEqual(1, rig.Runner.CycleAdvanceCount);
+
+            // ---- 読込失敗 → 再開画面へ戻り、同じ要求 ID のまま再試行できる ----
+            int travelId = rig.Runner.TravelTransitionId;
+            Assert.Greater(travelId, 0, "前提：遷移の世代が付いている。");
+            rig.Runner.NotifyTravelFailed(travelId);
+            Assert.AreEqual(CampaignRespawnPhase.Failed, rig.Runner.Phase, "失敗しても再試行できる状態へ戻す。");
+            Assert.IsTrue(rig.Runner.IsAwaitingRespawn);
+            Assert.AreEqual(GameMode.GameOver, rig.Modes.Current, "失敗で探索へは戻さない（主人公は死んだまま）。");
+            Assert.AreEqual(requestId, respawn.CurrentRequestId, "再試行で要求 ID を振り直さない。");
+
+            RespawnDecision retry = rig.Runner.RequestRespawn();
+            Assert.IsTrue(retry.Accepted, "再開画面から再試行できる。拒否=" + retry.Rejection);
+            Assert.AreEqual(requestId, retry.RequestId, "同じ再開要求の続き。");
+            Assert.AreEqual(2, rig.Travel.Count, "再試行ではロードをもう一度要求する。");
+
+            // <b>ここが核心。</b> 再試行では周期を進めない。
+            Assert.AreEqual(cycleBefore + 1, rig.Session.RespawnCycle,
+                "読込失敗からの再試行で再出現周期を二度進めない（§9.1 末尾）。");
+            Assert.AreEqual(1, respawn.AdvanceCount, "周期の更新は再開要求 ID につき 1 回。");
+            Assert.AreEqual(1, rig.Runner.CycleAdvanceCount);
+            Assert.AreEqual(1, respawn.FailureCount);
+
+            // ---- 到着したら次の死までは再開を受け付けない ----
+            Assert.IsTrue(respawn.NotifyArrived(requestId), "到着を受理する。");
+            Assert.AreEqual(CampaignRespawnPhase.Idle, rig.Runner.Phase);
+            RespawnDecision afterArrival = rig.Runner.RequestRespawn();
+            Assert.IsFalse(afterArrival.Accepted, "生きている間に再開はできない。");
+            Assert.AreEqual(RespawnRejection.NotDead, afterArrival.Rejection);
+            Assert.AreEqual(2, rig.Travel.Count, "余分なロードは起きない。");
+        }
+
+
+        /// <summary>
+        /// 戦闘から抜けたら<b>状態の券も返す</b>（§8.4 手順 6「犬丸は状態を保持して追従を再開」。P5-P08 の補助）。
+        ///
+        /// 移動だけ返して Chase の券を握ったままにすると、追従側の Follow 要求が所有権で弾かれ、
+        /// 犬丸は Chase のまま固まる。その状態では <c>IsWarpAllowed</c> が false なので、
+        /// 主人公から離れた位置で戦闘が終わると<b>追い付く手段が無くなる</b>
+        /// （P5-08 の実戦テストで実際に踏んだ：距離 18m、Warp が毎フレーム拒否）。
+        /// </summary>
+        [Test]
+        public void CombatDisengage_ReleasesStateSoFollowCanResume()
+        {
+            CompanionRig rig = MakeCompanionRig();
+            var states = rig.Actor.GetComponent<CompanionStateArbiter>();
+            Assert.IsNotNull(states, "状態の調停役がある。");
+
+            // 攻撃圏の外・索敵圏の内へ置く（殴らずに<b>追う</b>状況を作る）。
+            GameObject enemy = GameObject.Find("Enemy_Gate");
+            Assert.IsNotNull(enemy, "前提：索敵対象が居る。");
+            enemy.transform.position = new Vector3(0f, 0f, 4f);
+
+            // ---- 敵が居る間は戦闘が状態を握る ----
+            rig.Tracker.TickTargeting();
+            rig.Combat.TickCombat(0f);
+            Assert.AreEqual(CompanionEngageDecision.Chase, rig.Combat.Decision, "前提：追っている。");
+            Assert.AreEqual(CompanionState.Chase, rig.Actor.State, "前提：状態も Chase。");
+            Assert.AreEqual(CompanionActionOwner.Combat, states.CurrentOwner, "前提：戦闘が状態を握る。");
+
+            // 追従はこの間、状態を奪えない（戦闘優先。ここは正しい挙動）。
+            Assert.IsFalse(
+                states.TryBegin(CompanionActionOwner.Follow, CompanionState.Follow,
+                    CompanionStateChangeReason.FollowResumed, out _),
+                "前提：戦闘中は追従が状態を奪わない。");
+
+            // ---- 敵が居なくなる（勝利で登録が解放されたのと同じ状況）----
+            PerceptionTargetRegistry.Clear();
+            rig.Tracker.TickTargeting();
+            rig.Combat.TickCombat(0.1f);
+
+            Assert.AreEqual(CompanionEngageDecision.Idle, rig.Combat.Decision, "対象が居なければ戦闘から抜ける。");
+            Assert.AreEqual(CompanionActionOwner.None, states.CurrentOwner,
+                "<b>状態の券も返す。</b>移動だけ返すと Chase のまま固まり、追従へ戻れない（§8.4 手順 6）。");
+
+            // ---- 追従が引き取れる ----
+            Assert.IsTrue(
+                states.TryBegin(CompanionActionOwner.Follow, CompanionState.Follow,
+                    CompanionStateChangeReason.FollowResumed, out _),
+                "戦闘が終われば追従が状態を引き取れる。");
+            Assert.AreEqual(CompanionState.Follow, rig.Actor.State, "追従へ戻る。");
+            Assert.AreEqual(0, rig.Actor.IllegalTransitionCount, "不正遷移を出さない。");
+        }
+
     }
 }

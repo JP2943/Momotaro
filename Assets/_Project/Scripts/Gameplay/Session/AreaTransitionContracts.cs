@@ -58,10 +58,21 @@ namespace Momotaro.Gameplay.Session
         public StableId AreaId { get; }
         public StableId EntryId { get; }
 
-        public AreaTransitionRequest(StableId areaId, StableId entryId)
+        /// <summary>
+        /// 本編型死亡再開の要求か（§9.1 手順 4）。
+        ///
+        /// <b>通常の移動と同じ受付条件では通らない。</b> 再開は「主人公が死んでいて GameMode が
+        /// GameOver」のときにだけ行う操作で、§6.1 の「生存している・行動中でない・探索中である」を
+        /// そのまま当てると自分の条件で自分を拒否する。だから受付の分岐をここで区別する。
+        /// 同じ Area の明示 Reload も再開だけは許す（§6.1 末尾）。
+        /// </summary>
+        public bool IsRespawn { get; }
+
+        public AreaTransitionRequest(StableId areaId, StableId entryId, bool isRespawn = false)
         {
             AreaId = areaId;
             EntryId = entryId;
+            IsRespawn = isRespawn;
         }
     }
 

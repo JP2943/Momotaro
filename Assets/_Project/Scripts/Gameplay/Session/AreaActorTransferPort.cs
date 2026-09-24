@@ -32,6 +32,9 @@ namespace Momotaro.Gameplay.Session
         [SerializeField] private PlayerVitalsHolder _playerVitals;
         [SerializeField] private PlayerHitReaction _playerHitReaction;
 
+        [Tooltip("主人公の行動状態。死亡再開の中立化に使う（未配線なら主人公の根から解決する）。")]
+        [SerializeField] private PlayerStateController _playerState;
+
         [Header("仲間")]
         [SerializeField] private CompanionActor _companionActor;
         [SerializeField] private CompanionHitReceiver _companionVitals;
@@ -58,8 +61,14 @@ namespace Momotaro.Gameplay.Session
             PlayerVitalsHolder playerVitals, PlayerHitReaction playerHitReaction,
             CompanionActor companionActor, CompanionHitReceiver companionVitals,
             CompanionCombatController companionCombat, CompanionDefenseController companionDefense,
-            CompanionGuardianController companionGuardian, CompanionStateArbiter companionStates)
+            CompanionGuardianController companionGuardian, CompanionStateArbiter companionStates,
+            PlayerStateController playerState = null)
         {
+            if (playerState != null)
+            {
+                _playerState = playerState;
+            }
+
             _playerVitals = playerVitals;
             _playerHitReaction = playerHitReaction;
             _companionActor = companionActor;
@@ -256,6 +265,77 @@ namespace Momotaro.Gameplay.Session
 
             missing = string.Empty;
             return true;
+        }
+
+        /// <summary>
+        /// 本編型死亡再開の全回復（P5-08。仕様書 v1.1 §9.1 手順 6）。
+        /// 主人公と加入済み犬丸を全回復・CD 解除・短時間状態解除して、<b>出撃できる状態</b>へ戻す。
+        ///
+        /// <b>Scene が作り直されることを当てにしない。</b> 再開は A のロードを伴うので実際には
+        /// Actor が新品になることが多いが、それに頼ると「同じ Area を作り直さない再開」を
+        /// 足した瞬間に、死んだままの主人公が探索へ戻る。復帰の中身はここに 1 か所で持つ。
+        ///
+        /// 進行 State（徳・GrantOnce・調査済み・門・訪問・加入）には<b>触れない</b>（§4.1 の表）。
+        /// </summary>
+        public void RestoreForCampaignRespawn()
+        {
+            // --- 行動を止める（採取と同じ順：行動 → 所有権） ---
+            if (_companionCombat != null)
+            {
+                _companionCombat.CancelAttack();
+            }
+
+            if (_companionDefense != null)
+            {
+                _companionDefense.Guard?.Release();
+                _companionDefense.Evade?.Interrupt();
+            }
+
+            if (_companionStates != null)
+            {
+                _companionStates.ResetArbitration();
+            }
+
+            // --- 主人公：全回復・死亡確定の解除・短時間状態の解除 ---
+            if (_playerVitals != null)
+            {
+                _playerVitals.RestoreForCampaignRespawn();
+            }
+
+            if (_playerHitReaction != null)
+            {
+                _playerHitReaction.ResetHurt();
+            }
+
+            ResolvePlayerState()?.ResetForCampaignRespawn();
+
+            // --- 犬丸：全回復（Down 解除・復帰待ち解除・ひるみ解除）と CD 解除 ---
+            if (_companionVitals != null && _companionVitals.Vitals != null)
+            {
+                _companionVitals.Vitals.Reset();
+            }
+
+            _companionCombat?.TryImportTransferSnapshot(new CompanionCombatTransferSnapshot(0f));
+
+            // 状態は Follow へ。Down のまま再開すると「加入済み犬丸が復帰する」に反する（§15 の E20）。
+            if (_companionStates != null)
+            {
+                _companionStates.TryRestoreState(CompanionState.Follow);
+            }
+            else
+            {
+                _companionActor?.ResetState(CompanionState.Follow);
+            }
+        }
+
+        private PlayerStateController ResolvePlayerState()
+        {
+            if (_playerState == null && _playerRoot != null)
+            {
+                _playerState = _playerRoot.GetComponentInChildren<PlayerStateController>(true);
+            }
+
+            return _playerState;
         }
 
         private bool Fail(string reason)

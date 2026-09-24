@@ -2,6 +2,7 @@ using System;
 using Momotaro.Core.Logging;
 using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Player;
+using Momotaro.Gameplay.Session;
 using Momotaro.Infrastructure.Bootstrap;
 using UnityEngine.InputSystem;
 
@@ -56,6 +57,8 @@ namespace Momotaro.Infrastructure.Input
                 _playerInputAdapter = new PlayerInputAdapter(asset);
                 // Gameplay 層（Player コンポーネント）が参照する提供点へ注入する。
                 PlayerInputProvider.Current = _playerInputAdapter.Input;
+                RespawnSubmitProvider.Current = _playerInputAdapter.Submit;
+                InputReleaseGateProvider.Current = _playerInputAdapter;
             }
             catch (Exception ex)
             {
@@ -98,6 +101,16 @@ namespace Momotaro.Infrastructure.Input
             if (_playerInputAdapter != null && ReferenceEquals(PlayerInputProvider.Current, _playerInputAdapter.Input))
             {
                 PlayerInputProvider.Current = null;
+            }
+
+            if (_playerInputAdapter != null && ReferenceEquals(RespawnSubmitProvider.Current, _playerInputAdapter.Submit))
+            {
+                RespawnSubmitProvider.Current = null;
+            }
+
+            if (ReferenceEquals(InputReleaseGateProvider.Current, _playerInputAdapter))
+            {
+                InputReleaseGateProvider.Current = null;
             }
 
             _playerInputAdapter?.Dispose();

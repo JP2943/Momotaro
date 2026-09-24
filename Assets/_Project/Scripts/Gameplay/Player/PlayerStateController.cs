@@ -371,6 +371,22 @@ namespace Momotaro.Gameplay.Player
             }
         }
 
+        /// <summary>
+        /// 本編型死亡再開のための中立化（P5-08。仕様書 v1.1 §9.1 手順 6「短時間状態解除」）。
+        ///
+        /// 被弾中断の共通中立化に加えて<b>状態機械も Idle へ戻す</b>。死亡で入った硬直・
+        /// 直前の Hurt／Defeated の記憶を持ち越すと、生き返った直後に被弾演出が再発火する。
+        /// <see cref="ResetToNeutral"/> と違って<b>入力の参照は捨てない</b>：
+        /// あちらは Disable 用で、再開直後の主人公はそのまま操作を受け取らなければならない。
+        /// </summary>
+        public void ResetForCampaignRespawn()
+        {
+            NeutralizeForHurt();
+            _machine.Reset();
+            _wasHurt = false;
+            _wasDefeated = false;
+        }
+
         /// <summary>状態・攻撃・ロック・移動抑制・先行入力を中立へ戻す（Disable 時）。</summary>
         public void ResetToNeutral()
         {
