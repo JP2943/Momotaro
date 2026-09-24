@@ -4,6 +4,7 @@ using Momotaro.Core.Logging;
 using Momotaro.Data.Events;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Modes;
+using Momotaro.Gameplay.Player;
 using Momotaro.Gameplay.Scenes;
 using Momotaro.Gameplay.Session;
 using UnityEngine;
@@ -25,7 +26,7 @@ namespace Momotaro.Gameplay.Encounter
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class AreaEncounterRunner : MonoBehaviour,
-        IPlayerDefeatListener, IAreaEncounterActivitySource
+        IPlayerDefeatListener, IAreaEncounterActivitySource, IAreaEncounterState
     {
         [Header("構成（Data が正本。§8.1）")]
         [Tooltip("この区画の Encounter 定義。ID と EnemyIds の正本。")]
@@ -35,12 +36,41 @@ namespace Momotaro.Gameplay.Encounter
         [Tooltip("既存の戦闘セッション。敵登録・勝敗遷移を利用する（置き換えない）。")]
         [SerializeField] private CombatSessionController _session;
 
-        private IAreaEncounterConditions _conditions;
-        private IEncounterSpawner _spawner;
-        private IArenaBoundary _arena;
-        private IEncounterInterruptSink _interrupts;
+        [Tooltip("主人公の生存。死亡通知の供給元（§8.3 の死亡優先）。")]
+        [SerializeField] private PlayerVitalsHolder _playerVitals;
+
+        // Scene が持つ実装。<b>interface のフィールドは serialize されない</b>ので、
+        // 保存されるのはこちらの具象参照。実行時は注入（Bind）があればそちらを優先する。
+        [Tooltip("受付条件の供給元（§8.2 手順 2）。")]
+        [SerializeField] private AreaEncounterConditionsSource _conditionsSource;
+
+        [Tooltip("敵の生成（§8.2 手順 7・8）。")]
+        [SerializeField] private AreaEncounterSpawner _spawnerSource;
+
+        [Tooltip("アリーナ境界（§8.2 手順 5）。")]
+        [SerializeField] private AreaArenaBoundary _arenaSource;
+
+        [Tooltip("探索の同期撤収（§8.2 手順 4）。")]
+        [SerializeField] private EncounterInterruptRelay _interruptSource;
+
+        private IAreaEncounterConditions _injectedConditions;
+        private IEncounterSpawner _injectedSpawner;
+        private IArenaBoundary _injectedArena;
+        private IEncounterInterruptSink _injectedInterrupts;
         private Func<AreaRuntimeState> _areaState;
         private Func<int> _respawnCycle;
+
+        private IAreaEncounterConditions _conditions =>
+            _injectedConditions ?? (_conditionsSource != null ? _conditionsSource : null);
+
+        private IEncounterSpawner _spawner =>
+            _injectedSpawner ?? (_spawnerSource != null ? _spawnerSource : null);
+
+        private IArenaBoundary _arena =>
+            _injectedArena ?? (_arenaSource != null ? _arenaSource : null);
+
+        private IEncounterInterruptSink _interrupts =>
+            _injectedInterrupts ?? (_interruptSource != null ? _interruptSource : null);
 
         private readonly AreaEncounterMachine _machine = new AreaEncounterMachine();
         private EncounterPlan _plan;
@@ -84,6 +114,12 @@ namespace Momotaro.Gameplay.Encounter
         /// <summary>結果の短文（§8.4 手順 8。結果パネルで止めない）。</summary>
         public string ResultMessage { get; private set; } = string.Empty;
 
+        /// <summary>
+        /// 開始予約中・戦闘中・勝敗処理中か（§6.1 の遷移受付が読む）。
+        /// 戦闘の最中にエリア遷移が通ると、敵と境界を残したまま次の Scene へ行ってしまう。
+        /// </summary>
+        public bool IsEncounterActive => _machine.IsEngaged;
+
         /// <inheritdoc />
         public CombatSessionState? ActivitySession
         {
@@ -125,14 +161,67 @@ namespace Momotaro.Gameplay.Encounter
                 _session = session;
             }
 
-            _conditions = conditions ?? _conditions;
-            _spawner = spawner ?? _spawner;
-            _arena = arena ?? _arena;
-            _interrupts = interrupts ?? _interrupts;
+            if (conditions != null)
+            {
+                _injectedConditions = conditions;
+                if (conditions is AreaEncounterConditionsSource c)
+                {
+                    _conditionsSource = c;
+                }
+            }
+
+            if (spawner != null)
+            {
+                _injectedSpawner = spawner;
+                if (spawner is AreaEncounterSpawner sp)
+                {
+                    _spawnerSource = sp;
+                }
+            }
+
+            if (arena != null)
+            {
+                _injectedArena = arena;
+                if (arena is AreaArenaBoundary ab)
+                {
+                    _arenaSource = ab;
+                }
+            }
+
+            if (interrupts != null)
+            {
+                _injectedInterrupts = interrupts;
+                if (interrupts is EncounterInterruptRelay relay)
+                {
+                    _interruptSource = relay;
+                }
+            }
+
             _areaState = areaState ?? _areaState;
             _respawnCycle = respawnCycle ?? _respawnCycle;
 
             Subscribe();
+        }
+
+        /// <summary>
+        /// Session の世界状態を注入する（P5-03b の初期化担当が呼ぶ）。
+        /// 常駐 Session は Scene に serialize できないので、参照ではなく<b>取り出し口</b>を渡す。
+        /// </summary>
+        public void BindSession(Func<AreaRuntimeState> areaState, Func<int> respawnCycle)
+        {
+            _areaState = areaState ?? _areaState;
+            _respawnCycle = respawnCycle ?? _respawnCycle;
+        }
+
+        /// <summary>主人公の生存の供給元を配線する（Scene 構築）。</summary>
+        public void BindPlayerVitals(PlayerVitalsHolder vitals)
+        {
+            if (vitals != null)
+            {
+                _playerVitals = vitals;
+            }
+
+            ResolvePlayerDefeats();
         }
 
         /// <summary>主人公の死亡通知を購読する（§8.3 の死亡優先）。</summary>
@@ -434,6 +523,23 @@ namespace Momotaro.Gameplay.Encounter
 
             _session.AllEnemiesDefeated += OnAllEnemiesDefeated;
             _subscribed = true;
+            ResolvePlayerDefeats();
+        }
+
+        /// <summary>
+        /// 主人公の死亡通知を、既存 Session と自分の両方へ繋ぐ（<c>WaveRunner</c> と同じ作法）。
+        /// チャネルは実行時の実体なので Scene には serialize できない。供給元から取り出す。
+        /// </summary>
+        private void ResolvePlayerDefeats()
+        {
+            if (_playerVitals == null)
+            {
+                return;
+            }
+
+            PlayerDefeatChannel channel = _playerVitals.Defeats;
+            BindPlayerDefeat(channel);
+            _session?.BindPlayerDefeat(channel);
         }
 
         private void Unsubscribe()

@@ -140,8 +140,12 @@ namespace Momotaro.Editor.Phase5
         /// <summary>A へ戻る Interact 扉の位置（西端）。</summary>
         public static readonly Vector3 AreaBDoorToA = new Vector3(-13.4f, 0f, 6f);
 
-        /// <summary>B の正常な調査地点。</summary>
-        public static readonly Vector3 AreaBInvestigation = new Vector3(-2f, 0f, 8f);
+        /// <summary>
+        /// B の正常な調査地点。<b>アリーナ境界の外</b>に置く（境界は x -4〜12）。
+        /// 外に置くと「犬丸が調査している最中に主人公だけが Trigger へ入る」が作れる。
+        /// §8.3 の「調査未確定と戦闘開始 → 調査を中断して戦闘へ」を実機で通すための配置。
+        /// </summary>
+        public static readonly Vector3 AreaBInvestigation = new Vector3(-8f, 0f, 8f);
 
         /// <summary>遭遇 Trigger の中心。アリーナ境界より十分内側へ置く（§8.2）。</summary>
         public static readonly Vector3 AreaBEncounterTrigger = new Vector3(2f, 0f, 0f);
@@ -160,8 +164,14 @@ namespace Momotaro.Editor.Phase5
             new Vector3(6f, 0f, 0f),
         };
 
-        /// <summary>入口と重ならない安全な戦闘復帰点（§3.2）。</summary>
-        public static readonly Vector3 AreaBCombatReturn = new Vector3(0f, 0f, -8f);
+        /// <summary>
+        /// 入口と重ならない安全な戦闘復帰点（§3.2、§8.4 手順 7）。
+        /// <b>アリーナ境界の内側</b>に置く。境界の上に置くと、封鎖した瞬間に壁へめり込む。
+        /// </summary>
+        public static readonly Vector3 AreaBCombatReturn = new Vector3(0f, 0f, -5f);
+
+        /// <summary>戦闘開始 Trigger の広がり（XZ）。境界より十分内側に収まる大きさ（§8.2 末尾）。</summary>
+        public static readonly Vector2 AreaBEncounterTriggerSize = new Vector2(3f, 3f);
 
         /// <summary>B の既定領域（エリア全体）。B は 1 部屋なので領域を分けない。</summary>
         public static readonly Vector2 AreaBDefaultRegionSize = new Vector2(AreaBWidth, AreaBDepth);

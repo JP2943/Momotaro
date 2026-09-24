@@ -2,13 +2,16 @@ using System.Collections.Generic;
 using System.IO;
 using Momotaro.Core.Identification;
 using Momotaro.Core.World;
+using Momotaro.Data.Events;
 using Momotaro.Data.Exploration;
 using Momotaro.Data.World;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Companion;
+using Momotaro.Gameplay.Encounter;
 using Momotaro.Gameplay.Interaction;
 using Momotaro.Infrastructure.Input;
 using Momotaro.Gameplay.Player;
+using Momotaro.Gameplay.Scenes;
 using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Session;
 using Momotaro.Infrastructure.Navigation;
@@ -106,9 +109,11 @@ namespace Momotaro.Editor.Phase5
                 Phase5AreaIds.AreaBFromA);
 
             AreaCatalogData catalog = EnsureCatalog(areaA, areaB);
+            EnsureEncounterDefinition();
             outputs.Add(Phase5AreaIds.AreaADataPath);
             outputs.Add(Phase5AreaIds.AreaBDataPath);
             outputs.Add(Phase5AreaIds.CatalogDataPath);
+            outputs.Add(Phase5AreaIds.EncounterBDataPath);
 
             AssetDatabase.SaveAssets();
 
@@ -152,7 +157,7 @@ namespace Momotaro.Editor.Phase5
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             return new BuildResult(true,
-                "Data 3 件（A／B／カタログ）、Scene 3 件（A／B／統合起動）。Build Settings へ "
+                "Data 4 件（A／B／カタログ／Encounter）、Scene 3 件（A／B／統合起動）。Build Settings へ "
                 + added + " 件を追加。死亡再開点は " + Phase5AreaIds.AreaA.Value + "/" + Phase5AreaIds.AreaAStart.Value + "。",
                 outputs);
         }
@@ -181,6 +186,37 @@ namespace Momotaro.Editor.Phase5
             }
 
             asset.EditorSet(scenePath, AreaDefinition.SupportedFloorId, list, defaultEntry);
+            EditorUtility.SetDirty(asset);
+            return asset;
+        }
+
+        /// <summary>
+        /// B の通常 Encounter 定義（P5-07。仕様書 v1.1 §8.1）。
+        ///
+        /// <b>Data 側には EnemyId までしか置かない。</b> EnemyId → Prefab と SpawnPointId → Transform は
+        /// Scene の EncounterBinding が持つ。同じ対応表を Data カタログへ二重登録しない（§8.1）。
+        /// </summary>
+        private static EncounterData EnsureEncounterDefinition()
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<EncounterData>(Phase5AreaIds.EncounterBDataPath);
+            if (asset == null)
+            {
+                asset = ScriptableObject.CreateInstance<EncounterData>();
+                AssetDatabase.CreateAsset(asset, Phase5AreaIds.EncounterBDataPath);
+            }
+
+            SetIdentity(asset, Phase5AreaIds.EncounterBRoad, "エリア B 街道の遭遇（試作）");
+
+            var so = new SerializedObject(asset);
+            SerializedProperty ids = so.FindProperty("_enemyIds");
+            ids.arraySize = 2;
+            ids.GetArrayElementAtIndex(0).FindPropertyRelative("_value").stringValue = Phase5AreaIds.EnemyMelee.Value;
+            ids.GetArrayElementAtIndex(1).FindPropertyRelative("_value").stringValue = Phase5AreaIds.EnemyRanged.Value;
+            so.FindProperty("_spawnPointId").FindPropertyRelative("_value").stringValue =
+                Phase5AreaIds.SpawnPointsBRoad.Value;
+            so.FindProperty("_isBossEncounter").boolValue = false;
+            so.ApplyModifiedPropertiesWithoutUndo();
+
             EditorUtility.SetDirty(asset);
             return asset;
         }
@@ -534,8 +570,6 @@ namespace Momotaro.Editor.Phase5
             var markers = new GameObject("Markers");
             markers.transform.SetParent(root, false);
             Phase5Placeholder.CreateLabel("エリア B", markers.transform, new Vector3(0f, 0.2f, -1.5f), Color.white, 0.5f);
-            CreateMarker(markers.transform, "Investigation", Phase5Layout.AreaBInvestigation,
-                Phase5Placeholder.InvestigationColor, "調査", new Vector3(0.8f, 0.6f, 0.8f));
             CreateMarker(markers.transform, "EncounterTrigger", Phase5Layout.AreaBEncounterTrigger,
                 Phase5Placeholder.ArenaColor, "遭遇", new Vector3(2f, 0.1f, 2f));
             CreateMarker(markers.transform, "CombatReturn", Phase5Layout.AreaBCombatReturn,
@@ -555,11 +589,13 @@ namespace Momotaro.Editor.Phase5
             // 敵の出現点（EnemyIds の順に対応させる。敵数以上を用意する。§8.1）。
             var spawns = new GameObject("SpawnPoints");
             spawns.transform.SetParent(root, false);
+            var spawnPoints = new List<Transform>();
             for (int i = 0; i < Phase5Layout.AreaBSpawnPoints.Length; i++)
             {
                 var sp = new GameObject("Spawn_" + i);
                 sp.transform.SetParent(spawns.transform, false);
                 sp.transform.position = Phase5Layout.AreaBSpawnPoints[i];
+                spawnPoints.Add(sp.transform);
                 Phase5Placeholder.CreateLabel("出現 " + i, sp.transform,
                     Phase5Layout.AreaBSpawnPoints[i] + new Vector3(0f, 0.2f, 0f),
                     Phase5Placeholder.ArenaColor, 0.16f);
@@ -581,6 +617,16 @@ namespace Momotaro.Editor.Phase5
             fixtures.TransitionDoor = CreateTransitionDoor(fixtureRoot.transform, "DoorToA",
                 Phase5AreaIds.DoorBToA, definition.Id,
                 Phase5AreaIds.AreaA, Phase5AreaIds.AreaAFromB, Phase5Layout.AreaBDoorToA);
+
+            // 調査地点（§7.2）。アリーナの外に置き、調査中の戦闘開始を作れるようにする（§8.3）。
+            fixtures.Points.Add(CreateInvestigationPoint(fixtureRoot.transform, "Investigation",
+                Phase5AreaIds.PointBOpen, Phase5AreaIds.DiscoveryBOpen, Phase5Layout.AreaBInvestigation));
+
+            // ---- 戦闘区画（§8）----
+            //
+            // 出現点は EnemyIds の順に対応させる（§8.1）。Transform は Scene 側が持ち、Data へは入れない。
+            fixtures.SpawnPoints.AddRange(spawnPoints);
+            CreateArena(fixtureRoot.transform, fixtures);
 
             // カメラ領域（§11）。B は 1 部屋なので既定領域だけ。
             var cameraRegions = new GameObject("CameraRegions");
@@ -717,6 +763,10 @@ namespace Momotaro.Editor.Phase5
             public AreaFlagLever Lever;
             public AreaTransitionDoor TransitionDoor;
             public AreaCameraRegion DefaultCameraRegion;
+            public AreaArenaBoundary Arena;
+            public AreaEncounterTrigger EncounterTrigger;
+            public readonly List<Collider> ArenaBlockers = new List<Collider>();
+            public readonly List<Transform> SpawnPoints = new List<Transform>();
             public readonly List<CompanionInvestigationPoint> Points = new List<CompanionInvestigationPoint>();
             public readonly List<AreaCameraRegion> CameraRegions = new List<AreaCameraRegion>();
         }
@@ -882,7 +932,11 @@ namespace Momotaro.Editor.Phase5
             var activityGo = new GameObject("CompanionActivity");
             activityGo.transform.SetParent(systems.transform, false);
             CompanionActivityContext activity = activityGo.AddComponent<CompanionActivityContext>();
-            activity.MarkAreaWithoutEncounter();
+            bool hasEncounter = fixtures != null && fixtures.Arena != null;
+            if (!hasEncounter)
+            {
+                activity.MarkAreaWithoutEncounter();
+            }
 
             // 追従の相手（主人公）を配線する。未割当だと犬丸は付いてこない。
             if (companionRoot != null && playerRoot != null)
@@ -931,6 +985,7 @@ namespace Momotaro.Editor.Phase5
             interactInput.Bind(interaction);
 
             // ---- 調査（§7.2）。P5 は指定地点モードで構成する（§7.1）----
+            InvestigationCoordinator investigationCoordinator = null;
             if (fixtures != null && fixtures.Points.Count > 0)
             {
                 var rosterGo = new GameObject("CompanionRoster");
@@ -945,6 +1000,7 @@ namespace Momotaro.Editor.Phase5
                 var coordinatorGo = new GameObject("InvestigationCoordinator");
                 coordinatorGo.transform.SetParent(systems.transform, false);
                 InvestigationCoordinator coordinator = coordinatorGo.AddComponent<InvestigationCoordinator>();
+                investigationCoordinator = coordinator;
                 coordinator.ExplicitTargetOnly = true;
                 coordinator.Bind(player, roster, record,
                     driver != null ? new[] { driver } : new CompanionInvestigationController[0]);
@@ -955,6 +1011,59 @@ namespace Momotaro.Editor.Phase5
                     InvestigationInteractable adapter = point.gameObject.AddComponent<InvestigationInteractable>();
                     adapter.Bind(point, coordinator, definition.Id);
                 }
+            }
+
+            // ---- Encounter（§8）----
+            //
+            // 既存の戦闘セッションをそのまま使い、P5 の調停（AreaEncounterRunner）が
+            // 敵登録・勝敗遷移を駆動する。4 Wave の WaveRunner は載せない（§8.1 末尾）。
+            AreaEncounterRunner encounterRunner = null;
+            if (hasEncounter)
+            {
+                var encounterGo = new GameObject("Encounter");
+                encounterGo.transform.SetParent(systems.transform, false);
+
+                CombatSessionController combatSession = encounterGo.AddComponent<CombatSessionController>();
+
+                // 撃破報酬は既存の受け手を使う（§12.1）。新 Scene で購読開始前に Bind する。
+                CombatRewardCollector rewards = encounterGo.AddComponent<CombatRewardCollector>();
+                rewards.Bind(combatSession, progress);
+
+                var spawnerGo = new GameObject("Spawner");
+                spawnerGo.transform.SetParent(encounterGo.transform, false);
+                AreaEncounterSpawner spawner = spawnerGo.AddComponent<AreaEncounterSpawner>();
+                spawner.Bind(combatSession, BuildEnemyPrefabEntries(), fixtures.SpawnPoints);
+
+                AreaEncounterConditionsSource encounterConditions =
+                    encounterGo.AddComponent<AreaEncounterConditionsSource>();
+                encounterConditions.Bind(context, vitals);
+
+                EncounterInterruptRelay interrupts = encounterGo.AddComponent<EncounterInterruptRelay>();
+                interrupts.Bind(investigationCoordinator,
+                    companionRoot != null
+                        ? companionRoot.GetComponentInChildren<CompanionFollowController>(true)
+                        : null);
+
+                var encounterData = AssetDatabase.LoadAssetAtPath<EncounterData>(Phase5AreaIds.EncounterBDataPath);
+                encounterRunner = encounterGo.AddComponent<AreaEncounterRunner>();
+                encounterRunner.Bind(encounterData, combatSession, encounterConditions, spawner,
+                    fixtures.Arena, interrupts);
+                encounterRunner.BindPlayerVitals(vitals);
+
+                fixtures.Arena.Bind(fixtures.ArenaBlockers, playerRoot != null ? playerRoot.transform : null,
+                    companionRoot != null
+                        ? companionRoot.GetComponentInChildren<CompanionFollowController>(true)
+                        : null,
+                    Phase5Layout.AreaBArenaSize);
+
+                fixtures.EncounterTrigger.Bind(encounterRunner,
+                    playerRoot != null ? playerRoot.GetComponent<PlayerRoot>() : null);
+
+                // 仲間の活動は<b>区画 Encounter</b>が正本（§8.4 末尾）。
+                activity.BindAreaEncounter(encounterRunner);
+
+                // 遷移の受付も戦闘中は閉じる（§6.1／§8.3 の競合表）。
+                conditions.Bind(context, player, vitals, encounterRunner);
             }
 
             // ---- 経路の配線（§10.1／§10.2）----
@@ -991,6 +1100,7 @@ namespace Momotaro.Editor.Phase5
 
             // private な SerializeField は SerializedObject で配線する（Builder の既存の作法）。
             var so = new SerializedObject(initializer);
+            so.FindProperty("_encounter").objectReferenceValue = encounterRunner;
             so.FindProperty("_transferPort").objectReferenceValue = port;
             so.FindProperty("_areaRoot").objectReferenceValue = areaRoot;
             so.FindProperty("_context").objectReferenceValue = context;
@@ -999,6 +1109,91 @@ namespace Momotaro.Editor.Phase5
             so.FindProperty("_record").objectReferenceValue = record;
             so.FindProperty("_catalog").objectReferenceValue = catalog;
             so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>
+        /// アリーナ境界と戦闘開始 Trigger を置く（P5-07。仕様書 v1.1 §8.2）。
+        ///
+        /// 封鎖 Collider は<b>既定で無効</b>。戦闘中だけ有効化する（§8.2 手順 5、§8.4 手順 5）。
+        /// 有効なまま出荷すると、探索中に通れない壁が生えたエリアになる。
+        ///
+        /// Trigger は境界より<b>十分内側</b>へ置く（§8.2 末尾）。境界の上に置くと、
+        /// 封鎖した瞬間に主人公が壁へ食い込んだ状態になり、物理が外へ弾き出す。
+        /// </summary>
+        private static void CreateArena(Transform parent, Fixtures fixtures)
+        {
+            Vector3 center = Phase5Layout.AreaBArenaCenter;
+            Vector2 size = Phase5Layout.AreaBArenaSize;
+
+            var boundaryGo = new GameObject("ArenaBoundary");
+            boundaryGo.transform.SetParent(parent, false);
+            boundaryGo.transform.position = center;
+
+            float hx = size.x * 0.5f;
+            float hz = size.y * 0.5f;
+            float t = Phase5Layout.WallThickness;
+            float h = Phase5Layout.WallHeight;
+
+            AddBlocker(boundaryGo.transform, fixtures, "Blocker_North",
+                center + new Vector3(0f, h * 0.5f, hz + t * 0.5f), new Vector3(size.x + t * 2f, h, t));
+            AddBlocker(boundaryGo.transform, fixtures, "Blocker_South",
+                center + new Vector3(0f, h * 0.5f, -hz - t * 0.5f), new Vector3(size.x + t * 2f, h, t));
+            AddBlocker(boundaryGo.transform, fixtures, "Blocker_East",
+                center + new Vector3(hx + t * 0.5f, h * 0.5f, 0f), new Vector3(t, h, size.y + t * 2f));
+            AddBlocker(boundaryGo.transform, fixtures, "Blocker_West",
+                center + new Vector3(-hx - t * 0.5f, h * 0.5f, 0f), new Vector3(t, h, size.y + t * 2f));
+
+            fixtures.Arena = boundaryGo.AddComponent<AreaArenaBoundary>();
+
+            // 境界は探索中の地形ではない。NavMesh のベイクから外す
+            // （焼き込むと、閉じていない間も通れない床として残る）。
+            IgnoreFromNavMeshBuild(boundaryGo);
+
+            var triggerGo = new GameObject("EncounterTrigger");
+            triggerGo.transform.SetParent(parent, false);
+            triggerGo.transform.position = Phase5Layout.AreaBEncounterTrigger;
+            BoxCollider trigger = triggerGo.AddComponent<BoxCollider>();
+            trigger.isTrigger = true;
+            trigger.size = new Vector3(
+                Phase5Layout.AreaBEncounterTriggerSize.x, Phase5Layout.WallHeight,
+                Phase5Layout.AreaBEncounterTriggerSize.y);
+            trigger.center = new Vector3(0f, Phase5Layout.WallHeight * 0.5f, 0f);
+            fixtures.EncounterTrigger = triggerGo.AddComponent<AreaEncounterTrigger>();
+            Phase5Placeholder.CreateLabel("遭遇", triggerGo.transform,
+                Phase5Layout.AreaBEncounterTrigger + new Vector3(0f, 0.2f, 0f),
+                Phase5Placeholder.ArenaColor, 0.22f);
+            IgnoreFromNavMeshBuild(triggerGo);
+        }
+
+        private static void AddBlocker(
+            Transform parent, Fixtures fixtures, string name, Vector3 center, Vector3 size)
+        {
+            GameObject go = Phase5Placeholder.CreateBlocker(name, parent, center, size);
+            var box = go.GetComponent<BoxCollider>();
+            box.enabled = false; // 戦闘中だけ有効化する。
+            fixtures.ArenaBlockers.Add(box);
+        }
+
+        /// <summary>
+        /// EnemyId → Prefab の明示表を作る（§8.1 末尾）。
+        /// Prefab 名や表示名では解決しない。ID 一致は Validator が Prefab 側の
+        /// <c>EnemyArchetypeData.Id</c> と突き合わせる。
+        /// </summary>
+        private static List<EnemyPrefabTable.Entry> BuildEnemyPrefabEntries()
+        {
+            return new List<EnemyPrefabTable.Entry>
+            {
+                new EnemyPrefabTable.Entry
+                {
+                    EnemyId = Phase5AreaIds.EnemyMelee,
+                    Prefab = AssetDatabase.LoadAssetAtPath<GameObject>(Phase5AreaIds.EnemyMeleePrefabPath),
+                },
+                new EnemyPrefabTable.Entry
+                {
+                    EnemyId = Phase5AreaIds.EnemyRanged,
+                    Prefab = AssetDatabase.LoadAssetAtPath<GameObject>(Phase5AreaIds.EnemyRangedPrefabPath),
+                },
+            };
         }
 
         /// <summary>この GameObject 以下を NavMesh のベイク対象から外す。</summary>

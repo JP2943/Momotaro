@@ -1,7 +1,12 @@
 using System.Collections;
 using System.Text.RegularExpressions;
 using Momotaro.Core.Identification;
+using System.Collections.Generic;
 using Momotaro.Gameplay.Combat;
+using Momotaro.Gameplay.Encounter;
+using Momotaro.Gameplay.Enemy;
+using Momotaro.Gameplay.Enemy.Combat.Projectile;
+using Momotaro.Gameplay.Enemy.Defense;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Enemy.Threat;
 using Momotaro.Gameplay.Enemy.Perception;
@@ -2162,6 +2167,505 @@ namespace Momotaro.Tests.PlayMode
 
             motor.ClearReaction();
             Assert.Less(body.position.x, 12f, "押し出しでも外壁を越えない。x=" + body.position.x);
+        }
+
+        // ---------------------------------------------------------------- P05・P08（Encounter）
+
+        private static readonly Vector3 EncounterTriggerPoint = new Vector3(2f, 0f, 0f);
+
+        /// <summary>敵が受けた命中を記録する（誰の攻撃で削れたかを見るため）。</summary>
+        private sealed class EnemyHitLog : IHitResultListener
+        {
+            private readonly ICombatActor _player;
+
+            public EnemyHitLog(ICombatActor player)
+            {
+                _player = player;
+            }
+
+            public int DamageFromPlayer { get; private set; }
+
+            public int DamageTotal { get; private set; }
+
+            /// <summary>種別を問わない結果数（当たってすらいないのかを見分ける）。</summary>
+            public int AnyKindCount { get; private set; }
+
+            public void OnHitResult(in HitResult result)
+            {
+                AnyKindCount++;
+                if (result.Kind != HitResultKind.Damage)
+                {
+                    return;
+                }
+
+                DamageTotal++;
+                if (_player != null && ReferenceEquals(result.Attacker, _player))
+                {
+                    DamageFromPlayer++;
+                }
+            }
+        }
+
+        /// <summary>
+        /// P5-P05：実入力で<b>調査 → 開通 → 移動 → 実敵撃破 → 探索復帰</b>まで一周する（§15.3）。
+        /// 徳は 10＋12＝22（§8.5）。再訪では敵が湧かない（§8.4 末尾）。
+        ///
+        /// <b>撃破は実 Hitbox で通す</b>（§15.3 の但し書き）。結果を直接セットして命中経路を飛ばさない。
+        /// 主人公の攻撃が実際に当たっていることを、敵側の命中結果の<b>攻撃者</b>で確かめる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FullRoute_InvestigateOpenTravelFightAndReturn()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            // 仮想デバイスは Scene が立ってから足す（P10 と同じ順。先に足すと Action の再解決に間に合わない）。
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5Keyboard");
+
+            IGameModeService modes = GameModeProvider.Current;
+            GameSessionState session = Sessions().Session;
+            Assert.AreEqual(0, session.Progress.Virtue, "前提：まだ何も得ていない。");
+
+            // ================================ 1. 調査（実キー E）================================
+            var coordinator = Object.FindFirstObjectByType<InvestigationCoordinator>();
+            Assert.IsNotNull(coordinator, "A に調査の調停役がある。");
+
+            var interaction = Object.FindFirstObjectByType<AreaInteractionController>();
+            Assert.IsNotNull(interaction, "Interact の単一窓口がある。");
+            var mediatorA = Object.FindFirstObjectByType<AreaInteractInput>();
+            Assert.IsNotNull(mediatorA, "Interact の入力仲介がある。");
+
+            var point = Object.FindFirstObjectByType<InvestigationInteractable>();
+            Assert.IsNotNull(point, "調査地点が Interact 候補として出ている。");
+
+            yield return MovePlayerTo(point.InteractionAnchor + new Vector3(0f, 0f, -0.8f));
+            yield return PressKey(Key.E);
+            yield return WaitUntilOrTimeout(() => coordinator.LastRequestId > 0, 5f);
+            yield return ReleaseKeys();
+            Assert.Greater(coordinator.LastRequestId, 0,
+                "実キー E で調査が受理される。調停の理由=" + coordinator.LastRejectReason
+                + " 窓口の拒否=" + interaction.LastRejection
+                + " 実行=" + mediatorA.InteractCount + " 捨てた=" + mediatorA.DiscardedCount
+                + " 候補数=" + AreaInteractableRegistry.Count
+                + " 受付半径=" + point.InteractionRadius
+                + " 距離=" + Vector3.Distance(
+                    Object.FindFirstObjectByType<PlayerRoot>().transform.position, point.InteractionAnchor)
+                + " 利用可=" + point.IsAvailable);
+
+            Assert.IsTrue(session.TryGetArea(AreaA, out AreaRuntimeState areaA));
+            yield return WaitUntilOrTimeout(() => areaA.InvestigatedCount >= 1, 15f);
+            Assert.AreEqual(1, areaA.InvestigatedCount, "調査が成功して記録に残る。");
+
+            // ================================ 2. 門（実キー E）================================
+            var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.IsNotNull(lever);
+            Assert.IsFalse(lever.Door.IsOpened, "前提：門は閉じている。");
+
+            yield return MovePlayerTo(lever.InteractionAnchor + new Vector3(0.6f, 0f, 0f));
+            yield return PressKey(Key.E);
+            yield return WaitUntilOrTimeout(() => lever.OpenedCount >= 1, 5f);
+            yield return ReleaseKeys();
+            Assert.AreEqual(1, lever.OpenedCount, "実キー E で門が開通する。");
+            Assert.IsTrue(areaA.IsOpen(lever.FlagId), "開通が記録に残る。");
+
+            // ================================ 3. 移動（A → B）================================
+            AreaTransitionService service = Transitions();
+            AreaTransitionCoordinator transitions = service.Coordinator;
+            Assert.IsNotNull(transitions);
+            Assert.IsTrue(service.TryTravel(AreaB, AreaBFromA).Accepted);
+            yield return WaitForArrival(transitions, 1);
+
+            // ================================ 4. 戦闘 ================================
+            var runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            Assert.IsNotNull(runner, "B に Encounter の調停がある。");
+            Assert.IsTrue(runner.IsWired, "Encounter が配線されている。");
+            Assert.AreEqual(AreaEncounterState.Dormant, runner.State, "まだ始まっていない。");
+            Assert.AreEqual(0, Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None).Length,
+                "到着時点で敵は 0（§13.2 の「初期敵 0」）。");
+
+            var arena = Object.FindFirstObjectByType<AreaArenaBoundary>();
+            Assert.IsNotNull(arena);
+            Assert.IsFalse(arena.IsEnabled, "探索中は境界が無効。");
+
+            // Trigger の中へ入る。開始は Trigger が要求し、条件は調停が見る。
+            yield return MovePlayerTo(EncounterTriggerPoint);
+            yield return WaitUntilOrTimeout(() => runner.State == AreaEncounterState.Playing, 5f);
+            Assert.AreEqual(AreaEncounterState.Playing, runner.State,
+                "Trigger 進入で戦闘が始まる。拒否=" + runner.LastRejection + " 補足=" + runner.LastFailureDetail);
+            Assert.AreEqual(GameMode.Combat, modes.Current, "GameMode は Combat。");
+            Assert.IsTrue(arena.IsEnabled, "アリーナ境界が有効になる。");
+            Assert.AreEqual(arena.BlockerCount, arena.ActiveBlockerCount,
+                "封鎖 Collider が実際に有効（意図だけでなく実体を見る）。");
+
+            EnemyActor[] enemies = Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None);
+            Assert.AreEqual(2, enemies.Length, "骸骨剣士 1 ＋ 骸骨弓兵 1（§8.1）。");
+
+            var playerActor = Object.FindFirstObjectByType<PlayerStateController>();
+            Assert.IsNotNull(playerActor);
+            var log = new EnemyHitLog(playerActor);
+            for (int i = 0; i < enemies.Length; i++)
+            {
+                enemies[i].Results.AddListener(log);
+            }
+
+            try
+            {
+                for (int i = 0; i < enemies.Length; i++)
+                {
+                    yield return KillWithRealHitbox(enemies[i]);
+                }
+            }
+            finally
+            {
+                for (int i = 0; i < enemies.Length; i++)
+                {
+                    if (enemies[i] != null)
+                    {
+                        enemies[i].Results.RemoveListener(log);
+                    }
+                }
+            }
+
+            Assert.Greater(log.DamageFromPlayer, 0,
+                "主人公の攻撃が実 Hitbox で当たっている（結果を直接セットしていない）。");
+
+            // ================================ 5. 探索復帰 ================================
+            yield return WaitUntilOrTimeout(() => runner.State == AreaEncounterState.Cleared, 5f);
+            Assert.AreEqual(AreaEncounterState.Cleared, runner.State, "勝利で終わる。");
+            Assert.AreEqual(GameMode.Exploration, modes.Current, "探索へ戻る（§8.4 手順 6）。");
+            Assert.AreEqual("戦闘終了", runner.ResultMessage, "短文だけを出す（§8.4 手順 8）。");
+            Assert.IsFalse(arena.IsEnabled, "一時境界を解放する（§8.4 手順 5）。");
+            Assert.AreEqual(0, arena.ActiveBlockerCount,
+                "封鎖 Collider が実際に無効へ戻る（探索中に通れない壁を残さない）。");
+            Assert.AreEqual(22, session.Progress.Virtue, "10 ＋ 12 ＝ 22（§8.5）。");
+
+            Assert.IsTrue(session.TryGetArea(AreaB, out AreaRuntimeState areaB));
+            Assert.IsTrue(areaB.IsEncounterCleared(new StableId("encounter_p5_b_road"), session.RespawnCycle),
+                "この周期のクリアを記録する。");
+
+            // ================================ 6. 再訪では湧かない ================================
+            //
+            // 直前の一振りの硬直が残っていると §6.1 の「行動中は遷移しない」で断られる。
+            // 人が操作するときと同じく、手が空くのを待ってから移動する。
+            yield return WaitUntilOrTimeout(() => playerActor.IsFreeToTravel, 3f);
+
+            AreaTransitionDecision back = service.TryTravel(AreaA, AreaAFromB);
+            Assert.IsTrue(back.Accepted, "戦闘が終わっていれば遷移できる。理由=" + back.Rejection);
+            yield return WaitForArrival(transitions, 2);
+            Assert.IsTrue(service.TryTravel(AreaB, AreaBFromA).Accepted);
+            yield return WaitForArrival(transitions, 3);
+
+            var runnerAgain = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            Assert.IsNotNull(runnerAgain);
+            Assert.AreEqual(AreaEncounterState.Cleared, runnerAgain.State,
+                "記録からクリア済みを復元する（§4.3）。");
+
+            yield return MovePlayerTo(EncounterTriggerPoint);
+            for (int i = 0; i < 20; i++)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(AreaEncounterState.Cleared, runnerAgain.State, "再訪では始まらない（§8.4 末尾）。");
+            Assert.AreEqual(EncounterStartRejection.AlreadyCleared, runnerAgain.LastRejection);
+            Assert.AreEqual(0, Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None).Length,
+                "再訪の敵は 0。");
+            Assert.AreEqual(22, session.Progress.Virtue, "往復しても徳は増えない。");
+
+            yield return ReleaseKeys();
+        }
+
+        /// <summary>
+        /// P5-P08：生成失敗と勝利のどちらでも<b>残留物を残さない</b>。探索へ戻って犬丸が再活動する（§15.3）。
+        ///
+        /// 生成失敗はテスト専用の差し替え（<c>AreaEncounterRunner.Bind</c> の公開注入）で作る。
+        /// 結果を直接セットするのではなく、<b>本番と同じ開始手順</b>を通して失敗させる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator SpawnAndCombatCleanup_LeaveNoProjectileOrBoundary()
+        {
+            AssertSceneRegistered(AreaBScene);
+            _keyboard = InputSystem.AddDevice<Keyboard>();
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaBScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            IGameModeService modes = GameModeProvider.Current;
+            GameSessionState session = Sessions().Session;
+
+            var runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            var arena = Object.FindFirstObjectByType<AreaArenaBoundary>();
+            var spawner = Object.FindFirstObjectByType<AreaEncounterSpawner>();
+            Assert.IsNotNull(runner);
+            Assert.IsNotNull(arena);
+            Assert.IsNotNull(spawner);
+
+            var trigger = Object.FindFirstObjectByType<AreaEncounterTrigger>();
+            Assert.IsNotNull(trigger);
+            Assert.IsTrue(trigger.IsWired);
+
+            // ================================ 1. 生成失敗 ================================
+            //
+            // 生成だけを差し替え、<b>開始手順そのものは本番の経路</b>（Trigger 進入）を通す。
+            var failing = new FailingSpawner();
+            runner.Bind(null, null, null, failing, null);
+
+            yield return MovePlayerTo(EncounterTriggerPoint);
+            yield return WaitUntilOrTimeout(() => runner.State == AreaEncounterState.Failed, 5f);
+
+            Assert.AreEqual(1, trigger.RequestCount, "Trigger が 1 回だけ要求する。");
+            Assert.AreEqual(EncounterStartRejection.SpawnFailed, runner.LastRejection,
+                "生成の差し替えだけで落ちる（他の手順は通る）。補足=" + runner.LastFailureDetail);
+            Assert.AreEqual(AreaEncounterState.Failed, runner.State);
+            Assert.AreEqual(0, Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None).Length,
+                "生成途中の敵を残さない。");
+            Assert.IsFalse(arena.IsEnabled, "境界を元へ戻す。");
+            Assert.AreEqual(0, arena.ActiveBlockerCount, "封鎖 Collider も実際に無効へ戻る。");
+            Assert.AreEqual(GameMode.Exploration, modes.Current, "モードも元へ戻す。");
+            Assert.AreEqual(0, session.Progress.Virtue, "報酬は付かない。");
+            Assert.AreEqual(0, EnemyProjectileRegistry.LiveCount, "飛翔体も残らない。");
+            Assert.IsNull(runner.ActivitySession, "失敗のあとは「活動中 Encounter なし」。");
+            Assert.IsTrue(CompanionActivityProvider.Activity.CanInvestigate,
+                "犬丸は探索へ戻る（戦闘中のまま固まらない）。");
+
+            // ================================ 2. 実生成 → 勝利 ================================
+            runner.Bind(null, null, null, spawner, null);
+
+            // 失敗後は「Trigger 退出 → 再進入」で再試行できる（§8.2）。居座ったままでは再要求しない。
+            yield return MovePlayerTo(new Vector3(-9f, 0f, 6f));
+            yield return WaitUntilOrTimeout(() => !trigger.PlayerInside, 3f);
+            Assert.IsFalse(trigger.PlayerInside, "Trigger から出ている。");
+            Assert.AreEqual(AreaEncounterState.Failed, runner.State, "出ただけでは再開しない。");
+
+            yield return MovePlayerTo(EncounterTriggerPoint);
+            yield return WaitUntilOrTimeout(() => runner.State == AreaEncounterState.Playing, 5f);
+            Assert.AreEqual(2, trigger.RequestCount, "再進入で 1 回だけ再要求する。");
+            Assert.AreEqual(AreaEncounterState.Playing, runner.State,
+                "再試行で始まる。拒否=" + runner.LastRejection + " 補足=" + runner.LastFailureDetail);
+
+            EnemyActor[] enemies = Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None);
+            Assert.AreEqual(2, enemies.Length);
+            Assert.IsTrue(arena.IsEnabled);
+            Assert.AreEqual(arena.BlockerCount, arena.ActiveBlockerCount, "封鎖 Collider が実際に有効。");
+            Assert.IsFalse(CompanionActivityProvider.Activity.CanInvestigate, "戦闘中は探索を受け付けない。");
+
+            for (int i = 0; i < enemies.Length; i++)
+            {
+                yield return KillWithRealHitbox(enemies[i]);
+            }
+
+            yield return WaitUntilOrTimeout(() => runner.State == AreaEncounterState.Cleared, 5f);
+            Assert.AreEqual(AreaEncounterState.Cleared, runner.State);
+
+            // ================================ 3. 残留物なし ================================
+            //
+            // 破棄は次のフレームに回ることがあるので、数フレーム待ってから数える
+            // （「Destroy 予定になった」で成功にしない）。
+            for (int i = 0; i < 5; i++)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(0, Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None).Length,
+                "敵の死体を残さない（次 Scene へ持ち越さない。§8.4 末尾）。");
+            Assert.AreEqual(0, EnemyProjectileRegistry.LiveCount, "残留 Projectile なし（§8.4 手順 5）。");
+            Assert.IsFalse(arena.IsEnabled, "一時境界を解放する。");
+            Assert.AreEqual(0, arena.ActiveBlockerCount,
+                "封鎖 Collider が実際に無効へ戻る（探索中に通れない壁を残さない）。");
+            Assert.AreEqual(0, spawner.SpawnedCount, "生成物の管理も空になる。");
+
+            int hostiles = CountHostilePerceptionTargets();
+            Assert.AreEqual(0, hostiles, "索敵レジストリに敵が残らない。残り=" + hostiles);
+
+            // ================================ 4. 犬丸が再活動する ================================
+            Assert.AreEqual(GameMode.Exploration, modes.Current);
+            Assert.IsNull(runner.ActivitySession, "解放後は「活動中 Encounter なし」（§8.4 末尾）。");
+            Assert.IsTrue(CompanionActivityProvider.Activity.CanInvestigate,
+                "犬丸が探索を受け付ける状態へ戻る（Victory が残って永久停止しない）。");
+
+            var companionMotor = Object.FindFirstObjectByType<CompanionMotor>();
+            Assert.IsNotNull(companionMotor);
+            Rigidbody companionBody = companionMotor.GetComponent<Rigidbody>();
+            var companionActor = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.IsNotNull(companionActor);
+
+            // 実戦なので、犬丸が倒れていることはある（それ自体は正常）。
+            // ここで見たいのは<b>戦闘が終われば行動できる状態へ戻る</b>ことなので、復帰を待ってから追従を見る。
+            yield return WaitUntilOrTimeout(() => CanFollowAgain(companionActor.State), 20f);
+            Assert.IsTrue(CanFollowAgain(companionActor.State),
+                "犬丸が行動できる状態へ戻る（戦闘中のまま固まらない）。状態=" + companionActor.State);
+
+            // 実際に付いてくる（「止まっていない」を位置で見る）。
+            Vector3 before = companionBody.position;
+            yield return MovePlayerTo(new Vector3(-9f, 0f, -6f));
+            yield return WaitUntilOrTimeout(
+                () => Vector3.Distance(before, companionBody.position) > 1f, 10f);
+            Assert.Greater(Vector3.Distance(before, companionBody.position), 1f,
+                "犬丸が追従を再開する。移動量=" + Vector3.Distance(before, companionBody.position)
+                + " 状態=" + companionActor.State
+                + " 活動=" + CompanionActivityProvider.Activity);
+
+            yield return ReleaseKeys();
+        }
+
+        /// <summary>生成に必ず失敗する差し替え（テスト専用。開始手順そのものは本番と同じ経路を通る）。</summary>
+        private sealed class FailingSpawner : IEncounterSpawner
+        {
+            public int SpawnedCount => 0;
+            public bool SpawnedActive => false;
+            public IReadOnlyList<IEnemyDefeatSource> Spawned => System.Array.Empty<IEnemyDefeatSource>();
+            public int ReleaseCount { get; private set; }
+
+            public bool TrySpawnAll(in EncounterPlan plan, out string error)
+            {
+                error = "テスト：敵 Prefab を解決できません。";
+                return false;
+            }
+
+            public void ActivateSpawned()
+            {
+                Assert.Fail("生成に失敗したのに活動を許可している。");
+            }
+
+            public void ReleaseAll()
+            {
+                ReleaseCount++;
+            }
+        }
+
+        /// <summary>索敵レジストリに残っている敵対対象の数（主人公・犬丸から見た敵）。</summary>
+        private static int CountHostilePerceptionTargets()
+        {
+            var buffer = new List<IThreatTarget>();
+            PerceptionTargetRegistry.CollectHostileThreatTargets(
+                Vector3.zero, CombatFaction.Ally, 1000f, buffer);
+            return buffer.Count;
+        }
+
+        /// <summary>
+        /// 実 Hitbox で 1 体倒す。主人公を敵の隣へ置き、向きを作ってから実キー J を押す。
+        /// 犬丸も実機どおり戦うので、<b>撃破そのもの</b>は両者のどちらでも成立してよい。
+        /// 主人公の命中が起きていることは呼び出し側が命中結果の攻撃者で確かめる。
+        /// </summary>
+        private IEnumerator KillWithRealHitbox(EnemyActor enemy)
+        {
+            if (enemy == null || enemy.IsDefeated)
+            {
+                yield break;
+            }
+
+            var playerRoot = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(playerRoot);
+            var facing = playerRoot.GetComponentInChildren<PlayerFacing>();
+            Assert.IsNotNull(facing, "主人公の向き（PlayerFacing）がある。");
+            var player = playerRoot.GetComponentInChildren<PlayerStateController>();
+            Assert.IsNotNull(player);
+            bool sawAttack = false;
+            int activeFrames = 0;
+            var probe = new EnemyHitLog(player);
+            enemy.Results.AddListener(probe);
+
+            float deadline = Time.realtimeSinceStartup + 25f;
+            float nextPress = 0f;
+            bool pressed = false;
+
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                if (enemy == null || enemy.IsDefeated)
+                {
+                    yield break;
+                }
+
+                // 敵の手前 1.0m へ張り付き、敵の方（+Z）を向く。攻撃の判定は Active の間だけ出る。
+                Vector3 stick = enemy.transform.position + new Vector3(0f, 0f, -1.0f);
+                if (playerRoot.Body != null)
+                {
+                    playerRoot.Body.position = stick;
+                    playerRoot.Body.linearVelocity = Vector3.zero;
+                }
+
+                playerRoot.transform.position = stick;
+                facing.ConfirmFromInput(Vector2.up);
+
+                // 実キー J を押して離す（3 連撃の入力を回す）。
+                if (Time.realtimeSinceStartup >= nextPress)
+                {
+                    pressed = !pressed;
+                    InputSystem.QueueStateEvent(_keyboard, pressed ? new KeyboardState(Key.J) : new KeyboardState());
+                    nextPress = Time.realtimeSinceStartup + 0.12f;
+                }
+
+                sawAttack |= player.Current == PlayerState.Attack;
+                if (player.IsSwingHitboxActive)
+                {
+                    activeFrames++;
+                }
+
+                yield return null;
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            if (enemy != null)
+            {
+                enemy.Results.RemoveListener(probe);
+            }
+
+            Assert.IsTrue(enemy == null || enemy.IsDefeated,
+                "実 Hitbox で敵を倒せていない（HP=" + (enemy != null ? enemy.CurrentHp : 0)
+                + " 体幹=" + (enemy != null ? enemy.CurrentPoise : 0f)
+                + " 命中結果=" + probe.DamageTotal + "/主人公 " + probe.DamageFromPlayer
+                + " 全種=" + probe.AnyKindCount
+                + " 主人公の状態=" + player.Current + " 攻撃に入った=" + sawAttack
+                + " 敵レイヤー=" + (enemy != null ? LayerMask.LayerToName(enemy.gameObject.layer) : "-")
+                + " 判定中心=" + player.SwingCenter + " 前=" + player.SwingForward
+                + " 主人公位置=" + player.transform.position
+                + " 敵位置=" + (enemy != null ? enemy.transform.position.ToString() : "-")
+                + " 判定中フレーム=" + activeFrames + " 重なり=" + OverlapCountAt(player)
+                + " 主人公の root=" + player.transform.root.name
+                + " 敵の root=" + (enemy != null ? enemy.transform.root.name : "-")
+                + " 距離=" + (enemy != null ? Vector3.Distance(player.transform.position, enemy.transform.position) : 0f)
+                + " mode=" + (GameModeProvider.Current != null ? GameModeProvider.Current.Current.ToString() : "null")
+                + " input=" + (PlayerInputProvider.Current != null ? PlayerInputProvider.Current.GetType().Name : "null")
+                + " active=" + (PlayerInputProvider.Current != null && PlayerInputProvider.Current.Active) + "）。");
+        }
+
+        /// <summary>追従を再開できる状態か（倒れている・退場中は除く）。</summary>
+        private static bool CanFollowAgain(CompanionState state)
+        {
+            return state != CompanionState.Down
+                && state != CompanionState.Recovering
+                && state != CompanionState.Away
+                && state != CompanionState.Stagger;
+        }
+
+        /// <summary>いまの判定区間に何が重なっているか（診断用）。</summary>
+        private static int OverlapCountAt(PlayerStateController player)
+        {
+            Physics.SyncTransforms();
+            Collider[] hits = Physics.OverlapBox(
+                player.SwingCenter, player.SwingHalfExtents, Quaternion.identity, ~0,
+                QueryTriggerInteraction.Collide);
+            return hits != null ? hits.Length : 0;
+        }
+
+        /// <summary>遷移の完了を待つ（完了回数で数える）。</summary>
+        private static IEnumerator WaitForArrival(AreaTransitionCoordinator coordinator, int expected)
+        {
+            float waited = 0f;
+            while (coordinator.CompletedCount < expected && waited < 15f)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            Assert.AreEqual(expected, coordinator.CompletedCount, "遷移が完了する。");
         }
 
         // ---------------------------------------------------------------- P17（カメラ）

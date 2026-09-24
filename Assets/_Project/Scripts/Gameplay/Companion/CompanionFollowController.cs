@@ -404,6 +404,89 @@ namespace Momotaro.Gameplay.Companion
         }
 
         /// <summary>
+        /// 指定範囲の<b>内側へ</b>安全に置き直す（P5-07。仕様書 v1.1 §8.2 手順 5）。
+        ///
+        /// 戦闘開始でアリーナを封鎖するとき、犬丸が外に居たら内側へ入れる。
+        /// <b>値（HP・Down・CD）は触らない。</b>直すのは位置だけで、状態を初期化しない。
+        ///
+        /// 候補の選び方は P5-05 の安全ワープ規則をそのまま使う（固定順・危険候補は拒否・
+        /// 主人公と繋がっている側だけ）。<b>範囲内の候補が 1 つも安全でなければ跳ばさない</b>：
+        /// 壁内へ押し込むくらいなら封鎖を諦める方が正しい（§10.2）。
+        ///
+        /// すでに内側なら何もせず true。呼び出しの直前に §8.2 手順 4 で所有権は解放されているので、
+        /// 通常 Follow のワープ可否（攻撃中など）ではなく、Down／Away だけを見る。
+        /// </summary>
+        public bool TryRelocateInside(Bounds bounds, out Navigation.SafeWarpRejection rejection)
+        {
+            rejection = Navigation.SafeWarpRejection.None;
+
+            if (_actor == null || _leader == null)
+            {
+                rejection = Navigation.SafeWarpRejection.NotAllowed;
+                return false;
+            }
+
+            Vector3 current = _actor.transform.position;
+            if (IsInside(bounds, current))
+            {
+                return true; // すでに内側。動かさない。
+            }
+
+            Vector3 leaderPosition = _leader.position;
+            Vector3 forward = ResolveLeaderForward();
+
+            _warpCandidates.Clear();
+            AddIfInside(bounds, _model.SlotPosition);
+            AddIfInside(bounds, leaderPosition - forward * 1.2f);
+            AddIfInside(bounds, leaderPosition + Vector3.Cross(Vector3.up, forward) * 1.2f);
+            AddIfInside(bounds, leaderPosition - Vector3.Cross(Vector3.up, forward) * 1.2f);
+            AddIfInside(bounds, leaderPosition);
+
+            if (_warpCandidates.Count == 0)
+            {
+                rejection = Navigation.SafeWarpRejection.NoCandidate;
+                return false;
+            }
+
+            if (_warpProbe == null)
+            {
+                // 安全性を確かめる手立てが無い構成は、先頭候補へ跳ぶ（従来どおり）。
+                BeginFollowAction(CompanionState.Warp, CompanionStateChangeReason.Warped);
+                SubmitMove(CompanionMoveRequest.Warp(_warpCandidates[0]));
+                _pathModel.Reset();
+                return true;
+            }
+
+            if (!Navigation.SafeWarpSelector.TrySelect(
+                    _warpCandidates, leaderPosition, warpAllowed: true, _warpProbe,
+                    out Vector3 chosen, out rejection))
+            {
+                return false;
+            }
+
+            BeginFollowAction(CompanionState.Warp, CompanionStateChangeReason.Warped);
+            SubmitMove(CompanionMoveRequest.Warp(chosen));
+            _pathModel.Reset();
+            return true;
+        }
+
+        private void AddIfInside(Bounds bounds, Vector3 candidate)
+        {
+            if (IsInside(bounds, candidate))
+            {
+                _warpCandidates.Add(candidate);
+            }
+        }
+
+        private static bool IsInside(Bounds bounds, Vector3 position)
+        {
+            Vector3 min = bounds.min;
+            Vector3 max = bounds.max;
+            return position.x >= min.x && position.x <= max.x
+                && position.z >= min.z && position.z <= max.z;
+        }
+
+        /// <summary>
         /// いま通常 Follow のワープをしてよいか（§10.2）。
         /// 攻撃 Active・防御・被弾・Down・Away・探索占有中は禁止。
         /// </summary>

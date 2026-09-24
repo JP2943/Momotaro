@@ -72,6 +72,35 @@ namespace Momotaro.Editor.Phase5
         /// <summary>B から A へ戻る扉（Interact 1 回で要求する。§6.1）。</summary>
         public static readonly StableId DoorBToA = new StableId("door_p5_b_to_a");
 
+        // ---- P5-07：Encounter（§8）----
+
+        /// <summary>B の調査地点（戦闘区画の外。調査中の戦闘開始を作れる位置）。</summary>
+        public static readonly StableId PointBOpen = new StableId("point_p5_b_01");
+
+        /// <summary>B の調査で見つかるもの。</summary>
+        public static readonly StableId DiscoveryBOpen = new StableId("discovery_p5_b_01");
+
+        /// <summary>B の通常 Encounter の定義 Asset。</summary>
+        public const string EncounterBDataPath = DataFolder + "/SO_Encounter_P5_B_Road.asset";
+
+        /// <summary>B の通常 Encounter の安定 ID（§8.1）。</summary>
+        public static readonly StableId EncounterBRoad = new StableId("encounter_p5_b_road");
+
+        /// <summary>B の出現点集合の安定 ID（Transform は Scene 側が持つ。§8.1）。</summary>
+        public static readonly StableId SpawnPointsBRoad = new StableId("spawn_p5_b_road");
+
+        /// <summary>骸骨剣士（近接。報酬 10）。</summary>
+        public static readonly StableId EnemyMelee = new StableId("enemy_melee_prototype");
+
+        /// <summary>骸骨弓兵（遠距離。報酬 12）。</summary>
+        public static readonly StableId EnemyRanged = new StableId("enemy_ranged_prototype");
+
+        /// <summary>骸骨剣士の Prefab。</summary>
+        public const string EnemyMeleePrefabPath = "Assets/_Project/Prefabs/Enemies/PF_Enemy_Melee_Prototype.prefab";
+
+        /// <summary>骸骨弓兵の Prefab。</summary>
+        public const string EnemyRangedPrefabPath = "Assets/_Project/Prefabs/Enemies/PF_Enemy_Ranged_Prototype.prefab";
+
         // ---- P5-06：カメラ領域（§11）----
 
         /// <summary>A の既定領域（どの部屋にも入らないときに使う。§11）。</summary>

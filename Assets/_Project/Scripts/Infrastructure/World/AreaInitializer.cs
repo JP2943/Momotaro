@@ -4,6 +4,7 @@ using Momotaro.Core.Logging;
 using Momotaro.Core.World;
 using Momotaro.Data.World;
 using Momotaro.Gameplay.Companion.Investigation;
+using Momotaro.Gameplay.Encounter;
 using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Progression;
 using Momotaro.Gameplay.Session;
@@ -55,6 +56,9 @@ namespace Momotaro.Infrastructure.World
 
         [Tooltip("Actor 値の採取・復元の窓口（§4.4〜§4.6）。")]
         [SerializeField] private AreaActorTransferPort _transferPort;
+
+        [Tooltip("この区画の Encounter（§8。戦闘の無い区画は未割当でよい）。")]
+        [SerializeField] private AreaEncounterRunner _encounter;
 
         [Header("カタログ")]
         [Tooltip("P5 のエリアカタログ。遷移サービスへ渡す。")]
@@ -224,6 +228,15 @@ namespace Momotaro.Infrastructure.World
                 {
                     return Fail("開通済みの門を復元できませんでした: " + doorError);
                 }
+            }
+
+            // 6c. Encounter へ Session の世界状態を渡し、クリア済みを復元する（§4.3／§8.4 末尾）。
+            //     常駐 Session は Scene へ serialize できないので、参照ではなく取り出し口を渡す。
+            //     クリア済みの区画で Trigger を踏んでも戦闘が始まらないのは、この復元が効いているため。
+            if (_encounter != null)
+            {
+                _encounter.BindSession(() => area, () => session.RespawnCycle);
+                _encounter.RestoreFromRecord();
             }
 
             // 6b. 到着直後の跳ね返りを止める（§6.1 末尾）。

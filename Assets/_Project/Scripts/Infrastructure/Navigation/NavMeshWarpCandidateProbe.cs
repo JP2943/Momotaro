@@ -52,9 +52,16 @@ namespace Momotaro.Infrastructure.Navigation
 
             Physics.SyncTransforms();
 
-            // 床を拾わないよう少し浮かせる。Trigger も見る：水の境界・閉門は Trigger で置くことがある。
+            // 床を拾わないよう少し浮かせる。
+            //
+            // <b>Trigger は見ない。</b> このプロジェクトでは通行止めは必ず<b>実体のある Collider</b>で置く
+            // （壁・水の境界・閉じた門。§3.3／§7.3）。Trigger になっているのは受付の方——
+            // 出入口（<c>AreaExitGate</c>）と戦闘開始（<c>AreaEncounterTrigger</c>）——で、
+            // どちらも通れる床の上にある。Trigger まで塞がりとして数えると、
+            // <b>出入口と遭遇点の周りが丸ごと壁になり</b>、そこへは一歩も置けなくなる
+            // （P08 で実際に踏んだ：アリーナ内へ犬丸を入れられず、戦闘が始められなかった）。
             Vector3 center = position + new Vector3(0f, _bodyRadius + 0.05f, 0f);
-            return Physics.CheckSphere(center, _bodyRadius, _blockingMask, QueryTriggerInteraction.Collide);
+            return Physics.CheckSphere(center, _bodyRadius, _blockingMask, QueryTriggerInteraction.Ignore);
         }
 
         /// <inheritdoc />
