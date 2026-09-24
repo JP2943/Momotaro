@@ -87,6 +87,9 @@ namespace Momotaro.Tests.PlayMode
             AreaPendingArrival.Clear();
             AreaPendingArrival.ResetDiagnostics();
             AreaInteractableRegistry.Clear();
+
+            // 前の実行が残した仮想デバイスを、足す前に外しておく（枝番の 2 台目を作らない）。
+            RemoveStrayTestDevices();
         }
 
         [UnityTearDown]
@@ -180,6 +183,29 @@ namespace Momotaro.Tests.PlayMode
             {
                 InputSystem.RemoveDevice(_gamepad);
                 _gamepad = null;
+            }
+
+            RemoveStrayTestDevices();
+        }
+
+        /// <summary>
+        /// 前の実行が残した仮想デバイスを外す。
+        ///
+        /// デバイスは PlayMode を抜けても残るので、同じ名前で足すと <c>P5Keyboard1</c> のように
+        /// <b>枝番が付いて 2 台になる</b>。そうなると Action が複数のキーボードに解決され、
+        /// こちらが押したデバイスの押下が押下エッジとして立たなくなる（実際に踏んだ：
+        /// UI マップは有効・Submit も有効なのに、押下回数が 0 のまま）。
+        /// 名前で見分けられるのはこのテスト専用のデバイスだけなので、それだけを外す。
+        /// </summary>
+        private static void RemoveStrayTestDevices()
+        {
+            for (int i = InputSystem.devices.Count - 1; i >= 0; i--)
+            {
+                InputDevice device = InputSystem.devices[i];
+                if (device != null && device.name != null && device.name.StartsWith("P5"))
+                {
+                    InputSystem.RemoveDevice(device);
+                }
             }
         }
 
@@ -1893,6 +1919,31 @@ namespace Momotaro.Tests.PlayMode
         {
             InputSystem.QueueStateEvent(_keyboard, new KeyboardState(key));
             yield return null;
+        }
+
+        /// <summary>
+        /// 効くまで<b>押し直しながら</b>待つ（人が操作するときと同じ）。
+        ///
+        /// 1 回きりの押下は、Scene を何度も往復したあとだと届かないことがある（P5-10 で踏んだ）。
+        /// 入力エッジの扱いそのものは P18 が専用に見るので、それ以外の検査では
+        /// 「届くまで押し直す」で揺れを吸収し、本題の失敗と取り違えないようにする。
+        /// </summary>
+        private IEnumerator PressKeyUntil(Key key, System.Func<bool> condition, float seconds)
+        {
+            float deadline = Time.realtimeSinceStartup + seconds;
+            while (!condition() && Time.realtimeSinceStartup < deadline)
+            {
+                yield return PressKey(key);
+                yield return null;
+                yield return ReleaseKeys();
+
+                for (int i = 0; i < 10 && !condition(); i++)
+                {
+                    yield return null;
+                }
+            }
+
+            yield return ReleaseKeys();
         }
 
         private IEnumerator ReleaseKeys()
@@ -4271,6 +4322,20 @@ namespace Momotaro.Tests.PlayMode
                 text.Append(map.name).Append(map.enabled ? "[有効] " : "[無効] ");
             }
 
+            InputAction submit = asset.FindAction("UI/Submit", false);
+            text.Append(" Submit=")
+                .Append(submit == null ? "(見つからない)" :
+                    (submit.enabled ? "有効" : "無効") + " controls=" + submit.controls.Count
+                    + " pressed=" + submit.IsPressed());
+
+            text.Append(" timeScale=").Append(Time.timeScale)
+                .Append(" updateMode=").Append(InputSystem.settings.updateMode)
+                .Append(" devices=");
+            foreach (UnityEngine.InputSystem.InputDevice device in InputSystem.devices)
+            {
+                text.Append(device.name).Append(device.added ? "[在] " : "[無] ");
+            }
+
             InputAction interact = asset.FindAction("Gameplay/Interact", false);
             text.Append(" Interact=")
                 .Append(interact == null ? "(見つからない)" :
@@ -4300,7 +4365,10 @@ namespace Momotaro.Tests.PlayMode
                     ? RespawnSubmitProvider.Current.SubmitPressed.ToString() : "(提供点なし)")
                 + " 再開の拒否=" + (runner != null ? runner.LastRejection.ToString() : "-")
                 + " 遷移の拒否=" + (runner != null ? runner.LastTravelRejection.ToString() : "-")
-                + " 待ち=" + (runner != null ? runner.IsAwaitingRespawn.ToString() : "-");
+                + " 待ち=" + (runner != null ? runner.IsAwaitingRespawn.ToString() : "-")
+                + " 生の押下=" + ((RespawnSubmitProvider.Current as RespawnSubmitState)?.IsHeld)
+                + " 押下回数=" + ((RespawnSubmitProvider.Current as RespawnSubmitState)?.PressCount)
+                + " " + DescribeInputAsset();
         }
 
         /// <summary>主人公のすぐ隣に、実行回数だけを数える対象を登録する。</summary>
@@ -4456,6 +4524,221 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsNotNull(follow, label + "：犬丸が居る。");
             Assert.IsTrue(follow.HasPathProvider,
                 label + "：経路の供給元が実際に注入されている（§10.1。未注入なら経路追従が止まる）。");
+        }
+
+
+        // ---------------------------------------------------------------- P14・P19（残留の検査）
+
+        /// <summary>
+        /// P5-P14：A↔B を 3 往復して死亡再開まで通しても、<b>旧 Scene 由来の登録と実体が残らない</b>
+        /// （§5.1／§6.2 手順 4）。新しい Scene の正規の登録は残っていることも同時に見る。
+        ///
+        /// <b>「全部 0」を求めない。</b> 活動中の Area には登録があるのが正しく、
+        /// 全体 0 を要求すると「新しい Scene も壊れている」状態を合格にしてしまう（§15.5）。
+        /// 見るのは「いま居る Scene のものだけが居る」こと。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RepeatedTravelAndRespawn_LeaveOneOwnerAndNoOldColliders()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5Keyboard");
+
+            AreaTransitionService service = Transitions();
+            AreaTransitionCoordinator transitions = service.Coordinator;
+            GameSessionState session = Sessions().Session;
+
+            // ================================ 1. A↔B を 3 往復 ================================
+            int completed = 0;
+            for (int lap = 1; lap <= 3; lap++)
+            {
+                Assert.IsTrue(service.TryTravel(AreaB, AreaBFromA).Accepted, lap + " 周目：B へ。");
+                yield return WaitForArrival(transitions, ++completed);
+                AssertOnlyCurrentSceneIsRegistered(lap + " 周目の B");
+
+                Assert.IsTrue(service.TryTravel(AreaA, AreaAFromB).Accepted, lap + " 周目：A へ。");
+                yield return WaitForArrival(transitions, ++completed);
+                AssertOnlyCurrentSceneIsRegistered(lap + " 周目の A");
+            }
+
+            Assert.AreEqual(1, Sessions().CreatedCount, "往復で Session を作り直さない（§5.2）。");
+
+            // 往復しても<b>入力が生きている</b>ことを実キーで確かめる。
+            // ここが死んでいると、以降の失敗が「再開できない」に見えて原因を取り違える。
+            var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.IsNotNull(lever, "A にレバーがある。");
+            yield return MovePlayerTo(lever.InteractionAnchor + new Vector3(0.6f, 0f, 0f));
+            yield return PressKeyUntil(Key.E, () => lever.OpenedCount >= 1, 10f);
+            Assert.AreEqual(1, lever.OpenedCount,
+                "3 往復したあとでも実キーの Interact が効く。" + DescribeInputAsset());
+
+            // ================================ 2. 死亡再開 ================================
+            yield return KillPlayerWithRealHit();
+            yield return WaitForRespawnPrompt();
+
+            int before = transitions.CompletedCount;
+
+            yield return PressKeyUntil(Key.Enter, () => transitions.CompletedCount > before, 20f);
+            Assert.AreEqual(before + 1, transitions.CompletedCount,
+                "再開のロードが完了する。" + DescribeSubmit());
+            yield return WaitUntilOrTimeout(
+                () => GameModeProvider.Current.Current == GameMode.Exploration, 5f);
+
+            AssertOnlyCurrentSceneIsRegistered("死亡再開の到着");
+            Assert.AreEqual(1, session.RespawnCycle, "再出現周期は 1 回だけ進む。");
+
+            // ================================ 3. 犬丸の健全性（§5.1 末尾）================================
+            var actor = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.IsNotNull(actor, "到着先に犬丸が居る。");
+            Assert.AreEqual(0, actor.IllegalTransitionCount,
+                "往復と再開を通して不正遷移を出さない（診断カウンタを消してから見ない）。");
+
+            // 到着直後の最初の Tick まで観測する（§15.3）。
+            for (int i = 0; i < 5; i++)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(0, actor.IllegalTransitionCount, "最初の Tick を回しても増えない。");
+
+            // 旧 Scene の行動の券を持ち越さない（§15.3）。
+            // <b>追従が握っているのは正常</b>なので、そこは咎めない。戦闘・調査が残っていないことを見る。
+            var states = actor.GetComponent<CompanionStateArbiter>();
+            Assert.IsNotNull(states);
+            Assert.AreNotEqual(CompanionActionOwner.Combat, states.CurrentOwner,
+                "到着直後に戦闘の券を握ったままにしない。");
+            Assert.AreNotEqual(CompanionActionOwner.Investigate, states.CurrentOwner,
+                "到着直後に調査の券を握ったままにしない。");
+            Assert.IsTrue(CanFollowAgain(actor.State),
+                "到着直後から行動できる状態に居る。状態=" + actor.State);
+        }
+
+        /// <summary>
+        /// いま活動している Scene のものだけが登録に残っていることを見る。
+        /// <b>破棄予定になっただけを成功にしない</b>ので、登録の中身が現在の Scene に属することまで確かめる（§15.3）。
+        /// </summary>
+        private static void AssertOnlyCurrentSceneIsRegistered(string label)
+        {
+            Scene current = SceneManager.GetActiveScene();
+            AssertSingleOwners(label);
+
+            Assert.AreEqual(1, Object.FindObjectsByType<AreaRoot>(FindObjectsSortMode.None).Length,
+                label + "：エリアの根は 1 つ（旧 Scene の根が残らない）。");
+            Assert.AreEqual(0, EnemyProjectileRegistry.LiveCount, label + "：残留 Projectile なし。");
+
+            // 索敵：敵が居ない Area では 0、居る Area でも「その Scene の敵だけ」。
+            int hostiles = CountHostilePerceptionTargets();
+            int enemies = Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None).Length;
+            Assert.AreEqual(enemies, hostiles,
+                label + "：索敵の登録は活動中の敵と同数（旧 Scene 由来の登録が残らない）。敵=" + enemies);
+
+            // Interact 候補・調査地点：数だけでなく、<b>いまの Scene に属している</b>ことを見る。
+            var interactables = new List<IAreaInteractable>();
+            AreaInteractableRegistry.CopyTo(interactables);
+            Assert.Greater(interactables.Count, 0, label + "：新 Scene の Interact 候補は残っている。");
+            for (int i = 0; i < interactables.Count; i++)
+            {
+                AssertBelongsToScene(interactables[i], current, label + "：Interact 候補");
+            }
+
+            var points = new List<IInvestigationPoint>();
+            InvestigationPointRegistry.CopyTo(points);
+            Assert.Greater(points.Count, 0, label + "：新 Scene の調査地点は残っている。");
+            for (int i = 0; i < points.Count; i++)
+            {
+                AssertBelongsToScene(points[i], current, label + "：調査地点");
+            }
+        }
+
+        /// <summary>登録されている実体が、いま活動している Scene のものかを見る。</summary>
+        private static void AssertBelongsToScene(object registered, Scene current, string label)
+        {
+            var component = registered as Component;
+            Assert.IsNotNull(component, label + "：登録が Scene の実体ではありません（" + registered + "）。");
+            Assert.IsTrue(component != null && component.gameObject != null,
+                label + "：破棄済みの実体が登録に残っています。");
+            Assert.AreEqual(current.handle, component.gameObject.scene.handle,
+                label + "：旧 Scene の実体が登録に残っています（" + component.name
+                + " は " + component.gameObject.scene.name + " 所属）。");
+        }
+
+        /// <summary>
+        /// P5-P19：Area と Actor をすべて破棄して unload が終わったあと、
+        /// <b>Clear を呼ぶ前に</b>静的な登録が 0 であることを見る（§15.3 の 2 行目）。
+        ///
+        /// Assert の前に Clear すると、残留をテスト自身が隠してしまう。
+        /// 隔離のための Clear は失敗後の <c>finally</c> でだけ行う。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RegistryTeardown_LeavesZeroWithoutClearingBeforeAssertion()
+        {
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaBScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5Keyboard");
+
+            // 敵まで湧かせてから畳む（「何も起きていない Scene を捨てた」では検査にならない）。
+            var runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            Assert.IsNotNull(runner);
+            yield return MovePlayerTo(EncounterTriggerPoint);
+            yield return WaitUntilOrTimeout(() => runner.State == AreaEncounterState.Playing, 5f);
+            Assert.AreEqual(AreaEncounterState.Playing, runner.State,
+                "前提：戦闘が始まる。拒否=" + runner.LastRejection + " " + runner.LastFailureDetail);
+            Assert.Greater(CountHostilePerceptionTargets(), 0, "前提：索敵に敵が載っている。");
+            Assert.Greater(AreaInteractableRegistry.Count, 0, "前提：Interact 候補が載っている。");
+            Assert.Greater(InvestigationPointRegistry.Count, 0, "前提：調査地点が載っている。");
+
+            try
+            {
+                // ---- すべて畳む。unload の完了まで待つ ----
+                yield return ReleaseKeys();
+                yield return SceneManager.LoadSceneAsync(TrialScene, LoadSceneMode.Single);
+                DestroyTrialLaunchers();
+                yield return null;
+
+                AsyncOperation unload = Resources.UnloadUnusedAssets();
+                while (unload != null && !unload.isDone)
+                {
+                    yield return null;
+                }
+
+                // 破棄は次のフレームに回ることがある。「Destroy 予定になった」で成功にしない。
+                for (int i = 0; i < 5; i++)
+                {
+                    yield return null;
+                }
+
+                Assert.AreEqual(0, Object.FindObjectsByType<AreaRoot>(FindObjectsSortMode.None).Length,
+                    "前提：Area はすべて破棄されている。");
+                Assert.AreEqual(0, Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None).Length,
+                    "前提：敵はすべて破棄されている。");
+
+                // ---- ここで Clear を呼ばずに数える（呼んだら検査にならない）----
+                Assert.AreEqual(0, CountHostilePerceptionTargets(),
+                    "索敵の登録が残らない。残り=" + PerceptionTargetRegistry.Count);
+                Assert.AreEqual(0, AreaInteractableRegistry.Count,
+                    "Interact 候補の登録が残らない。残り=" + AreaInteractableRegistry.Count);
+                Assert.AreEqual(0, InvestigationPointRegistry.Count,
+                    "調査地点の登録が残らない。残り=" + InvestigationPointRegistry.Count);
+                Assert.AreEqual(0, EnemyProjectileRegistry.LiveCount,
+                    "Projectile の登録が残らない。残り=" + EnemyProjectileRegistry.LiveCount);
+            }
+            finally
+            {
+                // 隔離のための Clear は失敗したあとだけ（§15.3）。
+                PerceptionTargetRegistry.Clear();
+                AreaInteractableRegistry.Clear();
+                InvestigationPointRegistry.Clear();
+                EnemyProjectileRegistry.Clear();
+            }
         }
 
     }

@@ -31,6 +31,7 @@ using Momotaro.Gameplay.Interaction;
 using Momotaro.Gameplay.Navigation;
 using Momotaro.Presentation.Cameras;
 using Momotaro.Gameplay.Session;
+using Momotaro.Infrastructure.Bootstrap;
 using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.World;
 using NUnit.Framework;
@@ -3690,6 +3691,169 @@ namespace Momotaro.Tests.EditMode
                 "戦闘が終われば追従が状態を引き取れる。");
             Assert.AreEqual(CompanionState.Follow, rig.Actor.State, "追従へ戻る。");
             Assert.AreEqual(0, rig.Actor.IllegalTransitionCount, "不正遷移を出さない。");
+        }
+
+
+        // ---------------------------------------------------------------- E26・E27（Session の所有と後片付け）
+
+        /// <summary>
+        /// P5-E26：<b>Session を捨てられるのは所有者だけ</b>で、通常の移動は捨てない（§4.2／§5.2／§9.2）。
+        ///
+        /// ここが緩むと被害が非対称に出る。Area のロードが Session を作り直せば、
+        /// 往復するたびに徳と開通が消える。逆に New Game が作り直せなければ、
+        /// 「最初から」を選んでも前回の進行が残る。
+        /// </summary>
+        [Test]
+        public void NewGame_ClearsSessionButAreaLoadDoesNot()
+        {
+            var service = new GameSessionBootService();
+            Assert.AreEqual("GameSession", service.ServiceName);
+            Assert.IsTrue(service.Initialize().Success);
+            Assert.IsNull(service.Session, "起動しただけでは Session を作らない（§5.2）。");
+            Assert.AreEqual(0, service.CreatedCount);
+
+            // ---- Area の初期化が要求したときだけ作る。二度目以降は同じ実体 ----
+            GameSessionState first = service.EnsureSession();
+            Assert.IsNotNull(first);
+            Assert.AreEqual(1, service.CreatedCount);
+            Assert.AreSame(first, GameSessionProvider.Current, "提供点へ入る。");
+
+            first.Progress.TryGrant(new RewardSnapshot(new StableId("reward_p5_e26"), 13, default, true), out _);
+            var areaId = new StableId("area_p5_a");
+            AreaRuntimeState area = first.GetOrCreateArea(areaId);
+            first.MarkVisited(areaId);
+            Assert.IsTrue(area.TryOpen(new StableId("flag_p5_a_gate")));
+
+            for (int i = 0; i < 3; i++)
+            {
+                Assert.AreSame(first, service.EnsureSession(),
+                    "Area のロードを何度繰り返しても Session は作り直さない（§5.2）。");
+            }
+
+            Assert.AreEqual(1, service.CreatedCount, "往復で Session は増えない。");
+            Assert.AreEqual(13, first.Progress.Virtue, "往復で進行も消えない。");
+
+            // ---- 共有 State は Scene 側から初期化できない（§4.2）----
+            Assert.IsNull(
+                typeof(GameSessionState).GetMethod("Reset", BindingFlags.Public | BindingFlags.Instance,
+                    null, System.Type.EmptyTypes, null),
+                "Session に丸ごと初期化する公開口を作らない（Scene 側から消せてしまう）。");
+
+            PlayerProgressHolder holder = NewHolder("BoundProgress_E26");
+            Assert.IsTrue(holder.Bind(first.Progress));
+            Assert.IsFalse(holder.ResetProgress(), "束ねた進行を Scene 側から初期化できない。");
+            Assert.AreEqual(13, first.Progress.Virtue);
+
+            // ---- 明示的な New Game だけが作り直す（§9.2）----
+            GameSessionState fresh = service.StartNewSession();
+            Assert.AreNotSame(first, fresh);
+            Assert.AreEqual(2, service.CreatedCount);
+            Assert.AreSame(fresh, GameSessionProvider.Current, "提供点も差し替わる。");
+            Assert.AreEqual(0, fresh.Progress.Virtue, "徳は初期値へ戻る。");
+            Assert.AreEqual(0, fresh.VisitedAreaCount, "訪問済みも戻る。");
+            Assert.AreEqual(0, fresh.RecruitedCount, "加入設定も戻る。");
+            Assert.AreEqual(0, fresh.RespawnCycle);
+            Assert.AreEqual(13, first.Progress.Virtue, "古い Session の中身は壊さない（参照が残っていても別物）。");
+
+            // New Game の直後でも、Area の初期化は新しい Session を使い回す。
+            Assert.AreSame(fresh, service.EnsureSession());
+            Assert.AreEqual(2, service.CreatedCount);
+
+            // ---- 破棄（Play 終了）----
+            service.Dispose();
+            Assert.IsNull(service.Session, "所有者が捨てれば Session は無くなる。");
+            Assert.IsNull(GameSessionProvider.Current, "自分の Session なら提供点も外す。");
+        }
+
+        /// <summary>
+        /// P5-E27：<b>後から壊した重複が、生きている正本の提供点を消さない</b>（§5.2 末尾）。
+        ///
+        /// Bootstrap は重複しうるし、旧 Scene の <c>OnDestroy</c> は新しい Scene の準備が済んだ<b>後</b>に走る。
+        /// 「自分が差したものだけを外す」を守らないと、その瞬間に世界の窓口が全部 null になる。
+        /// </summary>
+        [Test]
+        public void Lifecycle_DisposeOnlyUnregistersOwnedProviders()
+        {
+            // ---- GameMode ----
+            var firstModes = new GameModeBootService();
+            Assert.IsTrue(firstModes.Initialize().Success);
+            Assert.AreSame(firstModes.Modes, GameModeProvider.Current, "前提：先に立った方が提供点を持つ。");
+
+            var secondModes = new GameModeBootService();
+            Assert.IsTrue(secondModes.Initialize().Success);
+            Assert.AreSame(secondModes.Modes, GameModeProvider.Current, "後から立った方が正本になる。");
+
+            firstModes.Dispose();
+            Assert.AreSame(secondModes.Modes, GameModeProvider.Current,
+                "後発破棄で正本の GameMode を消さない。");
+
+            // ---- Session ----
+            var firstSessions = new GameSessionBootService();
+            firstSessions.Initialize();
+            GameSessionState firstSession = firstSessions.EnsureSession();
+
+            var secondSessions = new GameSessionBootService();
+            Assert.IsTrue(secondSessions.Initialize().Success,
+                "後から立った起動処理が、走っている Session を消さない。");
+            Assert.AreSame(firstSession, GameSessionProvider.Current,
+                "<b>初期化だけで提供点を触らない</b>（自分は何も所有していない）。");
+
+            GameSessionState secondSession = secondSessions.EnsureSession();
+            Assert.AreSame(secondSession, GameSessionProvider.Current, "後から作った方が正本になる。");
+
+            firstSessions.Dispose();
+            Assert.AreSame(secondSession, GameSessionProvider.Current,
+                "後発破棄で正本の Session を消さない。");
+
+            // ---- Gameplay 時計（旧 Scene の常駐が壊れる順序を再現する）----
+            var firstClockGo = new GameObject("Transitions_First");
+            _spawned.Add(firstClockGo);
+            var firstClock = firstClockGo.AddComponent<AreaTransitionService>();
+            Assert.IsTrue(firstClock.Initialize().Success);
+            Assert.AreSame(firstClock.Clock, GameplayClockProvider.Current, "前提：先に立った方が時計を出す。");
+
+            var secondClockGo = new GameObject("Transitions_Second");
+            _spawned.Add(secondClockGo);
+            var secondClock = secondClockGo.AddComponent<AreaTransitionService>();
+            Assert.IsTrue(secondClock.Initialize().Success);
+            Assert.AreSame(secondClock.Clock, GameplayClockProvider.Current);
+
+            // EditMode では Unity が OnDestroy を送らない（[ExecuteAlways] でない）。
+            // 実際の破棄順を再現したいので、破棄の通知だけ明示的に回す。
+            InvokePrivate(firstClock, "OnDestroy");
+            UnityEngine.Object.DestroyImmediate(firstClockGo);
+            Assert.AreSame(secondClock.Clock, GameplayClockProvider.Current,
+                "後発破棄で正本の Gameplay 時計を消さない（止まったままの世界にしない）。");
+
+            // ---- 仲間の活動 Context（Scene をまたぐと必ずこの順序になる）----
+            var firstContextGo = new GameObject("Activity_First");
+            _spawned.Add(firstContextGo);
+            var firstContext = firstContextGo.AddComponent<CompanionActivityContext>();
+            firstContext.MarkAreaWithoutEncounter();
+            InvokePrivate(firstContext, "OnEnable");
+            Assert.AreSame(firstContext, CompanionActivityProvider.Current, "前提：先に立った方が提供点を持つ。");
+
+            var secondContextGo = new GameObject("Activity_Second");
+            _spawned.Add(secondContextGo);
+            var secondContext = secondContextGo.AddComponent<CompanionActivityContext>();
+            secondContext.MarkAreaWithoutEncounter();
+            InvokePrivate(secondContext, "OnEnable");
+            Assert.AreSame(secondContext, CompanionActivityProvider.Current, "後から来た方が正本になる。");
+
+            InvokePrivate(firstContext, "OnDisable");
+            Assert.AreSame(secondContext, CompanionActivityProvider.Current,
+                "旧 Scene の解除で新しい活動 Context を消さない。");
+
+            // 後片付け（提供点を次のテストへ持ち越さない）。
+            secondSessions.Dispose();
+            secondModes.Dispose();
+            InvokePrivate(secondContext, "OnDisable");
+            InvokePrivate(secondClock, "OnDestroy");
+            UnityEngine.Object.DestroyImmediate(secondClockGo);
+            Assert.IsNull(GameSessionProvider.Current);
+            Assert.IsNull(GameModeProvider.Current);
+            Assert.IsNull(CompanionActivityProvider.Current);
+            Assert.IsNull(GameplayClockProvider.Current);
         }
 
     }

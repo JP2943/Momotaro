@@ -32,7 +32,10 @@ namespace Momotaro.Infrastructure.World
         public ServiceInitResult Initialize()
         {
             // ここでは作らない。本編型 Area の初期化が要求したときだけ作る（§5.2）。
-            GameSessionProvider.Current = null;
+            //
+            // <b>提供点は触らない。</b> 後から立った重複 Bootstrap の初期化が、
+            // すでに走っている正本の Session を消してしまう（§5.2「後発破棄しても正本の Provider を解除しない」）。
+            // 自分は Session を持っていないので、提供点に対して主張できることが何も無い。
             return ServiceInitResult.Ok("Game session service ready (no session yet).");
         }
 
@@ -68,11 +71,18 @@ namespace Momotaro.Infrastructure.World
             return Session;
         }
 
-        /// <summary>Session を捨てる（Play 終了・アプリ終了）。保存はしない（§9.2）。</summary>
+        /// <summary>
+        /// Session を捨てる（Play 終了・アプリ終了）。保存はしない（§9.2）。
+        ///
+        /// <b>提供点の解除は所有者一致で行う</b>（§5.2 末尾）。重複 Bootstrap を後から壊したときに、
+        /// 生きている正本の Session まで消さないため。「いま提供点に入っているのが自分の Session なら外す」。
+        /// </summary>
         public void Dispose()
         {
+            GameSessionState owned = Session;
             Session = null;
-            if (GameSessionProvider.Current != null)
+
+            if (owned != null && ReferenceEquals(GameSessionProvider.Current, owned))
             {
                 GameSessionProvider.Current = null;
             }

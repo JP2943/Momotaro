@@ -246,7 +246,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.NewGame_ClearsSessionButAreaLoadDoesNot",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E27",
@@ -254,7 +254,7 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.Lifecycle_DisposeOnlyUnregistersOwnedProviders",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-E28",
@@ -409,7 +409,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RepeatedTravelAndRespawn_LeaveOneOwnerAndNoOldColliders",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-P15",
@@ -449,7 +449,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RegistryTeardown_LeavesZeroWithoutClearingBeforeAssertion",
       "requirementIds": [],
-      "implemented": false
+      "implemented": true
     },
     {
       "requirementId": "P5-V01",
