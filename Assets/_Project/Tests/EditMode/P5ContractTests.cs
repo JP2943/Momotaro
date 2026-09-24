@@ -12,6 +12,10 @@ using Momotaro.Core.World;
 using Momotaro.Data;
 using Momotaro.Data.Combat;
 using Momotaro.Data.World;
+using Momotaro.Data.Events;
+using Momotaro.Data.Progression;
+using Momotaro.Gameplay.Encounter;
+using Momotaro.Gameplay.Enemy;
 using Momotaro.Gameplay.Enemy.Defense;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Enemy.Threat;
@@ -22,6 +26,7 @@ using Momotaro.Gameplay.Vitals;
 using Momotaro.Tests.Support;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Progression;
+using Momotaro.Gameplay.Scenes;
 using Momotaro.Gameplay.Interaction;
 using Momotaro.Gameplay.Navigation;
 using Momotaro.Presentation.Cameras;
@@ -2492,6 +2497,551 @@ namespace Momotaro.Tests.EditMode
                 "中断で生じた CD が Snapshot に乗る（Port が止めてから採っている）。");
             Assert.IsTrue(snapshot.HasCompanion);
             Assert.AreEqual(CompanionIds.Inumaru.Value, snapshot.CompanionId.Value);
+        }
+
+        // ---------------------------------------------------------------- E15〜E19（Encounter）
+
+        /// <summary>P5-07 の Encounter 検査で使う一式。</summary>
+        private sealed class EncounterRig
+        {
+            public AreaEncounterRunner Runner;
+            public CombatSessionController Session;
+            public FakeEncounterConditions Conditions;
+            public FakeEncounterSpawner Spawner;
+            public FakeArena Arena;
+            public RecordingInterrupts Interrupts;
+            public PlayerDefeatChannel PlayerDefeats;
+            public AreaRuntimeState Area;
+            public CombatRewardCollector Rewards;
+            public PlayerProgressHolder Progress;
+            public GameSessionState Session5;
+        }
+
+        private sealed class FakeEncounterConditions : IAreaEncounterConditions
+        {
+            public bool IsAreaReady { get; set; } = true;
+            public bool IsExploration { get; set; } = true;
+            public bool IsPlayerAlive { get; set; } = true;
+            public bool IsTransitioning { get; set; }
+        }
+
+        private sealed class FakeArena : IArenaBoundary
+        {
+            public bool AllowEnable { get; set; } = true;
+            public string Error { get; set; } = "境界の内側へ安全に配置できません。";
+            public bool IsEnabled { get; private set; }
+            public int EnableCount { get; private set; }
+            public int DisableCount { get; private set; }
+
+            public bool TryEnable(out string error)
+            {
+                if (!AllowEnable)
+                {
+                    error = Error;
+                    return false;
+                }
+
+                IsEnabled = true;
+                EnableCount++;
+                error = null;
+                return true;
+            }
+
+            public void Disable()
+            {
+                if (IsEnabled)
+                {
+                    DisableCount++;
+                }
+
+                IsEnabled = false;
+            }
+        }
+
+        /// <summary>撤収の通知から開始を要求し直す購読者（§8.2 手順 3 の狙いを再現する）。</summary>
+        private sealed class RecordingInterrupts : IEncounterInterruptSink
+        {
+            public AreaEncounterRunner Runner;
+            public bool RequestStartAgain;
+            public int Count { get; private set; }
+            public int RunIdSeenAtInterrupt { get; private set; } = -1;
+            public EncounterStartRejection ReentryRejection { get; private set; } = EncounterStartRejection.None;
+            public bool ReentryStarted { get; private set; }
+
+            public void InterruptForEncounter()
+            {
+                Count++;
+                RunIdSeenAtInterrupt = Runner != null ? Runner.RunId : -1;
+
+                // 再要求は<b>1 回だけ</b>にする。門が閉じていない実装では再要求がまた撤収を呼ぶので、
+                // 無制限にすると StackOverflow で落ちて「何が壊れたか」が読めなくなる（P5-04 で踏んだ形）。
+                if (!RequestStartAgain || Runner == null || Count > 1)
+                {
+                    return;
+                }
+
+                EncounterStartDecision again = Runner.TryStart();
+                ReentryStarted = again.Started;
+                ReentryRejection = again.Rejection;
+            }
+        }
+
+        /// <summary>撃破を手で起こせる敵役（実 Prefab を使わずに勝敗と報酬の経路を通す）。</summary>
+        private sealed class FakeSpawnedEnemy : IEnemyDefeatSource
+        {
+            private static int _next = 9000;
+
+            public FakeSpawnedEnemy(StableId enemyId, EnemyRole role, RewardData reward)
+            {
+                EnemyId = enemyId;
+                Role = role;
+                Reward = reward;
+                DamageableId = ++_next;
+            }
+
+            public StableId EnemyId { get; }
+            public EnemyRole Role { get; set; }
+
+            /// <summary>この敵が載せる報酬（共有・GrantOnce の検査でテストが差し替える）。</summary>
+            public RewardData Reward { get; set; }
+            public EnemyDefeatChannel Defeats { get; } = new EnemyDefeatChannel();
+            public int DamageableId { get; }
+            public bool IsDefeated { get; private set; }
+
+            /// <summary>活動を許可されているか（生成途中に動いていないことを見る）。</summary>
+            public bool Active { get; set; }
+
+            public void Defeat()
+            {
+                IsDefeated = true;
+                Publish();
+            }
+
+            /// <summary>同じ撃破をもう一度通知する（重複排除の検査用）。</summary>
+            public void Publish()
+            {
+                Defeats.Publish(new EnemyDefeatedEvent(
+                    DamageableId, new EnemyRewardRequest(DamageableId, Role, Reward, Vector3.zero)));
+            }
+        }
+
+        /// <summary>生成の Fake。全数失敗・部分生成・黙って少なく作る、を作り分ける。</summary>
+        private sealed class FakeEncounterSpawner : IEncounterSpawner
+        {
+            private readonly List<FakeSpawnedEnemy> _enemies = new List<FakeSpawnedEnemy>();
+
+            public CombatSessionController Session;
+
+            /// <summary>この数を超えて作らない（部分生成）。</summary>
+            public int MaxSpawn = int.MaxValue;
+
+            /// <summary>作れないことを<b>申告する</b>（TrySpawnAll が false）。</summary>
+            public bool ReportFailure;
+
+            /// <summary>作れなかったのに<b>成功を返す</b>（手順 8 の全数確認が拾う形）。</summary>
+            public bool SilentPartial;
+
+            public Func<StableId, (EnemyRole role, RewardData reward)> Resolve;
+
+            public int ActivateCount { get; private set; }
+            public int ReleaseCount { get; private set; }
+            public bool SpawnedActive { get; private set; }
+            public int SpawnedCount => _enemies.Count;
+            public IReadOnlyList<IEnemyDefeatSource> Spawned => _enemies;
+            public IReadOnlyList<FakeSpawnedEnemy> Enemies => _enemies;
+
+            public bool TrySpawnAll(in EncounterPlan plan, out string error)
+            {
+                SpawnedActive = false;
+
+                for (int i = 0; i < plan.PlannedCount; i++)
+                {
+                    if (_enemies.Count >= MaxSpawn || ReportFailure)
+                    {
+                        if (SilentPartial)
+                        {
+                            break; // 少なく作ったまま「成功」を返す。
+                        }
+
+                        // 途中まで作ったものは自分で片付ける。
+                        ReleaseAll();
+                        error = "敵 '" + plan.EnemyIds[i].Value + "' を解決できません。";
+                        return false;
+                    }
+
+                    (EnemyRole role, RewardData reward) resolved = Resolve != null
+                        ? Resolve(plan.EnemyIds[i])
+                        : (EnemyRole.Melee, null);
+
+                    var enemy = new FakeSpawnedEnemy(plan.EnemyIds[i], resolved.role, resolved.reward);
+                    _enemies.Add(enemy);
+                    Session?.RegisterEnemy(enemy);
+                }
+
+                error = null;
+                return true;
+            }
+
+            public void ActivateSpawned()
+            {
+                ActivateCount++;
+                SpawnedActive = true;
+                for (int i = 0; i < _enemies.Count; i++)
+                {
+                    _enemies[i].Active = true;
+                }
+            }
+
+            public void ReleaseAll()
+            {
+                if (_enemies.Count > 0)
+                {
+                    ReleaseCount++;
+                }
+
+                for (int i = 0; i < _enemies.Count; i++)
+                {
+                    Session?.UnregisterEnemy(_enemies[i]);
+                    _enemies[i].Active = false;
+                }
+
+                _enemies.Clear();
+                SpawnedActive = false;
+            }
+        }
+
+        private static readonly StableId EncounterBRoad = new StableId("encounter_p5_b_road");
+        private static readonly StableId EnemyMelee = new StableId("enemy_melee_prototype");
+        private static readonly StableId EnemyRanged = new StableId("enemy_ranged_prototype");
+
+        private EncounterRig MakeEncounterRig(params string[] enemyIds)
+        {
+            if (enemyIds == null || enemyIds.Length == 0)
+            {
+                enemyIds = new[] { EnemyMelee.Value, EnemyRanged.Value };
+            }
+
+            var encounter = ScriptableObject.CreateInstance<EncounterData>();
+            _spawned.Add(encounter);
+            encounter.name = "SO_Encounter_P5_B_Road";
+            SetPrivate(encounter, "_id", EncounterBRoad);
+            var ids = new List<StableId>();
+            foreach (string id in enemyIds)
+            {
+                ids.Add(new StableId(id));
+            }
+
+            SetPrivate(encounter, "_enemyIds", ids);
+
+            var go = new GameObject("AreaEncounter");
+            _spawned.Add(go);
+
+            CombatSessionController session = go.AddComponent<CombatSessionController>();
+            PlayerProgressHolder progress = NewHolder("P07_Progress");
+            var session5 = new GameSessionState();
+            progress.Bind(session5.Progress);
+            AreaRuntimeState area = session5.GetOrCreateArea(new StableId("area_p5_b"));
+
+            CombatRewardCollector rewards = go.AddComponent<CombatRewardCollector>();
+            rewards.Bind(session, progress);
+            InvokePrivate(rewards, "OnEnable");
+
+            var conditions = new FakeEncounterConditions();
+            var arena = new FakeArena();
+            var spawner = new FakeEncounterSpawner { Session = session, Resolve = ResolveTestEnemy };
+            var interrupts = new RecordingInterrupts();
+            var playerDefeats = new PlayerDefeatChannel();
+
+            AreaEncounterRunner runner = go.AddComponent<AreaEncounterRunner>();
+            interrupts.Runner = runner;
+            runner.Bind(encounter, session, conditions, spawner, arena, interrupts, () => area, () => session5.RespawnCycle);
+            runner.BindPlayerDefeat(playerDefeats);
+            InvokePrivate(runner, "OnEnable");
+
+            return new EncounterRig
+            {
+                Runner = runner,
+                Session = session,
+                Conditions = conditions,
+                Spawner = spawner,
+                Arena = arena,
+                Interrupts = interrupts,
+                PlayerDefeats = playerDefeats,
+                Area = area,
+                Rewards = rewards,
+                Progress = progress,
+                Session5 = session5,
+            };
+        }
+
+        /// <summary>敵 ID から役割と報酬を決める（P5 の 2 種。10＋12＝22。§8.5）。</summary>
+        private (EnemyRole role, RewardData reward) ResolveTestEnemy(StableId enemyId)
+        {
+            if (enemyId.Equals(EnemyRanged))
+            {
+                return (EnemyRole.Ranged, NewReward("reward_enemy_ranged", 12, grantOnce: false));
+            }
+
+            return (EnemyRole.Melee, NewReward("reward_enemy_melee", 10, grantOnce: false));
+        }
+
+        private RewardData NewReward(string id, int virtue, bool grantOnce)
+        {
+            var reward = ScriptableObject.CreateInstance<RewardData>();
+            _spawned.Add(reward);
+            reward.name = "SO_" + id;
+            SetPrivate(reward, "_id", new StableId(id));
+            SetPrivate(reward, "_virtueAmount", virtue);
+            SetPrivate(reward, "_grantOnce", grantOnce);
+            return reward;
+        }
+
+        /// <summary>
+        /// P5-E15：開始の門は<b>探索の撤収より前</b>に閉じる（§8.2 手順 3 → 4）。
+        ///
+        /// 手順 4 で調査を撤収すると、撤収の通知を受けた購読者がその場で開始を要求し直すことがある。
+        /// 先に Starting と RunId を確定していないと、その再要求が<b>新しい Starting</b> を作り、
+        /// 先に走っていた実行の後始末が新しい実行を壊す。
+        /// </summary>
+        [Test]
+        public void Encounter_StartGatePrecedesInvestigationCallbacks()
+        {
+            EncounterRig rig = MakeEncounterRig();
+            rig.Interrupts.RequestStartAgain = true;
+
+            EncounterStartDecision decision = rig.Runner.TryStart();
+
+            Assert.IsTrue(decision.Started, "開始する。理由=" + decision.Rejection);
+            Assert.AreEqual(1, rig.Interrupts.Count, "撤収は 1 回だけ呼ぶ。");
+            Assert.AreEqual(1, rig.Interrupts.RunIdSeenAtInterrupt,
+                "撤収の時点で世代が確定している（手順 3 が手順 4 より前）。");
+
+            Assert.IsFalse(rig.Interrupts.ReentryStarted, "撤収の通知からの再要求は始まらない。");
+            Assert.AreEqual(EncounterStartRejection.AlreadyRunning, rig.Interrupts.ReentryRejection,
+                "再要求は「すでに開始済み」で閉じる。");
+
+            Assert.AreEqual(1, rig.Runner.RunId, "再要求で世代を上書きしない。");
+            Assert.AreEqual(AreaEncounterState.Playing, rig.Runner.State);
+            Assert.AreEqual(1, rig.Spawner.ActivateCount, "生成と活動許可も 1 回だけ。");
+            Assert.AreEqual(1, rig.Arena.EnableCount, "境界の有効化も 1 回だけ。");
+
+            // 外からの追加要求も同じく閉じる（Interact・別 Trigger）。
+            Assert.AreEqual(EncounterStartRejection.AlreadyRunning, rig.Runner.TryStart().Rejection);
+            Assert.AreEqual(1, rig.Runner.RunId);
+        }
+
+        /// <summary>
+        /// P5-E16：生成に失敗したら<b>勝利にも報酬にもしない</b>（§8.2 末尾）。
+        /// 生成の途中で敵が活動しないことも見る。
+        ///
+        /// 「初期生存数 0 だけで勝利にしない」がここの核心。0 体で始めれば生存数は 0 なので、
+        /// 生存数だけを見る実装は即勝利する。
+        /// </summary>
+        [Test]
+        public void Encounter_SpawnFailureDoesNotWinOrGrantRewards()
+        {
+            // ---- 申告された失敗（必須 Prefab 欠落など）----
+            EncounterRig rig = MakeEncounterRig();
+            rig.Spawner.ReportFailure = true;
+
+            EncounterStartDecision failed = rig.Runner.TryStart();
+
+            Assert.IsFalse(failed.Started);
+            Assert.AreEqual(EncounterStartRejection.SpawnFailed, failed.Rejection);
+            Assert.AreEqual(AreaEncounterState.Failed, rig.Runner.State);
+            Assert.AreEqual(0, rig.Spawner.SpawnedCount, "生成済みを破棄する。");
+            Assert.AreEqual(0, rig.Session.RegisteredEnemyCount, "登録も戻す。");
+            Assert.IsFalse(rig.Arena.IsEnabled, "境界も戻す。");
+            Assert.AreEqual(0, rig.Spawner.ActivateCount, "活動は一度も許可しない。");
+            Assert.AreEqual(0, rig.Area.ClearedEncounterRecordCount, "クリア記録は付けない。");
+            Assert.AreEqual(0, rig.Progress.State.Virtue, "報酬も付かない。");
+
+            // 生存数 0 のまま刻みを進めても勝利にならない。
+            rig.Runner.Tick(0.1f);
+            Assert.AreEqual(AreaEncounterState.Failed, rig.Runner.State, "0 体は勝利ではない。");
+            Assert.AreEqual(0, rig.Area.ClearedEncounterRecordCount);
+
+            // ---- 退出 → 再進入で再試行できる（§8.2）----
+            rig.Spawner.ReportFailure = false;
+            rig.Spawner.MaxSpawn = 1; // 部分生成。今度は「黙って少なく作る」形。
+            rig.Spawner.SilentPartial = true;
+
+            EncounterStartDecision partial = rig.Runner.TryStart();
+
+            Assert.IsFalse(partial.Started, "予定数に届かない生成は開始にしない（手順 8 の全数確認）。");
+            Assert.AreEqual(EncounterStartRejection.SpawnFailed, partial.Rejection);
+            Assert.AreEqual(2, rig.Runner.RunId, "再試行は新しい世代で走る。");
+            Assert.AreEqual(0, rig.Spawner.SpawnedCount, "部分生成も片付ける（死体を残さない）。");
+            Assert.AreEqual(0, rig.Session.RegisteredEnemyCount);
+            Assert.AreEqual(0, rig.Spawner.ActivateCount, "部分生成でも活動は許可しない。");
+            Assert.AreEqual(0, rig.Progress.State.Virtue);
+
+            // ---- 生成中に敵が活動していない（§8.2 末尾）----
+            rig.Spawner.SilentPartial = false;
+            rig.Spawner.MaxSpawn = int.MaxValue;
+
+            Assert.IsTrue(rig.Runner.TryStart().Started);
+            Assert.AreEqual(2, rig.Spawner.SpawnedCount);
+            Assert.IsTrue(rig.Spawner.SpawnedActive, "全数そろって初めて活動を許可する。");
+            Assert.AreEqual(1, rig.Spawner.ActivateCount);
+        }
+
+        /// <summary>
+        /// P5-E17：勝利は<b>予定生成完了・生存 0・主人公生存</b>の全部が要る（§8.4 手順 3）。
+        /// どれか 1 つでも欠けたら勝利にしない。
+        /// </summary>
+        [Test]
+        public void Encounter_VictoryRequiresAllSpawnedAndPlayerAlive()
+        {
+            EncounterRig rig = MakeEncounterRig();
+            Assert.IsTrue(rig.Runner.TryStart().Started);
+            Assert.AreEqual(2, rig.Spawner.SpawnedCount);
+
+            // ---- 1 体だけ倒しても勝利候補は出ない（生存 0 でない）----
+            rig.Spawner.Enemies[0].Defeat();
+            rig.Runner.Tick(0.1f);
+            Assert.AreEqual(AreaEncounterState.Playing, rig.Runner.State, "生存が残っていれば勝利しない。");
+            Assert.AreEqual(1, rig.Session.AliveEnemyCount);
+            Assert.AreEqual(0, rig.Area.ClearedEncounterRecordCount);
+
+            // ---- 全滅しても、主人公が生きていなければ勝利にしない ----
+            rig.Conditions.IsPlayerAlive = false;
+            rig.Spawner.Enemies[1].Defeat();
+            Assert.AreEqual(0, rig.Session.AliveEnemyCount, "前提：生存 0。");
+
+            rig.Runner.Tick(0.1f);
+            Assert.AreEqual(AreaEncounterState.Defeated, rig.Runner.State,
+                "全滅していても主人公が死んでいれば勝利にしない（§8.3 の死亡優先）。");
+            Assert.AreEqual(0, rig.Area.ClearedEncounterRecordCount, "クリア記録は付かない。");
+
+            // ---- 三条件が揃えばクリアし、活動 Context は「Encounter なし」へ戻る ----
+            EncounterRig ok = MakeEncounterRig();
+            Assert.IsTrue(ok.Runner.TryStart().Started);
+            Assert.AreEqual(CombatSessionState.Playing, ok.Runner.ActivitySession,
+                "戦闘中は戦闘として供給する。");
+
+            ok.Spawner.Enemies[0].Defeat();
+            ok.Spawner.Enemies[1].Defeat();
+            ok.Runner.Tick(0.1f);
+
+            Assert.AreEqual(AreaEncounterState.Cleared, ok.Runner.State);
+            Assert.AreEqual(CombatSessionState.Victory, ok.Session.State, "既存 Session は Victory へ。");
+            Assert.IsNull(ok.Runner.ActivitySession,
+                "解放後は「活動中 Encounter なし」（§8.4 末尾。犬丸を永久停止させない）。");
+            Assert.IsTrue(ok.Area.IsEncounterCleared(EncounterBRoad, 0), "この周期のクリアを記録する。");
+            Assert.IsFalse(ok.Arena.IsEnabled, "一時境界を解放する。");
+            Assert.AreEqual(0, ok.Spawner.SpawnedCount, "残留物を残さない。");
+            Assert.AreEqual("戦闘終了", ok.Runner.ResultMessage, "短文だけを出す（結果パネルで止めない）。");
+
+            // 一度クリアしたら通常往復では始まらない（§8.4 末尾）。
+            Assert.AreEqual(EncounterStartRejection.AlreadyCleared, ok.Runner.TryStart().Rejection);
+
+            // 死亡再開で周期が進めば、また始まる（§9.1）。
+            ok.Session5.AdvanceRespawnCycle();
+            Assert.IsFalse(ok.Area.IsEncounterCleared(EncounterBRoad, ok.Session5.RespawnCycle));
+        }
+
+        /// <summary>
+        /// P5-E18：同じ刻みに死亡と全滅が届いたら<b>死亡が勝つ</b>（§8.3）。通知順に依らない。
+        ///
+        /// 最後の敵の通知でその場で勝利を確定すると、処理順だけで相打ちが勝利になる。
+        /// 候補を溜めて刻みの終わりに決める形になっているかを、両方の順で見る。
+        /// </summary>
+        [Test]
+        public void Encounter_SameTickPlayerDeathWinsOverClear()
+        {
+            // ---- 全滅 → 死亡 の順 ----
+            EncounterRig a = MakeEncounterRig();
+            Assert.IsTrue(a.Runner.TryStart().Started);
+
+            a.Spawner.Enemies[0].Defeat();
+            a.Spawner.Enemies[1].Defeat();
+            Assert.AreEqual(AreaEncounterState.Playing, a.Runner.State,
+                "最後の敵の通知だけでは外へ確定しない（刻みの終わりまで待つ）。");
+
+            a.PlayerDefeats.Publish(new PlayerDefeatedEvent(1, Vector3.zero));
+            a.Runner.Tick(0.1f);
+
+            Assert.AreEqual(AreaEncounterState.Defeated, a.Runner.State, "死亡が優先される。");
+            Assert.AreEqual(0, a.Area.ClearedEncounterRecordCount, "勝利記録は付けない。");
+            Assert.IsFalse(a.Arena.IsEnabled);
+            Assert.AreEqual(0, a.Spawner.SpawnedCount);
+
+            // ---- 死亡 → 全滅 の順 ----
+            EncounterRig b = MakeEncounterRig();
+            Assert.IsTrue(b.Runner.TryStart().Started);
+
+            b.PlayerDefeats.Publish(new PlayerDefeatedEvent(1, Vector3.zero));
+            b.Spawner.Enemies[0].Defeat();
+            b.Spawner.Enemies[1].Defeat();
+            b.Runner.Tick(0.1f);
+
+            Assert.AreEqual(AreaEncounterState.Defeated, b.Runner.State, "順が逆でも死亡が優先される。");
+            Assert.AreEqual(0, b.Area.ClearedEncounterRecordCount);
+
+            // 死亡しても、撃破した瞬間の徳は取り消さない（§8.5）。
+            Assert.AreEqual(22, b.Progress.State.Virtue, "撃破済みの報酬は残る。");
+        }
+
+        /// <summary>
+        /// P5-E19：撃破報酬は<b>勝利より先</b>に確定し、敵ごとに 1 回ずつ入る（§8.4 手順 2、§8.5）。
+        /// 10＋12＝22。GrantOnce は RewardId 単位のまま変えない。
+        /// </summary>
+        [Test]
+        public void EnemyRewards_PrecedeVictoryAndRespectExistingGrantOnce()
+        {
+            EncounterRig rig = MakeEncounterRig();
+
+            var virtueWhenCleared = new List<int>();
+            rig.Session.StateChanged += s =>
+            {
+                if (s == CombatSessionState.Victory)
+                {
+                    virtueWhenCleared.Add(rig.Progress.State.Virtue);
+                }
+            };
+
+            Assert.IsTrue(rig.Runner.TryStart().Started);
+            Assert.AreEqual(0, rig.Progress.State.Virtue);
+
+            rig.Spawner.Enemies[0].Defeat(); // 近接 10
+            Assert.AreEqual(10, rig.Progress.State.Virtue, "撃破ごとに入る。");
+
+            // 同じ撃破をもう一度通知しても増えない（Session が重複を弾く）。
+            rig.Spawner.Enemies[0].Publish();
+            Assert.AreEqual(10, rig.Progress.State.Virtue, "重複通知では二重に付かない。");
+
+            rig.Spawner.Enemies[1].Defeat(); // 遠距離 12
+            Assert.AreEqual(22, rig.Progress.State.Virtue, "初回完勝で 22（§8.5）。");
+
+            rig.Runner.Tick(0.1f);
+            Assert.AreEqual(AreaEncounterState.Cleared, rig.Runner.State);
+            Assert.AreEqual(1, virtueWhenCleared.Count, "勝利は 1 回。");
+            Assert.AreEqual(22, virtueWhenCleared[0], "勝利の時点で報酬は確定済み（順序が逆ではない）。");
+            Assert.AreEqual(2, rig.Rewards.GrantedCount);
+
+            // ---- 同じ RewardData を 2 体が共有し、GrantOnce=false なら敵ごとに付く（§8.5）----
+            EncounterRig shared = MakeEncounterRig(EnemyMelee.Value, EnemyMelee.Value);
+            Assert.IsTrue(shared.Runner.TryStart().Started);
+            RewardData sharedReward = NewReward("reward_shared_melee", 10, grantOnce: false);
+            shared.Spawner.Enemies[0].Reward = sharedReward;
+            shared.Spawner.Enemies[1].Reward = sharedReward;
+
+            shared.Spawner.Enemies[0].Defeat();
+            shared.Spawner.Enemies[1].Defeat();
+            Assert.AreEqual(20, shared.Progress.State.Virtue, "GrantOnce=false は敵ごとに付く。");
+
+            // ---- GrantOnce=true は RewardId 単位で一度だけ（既存の意味を変えない）----
+            EncounterRig once = MakeEncounterRig(EnemyMelee.Value, EnemyMelee.Value);
+            Assert.IsTrue(once.Runner.TryStart().Started);
+            RewardData onceReward = NewReward("reward_once_melee", 10, grantOnce: true);
+            once.Spawner.Enemies[0].Reward = onceReward;
+            once.Spawner.Enemies[1].Reward = onceReward;
+
+            once.Spawner.Enemies[0].Defeat();
+            once.Spawner.Enemies[1].Defeat();
+            Assert.AreEqual(10, once.Progress.State.Virtue, "GrantOnce=true は RewardId 単位で一度だけ。");
+            Assert.AreEqual(1, once.Rewards.AlreadyGrantedCount);
         }
     }
 }

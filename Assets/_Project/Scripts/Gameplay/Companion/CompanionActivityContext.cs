@@ -1,3 +1,4 @@
+using Momotaro.Gameplay.Encounter;
 using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Scenes;
 using UnityEngine;
@@ -31,6 +32,9 @@ namespace Momotaro.Gameplay.Companion
         [Tooltip("明示開始の試遊段階（P4-08R。未設定なら P3.5 と同じく自動開始の Scene として扱う）。")]
         [SerializeField] private TrialStageController _stage;
 
+        [Tooltip("P5 の区画 Encounter（§8.4 末尾。開始前・解放後は「活動中 Session なし」を供給する）。")]
+        [SerializeField] private AreaEncounterRunner _areaEncounter;
+
         private IEncounterStartGate _startGateOverride;
 
         private IEncounterStartGate StartGateSource => _startGateOverride ?? (_stage != null ? _stage : null);
@@ -47,10 +51,20 @@ namespace Momotaro.Gameplay.Companion
                     return CompanionActivity.Stopped;
                 }
 
-                if (_session == null && !_noEncounterInThisArea)
+                if (_areaEncounter == null && _session == null && !_noEncounterInThisArea)
                 {
                     // セッションを繋ぎ忘れたのか、本当に無い区画なのかを区別できない。黙って通さない。
                     return CompanionActivity.Stopped;
+                }
+
+                // P5 の区画 Encounter が配線されていれば<b>それが正本</b>（§8.4 末尾）。
+                //
+                // 既存 Session の状態をそのまま読むと、勝利のあと Victory が残り続けるため、
+                // 仲間が「戦闘の終端＝入力不可」と読んで永久に停止する。
+                // 区画 Encounter は解放後に「活動中 Session なし」を返すので、探索へちゃんと戻れる。
+                if (_areaEncounter != null)
+                {
+                    return CompanionActivityResolver.Resolve(modes.Current, _areaEncounter.ActivitySession);
                 }
 
                 CombatSessionState? session = _session != null ? _session.State : (CombatSessionState?)null;
@@ -81,7 +95,7 @@ namespace Momotaro.Gameplay.Companion
         /// 供給元として成立しているか（セッションが繋がっている、または「無い区画」と宣言されている）。
         /// どちらでもない場合、この Context は常に停止を返す＝仲間が一切動かない。
         /// </summary>
-        public bool IsWired => _session != null || _noEncounterInThisArea;
+        public bool IsWired => _areaEncounter != null || _session != null || _noEncounterInThisArea;
 
         /// <summary>戦闘セッションを注入する（Scene 構築・テスト）。</summary>
         public void Bind(CombatSessionController session)
@@ -118,6 +132,21 @@ namespace Momotaro.Gameplay.Companion
         {
             _noEncounterInThisArea = true;
         }
+
+        /// <summary>
+        /// P5 の区画 Encounter を注入する（§8.4 末尾）。配線されるとこちらが正本になり、
+        /// 既存 Session の Victory 残りに引きずられなくなる。
+        /// </summary>
+        public void BindAreaEncounter(AreaEncounterRunner runner)
+        {
+            if (runner != null)
+            {
+                _areaEncounter = runner;
+            }
+        }
+
+        /// <summary>配線された区画 Encounter（Scene 検査・診断用）。</summary>
+        public AreaEncounterRunner AreaEncounter => _areaEncounter;
 
         private void OnEnable()
         {
