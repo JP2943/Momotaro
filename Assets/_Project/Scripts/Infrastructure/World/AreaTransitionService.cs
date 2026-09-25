@@ -31,6 +31,13 @@ namespace Momotaro.Infrastructure.World
         /// <summary>いま飛んでいる遷移が死亡再開のものなら、その世代（0 は通常の移動）。</summary>
         private int _respawnTransitionId;
 
+        /// <summary>
+        /// いま走っている死亡再開が、どの再開要求に対するものか（§9.1。GPT レビュー R6 の指摘 1）。
+        /// <b>Scene 側の実行役ではなく常駐のここが持つ。</b> 到着側 Scene が壊れて実行役ごと
+        /// 失われても、成功・失敗をこの ID で確定できる。
+        /// </summary>
+        private int _respawnRequestId;
+
         private AreaCatalog _catalog;
         private AreaTransitionCoordinator _coordinator;
         private IAreaTransitionConditions _conditions;
@@ -200,7 +207,7 @@ namespace Momotaro.Infrastructure.World
         /// そして<b>Actor 値を運ばないこと</b>。§9.1 手順 6 は到着先で全回復・CD 解除を求めているので、
         /// 死ぬ直前の HP や CD を持ち越しては意味が逆になる。保留中の持ち越しも捨てる。
         /// </summary>
-        public AreaTransitionDecision TryRespawnTravel(StableId areaId, StableId entryId)
+        public AreaTransitionDecision TryRespawnTravel(StableId areaId, StableId entryId, int respawnRequestId)
         {
             if (_coordinator == null)
             {
@@ -217,6 +224,7 @@ namespace Momotaro.Infrastructure.World
             HasTerminalFailure = false;
             TerminalFailureReason = null;
             _respawnTransitionId = decision.TransitionId;
+            _respawnRequestId = respawnRequestId;
 
             CloseCurrentArea();
             GameModeProvider.Current?.ChangeMode(GameMode.Loading);
@@ -228,21 +236,98 @@ namespace Momotaro.Infrastructure.World
             return decision;
         }
 
-        /// <summary>この遷移が死亡再開のものなら、再開画面へ戻す処理を行う。</summary>
-        private bool HandleRespawnFailure(int transitionId)
+        /// <summary>
+        /// 死亡再開の遷移が失敗したとき、<b>元 Area への復旧ではなく再開画面へ戻す</b>
+        /// （§9.1 末尾。GPT レビュー R6 の指摘 1）。
+        ///
+        /// 復旧は「運んでいた Actor 値を持ったまま元の場所へ戻る」処理だが、死亡再開は
+        /// 手順 6 のために<b>持ち越しを捨ててから</b>出発する。そのため復旧は必ず
+        /// 「復旧元のエリア・入口を解決できませんでした」で終端し、
+        /// 再試行できるはずの失敗が Error 表示になっていた。
+        /// そもそも死亡再開の「元の場所」は死んだ場所なので、戻る先として正しくない。
+        /// </summary>
+        /// <returns>死亡再開として処理したら true（呼び出し側は復旧へ進まない）。</returns>
+        private bool FailRespawnInsteadOfRecovery(int transitionId)
         {
-            if (_respawnTransitionId == 0 || transitionId != _respawnTransitionId)
+            if (!IsRespawnTransition(transitionId))
             {
                 return false;
             }
 
+            // 放棄として残す（遅れて読み終わった Scene に自己許可させない）。
+            AreaPendingArrival.Abandon();
+            _coordinator.NotifyFailed(transitionId, oldSceneUsable: false);
+            _running = null;
+
+            // Error 表示にはしない。再開画面からもう一度試せる失敗なので、戻り道は「再開する」。
+            HandleRespawnFailure(transitionId);
+            return true;
+        }
+
+        /// <summary>この遷移が死亡再開のものか（世代一致で見る）。</summary>
+        private bool IsRespawnTransition(int transitionId) =>
+            _respawnTransitionId != 0 && transitionId == _respawnTransitionId;
+
+        /// <summary>
+        /// この遷移が死亡再開のものなら、<b>同じ再開要求のまま</b>再開画面へ戻す（§9.1 末尾）。
+        ///
+        /// 以前は Scene の <see cref="CampaignRespawnRunner"/> を <c>FindFirstObjectByType</c> で
+        /// 探して通知していた。旧 Scene を破棄したあとの失敗では<b>実行役がどこにも居ない</b>ので、
+        /// 失敗が誰にも届かず、再開画面が二度と出なかった（GPT レビュー R6 の指摘 1）。
+        /// 常駐の Session が持つ調停役へ、常駐のここが直接確定する。
+        /// </summary>
+        private bool HandleRespawnFailure(int transitionId)
+        {
+            if (!IsRespawnTransition(transitionId))
+            {
+                return false;
+            }
+
+            int requestId = _respawnRequestId;
             _respawnTransitionId = 0;
+            _respawnRequestId = 0;
 
             // 主人公は死んだままなので、探索へは戻さない（§9.1 末尾「失敗時は再開画面から再試行可能」）。
             GameModeProvider.Current?.ChangeMode(GameMode.GameOver);
-            Object.FindFirstObjectByType<CampaignRespawnRunner>()?.NotifyTravelFailed(transitionId);
+
+            CampaignRespawnCoordinator respawn = GameSessionProvider.Current?.Respawn;
+            if (respawn != null && requestId != 0)
+            {
+                respawn.NotifyFailed(requestId);
+            }
+
+            RespawnFailureCount++;
             return true;
         }
+
+        /// <summary>
+        /// 死亡再開の到着を<b>成功地点で</b>確定する（§9.1 手順 7。GPT レビュー R6 の指摘 1）。
+        ///
+        /// 以前は到着側の <c>AreaInitializer</c> が Actor を全回復した直後に完了扱いにしていた。
+        /// そのあとにも門の復元など失敗しうる段が残っており、そこで落ちると
+        /// 段階はすでに Idle なので<b>失敗通知を受理できず、再開の再試行が成立しなかった</b>。
+        /// 世代・到着準備・活動許可を確認したここが、許可を出したあとに確定する。
+        /// </summary>
+        private void CompleteRespawn(int transitionId)
+        {
+            if (!IsRespawnTransition(transitionId))
+            {
+                return;
+            }
+
+            int requestId = _respawnRequestId;
+            _respawnTransitionId = 0;
+            _respawnRequestId = 0;
+
+            CampaignRespawnCoordinator respawn = GameSessionProvider.Current?.Respawn;
+            if (respawn != null && requestId != 0)
+            {
+                respawn.NotifyArrived(requestId);
+            }
+        }
+
+        /// <summary>死亡再開が失敗して再開画面へ戻った回数（診断・テスト用）。</summary>
+        public int RespawnFailureCount { get; private set; }
 
         private IEnumerator TravelRoutine(AreaTransitionRequest request, int transitionId)
         {
@@ -287,6 +372,11 @@ namespace Momotaro.Infrastructure.World
             _coordinator.TickUnscaled(Time.unscaledDeltaTime);
             if (_coordinator.TimedOut)
             {
+                if (FailRespawnInsteadOfRecovery(transitionId))
+                {
+                    yield break;
+                }
+
                 if (_coordinator.TryConsumeRecovery())
                 {
                     yield return RecoverToOrigin(transitionId);
@@ -301,6 +391,11 @@ namespace Momotaro.Infrastructure.World
 
             if (watched.HasError)
             {
+                if (FailRespawnInsteadOfRecovery(transitionId))
+                {
+                    yield break;
+                }
+
                 if (_coordinator.TryBeginRecovery(transitionId))
                 {
                     yield return RecoverToOrigin(transitionId);
@@ -329,6 +424,12 @@ namespace Momotaro.Infrastructure.World
 
             if (!AreaPendingArrival.IsPreparedFor(transitionId))
             {
+                // 死亡再開なら、復旧ではなく再開画面へ戻す（下記）。
+                if (FailRespawnInsteadOfRecovery(transitionId))
+                {
+                    yield break;
+                }
+
                 // 旧 Scene は破棄済み。元 Area を 1 回だけ再ロードして復旧する（§6.3 の 3 行目）。
                 if (_coordinator.TryBeginRecovery(transitionId))
                 {
@@ -372,10 +473,9 @@ namespace Momotaro.Infrastructure.World
                 AreaPendingArrival.Clear();
                 _running = null;
 
-                if (transitionId == _respawnTransitionId)
-                {
-                    _respawnTransitionId = 0;
-                }
+                // 死亡再開の完了は<b>ここ</b>で確定する（§9.1 手順 7）。
+                // 活動許可より前に確定すると、そのあとの失敗で再試行できなくなる。
+                CompleteRespawn(transitionId);
             }
 
             // 完了を通知する。<b>後始末をすべて終えてから出す</b>（§6.2 末尾）。

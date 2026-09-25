@@ -98,7 +98,13 @@ namespace Momotaro.Gameplay.Session
     /// </summary>
     public interface IAreaRespawnTravel
     {
-        /// <summary>再開地点へ移動する。受理したら遷移の世代を返す。</summary>
-        AreaTransitionDecision TryRespawnTravel(StableId areaId, StableId entryId);
+        /// <summary>
+        /// 再開地点へ移動する。受理したら遷移の世代を返す。
+        ///
+        /// <b>再開要求 ID を一緒に渡す。</b> 遷移の成否を確定するのは常駐の遷移サービスなので、
+        /// 「どの再開要求に対する遷移か」をサービス側が持っていないと、
+        /// Scene 側の実行役が失われたあとに成功・失敗を確定できない（GPT レビュー R6 の指摘 1）。
+        /// </summary>
+        AreaTransitionDecision TryRespawnTravel(StableId areaId, StableId entryId, int respawnRequestId);
     }
 }

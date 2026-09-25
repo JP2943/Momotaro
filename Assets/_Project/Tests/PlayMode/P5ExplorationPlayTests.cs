@@ -960,6 +960,22 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(AreaB.Value, Object.FindFirstObjectByType<AreaContext>().AreaId.Value, "B へ着く。");
         }
 
+        /// <summary>
+        /// <b>成功したことにするが、何も読み込まない</b> Loader。
+        /// 到着側の準備がいつまでも完了しない（＝Bind 監視が切れる）状況を実時間で作る。
+        /// 旧 Scene は生きたままなので、復旧経路と再開経路の分かれ目だけを見られる。
+        /// </summary>
+        private sealed class SilentLoader : IAreaSceneLoader
+        {
+            public IAreaLoadOperation Load(string scenePath) => new DoneOperation();
+
+            private sealed class DoneOperation : IAreaLoadOperation
+            {
+                public bool IsDone => true;
+                public bool HasError => false;
+            }
+        }
+
         /// <summary>読込を開始できない Loader（P12）。本番と同じ契約なので経路は 1 本のまま。</summary>
         private sealed class FailingLoader : IAreaSceneLoader
         {
@@ -3971,6 +3987,265 @@ namespace Momotaro.Tests.PlayMode
                 + " HP=" + vitals.Vitals.Health.Current
                 + " 犬丸=" + (companion != null ? companion.Vitals.IsDown.ToString() : "(なし)")
                 + " mode=" + (GameModeProvider.Current != null ? GameModeProvider.Current.Current.ToString() : "null"));
+        }
+
+        /// <summary>
+        /// P5-P20：<b>死亡再開のロードが失敗したら、Error 表示ではなく再開画面へ戻る</b>
+        /// （§9.1 末尾。GPT レビュー R6 の指摘 1）。
+        ///
+        /// 既存の E21 は Fake の遷移役と <c>NotifyTravelFailed</c> の直接呼び出しで段階だけを見ていたので、
+        /// <b>実サービスと常駐 Session の接続</b>を一度も通していなかった。ここは実 <c>AreaTransitionService</c> に
+        /// 失敗する Loader を差して、失敗が常駐の調停役まで届き、<b>同じ再開要求 ID のまま</b>
+        /// 再試行できることを見る。
+        ///
+        /// 併せて、再開が<b>復旧（RecoverToOrigin）へ流れない</b>ことも見る。死亡再開は手順 6 のために
+        /// 持ち越しを捨ててから出発するので、復旧へ流すと必ず終端失敗になり、
+        /// 再試行できるはずの失敗が Error 表示になっていた。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RespawnLoadFailure_ReturnsToRetryableRespawn_NotTerminalError()
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            RemoveStrayTestDevices();
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5RespawnFailKeyboard");
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            GameSessionState session = Sessions().Session;
+            AreaTransitionService service = Transitions();
+            var modes = GameModeProvider.Current;
+
+            yield return KillPlayerWithRealHit();
+            yield return WaitForRespawnPrompt();
+
+            int requestId = session.Respawn.CurrentRequestId;
+            Assert.Greater(requestId, 0, "前提：再開要求 ID が発行されている。");
+            int cycleBefore = session.RespawnCycle;
+
+            // ---- ロードを失敗させたまま再開する ----
+            IAreaSceneLoader original = service.Loader;
+            service.Loader = new FailingLoader();
+
+            var runner = Object.FindFirstObjectByType<CampaignRespawnRunner>();
+            Assert.IsNotNull(runner, "再開の実行役が Scene にある。");
+            RespawnDecision accepted = runner.RequestRespawn();
+            Assert.IsTrue(accepted.Accepted, "再開を受理する。拒否=" + accepted.Rejection);
+
+            yield return WaitUntilOrTimeout(
+                () => session.Respawn.Phase == CampaignRespawnPhase.Failed, 20f);
+
+            Assert.AreEqual(CampaignRespawnPhase.Failed, session.Respawn.Phase,
+                "ロード失敗は<b>常駐の調停役まで</b>届く（Scene の実行役を探しに行かない）。");
+            Assert.AreEqual(requestId, session.Respawn.CurrentRequestId,
+                "同じ死の続きなので再開要求 ID を振り直さない。");
+            Assert.AreEqual(1, session.Respawn.AdvanceCount, "周期の更新は再開要求につき 1 回のまま。");
+            Assert.AreEqual(cycleBefore + 1, session.RespawnCycle, "再試行で周期を二度進めない。");
+            Assert.AreEqual(0, session.Respawn.CompletedCount, "着いていないので完了していない。");
+            Assert.IsTrue(session.Respawn.IsAwaitingRespawn, "再開画面で待てる状態へ戻る。");
+            Assert.AreEqual(GameMode.GameOver, modes.Current, "探索へは戻さない（主人公は死んだまま）。");
+
+            // <b>ここが核心。</b> 復旧へ流していた頃はここが終端失敗になり、Error 表示になっていた。
+            Assert.IsFalse(service.HasTerminalFailure,
+                "再試行できる失敗を Error 表示にしない。理由=" + service.TerminalFailureReason);
+            Assert.AreEqual(1, service.RespawnFailureCount, "死亡再開の失敗として 1 回数える。");
+
+            // ---- ロードを戻して、同じ再開要求のまま再試行する ----
+            service.Loader = original;
+
+            RespawnDecision retry = runner.RequestRespawn();
+            Assert.IsTrue(retry.Accepted, "再開画面から再試行できる。拒否=" + retry.Rejection);
+            Assert.AreEqual(requestId, retry.RequestId, "同じ再開要求の続き。");
+
+            yield return WaitUntilOrTimeout(
+                () => session.Respawn.Phase == CampaignRespawnPhase.Idle, 20f);
+
+            Assert.AreEqual(CampaignRespawnPhase.Idle, session.Respawn.Phase,
+                "再試行では着いて完了する。段階=" + session.Respawn.Phase
+                + " 遷移の拒否=" + runner.LastTravelRejection);
+            Assert.AreEqual(1, session.Respawn.CompletedCount, "完了は 1 回だけ。");
+            Assert.AreEqual(cycleBefore + 1, session.RespawnCycle,
+                "再試行で再出現周期を二度進めない（§9.1 末尾）。");
+
+            // 完了は<b>活動許可のあと</b>に確定している。
+            yield return WaitUntilOrTimeout(() => modes.Current == GameMode.Exploration, 5f);
+            Assert.AreEqual(GameMode.Exploration, modes.Current, "到着して探索へ戻る（手順 7）。");
+            var arrivedContext = Object.FindFirstObjectByType<AreaContext>();
+            Assert.IsNotNull(arrivedContext);
+            Assert.IsTrue(arrivedContext.IsAreaReady, "活動が許可されている。");
+        }
+
+        /// <summary>
+        /// P5-P21：<b>到着側の初期化が後段で失敗したら、死亡再開を完了扱いにしない</b>
+        /// （§9.1 手順 7。GPT レビュー R6 の指摘 1）。
+        ///
+        /// 以前は Actor を全回復した直後に完了扱いにしていた。そのあとにも門の復元など
+        /// 失敗しうる段が残っており、そこで落ちると段階はすでに <c>Idle</c> なので
+        /// <b>失敗通知を受理できず、「再開する」の再表示・再試行が成立しなかった</b>。
+        ///
+        /// ここでは門の Collider の配線を外して 6a を確実に失敗させ、
+        /// 段階が <c>Requested</c> のまま残る（＝所有者が失敗を確定できる）ことを見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ArrivalInitializationFailure_DoesNotCompleteRespawn()
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            AreaInitializer initializer = FindInitializer();
+            Assert.IsTrue(initializer.Initialized, "前提：ふつうに初期化できている。");
+
+            GameSessionState session = Sessions().Session;
+
+            // ---- 再開で到着した状況を作る（段階だけを Requested にする。遷移は走らせない） ----
+            Assert.IsTrue(session.Respawn.NotifyPlayerDefeated(), "前提：死亡を受理できる。");
+            RespawnDecision decision = session.Respawn.TryRequest();
+            Assert.IsTrue(decision.Accepted, "前提：再開を受理できる。");
+            Assert.AreEqual(CampaignRespawnPhase.Requested, session.Respawn.Phase);
+            int requestId = decision.RequestId;
+
+            // ---- 6a（門の復元）を確実に失敗させる ----
+            var root = Object.FindFirstObjectByType<AreaRoot>();
+            Assert.Greater(root.Doors.Count, 0, "前提：この Area に門がある。");
+            AreaFlagDoor door = root.Doors[0];
+            Assert.IsNotNull(door);
+
+            AreaRuntimeState area = session.GetOrCreateArea(root.AreaId);
+            Assert.IsTrue(area.TryOpen(door.FlagId), "前提：開通済みとして記録できる（復元が走る条件）。");
+            SetPrivate(door, "_blocker", null); // 復元が必ず失敗する。
+
+            // 初期化をやり直させる。
+            typeof(AreaInitializer).GetProperty("Initialized")
+                .GetSetMethod(true).Invoke(initializer, new object[] { false });
+
+            // 失敗は Error ログとして出る（出ないほうが問題なので、握りつぶさず期待として書く）。
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("門の Collider が未配線です"));
+            LogAssert.Expect(LogType.Error,
+                new System.Text.RegularExpressions.Regex("Area initialization failed.*門を復元できませんでした"));
+
+            bool ok = initializer.Initialize();
+
+            Assert.IsFalse(ok, "門を復元できないので初期化は失敗する。");
+            StringAssert.Contains("門", initializer.FailureReason, "理由は門の復元失敗。");
+
+            // <b>ここが核心。</b> 修正前はここが Idle になっていて、失敗を受理できなかった。
+            Assert.AreEqual(CampaignRespawnPhase.Requested, session.Respawn.Phase,
+                "到着の途中で落ちたのだから、まだ完了ではない。");
+            Assert.AreEqual(requestId, session.Respawn.CurrentRequestId, "要求 ID は生きている。");
+            Assert.AreEqual(0, session.Respawn.CompletedCount, "完了として数えない。");
+
+            // 所有者はこの段階から失敗を確定でき、同じ要求 ID で再試行できる。
+            Assert.IsTrue(session.Respawn.NotifyFailed(requestId), "失敗通知を受理できる。");
+            Assert.AreEqual(CampaignRespawnPhase.Failed, session.Respawn.Phase);
+            Assert.IsTrue(session.Respawn.IsAwaitingRespawn, "「再開する」を出し直せる。");
+            Assert.AreEqual(requestId, session.Respawn.TryRequest().RequestId, "同じ再開要求のまま再試行できる。");
+        }
+
+        /// <summary>
+        /// P5-P22：<b>死亡再開が復旧（RecoverToOrigin）へ流れない</b>（§9.1 末尾。GPT レビュー R6 の指摘 1）。
+        ///
+        /// 到着側の準備が完了しないときの既定の立て直しは「運んでいた Actor 値を持って元 Area へ戻る」。
+        /// ところが死亡再開は手順 6 のために<b>持ち越しを捨ててから</b>出発するので、
+        /// 復旧は必ず「復旧元のエリア・入口を解決できませんでした」で終端し、
+        /// <b>再試行できるはずの失敗が Error 表示</b>になっていた。
+        /// そもそも死亡再開の「元の場所」は死んだ場所で、戻る先として正しくない。
+        ///
+        /// ここでは読込が成功したことにして何も読まない Loader を差し、
+        /// 到着の準備が来ないまま監視が切れる状況を実時間で作る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RespawnArrivalNeverPrepares_ReturnsToRespawnScreen_NotRecovery()
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            GameSessionState session = Sessions().Session;
+            AreaTransitionService service = Transitions();
+            var modes = GameModeProvider.Current;
+
+            yield return KillPlayerWithRealHit();
+            yield return WaitForRespawnPrompt();
+
+            int requestId = session.Respawn.CurrentRequestId;
+            int cycleBefore = session.RespawnCycle;
+            int recoveredBefore = service.RecoveredCount;
+
+            IAreaSceneLoader original = service.Loader;
+            float originalBind = service.BindTimeoutSeconds;
+            service.Loader = new SilentLoader();
+            service.BindTimeoutSeconds = 1.5f; // 失敗経路を実時間で通す。
+
+            var runner = Object.FindFirstObjectByType<CampaignRespawnRunner>();
+            Assert.IsTrue(runner.RequestRespawn().Accepted, "前提：再開を受理する。");
+
+            yield return WaitUntilOrTimeout(
+                () => session.Respawn.Phase == CampaignRespawnPhase.Failed, 20f);
+
+            service.Loader = original;
+            service.BindTimeoutSeconds = originalBind;
+
+            Assert.AreEqual(CampaignRespawnPhase.Failed, session.Respawn.Phase,
+                "到着の準備が来なければ、再開画面へ戻して再試行できるようにする。");
+            Assert.AreEqual(requestId, session.Respawn.CurrentRequestId, "要求 ID は振り直さない。");
+            Assert.AreEqual(cycleBefore + 1, session.RespawnCycle, "周期は二度進めない。");
+            Assert.AreEqual(0, session.Respawn.CompletedCount, "着いていないので完了していない。");
+            Assert.AreEqual(GameMode.GameOver, modes.Current, "探索へは戻さない。");
+
+            // <b>ここが核心。</b> 復旧へ流していた頃は必ず終端失敗になり、Error 表示になっていた。
+            Assert.IsFalse(service.HasTerminalFailure,
+                "再試行できる失敗を Error 表示にしない。理由=" + service.TerminalFailureReason);
+            Assert.AreEqual(recoveredBefore, service.RecoveredCount, "復旧ロードは走らせない。");
+            Assert.AreEqual(1, service.RespawnFailureCount, "死亡再開の失敗として数える。");
+            Assert.IsTrue(session.Respawn.IsAwaitingRespawn, "「再開する」を出し直せる。");
+        }
+
+        /// <summary>
+        /// P5-P23：<b>到着時の向きは主人公にも適用する</b>（§4.4「向きは Data の入口定義が正本」）。
+        ///
+        /// 以前は犬丸だけに適用しており、主人公は到着直後だけ入口定義と無関係な向き
+        /// （Prefab の初期値＝下）のままだった。B の入口 <c>area_p5_b_from_a</c> は East 定義なので、
+        /// 到着直後の主人公は<b>右</b>を向いていなければならない。
+        /// 入力は握らずに検査する（押していれば次のフレームから入力が勝つのが正しい）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ArrivalFacing_AppliesEntryDefinitionToThePlayerToo()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            var before = Object.FindFirstObjectByType<PlayerFacing>();
+            Assert.IsNotNull(before, "主人公の向きを持つ部品がある。");
+            // A の既定入口 area_p5_a_start は North 定義。直開きでも入口定義が適用される。
+            Assert.AreEqual(FacingDirection.Up, before.Current,
+                "直開きでも既定入口の向き（North）が主人公に適用される（§5.2／§4.4）。");
+
+            AreaTransitionService service = Transitions();
+            AreaTransitionCoordinator coordinator = service.Coordinator;
+            int completedBefore = coordinator.CompletedCount;
+
+            Assert.IsTrue(service.TryTravel(AreaB, AreaBFromA).Accepted, "B へ移動を受理する。");
+            yield return WaitForCompleted(coordinator, completedBefore + 1);
+
+            Assert.AreEqual(AreaB.Value, Object.FindFirstObjectByType<AreaContext>().AreaId.Value, "B へ着く。");
+
+            var arrived = Object.FindFirstObjectByType<PlayerFacing>();
+            Assert.IsNotNull(arrived);
+            Assert.AreEqual(FacingDirection.Right, arrived.Current,
+                "入口 area_p5_b_from_a は East 定義なので、到着直後の主人公は右を向く（§4.4）。");
         }
 
         /// <summary>死亡が受理され、再開画面が出るまで待つ。</summary>

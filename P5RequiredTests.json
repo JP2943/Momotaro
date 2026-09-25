@@ -194,7 +194,10 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.CampaignRespawn_PreservesEarnedProgressAndResetsVitals",
       "requirementIds": [],
-      "implemented": true
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ArrivalInitializationFailure_DoesNotCompleteRespawn"
+      ]
     },
     {
       "requirementId": "P5-E21",
@@ -202,7 +205,11 @@
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ContractTests.RespawnRequest_IsOnceEvenWhenLoadingFails",
       "requirementIds": [],
-      "implemented": true
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnLoadFailure_ReturnsToRetryableRespawn_NotTerminalError",
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnArrivalNeverPrepares_ReturnsToRespawnScreen_NotRecovery"
+      ]
     },
     {
       "requirementId": "P5-E22",
@@ -309,7 +316,8 @@
       "requirementIds": [],
       "implemented": true,
       "supportingTests": [
-        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.TravelWhileCompanionActing_ArrivesAsFollow"
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.TravelWhileCompanionActing_ArrivesAsFollow",
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ArrivalFacing_AppliesEntryDefinitionToThePlayerToo"
       ]
     },
     {

@@ -240,7 +240,8 @@ namespace Momotaro.Gameplay.Session
                 return RespawnDecision.Reject(RespawnRejection.NotWired);
             }
 
-            AreaTransitionDecision travelDecision = travel.TryRespawnTravel(entry.AreaId, entry.EntryId);
+            AreaTransitionDecision travelDecision =
+                travel.TryRespawnTravel(entry.AreaId, entry.EntryId, decision.RequestId);
             LastTravelRejection = travelDecision.Rejection;
             if (!travelDecision.Accepted)
             {

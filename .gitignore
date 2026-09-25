@@ -71,3 +71,9 @@ _to_delete/
 
 # Editor 常駐ブリッジの受け渡し（機械同士のポスト。履歴に残さない）
 _bridge/
+
+# Unity Test Framework が PlayMode 実行のたびに作る一時 Scene。
+# 名前が毎回変わる（InitTestScene<GUID>.unity）ので、生成物として最初から除外する。
+# 以前 1 つがコミットに紛れ込んだ（689d951。記録 025 §6 で除去）。
+/Assets/InitTestScene*.unity
+/Assets/InitTestScene*.unity.meta

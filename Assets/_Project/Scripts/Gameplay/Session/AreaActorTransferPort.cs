@@ -288,15 +288,26 @@ namespace Momotaro.Gameplay.Session
                 _companionCombat.CancelAttack();
             }
 
+            // 構え・回避は<b>中断だけでは足りない</b>（GPT レビュー R6 の指摘 2）。
+            // Release／Interrupt は動作を止めるがクールダウンを残す。この API の契約は
+            // 「Scene 再生成に依存せず全 CD を解除する」なので、初期化まで行う。
+            // 通常の P5 では再開で Scene を作り直すため新品になり表面化しないが、
+            // それは偶然であって、契約を満たしているからではない。
             if (_companionDefense != null)
             {
-                _companionDefense.Guard?.Release();
-                _companionDefense.Evade?.Interrupt();
+                _companionDefense.ResetDefense();
             }
 
             if (_companionStates != null)
             {
                 _companionStates.ResetArbitration();
+            }
+
+            // 守護のクールダウンも解除する（同上）。庇い待ちのまま再開すると、
+            // 再開直後の一戦だけ庇えない犬丸になる。
+            if (_companionGuardian != null)
+            {
+                _companionGuardian.ResetGuardian();
             }
 
             // --- 主人公：全回復・死亡確定の解除・短時間状態の解除 ---
@@ -330,6 +341,8 @@ namespace Momotaro.Gameplay.Session
                 _companionActor?.ResetState(CompanionState.Follow);
             }
         }
+
+        private PlayerFacing _playerFacing;
 
         private PlayerStateController ResolvePlayerState()
         {
@@ -367,6 +380,26 @@ namespace Momotaro.Gameplay.Session
             {
                 _companionActor.SetFacing(facing);
             }
+
+            // 主人公にも入口定義の向きを適用する（§4.4「向きは Data の入口定義が正本」）。
+            // 以前は犬丸だけに適用しており、到着直後の主人公だけ前の Area の向きのままだった。
+            // ConfirmFromInput はロック状態に関わらず明示的に確定する（到着の配置は権威なので、
+            // 死亡時に固定した向きも上書きしてよい）。次のフレームからは通常どおり入力が勝つ。
+            PlayerFacing playerFacing = ResolvePlayerFacing();
+            if (playerFacing != null)
+            {
+                playerFacing.ConfirmFromInput(new Vector2(facing.x, facing.z));
+            }
+        }
+
+        private PlayerFacing ResolvePlayerFacing()
+        {
+            if (_playerFacing == null && _playerRoot != null)
+            {
+                _playerFacing = _playerRoot.GetComponentInChildren<PlayerFacing>(true);
+            }
+
+            return _playerFacing;
         }
 
         private static void PlaceRoot(Transform root, Vector3 position)

@@ -3361,6 +3361,8 @@ namespace Momotaro.Tests.EditMode
             public CompanionActor Actor;
             public CompanionHitReceiver CompanionVitals;
             public CompanionCombatController Combat;
+            public CompanionDefenseController Defense;
+            public CompanionGuardianController Guardian;
             public AreaActorTransferPort Port;
             public CampaignRespawnRunner Runner;
             public FakeRespawnTravel Travel;
@@ -3383,11 +3385,15 @@ namespace Momotaro.Tests.EditMode
 
             public StableId LastEntryId { get; private set; }
 
-            public AreaTransitionDecision TryRespawnTravel(StableId areaId, StableId entryId)
+            /// <summary>受け取った再開要求 ID（同じ死での再試行で変わらないことを見る）。</summary>
+            public int LastRequestId { get; private set; }
+
+            public AreaTransitionDecision TryRespawnTravel(StableId areaId, StableId entryId, int respawnRequestId)
             {
                 Count++;
                 LastAreaId = areaId;
                 LastEntryId = entryId;
+                LastRequestId = respawnRequestId;
                 return Accept
                     ? AreaTransitionDecision.Accept(++_id)
                     : AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
@@ -3450,10 +3456,17 @@ namespace Momotaro.Tests.EditMode
             CompanionStateArbiter states = Ensure<CompanionStateArbiter>(companionGo);
             states.Bind(actor);
 
+            // 防御・守護も配線する。未配線のままだと「全 CD を解除する」契約の抜けを
+            // このリグでは踏めない（GPT レビュー R6 の指摘 2 で実際に見落としていた）。
+            CompanionDefenseController defense = Ensure<CompanionDefenseController>(companionGo);
+            defense.Bind(actor);
+            CompanionGuardianController guardian = Ensure<CompanionGuardianController>(companionGo);
+            guardian.Bind(actor, companionVitals);
+
             var portGo = new GameObject("TransferPort_Respawn");
             _spawned.Add(portGo);
             var port = portGo.AddComponent<AreaActorTransferPort>();
-            port.Bind(playerVitals, null, actor, companionVitals, combat, null, null, states);
+            port.Bind(playerVitals, null, actor, companionVitals, combat, defense, guardian, states);
             port.BindRoots(playerGo.transform, companionGo.transform);
 
             var catalogData = UnityEditor.AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase5CatalogPath);
@@ -3476,6 +3489,8 @@ namespace Momotaro.Tests.EditMode
                 Actor = actor,
                 CompanionVitals = companionVitals,
                 Combat = combat,
+                Defense = defense,
+                Guardian = guardian,
                 Port = port,
                 Runner = runner,
                 Travel = travel,
@@ -3511,6 +3526,14 @@ namespace Momotaro.Tests.EditMode
                 "前提：Down へ遷移できる。");
             Assert.IsTrue(rig.Combat.TryImportTransferSnapshot(new CompanionCombatTransferSnapshot(2.5f)),
                 "前提：CD の途中値を入れられる。");
+
+            // 防御・守護の CD も<b>非ゼロ</b>にする。初期値のままだと「解除された」と
+            // 「最初から 0 だった」が区別できず、解除漏れを見逃す（GPT レビュー R6 の指摘 2）。
+            Assert.IsTrue(rig.Defense.TryImportTransferSnapshot(new CompanionDefenseTransferSnapshot(
+                    new GuardAbilityTransferSnapshot(1.25f), new EvadeAbilityTransferSnapshot(0.85f))),
+                "前提：構え・回避の CD の途中値を入れられる。");
+            Assert.IsTrue(rig.Guardian.TryImportTransferSnapshot(new CompanionGuardianTransferSnapshot(3.5f)),
+                "前提：守護 CD の途中値を入れられる。");
         }
 
         /// <summary>
@@ -3533,6 +3556,10 @@ namespace Momotaro.Tests.EditMode
             Assert.IsTrue(rig.Area.IsEncounterCleared(rig.EncounterId, cycleBefore), "前提：通常戦をクリア済み。");
             Assert.AreEqual(0, rig.CompanionVitals.Vitals.Health.Current, "前提：犬丸は倒れている。");
             Assert.AreEqual(2.5f, rig.Combat.ExportTransferSnapshot().CooldownRemaining, 1e-3f, "前提：CD が残っている。");
+            CompanionDefenseTransferSnapshot defenseBefore = rig.Defense.ExportTransferSnapshot();
+            Assert.AreEqual(1.25f, defenseBefore.Guard.CooldownRemaining, 1e-3f, "前提：構えの CD が残っている。");
+            Assert.AreEqual(0.85f, defenseBefore.Evade.CooldownRemaining, 1e-3f, "前提：回避の CD が残っている。");
+            Assert.AreEqual(3.5f, rig.Guardian.CooldownRemaining, 1e-3f, "前提：守護の CD が残っている。");
 
             // ---- 手順 1：実被弾で死なせ、GameOver にする ----
             KillPlayer(rig.PlayerVitals);
@@ -3561,6 +3588,14 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(0f, rig.CompanionVitals.Vitals.RecoveryRemaining, 1e-4f, "復帰待ちも解除する。");
             Assert.AreEqual(0f, rig.CompanionVitals.Vitals.FlinchAccumulation, 1e-4f, "ひるみ蓄積も解除する。");
             Assert.AreEqual(0f, rig.Combat.ExportTransferSnapshot().CooldownRemaining, 1e-4f, "CD を解除する。");
+
+            // <b>攻撃 CD だけでは足りない。</b>「Scene 再生成に依存せず全 CD を解除する」が
+            // この API の契約なので、防御・守護もここで 0 になっていなければならない。
+            CompanionDefenseTransferSnapshot defenseAfter = rig.Defense.ExportTransferSnapshot();
+            Assert.AreEqual(0f, defenseAfter.Guard.CooldownRemaining, 1e-4f, "構えの CD も解除する。");
+            Assert.AreEqual(0f, defenseAfter.Evade.CooldownRemaining, 1e-4f, "回避の CD も解除する。");
+            Assert.AreEqual(0f, rig.Guardian.CooldownRemaining, 1e-4f, "守護の CD も解除する。");
+            Assert.IsFalse(rig.Defense.IsGuarding, "構えたまま再開しない。");
             Assert.AreEqual(CompanionState.Follow, rig.Actor.State, "配置状態は追従へ戻る。");
             Assert.AreEqual(0, rig.Actor.IllegalTransitionCount, "不正遷移を出さない。");
 

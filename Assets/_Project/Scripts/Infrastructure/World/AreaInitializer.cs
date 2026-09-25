@@ -219,7 +219,12 @@ namespace Momotaro.Infrastructure.World
 
                 transitions.ClearPendingTransfer();
                 _transferPort.RestoreForCampaignRespawn();
-                session.Respawn.NotifyArrived(session.Respawn.CurrentRequestId);
+
+                // <b>ここで完了扱いにしない</b>（GPT レビュー R6 の指摘 1）。
+                // この下にはまだ門の復元など失敗しうる段があり、さらに活動の許可は
+                // 世代・到着準備を確認した遷移サービスが出す。先に Idle へ戻してしまうと、
+                // そのあとに落ちても失敗通知を受理できず、「再開する」の再表示・再試行が成立しない。
+                // 完了の確定は AreaTransitionService が活動を許可したあとに行う（§9.1 手順 7）。
             }
             else if (transitions.TryPeekPendingTransfer(out AreaTransferSnapshot transfer))
             {

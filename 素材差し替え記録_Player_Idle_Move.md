@@ -108,6 +108,27 @@ EditMode は 1670 → 1679 件（新規 9 件ぶん）。P5 の必須 54 件は�
   内容は HEAD と同一（fileID を正規化した比較で一致を確認）。本コミットには含めていない。
 - `_to_delete/spritecheck/` に確認用コンタクトシート 2 枚を置いた。削除して差し支えない。
 
+## 8b. 正式素材化するときの移行（GPT レビュー R6 の整理依頼）
+
+今回の Idle／Move は**仮素材の置き場所**（`Assets/_Project/Art/Characters/Player/Momotaro/Prototype/`）に
+入れてある。他モーション（Attack／Step／Hurt／GuardBreak／Special）も同じ `Prototype/` 配下で、
+**今回だけが例外ということはない。** 動作上の問題ではなく、正式素材へ差し替えるときの手順の話として残す。
+
+正式素材（A3：ロードマップ §426「Attack1〜3、Guard、Step を Clip 単位で差し替え」）へ移す段になったら、
+次の順で `Prototype/` から `Master/`（正式素材の置き場所。まだ作っていない）へ移す。
+
+1. 正式 PNG を `Assets/_Project/Art/Characters/Player/Momotaro/Master/<Motion>/` へ入れる。
+   Import 設定は今回と同じ（Single／PPU100／BottomCenter Pivot (0.5, 0)／Full Rect／Bilinear／
+   Compression None／Mip 無効／Wrap Clamp）。**本体の描画高と下端余白を仮素材に合わせる**と、
+   当たり判定・カメラ・間合いの調整値をそのまま持ち越せる。
+2. Clip は**差し替えではなく参照の張り替え**にする（Clip の guid を変えない）。
+   Animator Controller・プレハブの参照が切れない。
+3. `PlayerIdleMoveSpriteImportTests` の `SpritesDir` を `Master` へ向け、枚数・寸法・コマ数・尺を
+   正式素材の値へ更新する。**検査を消さずに値を直す**のが正しい移行。
+4. 移行が済んだ `Prototype/<Motion>/` は削除する（参照が残っていないことを Validator で確認してから）。
+
+正式素材のコマ数・尺は P10b（カメラ・VFX・演出値）と一緒に決まるので、**今は移さない**。
+
 ## 9. 変更ファイルの sha256（本記録の最終編集後に採取）
 
 | ファイル | sha256 |
