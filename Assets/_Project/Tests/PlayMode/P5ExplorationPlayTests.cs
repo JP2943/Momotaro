@@ -912,6 +912,54 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(AreaA.Value, Object.FindFirstObjectByType<AreaContext>().AreaId.Value, "A へ戻る。");
         }
 
+        /// <summary>
+        /// P5-E06（実機経路）：<b>主人公が歩いて範囲へ入り、実キーで東を押し続けると B へ移動する。</b>
+        ///
+        /// 既存の E06 は <c>gate.SetPlayerInside</c> と <c>driver.Tick</c> を直接叩いていた。
+        /// 判定の中身はそれで十分だが、<b>範囲の出入りを誰が Gate へ伝えるか</b>と
+        /// <b>実際の移動入力が駆動部まで届くか</b>という配線は一度も通っていなかった。
+        /// 実機では <c>SetPlayerInside</c> を呼ぶ者がどこにも居らず、試遊で A→B が一度も起きなかった
+        /// （壁際で東を押し続けても無反応）。テストが緑のままだったのはこの抜けのせい。
+        ///
+        /// ここでは Gate にも駆動部にも触れず、<b>置く・押す</b>だけで B へ着くことを見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WalkingIntoTheExitAndHoldingEast_TravelsToB_ThroughTriggerAndRealInput()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            RemoveStrayTestDevices();
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5ExitKeyboard");
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            AreaTransitionCoordinator coordinator = Transitions().Coordinator;
+
+            var areaRoot = Object.FindFirstObjectByType<AreaRoot>();
+            Assert.AreEqual(1, areaRoot.ExitGates.Count, "A には B への出入口が 1 つある。");
+            AreaExitGate gate = areaRoot.ExitGates[0];
+
+            Assert.IsTrue(gate.IsWired,
+                "出入口に主人公の根が配線されている（配線が無いと Trigger を無視し、永久に反応しない）。");
+            Assert.IsFalse(gate.PlayerInside, "まだ範囲外。");
+
+            // 外壁へめり込ませないよう、出入口の少し手前へ置く（範囲内には入る）。
+            yield return MovePlayerTo(gate.transform.position + new Vector3(-0.4f, 0f, 0f));
+
+            Assert.IsTrue(gate.PlayerInside,
+                "歩いて入れば Trigger が範囲内にする（SetPlayerInside を外から呼ばずに成立する）。");
+
+            // 実キーで東を押し続ける。0.15 秒の連続入力で要求が出る。
+            yield return HoldKeyUntil(Key.D, () => coordinator.CompletedCount >= 1, 5f);
+
+            Assert.AreEqual(1, coordinator.CompletedCount, "東へ押し続けると遷移が 1 回成立する。");
+            Assert.AreEqual(AreaB.Value, Object.FindFirstObjectByType<AreaContext>().AreaId.Value, "B へ着く。");
+        }
+
         /// <summary>読込を開始できない Loader（P12）。本番と同じ契約なので経路は 1 本のまま。</summary>
         private sealed class FailingLoader : IAreaSceneLoader
         {
@@ -1941,6 +1989,19 @@ namespace Momotaro.Tests.PlayMode
                 {
                     yield return null;
                 }
+            }
+
+            yield return ReleaseKeys();
+        }
+
+        /// <summary>条件が成るまで<b>押しっぱなし</b>にする（押し直さない）。連続入力を見る検査で使う。</summary>
+        private IEnumerator HoldKeyUntil(Key key, System.Func<bool> condition, float seconds)
+        {
+            float deadline = Time.realtimeSinceStartup + seconds;
+            while (!condition() && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(key));
+                yield return null;
             }
 
             yield return ReleaseKeys();

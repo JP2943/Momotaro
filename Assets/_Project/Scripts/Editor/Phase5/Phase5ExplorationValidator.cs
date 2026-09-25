@@ -135,6 +135,10 @@ namespace Momotaro.Editor.Phase5
             RequireWired<AreaNavigationBinder>(scene, "経路 Adapter の配線役", errors, x => x.IsWired);
             RequireWired<CampaignRespawnRunner>(scene, "死亡再開の実行役", errors, x => x.IsWired);
             RequireWired<RespawnSubmitInput>(scene, "再開操作の仲介", errors, x => x.IsWired);
+
+            // 出入口は<b>自分の Trigger で範囲を見る</b>ので、主人公の根が配線されていないと一度も反応しない。
+            // 実際に試遊で A→B が動かず、原因がこの配線漏れだった（Gate を直接叩くテストでは気付けない）。
+            RequireWired<AreaExitGate>(scene, "開放出入口（AreaExitGate）", errors, x => x.IsWired);
             RequireWired<CampaignRespawnView>(scene, "再開操作の表示", errors, x => x.IsWired);
 
             foreach (AreaInteractInput input in Components<AreaInteractInput>(scene))

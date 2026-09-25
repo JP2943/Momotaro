@@ -318,7 +318,10 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.HeldExitInput_DoesNotBounceBackOrStartEncounter",
       "requirementIds": [],
-      "implemented": true
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.WalkingIntoTheExitAndHoldingEast_TravelsToB_ThroughTriggerAndRealInput"
+      ]
     },
     {
       "requirementId": "P5-P05",

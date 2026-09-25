@@ -987,6 +987,18 @@ namespace Momotaro.Editor.Phase5
             AreaExitGateDriver gateDriver = systems.AddComponent<AreaExitGateDriver>();
             gateDriver.Bind(areaRoot, player);
 
+            // 出入口の範囲判定（§6.1）。<b>ここを忘れると出入口が一度も反応しない。</b>
+            // Gate は主人公の根と一致する Collider の進入だけを範囲内と見なすので、根を配線する。
+            PlayerRoot exitGatePlayer = playerRoot != null ? playerRoot.GetComponent<PlayerRoot>() : null;
+            for (int i = 0; i < areaRoot.ExitGates.Count; i++)
+            {
+                AreaExitGate exitGate = areaRoot.ExitGates[i];
+                if (exitGate != null)
+                {
+                    exitGate.BindPlayer(exitGatePlayer);
+                }
+            }
+
             // 徳を映す HUD（§11 の必須 UI のうち、P5-03b で要る分）。
             CreateHud(systems.transform, vitals, player, progress);
 
@@ -1322,6 +1334,10 @@ namespace Momotaro.Editor.Phase5
             BoxCollider trigger = go.AddComponent<BoxCollider>();
             trigger.isTrigger = true;
             trigger.size = new Vector3(1.6f, Phase5Layout.WallHeight, Phase5Layout.CorridorWidth);
+
+            // 床の上へ載せる（遭遇 Trigger と同じ約束）。y=0 中心のままだと半分が床下へ潜り、
+            // 主人公の Capsule（y 0〜2）との重なりが薄くなる。
+            trigger.center = new Vector3(0f, Phase5Layout.WallHeight * 0.5f, 0f);
 
             AreaExitGate gate = go.AddComponent<AreaExitGate>();
             gate.Configure(destinationArea, destinationEntry, exitDirection);

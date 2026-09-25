@@ -1,4 +1,5 @@
 using Momotaro.Core.Identification;
+using Momotaro.Gameplay.Player;
 using UnityEngine;
 
 namespace Momotaro.Gameplay.Session
@@ -19,8 +20,18 @@ namespace Momotaro.Gameplay.Session
     /// 再開入力を到着先の操作へ流用しない P18 と同じ考え方。
     ///
     /// 判定の時間は unscaled ではなく Gameplay 時計で進める（Pause 中に溜まらない）。
+    ///
+    /// <b>範囲の出入りは自分の Trigger で見る。</b> 以前は <see cref="SetPlayerInside"/> を
+    /// 外から呼ぶ前提だったが、呼ぶ者が実機の Scene にどこにも居らず、
+    /// <b>試遊では出入口が一度も反応しなかった</b>（テストは Gate を直接叩いていたので緑のままだった）。
+    /// 判定を持つ本人が Trigger を受けるようにして、配線の抜けを <see cref="IsWired"/> で検査できるようにする。
+    /// 明示呼び出しも引き続き受け付ける（テスト・特殊な配置のため）。
+    ///
+    /// <b>主人公本人の進入だけを見る</b>のは <see cref="Momotaro.Gameplay.Encounter.AreaEncounterTrigger"/> と同じ。
+    /// 仲間・敵・Projectile が踏んでも範囲内にしない。
     /// </summary>
     [DisallowMultipleComponent]
+    [RequireComponent(typeof(Collider))]
     public sealed class AreaExitGate : MonoBehaviour
     {
         /// <summary>要求までに必要な連続入力の秒数（§6.1）。</summary>
@@ -37,6 +48,9 @@ namespace Momotaro.Gameplay.Session
 
         [Tooltip("入力が出口方向と見なされる内積の下限。1 に近いほど厳しい。")]
         [SerializeField] private float _directionThreshold = 0.5f;
+
+        [Tooltip("主人公の根（本人かどうかの判定に使う）。")]
+        [SerializeField] private PlayerRoot _player;
 
         private bool _playerInside;
         private bool _requiresRelease;
@@ -59,6 +73,46 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>要求を出した回数（診断・テスト用）。</summary>
         public int RequestCount { get; private set; }
+
+        /// <summary>主人公が配線されているか（Validator・テスト用）。配線が無いと Trigger を無視する。</summary>
+        public bool IsWired => _player != null;
+
+        /// <summary>主人公を配線する（Scene 構築・テストが呼ぶ）。</summary>
+        public void BindPlayer(PlayerRoot player)
+        {
+            if (player != null)
+            {
+                _player = player;
+            }
+        }
+
+        private void OnTriggerEnter(Collider other)
+        {
+            if (IsPlayer(other))
+            {
+                SetPlayerInside(true);
+            }
+        }
+
+        private void OnTriggerExit(Collider other)
+        {
+            if (IsPlayer(other))
+            {
+                SetPlayerInside(false);
+            }
+        }
+
+        /// <summary>主人公本人か（仲間・敵・Projectile は無視する）。</summary>
+        private bool IsPlayer(Collider other)
+        {
+            if (other == null || _player == null)
+            {
+                return false;
+            }
+
+            var root = other.GetComponentInParent<PlayerRoot>();
+            return root != null && root == _player;
+        }
 
         /// <summary>配線する（Builder・テストが呼ぶ）。</summary>
         public void Configure(StableId areaId, StableId entryId, Vector3 exitDirection)
