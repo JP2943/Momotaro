@@ -50,7 +50,7 @@ namespace Momotaro.Infrastructure.Input
         public string HeldSubmitDiagnostics =>
             _submitControl == null
                 ? "(覚えていない)"
-                : _submitControl.path + " pressed=" + _submitControl.isPressed;
+                : _submitControl.path + " pressed=" + IsPressed(_submitControl);
 
         /// <inheritdoc />
         public void PollHeldControls()
@@ -203,7 +203,7 @@ namespace Momotaro.Infrastructure.Input
                 return true;
             }
 
-            return context.control is UnityEngine.InputSystem.Controls.ButtonControl button && button.isPressed;
+            return context.control is UnityEngine.InputSystem.Controls.ButtonControl button && IsPressed(button);
         }
 
         private void OnInteractStarted(InputAction.CallbackContext context)
@@ -240,7 +240,7 @@ namespace Momotaro.Infrastructure.Input
             // Action へ届かないので、Map を開いた瞬間に「押しっぱなし」が新しい押下として
             // 立ち上がってしまう。押されていれば離すまで無効にし、押されていなければ
             // 解放待ちを解く（離してから到着した人の最初の 1 回を飲み込まないため）。
-            if (_submitControl != null && _submitControl.isPressed)
+            if (IsPressed(_submitControl))
             {
                 _state.RequireRelease();
             }
