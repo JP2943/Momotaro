@@ -208,7 +208,8 @@
       "implemented": true,
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnLoadFailure_ReturnsToRetryableRespawn_NotTerminalError",
-        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnArrivalNeverPrepares_ReturnsToRespawnScreen_NotRecovery"
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnArrivalNeverPrepares_ReturnsToRespawnScreen_NotRecovery",
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ArrivalSceneFailsToInitialize_RespawnInputStillRetriesToCompletion"
       ]
     },
     {
@@ -345,7 +346,10 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.MovementStepAndHitback_RespectWallsAndWaterBoundary",
       "requirementIds": [],
-      "implemented": true
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.GateOpened_MakesTheGatedRouteTraversable"
+      ]
     },
     {
       "requirementId": "P5-P07",

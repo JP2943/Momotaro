@@ -200,6 +200,22 @@ namespace Momotaro.Infrastructure.World
                 return Fail("Area カタログを構築できませんでした（Data の不整合）。");
             }
 
+            // 5b. 死亡再開の実行役へ Session と遷移役を渡す（§9.1）。
+            //
+            // <b>この下で失敗しうる段より前に配線する</b>（GPT レビュー R7 の指摘 1）。
+            // 以前は門の復元より後に置いていたので、門の復元で落ちると実行役が未配線のまま残り、
+            // 段階は「再試行待ち」へ戻っているのに <c>RequestRespawn</c> が NotWired で断る、という
+            // <b>再開画面は出るが押しても何も起きない</b>状態になっていた。
+            // ここより前で落ちた場合や、そもそも実行役が Scene に居ない場合に備えて、
+            // 実行役側も常駐（<see cref="GameSessionProvider"/>／
+            // <see cref="CampaignRespawnTravelProvider"/>）から取り直せるようにしてある。
+            // 判断（一度限り・段階）は Session 側が持ち、ここは配線だけを行う。
+            if (_respawn != null)
+            {
+                _respawn.BindSession(() => session);
+                _respawn.BindTravel(transitions);
+            }
+
             // 6. 入口へ配置し、運ばれてきた Actor 値を復元する（§4.4〜§4.6）。
             //    値の復元は AreaReady より前。1 つでも失敗したら Ready を確定しない。
             PlaceArrivals(entryPoint, definitionFacing: ResolveFacing(entryId));
@@ -262,14 +278,6 @@ namespace Momotaro.Infrastructure.World
             {
                 _encounter.BindSession(() => area, () => session.RespawnCycle);
                 _encounter.RestoreFromRecord();
-            }
-
-            // 6d. 死亡再開の実行役へ Session と遷移役を渡す（§9.1）。
-            //     判断（一度限り・段階）は Session 側が持ち、ここは配線だけを行う。
-            if (_respawn != null)
-            {
-                _respawn.BindSession(() => session);
-                _respawn.BindTravel(transitions);
             }
 
             // 6b. 到着直後の跳ね返りを止める（§6.1 末尾）。

@@ -199,7 +199,7 @@ namespace Momotaro.Gameplay.Session
         public RespawnDecision RequestRespawn()
         {
             CampaignRespawnCoordinator respawn = ResolveRespawn();
-            GameSessionState session = _session?.Invoke();
+            GameSessionState session = ResolveSession();
             if (respawn == null || session == null)
             {
                 LastRejection = RespawnRejection.NotWired;
@@ -292,6 +292,15 @@ namespace Momotaro.Gameplay.Session
             return _catalog.TryGetRespawnEntry(out entry);
         }
 
+        /// <summary>
+        /// 再開の遷移役を解決する。
+        ///
+        /// <b>注入されていなければ常駐の窓口を見る</b>（GPT レビュー R7 の指摘 1）。
+        /// 遷移役の注入は到着側 <c>AreaInitializer</c> が行うが、到着初期化が途中で落ちると
+        /// そこへ到達しない。段階は「再試行待ち」へ戻っているのに実行役が居ない、という
+        /// <b>再開画面は出るが押しても NotWired で断られる</b>状態になっていた。
+        /// 常駐サービスは Scene の成否と無関係に生きているので、そこから取り直す。
+        /// </summary>
         private IAreaRespawnTravel ResolveTravel()
         {
             if (!_travelResolved)
@@ -300,18 +309,21 @@ namespace Momotaro.Gameplay.Session
                 _travel = _travelSource as IAreaRespawnTravel;
             }
 
-            return _travel;
+            return _travel ?? CampaignRespawnTravelProvider.Current;
+        }
+
+        /// <summary>
+        /// Session を解決する。注入されていなければ常駐の窓口を見る（同上）。
+        /// Session は常駐が持っているので、Scene の初期化が落ちても取り直せる。
+        /// </summary>
+        private GameSessionState ResolveSession()
+        {
+            return _session?.Invoke() ?? GameSessionProvider.Current;
         }
 
         private CampaignRespawnCoordinator ResolveRespawn()
         {
-            GameSessionState session = _session?.Invoke();
-            if (session == null)
-            {
-                session = GameSessionProvider.Current;
-            }
-
-            return session?.Respawn;
+            return ResolveSession()?.Respawn;
         }
     }
 }

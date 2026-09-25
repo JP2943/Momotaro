@@ -107,4 +107,33 @@ namespace Momotaro.Gameplay.Session
         /// </summary>
         AreaTransitionDecision TryRespawnTravel(StableId areaId, StableId entryId, int respawnRequestId);
     }
+
+    /// <summary>
+    /// 再開の遷移役を常駐で公開する（GPT レビュー R7 の指摘 1）。
+    ///
+    /// <b>再試行の実行経路を、到着先 Scene の正常初期化に依存させないための窓口。</b>
+    /// 遷移役は常駐サービスなので Scene へ serialize できず、これまでは到着側の
+    /// <c>AreaInitializer</c> が初期化の終盤で <c>BindTravel</c> していた。
+    /// そのため<b>到着初期化が途中で落ちると、実行役が未配線のまま再開画面だけが出る</b>——
+    /// 段階は「再試行待ち」でも <c>RequestRespawn</c> が NotWired で断る、という状態になっていた。
+    ///
+    /// 解除は<b>所有者一致</b>で行う（§5.2）。自分が差したものだけを外す。
+    /// </summary>
+    public static class CampaignRespawnTravelProvider
+    {
+        /// <summary>現在の遷移役（未設定なら null）。</summary>
+        public static IAreaRespawnTravel Current { get; set; }
+
+        /// <summary>差さっているか（診断・テスト用）。</summary>
+        public static bool HasTravel => Current != null;
+
+        /// <summary>自分が差したものだけを外す（所有者一致）。</summary>
+        public static void ReleaseIfOwner(IAreaRespawnTravel owned)
+        {
+            if (owned != null && ReferenceEquals(Current, owned))
+            {
+                Current = null;
+            }
+        }
+    }
 }

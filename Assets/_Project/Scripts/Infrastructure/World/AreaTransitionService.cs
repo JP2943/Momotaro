@@ -134,6 +134,10 @@ namespace Momotaro.Infrastructure.World
         public ServiceInitResult Initialize()
         {
             GameplayClockProvider.Current = _clock;
+
+            // 再開の遷移役を常駐で公開する（GPT レビュー R7 の指摘 1）。
+            // 到着側 Scene の初期化が落ちても、再試行の実行経路はここから取り直せる。
+            CampaignRespawnTravelProvider.Current = this;
             return ServiceInitResult.Ok("Area transition ready.");
         }
 
@@ -822,6 +826,8 @@ namespace Momotaro.Infrastructure.World
                 // 自分が差したものだけを外す（所有者一致。§5.2「Provider の解除は所有者一致で行う」）。
                 GameplayClockProvider.Current = null;
             }
+
+            CampaignRespawnTravelProvider.ReleaseIfOwner(this);
         }
 
         /// <summary>差し替え可能な条件源へ橋渡しする（Scene ごとに条件源が入れ替わるため）。</summary>

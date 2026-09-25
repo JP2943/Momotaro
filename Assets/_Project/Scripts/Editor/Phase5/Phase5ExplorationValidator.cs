@@ -554,8 +554,18 @@ namespace Momotaro.Editor.Phase5
 
                 if (viaDoor)
                 {
+                    // <b>「開通すれば通れる」とは言えない</b>（GPT レビュー R7 の指摘 2）。
+                    // ここで見たのは「入口→門の手前」と「門の向こう→目的地」の 2 区間だけで、
+                    // <b>門の手前と向こうを結ぶ区間は見ていない</b>。門の近くに別の壁があったり
+                    // NavMesh が切れていたりしても、この 2 区間は成立してしまう。
+                    // 門を開けた状態の経路は、くり抜きの解除にフレームが要るので静的検査では見られない。
+                    // ここは<b>未検査</b>として残し、PlayMode の
+                    // GateOpened_MakesTheGatedRouteTraversable が受入条件になる。
                     warnings.Add(label + " は閉じた門（" + closedDoors[i].name
-                        + "）の先にあります。門の両側で経路は繋がっているので、開通すれば通れます。");
+                        + "）の先にあります。門の両側それぞれには到達できますが、"
+                        + "<b>開通後に渡れるかはここでは未検査</b>です"
+                        + "（くり抜きの解除にフレームが要るため静的には見られない）。"
+                        + "PlayMode の GateOpened_MakesTheGatedRouteTraversable が受入条件です。");
                     return;
                 }
             }

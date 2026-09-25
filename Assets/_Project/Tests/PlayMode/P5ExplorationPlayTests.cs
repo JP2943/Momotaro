@@ -30,6 +30,7 @@ using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.World;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.AI;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.SceneManagement;
@@ -84,6 +85,7 @@ namespace Momotaro.Tests.PlayMode
             PerceptionTargetRegistry.Clear();
             GameplayClockProvider.Current = null;
             GameSessionProvider.Current = null;
+            CampaignRespawnTravelProvider.Current = null;
             AreaPendingArrival.Clear();
             AreaPendingArrival.ResetDiagnostics();
             AreaInteractableRegistry.Clear();
@@ -139,6 +141,7 @@ namespace Momotaro.Tests.PlayMode
             PerceptionTargetRegistry.Clear();
             GameplayClockProvider.Current = null;
             GameSessionProvider.Current = null;
+            CampaignRespawnTravelProvider.Current = null;
             AreaPendingArrival.Clear();
             AreaInteractableRegistry.Clear();
             RemoveInputDevices();
@@ -4246,6 +4249,202 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsNotNull(arrived);
             Assert.AreEqual(FacingDirection.Right, arrived.Current,
                 "入口 area_p5_b_from_a は East 定義なので、到着直後の主人公は右を向く（§4.4）。");
+        }
+
+        /// <summary>
+        /// P5-P24：<b>到着先 Scene の初期化が失敗しても、実キーの再開操作で再ロードまで通る</b>
+        /// （§9.1 末尾。GPT レビュー R7 の指摘 1）。
+        ///
+        /// 既存の 2 本はどちらもこの経路を通っていなかった。
+        /// <c>ArrivalInitializationFailure_DoesNotCompleteRespawn</c> は初期化済み Scene を
+        /// 再初期化する検査で、<c>RespawnArrivalNeverPrepares_...</c> は旧 Scene を残す。
+        /// <b>どちらも「新しい Scene の未配線状態」を作れない。</b>
+        ///
+        /// ここでは旧 Scene を実際に破棄させ、新しく読まれた Scene の門を
+        /// <c>sceneLoaded</c>（<c>Start</c> より前）で壊して初期化を失敗させる。
+        /// その状態から<b>実キーの再開操作</b>で再ロードが完了することを見る。
+        /// 修正前は、新しい Scene の実行役が未配線のまま（配線は門の復元より後だった）で、
+        /// 段階は「再試行待ち」でも <c>RequestRespawn</c> が NotWired で断っていた。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ArrivalSceneFailsToInitialize_RespawnInputStillRetriesToCompletion()
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            RemoveStrayTestDevices();
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5RetryKeyboard");
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            GameSessionState session = Sessions().Session;
+            var modes = GameModeProvider.Current;
+
+            // 開通済みの門を記録しておく（到着側で復元が走る条件）。
+            var rootBefore = Object.FindFirstObjectByType<AreaRoot>();
+            Assert.Greater(rootBefore.Doors.Count, 0, "前提：A に門がある。");
+            StableId gateFlag = rootBefore.Doors[0].FlagId;
+            AreaRuntimeState areaA = session.GetOrCreateArea(AreaA);
+            Assert.IsTrue(areaA.TryOpen(gateFlag), "前提：開通済みとして記録できる。");
+
+            yield return KillPlayerWithRealHit();
+            yield return WaitForRespawnPrompt();
+
+            int requestId = session.Respawn.CurrentRequestId;
+            Assert.Greater(requestId, 0, "前提：再開要求 ID が発行されている。");
+            int cycleBefore = session.RespawnCycle;
+
+            // ---- 次に読まれる Scene の門を、Start より前に壊す ----
+            bool broken = false;
+            UnityEngine.Events.UnityAction<Scene, LoadSceneMode> breakNext = (scene, mode) =>
+            {
+                if (broken)
+                {
+                    return;
+                }
+
+                foreach (GameObject go in scene.GetRootGameObjects())
+                {
+                    var door = go.GetComponentInChildren<AreaFlagDoor>(true);
+                    if (door != null)
+                    {
+                        SetPrivate(door, "_blocker", null); // 復元が必ず失敗する。
+                        broken = true;
+                        break;
+                    }
+                }
+            };
+            SceneManager.sceneLoaded += breakNext;
+            LogAssert.ignoreFailingMessages = true; // 壊した Scene が出す Error は想定内。
+
+            var runner = Object.FindFirstObjectByType<CampaignRespawnRunner>();
+            Assert.IsTrue(runner.RequestRespawn().Accepted, "前提：再開を受理する。");
+
+            // 旧 Scene は破棄され、新しい Scene の初期化が失敗する。
+            yield return WaitUntilOrTimeout(
+                () => session.Respawn.Phase == CampaignRespawnPhase.Failed, 30f);
+
+            SceneManager.sceneLoaded -= breakNext; // 次の読込は壊さない。
+
+            Assert.IsTrue(broken, "前提：新しく読まれた Scene の門を壊せた。");
+            Assert.AreEqual(CampaignRespawnPhase.Failed, session.Respawn.Phase,
+                "到着初期化に失敗したら、再試行待ちへ戻す。");
+            Assert.IsFalse(FindInitializer().Initialized, "前提：到着側の初期化は失敗している。");
+            Assert.AreEqual(requestId, session.Respawn.CurrentRequestId, "要求 ID は振り直さない。");
+            Assert.AreEqual(0, session.Respawn.CompletedCount, "完了として数えない。");
+
+            // <b>ここが核心。</b> 実行役が未配線だと、ここから先へ進めなかった。
+            var brokenRunner = Object.FindFirstObjectByType<CampaignRespawnRunner>();
+            Assert.IsNotNull(brokenRunner, "壊れた Scene にも実行役は居る。");
+            Assert.IsTrue(brokenRunner.IsAwaitingRespawn, "再試行待ちとして見える。");
+
+            // ---- 実キーの再開操作で再ロードまで通す ----
+            yield return PressKeyUntil(Key.Enter,
+                () => session.Respawn.Phase == CampaignRespawnPhase.Idle, 30f);
+
+            LogAssert.ignoreFailingMessages = false;
+
+            Assert.AreEqual(CampaignRespawnPhase.Idle, session.Respawn.Phase,
+                "再開操作で再ロードが完了する。拒否="
+                + Object.FindFirstObjectByType<CampaignRespawnRunner>()?.LastRejection
+                + " 遷移の拒否=" + Object.FindFirstObjectByType<CampaignRespawnRunner>()?.LastTravelRejection);
+            Assert.AreEqual(1, session.Respawn.CompletedCount, "完了は 1 回だけ。");
+            Assert.AreEqual(1, session.Respawn.AdvanceCount, "周期の更新は再開要求につき 1 回。");
+            Assert.AreEqual(cycleBefore + 1, session.RespawnCycle,
+                "再試行で再出現周期を二度進めない（§9.1 末尾）。");
+
+            AreaInitializer arrived = FindInitializer();
+            Assert.IsTrue(arrived.Initialized, "やり直した到着は成功している。");
+            Assert.AreEqual(AreaA.Value, arrived.AreaId.Value, "再開地点は A。");
+            yield return WaitUntilOrTimeout(() => modes.Current == GameMode.Exploration, 5f);
+            Assert.AreEqual(GameMode.Exploration, modes.Current, "探索へ戻る（手順 7）。");
+
+            Assert.IsTrue(session.TryGetArea(AreaA, out AreaRuntimeState afterArea));
+            Assert.IsTrue(afterArea.IsOpen(gateFlag), "門の開通は残る。");
+        }
+
+        /// <summary>
+        /// P5-P25：<b>門を開けたら、その先まで実際に渡れる</b>（§10.2／§13.3 の 7 行目。
+        /// GPT レビュー R7 の指摘 2）。
+        ///
+        /// Scene の静的検査は、閉じた門の先を「門の両肩がそれぞれ到達できる」までしか見られない。
+        /// <b>門の手前と向こうを結ぶ区間は見ていない</b>ので、門の近くに別の壁があったり
+        /// NavMesh が切れていたりしても、その 2 区間は成立してしまう。
+        /// くり抜き（NavMeshObstacle）の解除にはフレームが要るため、静的検査では埋められない。
+        /// ここが受入条件の側。
+        ///
+        /// 門を開け、くり抜きが消えるのを待ってから、<b>既定入口から門の先の出入口まで
+        /// 一本の経路が繋がる</b>ことを見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator GateOpened_MakesTheGatedRouteTraversable()
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            var root = Object.FindFirstObjectByType<AreaRoot>();
+            Assert.AreEqual(1, root.ExitGates.Count, "前提：A には B への出入口が 1 つある。");
+            Assert.Greater(root.Doors.Count, 0, "前提：A に門がある。");
+
+            AreaEntryPoint start = null;
+            foreach (AreaEntryPoint p in root.EntryPoints)
+            {
+                if (p != null && p.EntryId.Equals(AreaAStart))
+                {
+                    start = p;
+                }
+            }
+
+            Assert.IsNotNull(start, "前提：既定入口がある。");
+            Vector3 from = start.ArrivalPosition;
+            Vector3 to = root.ExitGates[0].transform.position;
+
+            // ---- 閉じている間は渡れない（前提の確認。ここが通ると検査の意味が無い） ----
+            Assert.IsFalse(IsNavPathComplete(from, to),
+                "前提：門が閉じている間は経路が繋がっていない（くり抜きが効いている）。");
+
+            // ---- 門を開ける ----
+            AreaFlagDoor gate = root.Doors[0];
+            Assert.IsTrue(gate.TryApplyOpened(out string error), "門を開けられる。" + error);
+            Assert.IsTrue(gate.IsOpened);
+
+            // くり抜きの解除は即時ではない（NavMesh の更新にフレームが要る）。
+            yield return WaitUntilOrTimeout(() => IsNavPathComplete(from, to), 10f);
+
+            // <b>ここが核心。</b> 両肩に到達できることと、開けて渡れることは別。
+            Assert.IsTrue(IsNavPathComplete(from, to),
+                "門を開けたら、既定入口から門の先の出入口まで経路が繋がる（§10.2 末尾）。");
+
+            // 扉・出現点など、門の先にある他の地点も同様に繋がる。
+            foreach (AreaEntryPoint p in root.EntryPoints)
+            {
+                if (p != null)
+                {
+                    Assert.IsTrue(IsNavPathComplete(from, p.ArrivalPosition),
+                        "門を開けたら入口 " + p.EntryId.Value + " まで繋がる。");
+                }
+            }
+        }
+
+        /// <summary>NavMesh 上で 2 点が繋がっているか（両端を NavMesh へ寄せてから引く）。</summary>
+        private static bool IsNavPathComplete(Vector3 from, Vector3 to)
+        {
+            const float sampleRadius = 1.5f;
+            if (!NavMesh.SamplePosition(from, out NavMeshHit a, sampleRadius, NavMesh.AllAreas)
+                || !NavMesh.SamplePosition(to, out NavMeshHit b, sampleRadius, NavMesh.AllAreas))
+            {
+                return false;
+            }
+
+            var path = new NavMeshPath();
+            return NavMesh.CalculatePath(a.position, b.position, NavMesh.AllAreas, path)
+                && path.status == NavMeshPathStatus.PathComplete;
         }
 
         /// <summary>死亡が受理され、再開画面が出るまで待つ。</summary>
