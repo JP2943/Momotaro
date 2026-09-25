@@ -53,6 +53,9 @@ namespace Momotaro.Infrastructure.Bootstrap
         /// <summary>遷移の終端失敗を出す仮の表示（§6.3。診断・テスト用）。</summary>
         public AreaTransitionFailureView FailureView { get; private set; }
 
+        /// <summary>Scene 側が使えないときに死亡再開を肩代わりする常駐の表示・受付（§9.1。診断・テスト用）。</summary>
+        public CampaignRespawnResidentView RespawnResidentView { get; private set; }
+
         /// <summary>
         /// 起動の<b>成否が確定したか</b>（P5-03b 修正。GPT レビュー R2 の指摘 2）。
         ///
@@ -175,6 +178,14 @@ namespace Momotaro.Infrastructure.Bootstrap
             var failureView = gameObject.AddComponent<AreaTransitionFailureView>();
             failureView.Bind(transitions);
             FailureView = failureView;
+
+            // 死亡再開の表示・再試行受付の肩代わり（§9.1 末尾。GPT レビュー R8 の指摘 1）。
+            // 到着先で Scene の実行役が欠落・利用不能になると、Session は Failed でも
+            // 表示も操作経路も無くなる。失敗を終端失敗にしない（Error 表示を出さない）ので、
+            // 上の failureView では拾えない。Scene 側が生きているうちは何もしない。
+            var respawnView = gameObject.AddComponent<CampaignRespawnResidentView>();
+            respawnView.Bind(transitions);
+            RespawnResidentView = respawnView;
         }
     }
 }

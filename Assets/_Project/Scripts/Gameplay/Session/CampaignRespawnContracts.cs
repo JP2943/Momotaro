@@ -136,4 +136,31 @@ namespace Momotaro.Gameplay.Session
             }
         }
     }
+
+    /// <summary>
+    /// 再開操作の短文（§9.1 の 1 行目／末尾）。
+    ///
+    /// <b>Gameplay 側に置く。</b> Scene の表示（Presentation）と、Scene が使えないときに
+    /// 肩代わりする常駐の表示（Infrastructure）の両方が同じ文言を出す必要があるが、
+    /// Infrastructure は Presentation を参照しない（層規則）。文言を 2 か所へ書くと必ずずれる。
+    /// </summary>
+    public static class CampaignRespawnLabels
+    {
+        /// <summary>再開操作のラベル（§9.1 の 1 行目）。既存試遊版の「Retry」とは別物。</summary>
+        public const string Respawn = "再開する";
+
+        /// <summary>読込に失敗して再試行できるときの短文（§9.1 末尾）。</summary>
+        public const string Retry = "読み込みに失敗しました。もう一度：再開する";
+
+        /// <summary>段階に対応する短文（出さないなら空）。</summary>
+        public static string ForPhase(CampaignRespawnPhase phase)
+        {
+            switch (phase)
+            {
+                case CampaignRespawnPhase.Failed: return Retry;
+                case CampaignRespawnPhase.Dead: return Respawn;
+                default: return string.Empty;
+            }
+        }
+    }
 }

@@ -268,6 +268,22 @@ namespace Momotaro.Infrastructure.World
             return true;
         }
 
+        /// <summary>
+        /// 再開地点の入口を解決する（§9.1 手順 4）。
+        /// Scene 側の実行役が使えないとき、常駐の受付がここからカタログを借りる
+        /// （GPT レビュー R8 の指摘 1）。
+        /// </summary>
+        public bool TryGetRespawnEntry(out AreaEntryInfo entry)
+        {
+            if (_catalog != null)
+            {
+                return _catalog.TryGetRespawnEntry(out entry);
+            }
+
+            entry = default;
+            return false;
+        }
+
         /// <summary>この遷移が死亡再開のものか（世代一致で見る）。</summary>
         private bool IsRespawnTransition(int transitionId) =>
             _respawnTransitionId != 0 && transitionId == _respawnTransitionId;

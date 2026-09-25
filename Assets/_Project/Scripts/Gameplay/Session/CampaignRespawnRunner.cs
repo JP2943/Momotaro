@@ -198,65 +198,27 @@ namespace Momotaro.Gameplay.Session
         /// <inheritdoc />
         public RespawnDecision RequestRespawn()
         {
-            CampaignRespawnCoordinator respawn = ResolveRespawn();
-            GameSessionState session = ResolveSession();
-            if (respawn == null || session == null)
-            {
-                LastRejection = RespawnRejection.NotWired;
-                return RespawnDecision.Reject(RespawnRejection.NotWired);
-            }
+            // 手順そのものは共有の手順役が持つ（GPT レビュー R8 の指摘 1）。
+            // Scene が使えないときは常駐側の受付が同じ手順役を呼ぶので、
+            // ここへ手順を写しておくと 2 か所が食い違う。ここは診断値を写すだけにする。
+            CampaignRespawnRequestProcedure.Outcome outcome = CampaignRespawnRequestProcedure.Execute(
+                ResolveSession(), ResolveRespawn(), ResolveCatalog, ResolveTravel());
 
-            // ---- 手順 3：再開操作を 1 回だけ受理する ----
-            RespawnDecision decision = respawn.TryRequest();
-            if (!decision.Accepted)
-            {
-                LastRejection = decision.Rejection;
-                return decision;
-            }
+            LastRejection = outcome.Rejection;
+            LastTravelRejection = outcome.TravelRejection;
 
-            // ---- 手順 5：再出現周期を進め、通常戦のクリア記録を初期化する ----
-            //
-            // 進めるのは「この再開要求で初めてのとき」だけ。読込に失敗して再試行しても、
-            // 同じ要求 ID なのでもう一度は進まない（§9.1 末尾、P5-E21）。
-            if (respawn.TryConsumeCycleAdvance(decision.RequestId))
+            if (outcome.CycleAdvanced)
             {
-                session.AdvanceRespawnCycle();
                 CycleAdvanceCount++;
             }
 
-            if (!ResolveCatalog(out AreaEntryInfo entry))
+            if (outcome.Decision.Accepted)
             {
-                respawn.NotifyFailed(decision.RequestId);
-                LastRejection = RespawnRejection.NoRespawnPoint;
-                return RespawnDecision.Reject(RespawnRejection.NoRespawnPoint);
+                _travelTransitionId = outcome.TravelTransitionId;
+                AcceptedCount++;
             }
 
-            // ---- 手順 4：Loading へ入り、再開地点をロードする ----
-            IAreaRespawnTravel travel = ResolveTravel();
-            if (travel == null)
-            {
-                respawn.NotifyFailed(decision.RequestId);
-                LastRejection = RespawnRejection.NotWired;
-                return RespawnDecision.Reject(RespawnRejection.NotWired);
-            }
-
-            AreaTransitionDecision travelDecision =
-                travel.TryRespawnTravel(entry.AreaId, entry.EntryId, decision.RequestId);
-            LastTravelRejection = travelDecision.Rejection;
-            if (!travelDecision.Accepted)
-            {
-                respawn.NotifyFailed(decision.RequestId);
-                LastRejection = RespawnRejection.TravelRejected;
-                return RespawnDecision.Reject(RespawnRejection.TravelRejected);
-            }
-
-            _travelTransitionId = travelDecision.TransitionId;
-            AcceptedCount++;
-            LastRejection = RespawnRejection.None;
-
-            // 旧 Interact のラッチを捨てる（§9.1 末尾。再開の押下が到着先の操作へ化けない）。
-            (PlayerInputProvider.Current as IInteractInput)?.DiscardInteractPressed();
-            return decision;
+            return outcome.Decision;
         }
 
         /// <summary>遷移側が失敗したことを受け取る（再開画面へ戻して再試行できるようにする）。</summary>

@@ -206,9 +206,11 @@ namespace Momotaro.Infrastructure.World
             // 以前は門の復元より後に置いていたので、門の復元で落ちると実行役が未配線のまま残り、
             // 段階は「再試行待ち」へ戻っているのに <c>RequestRespawn</c> が NotWired で断る、という
             // <b>再開画面は出るが押しても何も起きない</b>状態になっていた。
-            // ここより前で落ちた場合や、そもそも実行役が Scene に居ない場合に備えて、
-            // 実行役側も常駐（<see cref="GameSessionProvider"/>／
-            // <see cref="CampaignRespawnTravelProvider"/>）から取り直せるようにしてある。
+            // ここより前で落ちた場合に備えて、実行役が参照する Session と遷移役は
+            // 常駐（<see cref="GameSessionProvider"/>／<see cref="CampaignRespawnTravelProvider"/>）
+            // からも取り直せるようにしてある。
+            // <b>実行役そのものが Scene に居ない場合はそれでも足りない</b>ので、
+            // 表示と受付の肩代わりを常駐側（<c>CampaignRespawnResidentView</c>）に置いてある。
             // 判断（一度限り・段階）は Session 側が持ち、ここは配線だけを行う。
             if (_respawn != null)
             {

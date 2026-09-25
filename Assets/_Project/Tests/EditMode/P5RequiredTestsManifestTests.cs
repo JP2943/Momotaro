@@ -50,7 +50,26 @@ namespace Momotaro.Tests.EditMode
             Phase4RequiredTests.Manifest manifest = Phase4RequiredTests.Load("P5", out string error);
             Assert.IsNotNull(manifest, "P5 の一覧が読める: " + error);
             Assert.AreEqual(54, manifest.requirements.Length, "§15 の要求は 54 件。");
-            Assert.AreEqual(54, manifest.tests.Length, "要求 1 件につき 1 本の名前付きテストを持つ。");
+
+            // <b>要求 1 件につき 1 本。</b> そのうえで、レビューで見つかった欠陥の再発防止テストも
+            // 受入ゲートへ載せる（GPT レビュー R8 の指摘 2）。
+            // <c>supportingTests</c> は <c>RequiredFullNames()</c> が読まないので照合対象外——
+            // 「この PlayMode 検査が受入条件」と書いても、実行結果から欠落したまま合格してしまう。
+            // 独立エントリにして初めてゲートに載る。したがって tests は requirements 以上になる。
+            var covered = new HashSet<string>();
+            for (int i = 0; i < manifest.tests.Length; i++)
+            {
+                covered.Add(manifest.tests[i].requirementId);
+            }
+
+            for (int i = 0; i < manifest.requirements.Length; i++)
+            {
+                Assert.IsTrue(covered.Contains(manifest.requirements[i].id),
+                    "要求に対応する名前付きテストが無い: " + manifest.requirements[i].id);
+            }
+
+            Assert.GreaterOrEqual(manifest.tests.Length, manifest.requirements.Length,
+                "必須テストは要求の数を下回らない。");
 
             var stages = new HashSet<string>(manifest.stages);
             for (int i = 0; i < manifest.tests.Length; i++)

@@ -16,11 +16,11 @@ namespace Momotaro.Presentation.Hud
     [DisallowMultipleComponent]
     public sealed class CampaignRespawnView : MonoBehaviour
     {
-        /// <summary>再開操作のラベル（§9.1 の 1 行目）。</summary>
-        public const string RespawnLabel = "再開する";
+        /// <summary>再開操作のラベル（§9.1 の 1 行目）。正本は <see cref="CampaignRespawnLabels"/>。</summary>
+        public const string RespawnLabel = CampaignRespawnLabels.Respawn;
 
-        /// <summary>読込に失敗して再試行できるときの短文（§9.1 末尾）。</summary>
-        public const string RetryLabel = "読み込みに失敗しました。もう一度：再開する";
+        /// <summary>読込に失敗して再試行できるときの短文（§9.1 末尾）。正本は同上。</summary>
+        public const string RetryLabel = CampaignRespawnLabels.Retry;
 
         [Tooltip("死亡再開の実行役。")]
         [SerializeField] private CampaignRespawnRunner _runner;
@@ -30,11 +30,7 @@ namespace Momotaro.Presentation.Hud
 
         /// <summary>いま出している短文（出していなければ空）。</summary>
         public string Message =>
-            _runner == null
-                ? string.Empty
-                : _runner.Phase == CampaignRespawnPhase.Failed
-                    ? RetryLabel
-                    : _runner.Phase == CampaignRespawnPhase.Dead ? RespawnLabel : string.Empty;
+            _runner == null ? string.Empty : CampaignRespawnLabels.ForPhase(_runner.Phase);
 
         /// <summary>いま出しているか。</summary>
         public bool IsShowing => !string.IsNullOrEmpty(Message);

@@ -208,8 +208,7 @@
       "implemented": true,
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnLoadFailure_ReturnsToRetryableRespawn_NotTerminalError",
-        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnArrivalNeverPrepares_ReturnsToRespawnScreen_NotRecovery",
-        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ArrivalSceneFailsToInitialize_RespawnInputStillRetriesToCompletion"
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnArrivalNeverPrepares_ReturnsToRespawnScreen_NotRecovery"
       ]
     },
     {
@@ -346,10 +345,7 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.MovementStepAndHitback_RespectWallsAndWaterBoundary",
       "requirementIds": [],
-      "implemented": true,
-      "supportingTests": [
-        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.GateOpened_MakesTheGatedRouteTraversable"
-      ]
+      "implemented": true
     },
     {
       "requirementId": "P5-P07",
@@ -510,6 +506,30 @@
       "stage": "P5-09",
       "mode": "EditMode",
       "fullName": "Momotaro.Tests.EditMode.P5ValidatorTests.ProjectDataValidation_IncludesPhase5GeneratedFolder",
+      "requirementIds": [],
+      "implemented": true
+    },
+    {
+      "requirementId": "P5-P20",
+      "stage": "P5-10",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ArrivalSceneFailsToInitialize_RespawnInputStillRetriesToCompletion",
+      "requirementIds": [],
+      "implemented": true
+    },
+    {
+      "requirementId": "P5-P21",
+      "stage": "P5-10",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.GateOpened_MakesTheGatedRouteTraversable",
+      "requirementIds": [],
+      "implemented": true
+    },
+    {
+      "requirementId": "P5-P22",
+      "stage": "P5-10",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ArrivalRunnerUnavailable_ResidentHostShowsAndRetriesRespawn",
       "requirementIds": [],
       "implemented": true
     }

@@ -4317,34 +4317,44 @@ namespace Momotaro.Tests.PlayMode
                 }
             };
             SceneManager.sceneLoaded += breakNext;
+
+            // <b>後始末は try/finally で保証する</b>（GPT レビュー R8 の指摘 3）。
+            // 途中の Assert で抜けると、Scene を壊すハンドラが残って後続テストの Scene を壊し、
+            // ログ無視も残って後続テストが Error を見逃す。
+            bool ignoring = LogAssert.ignoreFailingMessages;
             LogAssert.ignoreFailingMessages = true; // 壊した Scene が出す Error は想定内。
+            try
+            {
+                var runner = Object.FindFirstObjectByType<CampaignRespawnRunner>();
+                Assert.IsTrue(runner.RequestRespawn().Accepted, "前提：再開を受理する。");
 
-            var runner = Object.FindFirstObjectByType<CampaignRespawnRunner>();
-            Assert.IsTrue(runner.RequestRespawn().Accepted, "前提：再開を受理する。");
+                // 旧 Scene は破棄され、新しい Scene の初期化が失敗する。
+                yield return WaitUntilOrTimeout(
+                    () => session.Respawn.Phase == CampaignRespawnPhase.Failed, 30f);
 
-            // 旧 Scene は破棄され、新しい Scene の初期化が失敗する。
-            yield return WaitUntilOrTimeout(
-                () => session.Respawn.Phase == CampaignRespawnPhase.Failed, 30f);
+                SceneManager.sceneLoaded -= breakNext; // 次の読込は壊さない。
 
-            SceneManager.sceneLoaded -= breakNext; // 次の読込は壊さない。
+                Assert.IsTrue(broken, "前提：新しく読まれた Scene の門を壊せた。");
+                Assert.AreEqual(CampaignRespawnPhase.Failed, session.Respawn.Phase,
+                    "到着初期化に失敗したら、再試行待ちへ戻す。");
+                Assert.IsFalse(FindInitializer().Initialized, "前提：到着側の初期化は失敗している。");
+                Assert.AreEqual(requestId, session.Respawn.CurrentRequestId, "要求 ID は振り直さない。");
+                Assert.AreEqual(0, session.Respawn.CompletedCount, "完了として数えない。");
 
-            Assert.IsTrue(broken, "前提：新しく読まれた Scene の門を壊せた。");
-            Assert.AreEqual(CampaignRespawnPhase.Failed, session.Respawn.Phase,
-                "到着初期化に失敗したら、再試行待ちへ戻す。");
-            Assert.IsFalse(FindInitializer().Initialized, "前提：到着側の初期化は失敗している。");
-            Assert.AreEqual(requestId, session.Respawn.CurrentRequestId, "要求 ID は振り直さない。");
-            Assert.AreEqual(0, session.Respawn.CompletedCount, "完了として数えない。");
+                // <b>ここが核心。</b> 実行役が未配線だと、ここから先へ進めなかった。
+                var brokenRunner = Object.FindFirstObjectByType<CampaignRespawnRunner>();
+                Assert.IsNotNull(brokenRunner, "壊れた Scene にも実行役は居る。");
+                Assert.IsTrue(brokenRunner.IsAwaitingRespawn, "再試行待ちとして見える。");
 
-            // <b>ここが核心。</b> 実行役が未配線だと、ここから先へ進めなかった。
-            var brokenRunner = Object.FindFirstObjectByType<CampaignRespawnRunner>();
-            Assert.IsNotNull(brokenRunner, "壊れた Scene にも実行役は居る。");
-            Assert.IsTrue(brokenRunner.IsAwaitingRespawn, "再試行待ちとして見える。");
-
-            // ---- 実キーの再開操作で再ロードまで通す ----
-            yield return PressKeyUntil(Key.Enter,
-                () => session.Respawn.Phase == CampaignRespawnPhase.Idle, 30f);
-
-            LogAssert.ignoreFailingMessages = false;
+                // ---- 実キーの再開操作で再ロードまで通す ----
+                yield return PressKeyUntil(Key.Enter,
+                    () => session.Respawn.Phase == CampaignRespawnPhase.Idle, 30f);
+            }
+            finally
+            {
+                SceneManager.sceneLoaded -= breakNext;
+                LogAssert.ignoreFailingMessages = ignoring;
+            }
 
             Assert.AreEqual(CampaignRespawnPhase.Idle, session.Respawn.Phase,
                 "再開操作で再ロードが完了する。拒否="
@@ -4445,6 +4455,134 @@ namespace Momotaro.Tests.PlayMode
             var path = new NavMeshPath();
             return NavMesh.CalculatePath(a.position, b.position, NavMesh.AllAreas, path)
                 && path.status == NavMeshPathStatus.PathComplete;
+        }
+
+        /// <summary>
+        /// P5-P26：<b>到着先の実行役が使えなくなっても、常駐側が表示と再試行受付を肩代わりする</b>
+        /// （§9.1 末尾。GPT レビュー R8 の指摘 1）。
+        ///
+        /// 遷移役を常駐で公開しても、それを<b>呼ぶ側</b>（Scene の <c>RespawnSubmitInput</c>／
+        /// <c>CampaignRespawnView</c>）はどちらも Scene の実行役を前提にしている。
+        /// 死亡再開では旧 Scene を破棄してから読むので、到着先で実行役が欠落・利用不能になると
+        /// Session は Failed でも表示も操作経路も無くなる。しかも死亡再開の失敗は終端失敗にしないので
+        /// Error 表示も出ない——<b>何も出ないまま操作不能</b>になっていた。
+        ///
+        /// ここでは新しく読まれた Scene の実行役を <c>sceneLoaded</c>（<c>Start</c> より前）で
+        /// 破棄し、常駐の受付が出ること・実入力で<b>同じ要求 ID のまま</b>再試行できることを見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ArrivalRunnerUnavailable_ResidentHostShowsAndRetriesRespawn()
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            RemoveStrayTestDevices();
+            _keyboard = InputSystem.AddDevice<Keyboard>("P5ResidentKeyboard");
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            GameSessionState session = Sessions().Session;
+            var resident = Object.FindFirstObjectByType<CampaignRespawnResidentView>();
+            Assert.IsNotNull(resident, "常駐の肩代わり表示が立ち上がっている。");
+            Assert.IsFalse(resident.ShouldTakeOver, "Scene 側が生きているうちは肩代わりしない。");
+
+            yield return KillPlayerWithRealHit();
+            yield return WaitForRespawnPrompt();
+
+            Assert.IsFalse(resident.ShouldTakeOver,
+                "死亡直後も Scene 側の受付が生きているので、常駐は何も出さない（二重処理しない）。");
+            Assert.AreEqual(string.Empty, resident.Message);
+
+            int requestId = session.Respawn.CurrentRequestId;
+            int cycleBefore = session.RespawnCycle;
+
+            // ---- 次に読まれる Scene の実行役を消し、初期化も失敗させる（Start より前） ----
+            //
+            // 実行役を消すだけでは到着が成功してしまい、再開は完了して終わる。
+            // 「到着に失敗し、かつ実行役も居ない」——常駐が肩代わりするしかない状態を作る。
+            var rootBefore = Object.FindFirstObjectByType<AreaRoot>();
+            Assert.Greater(rootBefore.Doors.Count, 0, "前提：A に門がある。");
+            StableId gateFlag = rootBefore.Doors[0].FlagId;
+            Assert.IsTrue(session.GetOrCreateArea(AreaA).TryOpen(gateFlag),
+                "前提：開通済みとして記録できる（到着側で復元が走る条件）。");
+
+            bool removed = false;
+            UnityEngine.Events.UnityAction<Scene, LoadSceneMode> killRunner = (scene, mode) =>
+            {
+                if (removed)
+                {
+                    return;
+                }
+
+                foreach (GameObject go in scene.GetRootGameObjects())
+                {
+                    var runner = go.GetComponentInChildren<CampaignRespawnRunner>(true);
+                    var door = go.GetComponentInChildren<AreaFlagDoor>(true);
+                    if (door != null)
+                    {
+                        SetPrivate(door, "_blocker", null); // 到着初期化を失敗させる。
+                    }
+
+                    if (runner != null)
+                    {
+                        Object.DestroyImmediate(runner); // 再試行の受け口を奪う。
+                        removed = true;
+                    }
+                }
+            };
+
+            SceneManager.sceneLoaded += killRunner;
+            bool ignoring = LogAssert.ignoreFailingMessages;
+            LogAssert.ignoreFailingMessages = true;
+            try
+            {
+                var sceneRunner = Object.FindFirstObjectByType<CampaignRespawnRunner>();
+                Assert.IsTrue(sceneRunner.RequestRespawn().Accepted, "前提：再開を受理する。");
+
+                // 旧 Scene は破棄され、新しい Scene は初期化に失敗し、実行役も居ない。
+                yield return WaitUntilOrTimeout(
+                    () => session.Respawn.Phase == CampaignRespawnPhase.Failed, 30f);
+
+                Assert.IsTrue(removed, "前提：新しく読まれた Scene の実行役を消せた。");
+                Assert.IsNull(Object.FindFirstObjectByType<CampaignRespawnRunner>(),
+                    "前提：到着先に実行役が居ない。");
+                Assert.AreEqual(CampaignRespawnPhase.Failed, session.Respawn.Phase,
+                    "到着初期化に失敗したので再試行待ちへ戻る。");
+                Assert.AreEqual(requestId, session.Respawn.CurrentRequestId, "要求 ID は振り直さない。");
+
+                // <b>ここが核心。</b> 呼ぶ側が居ないので、以前はここで何も出なかった。
+                Assert.IsTrue(resident.ShouldTakeOver, "Scene 側が使えないので常駐が肩代わりする。");
+                Assert.IsTrue(resident.IsShowing, "常駐側が再開の短文を出す。");
+                Assert.AreEqual(CampaignRespawnLabels.Retry, resident.Message,
+                    "読込失敗からの再試行なので「もう一度」の短文。");
+
+                // 次の読込は壊さない。
+                SceneManager.sceneLoaded -= killRunner;
+
+                // ---- 実キーの再開操作で、常駐の受付から再ロードまで通す ----
+                yield return PressKeyUntil(Key.Enter,
+                    () => session.Respawn.Phase == CampaignRespawnPhase.Idle, 30f);
+            }
+            finally
+            {
+                SceneManager.sceneLoaded -= killRunner;
+                LogAssert.ignoreFailingMessages = ignoring;
+            }
+
+            Assert.AreEqual(CampaignRespawnPhase.Idle, session.Respawn.Phase,
+                "常駐の受付で再ロードが完了する。肩代わりの受理="
+                + resident.TakeoverSubmitCount + " 判定=" + resident.LastDecision.Rejection);
+            Assert.GreaterOrEqual(resident.TakeoverSubmitCount, 1, "常駐側が押下を受け取っている。");
+            Assert.AreEqual(1, session.Respawn.CompletedCount, "完了は 1 回だけ。");
+            Assert.AreEqual(1, session.Respawn.AdvanceCount, "周期の更新は再開要求につき 1 回。");
+            Assert.AreEqual(cycleBefore + 1, session.RespawnCycle, "再試行で周期を二度進めない。");
+
+            AreaInitializer arrived = FindInitializer();
+            Assert.IsTrue(arrived.Initialized, "やり直した到着は成功している。");
+            Assert.AreEqual(AreaA.Value, arrived.AreaId.Value, "再開地点は A。");
+            Assert.IsFalse(resident.ShouldTakeOver, "Scene 側が戻ったので常駐は退く。");
         }
 
         /// <summary>死亡が受理され、再開画面が出るまで待つ。</summary>
