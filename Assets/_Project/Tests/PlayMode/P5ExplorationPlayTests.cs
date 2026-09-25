@@ -86,6 +86,7 @@ namespace Momotaro.Tests.PlayMode
             GameplayClockProvider.Current = null;
             GameSessionProvider.Current = null;
             CampaignRespawnTravelProvider.Current = null;
+            RespawnSubmitOwnerProvider.Current = null;
             AreaPendingArrival.Clear();
             AreaPendingArrival.ResetDiagnostics();
             AreaInteractableRegistry.Clear();
@@ -142,6 +143,7 @@ namespace Momotaro.Tests.PlayMode
             GameplayClockProvider.Current = null;
             GameSessionProvider.Current = null;
             CampaignRespawnTravelProvider.Current = null;
+            RespawnSubmitOwnerProvider.Current = null;
             AreaPendingArrival.Clear();
             AreaInteractableRegistry.Clear();
             RemoveInputDevices();
@@ -4583,6 +4585,223 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsTrue(arrived.Initialized, "やり直した到着は成功している。");
             Assert.AreEqual(AreaA.Value, arrived.AreaId.Value, "再開地点は A。");
             Assert.IsFalse(resident.ShouldTakeOver, "Scene 側が戻ったので常駐は退く。");
+        }
+
+        /// <summary>押下を 1 回だけ持つ再開入力（受付所有権の検査用）。</summary>
+        private sealed class OneShotSubmitInput : IRespawnSubmitInput
+        {
+            private bool _pressed = true;
+
+            public int ConsumedCount { get; private set; }
+
+            public int DiscardedCount { get; private set; }
+
+            public bool SubmitPressed => _pressed;
+
+            public bool ConsumeSubmitPressed()
+            {
+                if (!_pressed)
+                {
+                    return false;
+                }
+
+                _pressed = false;
+                ConsumedCount++;
+                return true;
+            }
+
+            public void DiscardSubmitPressed()
+            {
+                if (_pressed)
+                {
+                    _pressed = false;
+                    DiscardedCount++;
+                }
+            }
+        }
+
+        /// <summary>受理を数えるだけの再開遷移（実ロードを走らせずに受付の回数を見る）。</summary>
+        private sealed class CountingRespawnTravel : IAreaRespawnTravel
+        {
+            private int _id;
+
+            public int Count { get; private set; }
+
+            public AreaTransitionDecision TryRespawnTravel(StableId areaId, StableId entryId, int respawnRequestId)
+            {
+                Count++;
+                LastRequestId = respawnRequestId;
+                return AreaTransitionDecision.Accept(++_id);
+            }
+
+            public int LastRequestId { get; private set; }
+        }
+
+        /// <summary>
+        /// 受付所有権の検査の土台をつくる（A を開いて死なせ、遷移だけ Fake へ差し替える）。
+        ///
+        /// <b>押下はここでは置かない。</b> 押下を置いたままフレームを進めると、
+        /// 各コンポーネント自身の <c>Update</c> が先に消費してしまい、
+        /// 検査したい実行順を作れない（最初そう書いて、順序を作れていないのに緑になった）。
+        /// 押下は <see cref="ArmSubmitPress"/> で、フレームを進めずに置く。
+        /// </summary>
+        private IEnumerator SetUpSubmitOwnershipRig(System.Action<CountingRespawnTravel> ready)
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            yield return KillPlayerWithRealHit();
+            yield return WaitForRespawnPrompt();
+
+            var travel = new CountingRespawnTravel();
+            CampaignRespawnTravelProvider.Current = travel;
+
+            // Scene 側の実行役は起動時に実サービスを注入されているので、そちらも Fake へ向ける
+            // （両経路を同じ物差しで数えるため）。
+            var runner = Object.FindFirstObjectByType<CampaignRespawnRunner>();
+            if (runner != null)
+            {
+                runner.BindTravel(travel);
+            }
+
+            ready(travel);
+        }
+
+        /// <summary>押下を 1 つ置く。<b>呼んだあとフレームを進めない</b>こと（順序が壊れる）。</summary>
+        private static OneShotSubmitInput ArmSubmitPress()
+        {
+            var press = new OneShotSubmitInput();
+            RespawnSubmitProvider.Current = press;
+            return press;
+        }
+
+        /// <summary>
+        /// P5-P23：<b>再開入力の受付は、どちらの実行順でも 1 押下＝1 受理</b>
+        /// （§9.1 手順 3。GPT レビュー R9 の指摘）。
+        ///
+        /// 常駐側へ引き継いでも、Scene 側は実行役が無いと押下を<b>捨てる</b>。
+        /// Scene 側が先に Update された順序では、常駐側が読む前に押下が消えていた。
+        /// 「消費する側」を切り替えるだけでは足りず、<b>捨てる側も同じ所有権に従う</b>必要がある。
+        /// 実行順の指定で回避せず、どちらが先でも成立する契約になっていることを見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RespawnSubmitOwnership_HoldsInEitherUpdateOrder()
+        {
+            CountingRespawnTravel travel = null;
+            yield return SetUpSubmitOwnershipRig(t => travel = t);
+
+            var resident = Object.FindFirstObjectByType<CampaignRespawnResidentView>();
+            var sceneInput = Object.FindFirstObjectByType<RespawnSubmitInput>();
+            Assert.IsNotNull(resident);
+            Assert.IsNotNull(sceneInput);
+
+            // 実行役を失わせる（常駐側が所有する状況）。
+            Object.DestroyImmediate(Object.FindFirstObjectByType<CampaignRespawnRunner>());
+            yield return null;
+
+            Assert.IsTrue(resident.OwnsRespawnSubmit, "実行役が居ないので常駐側が所有する。");
+
+            // ---- 順序 A：Scene 側 → 常駐側（この間フレームを進めない） ----
+            // YieldedCount は累積なので、直前の値との差で見る（自分の Update も譲っている）。
+            int yieldedBefore = sceneInput.YieldedCount;
+            OneShotSubmitInput press = ArmSubmitPress();
+            sceneInput.TickInput();
+            Assert.AreEqual(0, press.DiscardedCount,
+                "所有していない Scene 側は押下を捨てない（ここが以前の取りこぼし）。");
+            Assert.AreEqual(0, press.ConsumedCount, "所有していない Scene 側は消費もしない。");
+            Assert.AreEqual(yieldedBefore + 1, sceneInput.YieldedCount, "所有権が無いので譲っている。");
+
+            resident.TickInput();
+            Assert.AreEqual(1, press.ConsumedCount, "常駐側が 1 回だけ消費する。");
+            Assert.AreEqual(1, travel.Count, "1 押下で再試行を 1 回だけ要求する。");
+            Assert.AreEqual(1, resident.TakeoverSubmitCount);
+        }
+
+        /// <summary>P5-P24：同じ契約を、逆の実行順でも見る（同上）。</summary>
+        [UnityTest]
+        public IEnumerator RespawnSubmitOwnership_HoldsWhenResidentRunsFirst()
+        {
+            CountingRespawnTravel travel = null;
+            yield return SetUpSubmitOwnershipRig(t => travel = t);
+
+            var resident = Object.FindFirstObjectByType<CampaignRespawnResidentView>();
+            var sceneInput = Object.FindFirstObjectByType<RespawnSubmitInput>();
+
+            Object.DestroyImmediate(Object.FindFirstObjectByType<CampaignRespawnRunner>());
+            yield return null;
+            Assert.IsTrue(resident.OwnsRespawnSubmit, "前提：常駐側が所有している。");
+
+            // ---- 順序 B：常駐側 → Scene 側（この間フレームを進めない） ----
+            OneShotSubmitInput press = ArmSubmitPress();
+            resident.TickInput();
+            Assert.AreEqual(1, press.ConsumedCount, "常駐側が 1 回だけ消費する。");
+            Assert.AreEqual(1, travel.Count, "再試行の要求は 1 回。");
+
+            sceneInput.TickInput();
+            Assert.AreEqual(1, press.ConsumedCount, "後から動いた Scene 側は二重に消費しない。");
+            Assert.AreEqual(1, travel.Count, "要求も増えない。");
+            Assert.AreEqual(0, press.DiscardedCount, "捨てもしない。");
+        }
+
+        /// <summary>
+        /// P5-P25：<b>Scene 側の受付だけを無効化しても、常駐側へ引き継げる</b>（同上）。
+        ///
+        /// <c>enabled == false</c> の受付は、GameObject が有効なら取得できてしまう。
+        /// 以前の判定は <c>IsWired</c> しか見ていなかったので、
+        /// 「Scene 側は Update されないのに、常駐側も引き継がない」隙間ができていた。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RespawnSubmitOwnership_TakesOverWhenSceneAcceptorIsDisabled()
+        {
+            CountingRespawnTravel travel = null;
+            yield return SetUpSubmitOwnershipRig(t => travel = t);
+
+            var resident = Object.FindFirstObjectByType<CampaignRespawnResidentView>();
+            var sceneInput = Object.FindFirstObjectByType<RespawnSubmitInput>();
+
+            // 実行役は生きているが、受付だけを無効にする。
+            Assert.IsNotNull(Object.FindFirstObjectByType<CampaignRespawnRunner>(), "前提：実行役は居る。");
+            sceneInput.enabled = false;
+            yield return null;
+
+            Assert.IsTrue(resident.OwnsRespawnSubmit,
+                "受付が無効なら、実行役が生きていても常駐側が引き継ぐ。");
+
+            OneShotSubmitInput press = ArmSubmitPress();
+            resident.TickInput();
+            Assert.AreEqual(1, press.ConsumedCount, "常駐側が受け取る。");
+            Assert.AreEqual(1, travel.Count, "再試行を 1 回要求する。");
+        }
+
+        /// <summary>
+        /// P5-P26：<b>Scene 側が正常なら、常駐側は介入しない</b>（同上）。二重処理を防ぐ側の検査。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RespawnSubmitOwnership_ResidentStaysOutWhenSceneIsHealthy()
+        {
+            CountingRespawnTravel travel = null;
+            yield return SetUpSubmitOwnershipRig(t => travel = t);
+
+            var resident = Object.FindFirstObjectByType<CampaignRespawnResidentView>();
+            var sceneInput = Object.FindFirstObjectByType<RespawnSubmitInput>();
+
+            Assert.IsFalse(resident.OwnsRespawnSubmit, "Scene 側が正常なら常駐側は所有しない。");
+            Assert.IsFalse(resident.IsShowing, "常駐側は何も出さない。");
+
+            // 常駐側を先に動かしても、押下に触らない（この間フレームを進めない）。
+            OneShotSubmitInput press = ArmSubmitPress();
+            resident.TickInput();
+            Assert.AreEqual(0, press.ConsumedCount, "常駐側は消費しない。");
+            Assert.AreEqual(0, press.DiscardedCount, "破棄もしない。");
+
+            sceneInput.TickInput();
+            Assert.AreEqual(1, press.ConsumedCount, "Scene 側が 1 回だけ消費する。");
+            Assert.AreEqual(1, travel.Count, "受理は 1 回。");
+            Assert.AreEqual(0, resident.TakeoverSubmitCount, "常駐側は肩代わりしていない。");
         }
 
         /// <summary>死亡が受理され、再開画面が出るまで待つ。</summary>

@@ -25,7 +25,7 @@ namespace Momotaro.Infrastructure.World
     /// <see cref="TryRequestRespawn"/> の 3 つ。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class CampaignRespawnResidentView : MonoBehaviour
+    public sealed class CampaignRespawnResidentView : MonoBehaviour, IRespawnSubmitOwner
     {
         private AreaTransitionService _service;
 
@@ -39,6 +39,18 @@ namespace Momotaro.Infrastructure.World
         public void Bind(AreaTransitionService service)
         {
             _service = service;
+
+            // 受付所有権の窓口へ自分を差す（R9 の指摘）。Scene 側はここを見てから動くので、
+            // どちらの実行順でも押下を取り合わない。
+            RespawnSubmitOwnerProvider.Current = this;
+        }
+
+        /// <inheritdoc />
+        public bool OwnsRespawnSubmit => ShouldTakeOver;
+
+        private void OnDestroy()
+        {
+            RespawnSubmitOwnerProvider.ReleaseIfOwner(this);
         }
 
         /// <summary>
@@ -58,14 +70,23 @@ namespace Momotaro.Infrastructure.World
                     return false;
                 }
 
-                var runner = Object.FindFirstObjectByType<CampaignRespawnRunner>();
-                if (runner == null || !runner.IsAwaitingRespawn)
+                // <b>受付が「居るか」ではなく「使えるか」を見る</b>（GPT レビュー R9 の指摘）。
+                //
+                // 以前は IsWired だけを見ていたので、受付コンポーネントが <c>enabled == false</c> の
+                // 場合を取りこぼした。GameObject が有効なら取得はできてしまうため、
+                // 「Scene 側は Update されないのに、常駐側も引き継がない」という隙間ができる。
+                // 無効な GameObject に付いている場合も拾えるよう、非活動も含めて探す。
+                var submit = Object.FindFirstObjectByType<Momotaro.Infrastructure.Input.RespawnSubmitInput>(
+                    FindObjectsInactive.Include);
+                if (submit == null || !submit.isActiveAndEnabled || !submit.IsWired)
                 {
                     return true;
                 }
 
-                var submit = Object.FindFirstObjectByType<Momotaro.Infrastructure.Input.RespawnSubmitInput>();
-                return submit == null || !submit.IsWired;
+                // <b>実際の配線先</b>まで見る。受付は生きていても、繋ぎ先の実行役が失われていたり
+                // 段階を返せなければ、その経路では再試行できない。
+                CampaignRespawnRunner runner = submit.BoundRunner;
+                return runner == null || !runner.IsAwaitingRespawn;
             }
         }
 
@@ -119,20 +140,30 @@ namespace Momotaro.Infrastructure.World
 
         private void Update()
         {
+            TickInput();
+        }
+
+        /// <summary>
+        /// 1 フレーム分の受付を行う（テストは Update を待たずに、任意の順序で呼べる）。
+        ///
+        /// <b>所有していないときは押下に触らない。</b> 消費も破棄もしないので、
+        /// Scene 側との実行順に関係なく「1 押下＝1 受理」になる。
+        /// </summary>
+        public bool TickInput()
+        {
             if (!ShouldTakeOver)
             {
-                return;
+                return false;
             }
 
-            // 押下は 1 つの受け口だけが消費する。Scene 側が死んでいるこの場合だけここが取る。
             IRespawnSubmitInput input = RespawnSubmitProvider.Current;
             if (input == null || !input.ConsumeSubmitPressed())
             {
-                return;
+                return false;
             }
 
             TakeoverSubmitCount++;
-            TryRequestRespawn();
+            return TryRequestRespawn().Accepted;
         }
 
         private void OnGUI()

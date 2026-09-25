@@ -25,6 +25,16 @@ namespace Momotaro.Infrastructure.Input
         /// <summary>仲介先が配線されているか（Scene 検査・診断用）。</summary>
         public bool IsWired => _runner != null;
 
+        /// <summary>
+        /// 実際の配線先（常駐側が「Scene 側の受付が使えるか」を見るために読む。R9 の指摘）。
+        /// <b>居るかどうかではなく、何に繋がっているか</b>を見ないと、
+        /// 受付はあるのに繋ぎ先が死んでいる状態を取りこぼす。
+        /// </summary>
+        public CampaignRespawnRunner BoundRunner => _runner;
+
+        /// <summary>所有権が無くて何もしなかった回数（診断・テスト用）。</summary>
+        public int YieldedCount { get; private set; }
+
         /// <summary>再開を要求した回数（診断・テスト用）。</summary>
         public int SubmitCount { get; private set; }
 
@@ -59,6 +69,17 @@ namespace Momotaro.Infrastructure.Input
             // Button 型の Action は押しっぱなしのまま Map を開き直しても何も通知しないので、
             // これが無いと解放待ちが解けず、到着後の最初の Interact を飲み込む（実際に踏んだ）。
             InputReleaseGateProvider.Current?.PollHeldControls();
+
+            // <b>所有権が常駐側にあるなら、消費も破棄もしない</b>（GPT レビュー R9 の指摘）。
+            //
+            // ここを「消費しない」だけにすると足りない。下の枝は実行役が居ないときに押下を
+            // <b>捨てる</b>ので、Scene 側が先に Update された順序では、常駐側が読む前に
+            // 押下が消える。両方の実行順で成立させるには、捨てる側も所有権に従う。
+            if (RespawnSubmitOwnerProvider.ResidentOwnsSubmit)
+            {
+                YieldedCount++;
+                return false;
+            }
 
             IRespawnSubmitInput input = ResolveInput();
             if (input == null)

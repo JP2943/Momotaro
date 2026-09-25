@@ -111,4 +111,44 @@ namespace Momotaro.Gameplay.Session
         /// <summary>現在の再開操作入力（未配線なら null）。</summary>
         public static IRespawnSubmitInput Current { get; set; }
     }
+
+    /// <summary>
+    /// 再開操作の<b>受付所有権</b>（GPT レビュー R9 の指摘）。
+    ///
+    /// Scene 側の受付（<c>RespawnSubmitInput</c>）と、Scene が使えないときに肩代わりする
+    /// 常駐側の受付（<c>CampaignRespawnResidentView</c>）は、どちらも同じ押下を見る。
+    /// <b>「消費する側」だけを切り替えても足りない。</b> Scene 側は実行役が居ないと押下を
+    /// <b>捨てる</b>ので、Scene 側が先に動いた順序では、常駐側が読む前に押下が消える。
+    /// どちらの実行順でも成立させるには、<b>捨てる側も同じ所有権に従う</b>必要がある。
+    ///
+    /// 所有者は 1 人だけ。所有していない側は<b>消費も破棄もしない</b>ので、
+    /// どちらが先に Update されても「1 押下＝1 受理」になる。
+    /// </summary>
+    public interface IRespawnSubmitOwner
+    {
+        /// <summary>いま常駐側が受付を所有しているか。</summary>
+        bool OwnsRespawnSubmit { get; }
+    }
+
+    /// <summary>
+    /// 受付所有権の窓口（同上）。常駐側が自分を差し、Scene 側はここを見てから動く。
+    /// 解除は所有者一致で行う（§5.2）。
+    /// </summary>
+    public static class RespawnSubmitOwnerProvider
+    {
+        /// <summary>現在の所有権判定（未設定なら null＝Scene 側が従来どおり動く）。</summary>
+        public static IRespawnSubmitOwner Current { get; set; }
+
+        /// <summary>常駐側が所有しているか。未設定なら false（Scene 側が扱う）。</summary>
+        public static bool ResidentOwnsSubmit => Current != null && Current.OwnsRespawnSubmit;
+
+        /// <summary>自分が差したものだけを外す（所有者一致）。</summary>
+        public static void ReleaseIfOwner(IRespawnSubmitOwner owned)
+        {
+            if (owned != null && ReferenceEquals(Current, owned))
+            {
+                Current = null;
+            }
+        }
+    }
 }
