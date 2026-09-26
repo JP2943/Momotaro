@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "phase": "P5.5",
+  "note": "P5.5（エリア接続・スライド遷移）の必須テスト一覧。仕様書 §11 の ID を実際の完全修飾テスト名へ対応させる。未実装の要求はエントリを作らない——空の名前を置くと『0 件成功』を合格と数える穴になる。",
+  "stages": [
+    "P55-00",
+    "P55-01",
+    "P55-02",
+    "P55-03",
+    "P55-04",
+    "P55-05",
+    "P55-06"
+  ],
+  "requirements": [
+    {
+      "id": "P55-E01",
+      "summary": "接続解決・逆方向・不正ID・軸不一致・既存DataのFade既定",
+      "stage": "P55-01"
+    },
+    {
+      "id": "P55-E02",
+      "summary": "死亡／Starting優先、Pause拒否、遷移再入拒否。先読みだけでは行動を止めない",
+      "stage": "P55-01"
+    },
+    {
+      "id": "P55-E03",
+      "summary": "受理・成功・Rollbackの世代照合。古い完了／解除が新要求へ作用しない",
+      "stage": "P55-01"
+    },
+    {
+      "id": "P55-E04",
+      "summary": "先読みの同一先再利用、候補切替、最大2Area、ロード直列化",
+      "stage": "P55-01"
+    },
+    {
+      "id": "P55-E06",
+      "summary": "Preparedでは未訪問・未完了、Commitだけが訪問／成功通知を一度確定",
+      "stage": "P55-01"
+    },
+    {
+      "id": "P55-E08",
+      "summary": "成功通知から次要求、unload待機、新要求と旧後始末の分離",
+      "stage": "P55-01"
+    }
+  ],
+  "tests": [
+    {
+      "requirementId": "P55-E01",
+      "stage": "P55-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55ConnectionContractTests.EastWestPair_ResolvesBothWaysAndIsMutuallyReversed",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55ConnectionContractTests.NorthSouthPair_UsesTheZAxis",
+        "Momotaro.Tests.EditMode.P55ConnectionContractTests.UnknownIdsResolveToNothing",
+        "Momotaro.Tests.EditMode.P55ConnectionContractTests.SlideWithoutDirection_IsRefused",
+        "Momotaro.Tests.EditMode.P55ConnectionContractTests.ReverseWithWrongDirection_IsRefused",
+        "Momotaro.Tests.EditMode.P55ConnectionContractTests.ReverseBetweenWrongAreas_IsRefused",
+        "Momotaro.Tests.EditMode.P55ConnectionContractTests.OneSidedReverse_IsRefused",
+        "Momotaro.Tests.EditMode.P55ConnectionContractTests.FadeIsTheDefault_AndNeedsNoDirectionOrReverse",
+        "Momotaro.Tests.EditMode.P55ConnectionContractTests.SlideDurationOutsideTheTuningRange_IsRefused",
+        "Momotaro.Tests.EditMode.P55ConnectionContractTests.SelfConnection_IsRefused",
+        "Momotaro.Tests.EditMode.P55ConnectionContractTests.DataValidation_UsesTheSameRules",
+        "Momotaro.Tests.EditMode.P55ConnectionContractTests.AreaInstanceHandle_DistinguishesReloadsOfTheSameArea"
+      ]
+    },
+    {
+      "requirementId": "P55-E02",
+      "stage": "P55-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.Admission_KeepsThePhase5PriorityOrder",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.SecondRequestWhileTransitioning_IsRefused",
+        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.Coordinator_DoesNotKnowAboutPreloading",
+        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.InvalidConnection_IsRefusedWithoutAdvancingTheGeneration"
+      ]
+    },
+    {
+      "requirementId": "P55-E03",
+      "stage": "P55-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.StaleNotifications_DoNotAffectTheCurrentTransition",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.OutOfOrderNotifications_AreRefused",
+        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.Residency_DistinguishesReloadsOfTheSameArea"
+      ]
+    },
+    {
+      "requirementId": "P55-E04",
+      "stage": "P55-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.Residency_AllowsOneActiveAndTwoResidents",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.Residency_HandsOverByLoweringTheOldOneFirst",
+        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.Residency_SerializesSceneOperations"
+      ]
+    },
+    {
+      "requirementId": "P55-E06",
+      "stage": "P55-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.OnlyCommitConfirmsArrival_AndOnlyOnce",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.CommittedTransition_CannotBeRolledBack"
+      ]
+    },
+    {
+      "requirementId": "P55-E08",
+      "stage": "P55-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.ArrivalAnnouncement_IsSeparateFromCommitAndFiresOnce",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.AnnouncementBeforeCommit_IsRefused",
+        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.AfterFailure_TheNextRequestIsStillAccepted"
+      ]
+    }
+  ],
+  "allowedSkips": []
+}

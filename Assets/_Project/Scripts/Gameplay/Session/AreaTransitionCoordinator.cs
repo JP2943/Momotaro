@@ -103,60 +103,12 @@ namespace Momotaro.Gameplay.Session
                 return AreaTransitionDecision.Reject(AreaTransitionRejection.UnknownDestination);
             }
 
-            if (_conditions == null)
+            // 受付条件は共有の表が正本（P5.5 で P5.5 側と共有した。写すと必ず食い違う）。
+            AreaTransitionRejection rejection =
+                AreaTransitionAdmission.Evaluate(_conditions, request.IsRespawn);
+            if (rejection != AreaTransitionRejection.None)
             {
-                // 条件が分からない＝安全側。未配線で遷移させない。
-                return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
-            }
-
-            // 死亡再開だけは別の受付条件を使う（§9.1 手順 4／§6.1 末尾）。
-            //
-            // 通常の移動は「探索中・生存・行動していない」を求めるが、再開はその 3 つが
-            // <b>すべて成り立たないときにだけ</b>行う操作である。同じ条件表を当てると、
-            // 再開が自分の前提で拒否されて永久に死んだままになる。
-            // 代わりに「GameOver であること」を求め、戦闘が残っていないことだけ引き続き見る。
-            if (request.IsRespawn)
-            {
-                // <b>AreaReady は見ない。</b> 死亡を受理した時点で活動を閉じている（§9.1 手順 1）ので、
-                // 通常の移動と同じ「準備できているか」を求めると、閉じた自分の状態を理由に
-                // 再開が断られ、死んだまま動けなくなる（実際に踏んだ）。
-                if (_conditions.Mode != GameMode.GameOver)
-                {
-                    return AreaTransitionDecision.Reject(AreaTransitionRejection.WrongMode);
-                }
-
-                if (_conditions.IsEncounterActive)
-                {
-                    return AreaTransitionDecision.Reject(AreaTransitionRejection.EncounterActive);
-                }
-            }
-            else
-            {
-                if (!_conditions.IsAreaReady)
-                {
-                    return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
-                }
-
-                if (_conditions.Mode != GameMode.Exploration)
-                {
-                    return AreaTransitionDecision.Reject(AreaTransitionRejection.WrongMode);
-                }
-
-                if (!_conditions.IsPlayerAlive)
-                {
-                    return AreaTransitionDecision.Reject(AreaTransitionRejection.PlayerDefeated);
-                }
-
-                // 戦闘開始が移動より先（§8.3 の競合表）。主人公の行動中より先に見る。
-                if (_conditions.IsEncounterActive)
-                {
-                    return AreaTransitionDecision.Reject(AreaTransitionRejection.EncounterActive);
-                }
-
-                if (_conditions.IsPlayerBusy)
-                {
-                    return AreaTransitionDecision.Reject(AreaTransitionRejection.PlayerBusy);
-                }
+                return AreaTransitionDecision.Reject(rejection);
             }
 
             CurrentTransitionId++;
