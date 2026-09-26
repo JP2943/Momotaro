@@ -146,6 +146,11 @@ namespace Momotaro.Editor.Phase5
             // 出入口は<b>自分の Trigger で範囲を見る</b>ので、主人公の根が配線されていないと一度も反応しない。
             // 実際に試遊で A→B が動かず、原因がこの配線漏れだった（Gate を直接叩くテストでは気付けない）。
             RequireWired<AreaExitGate>(scene, "開放出入口（AreaExitGate）", errors, x => x.IsWired);
+
+            // §11 の必須 UI（徳の表示）。置かれているのに誰も検査していなかった（記録 029）。
+            // 落ちると試遊の観点 6「徳・開通・調査済みが画面から分かるか」が黙って崩れる。
+            RequireOne<CombatPlayHud>(scene, "徳を映す HUD（CombatPlayHud）", errors);
+            RequireWired<CombatPlayHud>(scene, "徳を映す HUD", errors, x => x.ProgressSource != null);
             RequireWired<CampaignRespawnView>(scene, "再開操作の表示", errors, x => x.IsWired);
 
             foreach (AreaInteractInput input in Components<AreaInteractInput>(scene))
@@ -316,6 +321,15 @@ namespace Momotaro.Editor.Phase5
                 if (!point.DiscoveryId.IsValid)
                 {
                     errors.Add("調査地点 " + point.PointId.Value + " の DiscoveryId が不正です。");
+                }
+
+                // <b>調べられる実体が要る。</b> Data が揃っていても Interactable が無ければ
+                // Interact の候補に挙がらず、その地点は永久に調べられない。
+                // 置かれているのに誰も検査していなかった（配線監査・記録 029）。
+                if (point.GetComponentInChildren<InvestigationInteractable>(true) == null)
+                {
+                    errors.Add("調査地点 " + point.PointId.Value
+                        + " に調べる実体（InvestigationInteractable）がありません。Interact の候補に挙がりません。");
                 }
             }
 
@@ -671,6 +685,19 @@ namespace Momotaro.Editor.Phase5
             RequireWired<AreaEncounterTrigger>(scene, "戦闘開始 Trigger", errors, x => x.IsWired);
             RequireOne<AreaArenaBoundary>(scene, "アリーナ境界（AreaArenaBoundary）", errors);
             RequireWired<AreaArenaBoundary>(scene, "アリーナ境界", errors, x => x.IsWired);
+            // 撃破報酬の受け手（§12.1）。<b>これが居ないと徳が黙って入らなくなる。</b>
+            // 配線監査（記録 029）で、置かれているのに誰も検査していない部品として見つかった。
+            // 遭遇戦の調停の IsWired には含まれないので、独立して見る。
+            RequireOne<CombatRewardCollector>(scene, "撃破報酬の受け手（CombatRewardCollector）", errors);
+            RequireWired<CombatRewardCollector>(scene, "撃破報酬の受け手", errors,
+                x => x.Session != null && x.Progress != null);
+
+            // 手応えの本体（§8.2 手順 7）。ヒットストップと点滅は購読役ではなく
+            // CombatFeedbackPresenter の参照で繋がっているので、参照そのものを見る。
+            // 落ちても戦闘は成立してしまうため、テストでは気付けない（同上）。
+            RequireWired<CombatFeedbackPresenter>(scene, "命中 Feedback（ヒットストップ・点滅）", errors,
+                x => x.HitStop != null && x.Flash != null);
+
             RequireOne<AreaEncounterConditionsSource>(scene, "戦闘の受付条件", errors);
             RequireWired<AreaEncounterConditionsSource>(scene, "戦闘の受付条件", errors, x => x.IsWired);
             RequireOne<EncounterInterruptRelay>(scene, "撤収の通知役（EncounterInterruptRelay）", errors);

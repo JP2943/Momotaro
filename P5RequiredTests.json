@@ -564,6 +564,30 @@
       "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnSubmitOwnership_ResidentStaysOutWhenSceneIsHealthy",
       "requirementIds": [],
       "implemented": true
+    },
+    {
+      "requirementId": "P5-V06",
+      "stage": "P5-09",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase5ValidatorCoverageTests.EveryComponentTheBuilderPlaces_IsCheckedOrExemptedWithAReason",
+      "requirementIds": [],
+      "implemented": true
+    },
+    {
+      "requirementId": "P5-V07",
+      "stage": "P5-09",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase5ValidatorCoverageTests.ExemptionList_HasNoStaleEntries",
+      "requirementIds": [],
+      "implemented": true
+    },
+    {
+      "requirementId": "P5-V08",
+      "stage": "P5-09",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.Phase5ValidatorCoverageTests.EveryExemption_HasANonEmptyReason",
+      "requirementIds": [],
+      "implemented": true
     }
   ],
   "allowedSkips": [],
