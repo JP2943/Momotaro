@@ -76,8 +76,7 @@ namespace Momotaro.Infrastructure.World
                 // 場合を取りこぼした。GameObject が有効なら取得はできてしまうため、
                 // 「Scene 側は Update されないのに、常駐側も引き継がない」という隙間ができる。
                 // 無効な GameObject に付いている場合も拾えるよう、非活動も含めて探す。
-                var submit = Object.FindFirstObjectByType<Momotaro.Infrastructure.Input.RespawnSubmitInput>(
-                    FindObjectsInactive.Include);
+                Momotaro.Infrastructure.Input.RespawnSubmitInput submit = ResolveSubmit();
                 if (submit == null || !submit.isActiveAndEnabled || !submit.IsWired)
                 {
                     return true;
@@ -88,6 +87,34 @@ namespace Momotaro.Infrastructure.World
                 CampaignRespawnRunner runner = submit.BoundRunner;
                 return runner == null || !runner.IsAwaitingRespawn;
             }
+        }
+
+        /// <summary>
+        /// 現行 Area の受付を引く（P5.5 §4.3）。
+        ///
+        /// 常駐が現行として指定している Area、なければ唯一の Area の中だけを探す。
+        /// <b>全 Scene 検索は束を載せていない構成のときだけ。</b>
+        /// 2 Area 同時読込でこれをやると、先読み中の隣 Area の受付を「生きている」と見なして
+        /// 常駐が肩代わりをやめてしまう——その隣 Area はまだ活動していないので、誰も受け付けない。
+        /// 非活動も含めて探す（enabled == false を取りこぼさないため。GPT レビュー R9）。
+        /// </summary>
+        private static Momotaro.Infrastructure.Input.RespawnSubmitInput ResolveSubmit()
+        {
+            AreaRuntimeBundle bundle = CurrentAreaProvider.Current;
+            if (bundle == null)
+            {
+                AreaBundleDirectory.TryGetSingle(out bundle);
+            }
+
+            if (bundle != null)
+            {
+                return bundle.TryResolve(out Momotaro.Infrastructure.Input.RespawnSubmitInput found)
+                    ? found
+                    : null;
+            }
+
+            return Object.FindFirstObjectByType<Momotaro.Infrastructure.Input.RespawnSubmitInput>(
+                FindObjectsInactive.Include);
         }
 
         /// <summary>いま常駐側で出しているか。</summary>

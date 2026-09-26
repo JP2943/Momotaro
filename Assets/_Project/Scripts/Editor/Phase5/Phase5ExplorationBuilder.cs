@@ -1194,6 +1194,14 @@ namespace Momotaro.Editor.Phase5
             so.FindProperty("_catalog").objectReferenceValue = catalog;
             so.FindProperty("_respawn").objectReferenceValue = respawn;
             so.ApplyModifiedPropertiesWithoutUndo();
+
+            // ---- この Area Scene の参照集合（P5.5 §4.3）----
+            //
+            // 常駐から全 Scene 検索させないための束。<b>AreaRoot と同じ物体に置く。</b>
+            // 活動ゲート（GameplayRoot／PhysicsRoot）の内側に置くと、Staged の間に束ごと
+            // 無効になって「読み込んだのに部品の在処が分からない」状態になる。
+            AreaRuntimeBundle bundle = areaRoot.gameObject.AddComponent<AreaRuntimeBundle>();
+            bundle.EditorSet(areaRoot, context, port, conditions, encounterRunner, respawn);
         }
 
         /// <summary>

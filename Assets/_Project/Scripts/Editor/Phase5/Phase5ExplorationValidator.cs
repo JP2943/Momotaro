@@ -107,6 +107,10 @@ namespace Momotaro.Editor.Phase5
             RequireOne<CampaignRespawnRunner>(scene, "死亡再開の実行役（CampaignRespawnRunner）", errors);
             RequireOne<RespawnSubmitInput>(scene, "再開操作の仲介（RespawnSubmitInput）", errors);
             RequireOne<CampaignRespawnView>(scene, "再開操作の表示（CampaignRespawnView）", errors);
+
+            // この Area Scene の参照集合（P5.5 §4.3）。常駐はこれ経由で Scene 側を触るので、
+            // 無いと全 Scene 検索の互換経路へ黙って落ちる。
+            RequireOne<AreaRuntimeBundle>(scene, "Area の参照集合（AreaRuntimeBundle）", errors);
         }
 
         // ---------------------------------------------------------------- 混入禁止（§13.3 の 4 行目）
@@ -142,6 +146,7 @@ namespace Momotaro.Editor.Phase5
             RequireWired<AreaNavigationBinder>(scene, "経路 Adapter の配線役", errors, x => x.IsWired);
             RequireWired<CampaignRespawnRunner>(scene, "死亡再開の実行役", errors, x => x.IsWired);
             RequireWired<RespawnSubmitInput>(scene, "再開操作の仲介", errors, x => x.IsWired);
+            RequireWired<AreaRuntimeBundle>(scene, "Area の参照集合", errors, x => x.IsWired);
 
             // 出入口は<b>自分の Trigger で範囲を見る</b>ので、主人公の根が配線されていないと一度も反応しない。
             // 実際に試遊で A→B が動かず、原因がこの配線漏れだった（Gate を直接叩くテストでは気付けない）。

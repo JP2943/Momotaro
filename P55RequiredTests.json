@@ -41,6 +41,11 @@
       "id": "P55-E08",
       "summary": "成功通知から次要求、unload待機、新要求と旧後始末の分離",
       "stage": "P55-01"
+    },
+    {
+      "id": "P55-SEC4-3",
+      "summary": "参照集合と現行指定（仕様書 §4.3）。常駐からの全 Scene 検索を残さない。§11 の P04（先読み）は実装が入る工程で別途追加する",
+      "stage": "P55-02"
     }
   ],
   "tests": [
@@ -123,6 +128,36 @@
       "supportingTests": [
         "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.AnnouncementBeforeCommit_IsRefused",
         "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.AfterFailure_TheNextRequestIsStillAccepted"
+      ]
+    },
+    {
+      "requirementId": "P55-SEC4-3",
+      "stage": "P55-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55AreaBundleTests.TryGetSingle_OnlySucceedsWhenExactlyOneAreaIsLoaded",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55AreaBundleTests.Register_IsIdempotentAndUnregisterRemovesOnlyThatBundle",
+        "Momotaro.Tests.EditMode.P55AreaBundleTests.TryGetByInstance_DistinguishesReloadsOfTheSameArea",
+        "Momotaro.Tests.EditMode.P55AreaBundleTests.TryGetByScene_NeedsARealSceneHandle",
+        "Momotaro.Tests.EditMode.P55AreaBundleTests.CurrentArea_IsOwnerMatchedAndCannotBeStolen",
+        "Momotaro.Tests.EditMode.P55AreaBundleTests.UnregisteringTheCurrentBundle_DropsTheDesignation",
+        "Momotaro.Tests.EditMode.P55AreaBundleTests.UnregisteringAnotherBundle_DoesNotDropTheDesignation",
+        "Momotaro.Tests.EditMode.P55AreaBundleTests.IsWired_NeedsTheRootDefinitionAndContext",
+        "Momotaro.Tests.EditMode.P55AreaBundleTests.TryResolve_FindsPartsInOtherRootsOfTheSameScene"
+      ]
+    },
+    {
+      "requirementId": "P55-SEC4-3",
+      "stage": "P55-02",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55AreaBundlePlayTests.DirectOpen_RegistersTheBundleAndResidentUsesItWithoutSearching",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55AreaBundlePlayTests.TwoScenesLoaded_IndexSeparatesThemAndBundlesDoNotReachAcross",
+        "Momotaro.Tests.PlayMode.P55AreaBundlePlayTests.Travel_MovesTheCurrentAreaDesignationWithoutFallingBack"
       ]
     }
   ],

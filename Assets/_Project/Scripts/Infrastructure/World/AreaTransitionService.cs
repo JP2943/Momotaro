@@ -474,6 +474,8 @@ namespace Momotaro.Infrastructure.World
             // 世代・対象・タイムアウトを確認した所有者＝ここが許可を出す。
             // 到着側が自分で Ready にしてしまうと、監視がタイムアウトしたあとに遅れて届いた
             // 目的地が、そのまま操作可能になってしまう。
+            AdoptArrivedBundle();
+
             AreaContext arrived = FindCurrentContext();
             if (arrived == null)
             {
@@ -805,7 +807,7 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         private void CaptureActors()
         {
-            var port = Object.FindFirstObjectByType<AreaActorTransferPort>();
+            AreaActorTransferPort port = ResolveTransferPort();
             if (port == null)
             {
                 _hasPendingTransfer = false;
@@ -829,10 +831,74 @@ namespace Momotaro.Infrastructure.World
             }
         }
 
-        private static AreaContext FindCurrentContext()
+        private AreaContext FindCurrentContext()
         {
-            // Scene に 1 つだけの前提（§5.1）。常駐側からは明示参照が持てないのでここだけ探索する。
-            return Object.FindFirstObjectByType<AreaContext>();
+            AreaRuntimeBundle bundle = CurrentBundle();
+            if (bundle != null && bundle.Context != null)
+            {
+                return bundle.Context;
+            }
+
+            return FallbackSearch<AreaContext>();
+        }
+
+        /// <summary>出発側の Actor 採取口を引く（P5.5 §4.3）。</summary>
+        private AreaActorTransferPort ResolveTransferPort()
+        {
+            AreaRuntimeBundle bundle = CurrentBundle();
+            if (bundle != null && bundle.TransferPort != null)
+            {
+                return bundle.TransferPort;
+            }
+
+            return FallbackSearch<AreaActorTransferPort>();
+        }
+
+        /// <summary>
+        /// いま触るべき Area の参照集合を引く（P5.5 §4.3）。
+        ///
+        /// 常駐が現行を指定していればそれ。していなければ、Area がちょうど 1 つのときに限りそれを使う
+        /// （直開き・P3.5／P4 の単一 Area 構成）。2 つ以上載っていて指定が無いなら、
+        /// ここで当て推量せず null を返す。
+        /// </summary>
+        private AreaRuntimeBundle CurrentBundle()
+        {
+            AreaRuntimeBundle bundle = CurrentAreaProvider.Current;
+            if (bundle != null)
+            {
+                return bundle;
+            }
+
+            return AreaBundleDirectory.TryGetSingle(out bundle) ? bundle : null;
+        }
+
+        /// <summary>
+        /// 束から引けなかったときの互換経路（全 Scene 検索）。
+        ///
+        /// 束を載せていない Scene（P3.5／P4 の既存構成・最小テスト構成）を動かし続けるために残す。
+        /// <b>回数を数える。</b> P5.5 の Scene でここを通ったら配線漏れなので、検査で落とせるようにする。
+        /// </summary>
+        private T FallbackSearch<T>() where T : Object
+        {
+            BundleFallbackCount++;
+            return Object.FindFirstObjectByType<T>();
+        }
+
+        /// <summary>束から引けず全 Scene 検索へ落ちた回数（診断・テスト用）。</summary>
+        public int BundleFallbackCount { get; private set; }
+
+        /// <summary>
+        /// 到着した Area の束を現行として採用する（P5.5 §4.3）。
+        ///
+        /// <b>現行の指定は常駐が持つ。</b> Scene 側に名乗らせると、先読みで載っただけの Area が
+        /// 現行になってしまう。束を載せていない Scene では何もしない（互換経路が引き続き動く）。
+        /// </summary>
+        private void AdoptArrivedBundle()
+        {
+            if (AreaBundleDirectory.TryGetSingle(out AreaRuntimeBundle bundle))
+            {
+                CurrentAreaProvider.TrySetCurrent(this, bundle);
+            }
         }
 
         private void OnDestroy()
@@ -844,6 +910,7 @@ namespace Momotaro.Infrastructure.World
             }
 
             CampaignRespawnTravelProvider.ReleaseIfOwner(this);
+            CurrentAreaProvider.ReleaseIfOwner(this);
         }
 
         /// <summary>差し替え可能な条件源へ橋渡しする（Scene ごとに条件源が入れ替わるため）。</summary>
