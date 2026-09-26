@@ -71,6 +71,13 @@ namespace Momotaro.Presentation.Companion
                 _channelView.Clear();
                 for (int i = 0; i < _entries.Count; i++)
                 {
+                    // 非活動 Area の仲間の演出を混ぜない（P5.5 §4.3）。
+                    // 持ち主を渡さない登録（テストの Fake 等）は Scene に属さないので絞らない。
+                    if (!Momotaro.Gameplay.Session.AreaScope.IsVisible(_entries[i].Owner))
+                    {
+                        continue;
+                    }
+
                     _channelView.Add(_entries[i].Channel);
                 }
 

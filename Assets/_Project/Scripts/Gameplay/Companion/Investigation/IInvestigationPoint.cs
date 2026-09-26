@@ -73,7 +73,8 @@ namespace Momotaro.Gameplay.Companion.Investigation
             buffer.Clear();
             for (int i = 0; i < _points.Count; i++)
             {
-                if (_points[i] != null)
+                // 非活動 Area の地点へ犬丸を行かせない（P5.5 §4.3）。
+                if (_points[i] != null && Session.AreaScope.IsVisible(_points[i]))
                 {
                     buffer.Add(_points[i]);
                 }

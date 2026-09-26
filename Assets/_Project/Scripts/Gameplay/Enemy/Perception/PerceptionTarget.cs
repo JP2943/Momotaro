@@ -78,6 +78,12 @@ namespace Momotaro.Gameplay.Enemy.Perception
                     continue;
                 }
 
+                // 境界越しの索敵をさせない（P5.5 §4.3）。
+                if (!Session.AreaScope.IsVisible(t))
+                {
+                    continue;
+                }
+
                 float d = VisionCheck.PlanarDistance(observerPos, t.Position);
                 if (d < best)
                 {
@@ -107,6 +113,12 @@ namespace Momotaro.Gameplay.Enemy.Perception
             for (int i = 0; i < _targets.Count; i++)
             {
                 if (!(_targets[i] is IThreatTarget t) || !t.IsActive || !IsHostile(observerFaction, t.Faction))
+                {
+                    continue;
+                }
+
+                // 境界越しの脅威を拾わない（P5.5 §4.3）。
+                if (!Session.AreaScope.IsVisible(t))
                 {
                     continue;
                 }

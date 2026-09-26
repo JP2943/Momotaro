@@ -46,6 +46,11 @@
       "id": "P55-SEC4-3",
       "summary": "参照集合と現行指定（仕様書 §4.3）。常駐からの全 Scene 検索を残さない。§11 の P04（先読み）は実装が入る工程で別途追加する",
       "stage": "P55-02"
+    },
+    {
+      "id": "P55-SEC4-3B",
+      "summary": "登録簿の Area 帰属（仕様書 §4.3）。境界越しの索敵・Interact・調査を起こさない。指定が無いときと Area 外の登録は絞らない",
+      "stage": "P55-02"
     }
   ],
   "tests": [
@@ -158,6 +163,20 @@
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55AreaBundlePlayTests.TwoScenesLoaded_IndexSeparatesThemAndBundlesDoNotReachAcross",
         "Momotaro.Tests.PlayMode.P55AreaBundlePlayTests.Travel_MovesTheCurrentAreaDesignationWithoutFallingBack"
+      ]
+    },
+    {
+      "requirementId": "P55-SEC4-3B",
+      "stage": "P55-02",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.Perception_DoesNotSeeTargetsInTheNeighbouringArea",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.InteractablesAndInvestigationPoints_AreLimitedToTheActiveArea",
+        "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.Perception_WithoutAnActiveArea_SeesEverything",
+        "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.Perception_StillSeesTargetsOutsideAnyArea",
+        "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.BelongsTo_TellsApartTheTwoAreas"
       ]
     }
   ],

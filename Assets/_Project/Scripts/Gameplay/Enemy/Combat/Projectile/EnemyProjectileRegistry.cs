@@ -35,6 +35,36 @@ namespace Momotaro.Gameplay.Enemy.Combat.Projectile
         /// 生存中の全 Projectile を消滅させる（プレイヤー死亡時の一括掃除。§4.1）。各 <see cref="EnemyProjectile.Cleanup"/> は
         /// 登録解除を伴うため、走査中の集合変更に耐えるようスナップショットを反復する。二重呼び出し・空集合でも安全（冪等）。
         /// </summary>
+        /// <summary>
+        /// 指定した Scene に属する Projectile だけを消滅させる（P5.5 §4.3）。
+        ///
+        /// Projectile は生成時登録で、活動中 Area にしか生まれない。
+        /// ただし<b>遷移の瞬間に飛んでいる分が残る</b>ので、
+        /// その Area を撤去するときに所属分を一括で落とす。
+        /// 全体の一括掃除（<see cref="DespawnAll"/>）とは別もので、隣 Area の弾は残す。
+        /// </summary>
+        public static int DespawnInScene(int sceneHandle)
+        {
+            if (sceneHandle == 0 || _live.Count == 0)
+            {
+                return 0;
+            }
+
+            EnemyProjectile[] snapshot = _live.ToArray();
+            int despawned = 0;
+            for (int i = 0; i < snapshot.Length; i++)
+            {
+                EnemyProjectile p = snapshot[i];
+                if (p != null && Momotaro.Gameplay.Session.AreaScope.BelongsTo(p, sceneHandle))
+                {
+                    p.Cleanup();
+                    despawned++;
+                }
+            }
+
+            return despawned;
+        }
+
         public static void DespawnAll()
         {
             if (_live.Count == 0)

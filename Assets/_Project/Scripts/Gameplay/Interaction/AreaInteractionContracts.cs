@@ -130,7 +130,9 @@ namespace Momotaro.Gameplay.Interaction
             buffer.Clear();
             for (int i = 0; i < _items.Count; i++)
             {
-                if (_items[i] != null)
+                // 非活動 Area の対象は候補にしない（P5.5 §4.3）。
+                // 境界の向こうのレバー・扉が Interact 候補に挑がるのを防ぐ。
+                if (_items[i] != null && Session.AreaScope.IsVisible(_items[i]))
                 {
                     buffer.Add(_items[i]);
                 }
