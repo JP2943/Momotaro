@@ -11,6 +11,7 @@ using Momotaro.Gameplay.Session;
 using Momotaro.Infrastructure.Bootstrap;
 using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.World;
+using Momotaro.Presentation.Cameras;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -43,6 +44,9 @@ namespace Momotaro.Tests.PlayMode
         private static readonly StableId ExitBWest = new StableId("exit_p55_b_west");
         private static readonly StableId ConnectionAToB = new StableId("conn_p55_a_east_to_b");
         private static readonly StableId ConnectionBToA = new StableId("conn_p55_b_west_to_a");
+
+        /// <summary>接続軸の Z（<c>Phase55WorldLayout.SeamZ</c>。Editor 側の定数は参照しない）。</summary>
+        private const float SeamAxisZ = 0f;
 
         private GameObject _bootstrap;
         private Keyboard _keyboard;
@@ -217,6 +221,74 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual("area_p5_b", FindAreaRoot().AreaId.Value, "従来どおり B へ着く。");
         }
 
+        // ---------------------------------------------------------------- カメラ軸（§7.1）
+
+        /// <summary>
+        /// <b>通路の端から入っても、カメラは接続軸に乗ったまま</b>（§7.1。GPT レビュー R14 の指摘 2）。
+        ///
+        /// 出入口には幅がある。通路の中心（z=0）からしか入らない検査では、
+        /// 「たまたま両側が一致した」だけで通ってしまう——実際そうなっていた。
+        /// ここでは<b>端に寄って</b>入り、受理の瞬間まで実カメラの Z を毎フレーム見る。
+        ///
+        /// <b>受理の直前に Snap して帳尻を合わせていない</b>ことも、これで分かる。
+        /// 近づく間ずっと軸に乗っているなら、合わせているのは配置（境界寄せ領域）であって
+        /// 直前の強制配置ではない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator EnteringTheSeamOffCentre_KeepsTheCameraOnTheConnectionAxis(
+            [Values(1f, -1f)] float offsetZ)
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            AreaExitGate gate = FindExitGate(ExitAEast);
+            yield return StandJustBefore(gate, Vector3.left, offsetZ);
+
+            // 置き直した直後の補間を終わらせてから見る（配置の話をしたいので）。
+            yield return SettleCamera();
+
+            AreaCameraRig rig = AreaCameraRigHost.Instance.Rig;
+            float worst = 0f;
+            float deadline = Time.realtimeSinceStartup + 8f;
+            while (transitions.ConnectionTravelCount == 0 && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                yield return null;
+                worst = Mathf.Max(worst, Mathf.Abs(rig.transform.position.z - SeamAxisZ));
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+
+            Assert.AreEqual(1, transitions.ConnectionTravelCount,
+                "通路の端から入っても受理される（進入位置 z ずらし=" + offsetZ + "）。");
+            Assert.Less(worst, 0.1f,
+                "近づく間ずっとカメラが接続軸に乗っている（最大のずれ=" + worst
+                + "。東西の接続で Z へ動かない。§7.1）。");
+
+            yield return WaitForArrival(transitions, 1);
+            yield return null;
+
+            AreaCameraRig arrived = AreaCameraRigHost.Instance.Rig;
+            Assert.Less(Mathf.Abs(arrived.transform.position.z - SeamAxisZ), 0.1f,
+                "到着後も接続軸の上に居る（z=" + arrived.transform.position.z + "）。");
+        }
+
+        /// <summary>置き直した直後の補間を終わらせる（配置の検査に補間の残りを混ぜない）。</summary>
+        private static IEnumerator SettleCamera()
+        {
+            AreaCameraRigHost host = AreaCameraRigHost.Instance;
+            Assert.IsNotNull(host, "常駐 Rig が立っている。");
+
+            float deadline = Time.realtimeSinceStartup + 3f;
+            while (host.Rig.Blend.IsBlending && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.IsFalse(host.Rig.Blend.IsBlending, "前提：補間が終わっている。");
+        }
+
         // ---------------------------------------------------------------- 補助
 
         /// <summary>常駐を立てて Area を直開きする。</summary>
@@ -255,9 +327,9 @@ namespace Momotaro.Tests.PlayMode
         /// ここから先はテストは何も操作しない——§6.1 の「範囲内で出口方向へ連続入力」を
         /// 実キーだけで成立させる。
         /// </summary>
-        private IEnumerator StandJustBefore(AreaExitGate gate, Vector3 back)
+        private IEnumerator StandJustBefore(AreaExitGate gate, Vector3 back, float offsetZ = 0f)
         {
-            Vector3 spot = gate.transform.position + back * 0.4f;
+            Vector3 spot = gate.transform.position + back * 0.4f + new Vector3(0f, 0f, offsetZ);
             var root = Object.FindFirstObjectByType<PlayerRoot>();
             Assert.IsNotNull(root, "主人公の根がある。");
             root.transform.position = new Vector3(spot.x, root.transform.position.y, spot.z);

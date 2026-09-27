@@ -457,6 +457,30 @@ namespace Momotaro.Editor.Phase5
             }
         }
 
+        /// <summary>
+        /// 接続境界の手前に<b>Z を接続軸へ固定する領域</b>を置く（P5.5 §7.1）。
+        ///
+        /// 奥行を<b>見える奥行より狭く</b>すると、<c>ClampFocus</c> はその軸を領域の中央へ
+        /// 固定する（無理に clamp しない）。これで、通路の端から入っても Camera の Z が
+        /// 接続軸に乗る——東西の接続で Z にもずれる問題への対処（GPT レビュー R14 の指摘 2）。
+        ///
+        /// <b>優先度は既存より高い 2。</b> 同じ場所に重なる A の東通路・B の全体より
+        /// こちらを勝たせる。奥行 0 の指定では置かない（P5 の構成）。
+        /// </summary>
+        private static void AddSeamCameraRegion(
+            Transform parent, Fixtures fixtures, Phase5BuildTargets t,
+            StableId regionId, Vector2 centerXAndWidth)
+        {
+            if (t.SeamCameraRegionDepth <= 0f || !regionId.IsValid || centerXAndWidth.y <= 0f)
+            {
+                return;
+            }
+
+            fixtures.CameraRegions.Add(CreateCameraRegion(parent, regionId, 2,
+                new Vector3(centerXAndWidth.x, 0f, t.SeamZ),
+                new Vector2(centerXAndWidth.y, t.SeamCameraRegionDepth)));
+        }
+
         /// <summary>カメラ領域を 1 つ置く（§11。XZ の軸平行矩形。回転は持たない）。</summary>
         private static AreaCameraRegion CreateCameraRegion(
             Transform parent, StableId regionId, int priority, Vector3 center, Vector2 size)
@@ -661,6 +685,8 @@ namespace Momotaro.Editor.Phase5
             fixtures.CameraRegions.Add(CreateCameraRegion(cameraRegions.transform,
                 Phase5AreaIds.RegionAEast, 1,
                 Phase5Layout.AreaAEastRegionCenter, Phase5Layout.AreaAEastRegionSize));
+            AddSeamCameraRegion(cameraRegions.transform, fixtures, t,
+                t.SeamCameraRegionAId, t.SeamCameraRegionA);
 
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
             areaRoot.EditorSet(definition, new List<AreaEntryPoint> { start, fromB },
@@ -764,6 +790,8 @@ namespace Momotaro.Editor.Phase5
             cameraRegions.transform.SetParent(root, false);
             fixtures.DefaultCameraRegion = CreateCameraRegion(cameraRegions.transform,
                 Phase5AreaIds.RegionBDefault, 0, Vector3.zero, Phase5Layout.AreaBDefaultRegionSize);
+            AddSeamCameraRegion(cameraRegions.transform, fixtures, t,
+                t.SeamCameraRegionBId, t.SeamCameraRegionB);
 
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
             areaRoot.EditorSet(definition, new List<AreaEntryPoint> { fromA },

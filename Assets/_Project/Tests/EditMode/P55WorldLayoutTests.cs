@@ -77,16 +77,15 @@ namespace Momotaro.Tests.EditMode
             Assert.IsNotNull(areaAP55);
             Assert.AreNotSame(areaAP5, areaAP55, "A の Data は配置ごとに別 Asset。");
 
-            // <b>AreaId は配置ごとに別。</b> §3.2 は AreaId の再利用を求めているが、
-            // この repo には「Data Asset の安定 ID はプロジェクト全体で一意」という不変条件が
-            // 別にあり（ProjectDataValidator／ProjectAssetIntegrityTests）、
-            // 同じ AreaId の AreaDefinition を 2 つ置くとそこで落ちる。
-            // 一意性の穴を開けるより副作用が小さいと判断した（理由は Phase5BuildTargets.AreaAId）。
+            // <b>AreaId は配置ごとに別</b>（付録 B.5 の裁定）。Data Asset の安定 ID は
+            // プロジェクト全体で一意という不変条件があり（ProjectDataValidator／
+            // ProjectAssetIntegrityTests）、同じ AreaId の AreaDefinition を 2 つ置くと落ちる。
             Assert.AreNotEqual(areaAP5.Id.Value, areaAP55.Id.Value,
-                "AreaId は配置ごとに別（安定 ID の一意性を守るため。判断の経緯は記録 014）。");
+                "AreaId は配置ごとに別（安定 ID の一意性を守るため。裁定は付録 B.5）。");
 
-            // <b>入口 ID は再利用する。</b> 進行に効くのはこちらで、§3.2 の
-            // 「接続のために進行 ID を振り直さない」はここで守っている。
+            // <b>入口 ID は再利用する。</b> ただし<b>進行の引き継ぎは保証しない</b>——
+            // GameSessionState は AreaId をキーにエリア進行を持つので、
+            // 子の ID が同じでも P5 と P5.5 の進行は別物になる（付録 B.5）。
             Assert.IsTrue(HasEntry(areaAP55, Phase5AreaIds.AreaAStart),
                 "P5.5 の A も開始入口 '" + Phase5AreaIds.AreaAStart.Value + "' を持つ。");
             Assert.IsTrue(HasEntry(areaAP55, Phase5AreaIds.AreaAFromB),
@@ -167,13 +166,14 @@ namespace Momotaro.Tests.EditMode
         /// V02：<b>接続軸以外へずれる配置</b>を検出する（§7.1）。
         ///
         /// 東西の接続なのに Camera が Z へも動くと、地続きの見た目が崩れる。
-        /// 入口を領域の中心から外すと、両側の clamp 結果が別の Z へ寄る——
-        /// P5 の z=6 のままだとこれが起きる。
+        /// 入口を境界寄せ領域の外へ出すと、到着時のカメラが接続軸から外れる。
+        /// <b>通路の端から入る場合</b>も同じ壊れ方で、そちらは Validator が
+        /// 進入位置を刻んで見る（付録 B.3.1／B.3.2）。
         /// </summary>
         [Test]
         public void MovingThePassageOffTheRegionCentre_FailsValidation()
         {
-            AssertBreakingIsDetected("カメラの Z", (a, b) =>
+            AssertBreakingIsDetected("接続軸", (a, b) =>
             {
                 foreach (AreaEntryPointMover mover in AreaEntryPointMover.For(b))
                 {

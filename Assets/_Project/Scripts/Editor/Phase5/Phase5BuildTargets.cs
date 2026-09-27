@@ -104,8 +104,18 @@ namespace Momotaro.Editor.Phase5
         /// <c>AreaInstanceHandle</c>・<c>CurrentAreaProvider</c>・カタログ引きはどれも
         /// 「AreaId が Area を一意に指す」前提で書かれており、同じ ID の別レイアウトを
         /// 許すとこれらが<b>型では防げない曖昧さ</b>を持つ。
-        /// <b>入口 ID・仕掛け・調査・発見の ID は再利用する</b>（進行に効くのはこちら）。
-        /// 判断の是非は検査で見ていただきたい。
+        ///
+        /// <b>裁定（付録 B.5）</b>：P5 と P5.5 は独立した試遊構成として別の AreaId を使う。
+        /// 入口・仕掛け・調査・発見の ID は再利用するが、<b>構成間の進行引き継ぎは保証しない</b>。
+        /// 同一 Session に両構成を混在させない。
+        ///
+        /// <b>「子の ID を再利用すれば進行に影響しない」は誤りだった。</b>
+        /// <c>GameSessionState</c> は AreaId をキーにエリア進行を持ち、その配下に
+        /// 仕掛け・調査・Encounter の記録がある。子の ID が同じでも、
+        /// P5 と P5.5 の進行は別物になる（GPT レビュー R14 の裁定 1）。
+        ///
+        /// これは試遊構成の併存に対する措置で、<b>地形や配置を変えるたびに
+        /// AreaId を変える規則ではない</b>。
         /// </summary>
         public Core.Identification.StableId AreaAId { get; set; } = Phase5AreaIds.AreaA;
 
@@ -163,6 +173,32 @@ namespace Momotaro.Editor.Phase5
         /// 個別に座標を渡す形にすると、代替配置や目印だけ古い Z に取り残される。
         /// </summary>
         public float SeamZ { get; set; } = Phase5Layout.SeamDefaultZ;
+
+        /// <summary>
+        /// 接続境界の手前に置く<b>カメラ領域の奥行</b>（0 なら置かない。P5.5 §7.1）。
+        ///
+        /// <b>Z を接続軸へ固定するために置く。</b> 領域の奥行が見える奥行より<b>狭い</b>と、
+        /// <c>ClampFocus</c> はその軸を領域の中央へ固定する（無理に clamp しない）。
+        /// これを使って、境界へ近づく間の Camera の Z を <see cref="SeamZ"/> へ寄せる。
+        ///
+        /// <b>「領域が画面より広いから中心へ寄る」は誤りである。</b> 広い領域では clamp の
+        /// 範囲内に収まるだけで、追従先の Z がそのまま残る——通路の端（z=±1 など）から
+        /// 入ると、東西の接続なのに Camera が Z へも動く（GPT レビュー R14 の指摘 2）。
+        /// 見える奥行は <c>orthographicSize / sin(俯角)</c> で、画面比に依らない。
+        /// </summary>
+        public float SeamCameraRegionDepth { get; set; }
+
+        /// <summary>境界寄せ領域の ID と X の範囲（Area ローカル）。奥行は共通。</summary>
+        public Core.Identification.StableId SeamCameraRegionAId { get; set; }
+
+        /// <summary>同・B 側。</summary>
+        public Core.Identification.StableId SeamCameraRegionBId { get; set; }
+
+        /// <summary>A 側の境界寄せ領域の中心 X と幅（Area ローカル）。</summary>
+        public Vector2 SeamCameraRegionA { get; set; }
+
+        /// <summary>B 側の境界寄せ領域の中心 X と幅（Area ローカル）。</summary>
+        public Vector2 SeamCameraRegionB { get; set; }
 
         /// <summary>
         /// A の門（レバーで開通する）の Z。既定は P5 の配置。

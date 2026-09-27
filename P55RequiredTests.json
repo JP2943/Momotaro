@@ -79,7 +79,7 @@
     },
     {
       "id": "P55-V02",
-      "summary": "壊した配置を検出する（§11 の V02）。接続ズレ・通路の塞ぎ・接続軸以外へのカメラずれ。いずれも Scene 1 枚ずつの検査では言えない",
+      "summary": "壊した配置を検出する（§11 の V02）。接続ズレ・通路の塞ぎ・接続軸以外へのカメラずれ。カメラ軸は入口の中心だけでなく<通路の端からの進入>も刻んで見る（付録 B.3.1）。いずれも Scene 1 枚ずつの検査では言えない",
       "stage": "P55-03"
     },
     {
@@ -342,6 +342,8 @@
       "requirementIds": [],
       "implemented": true,
       "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.EnteringTheSeamOffCentre_KeepsTheCameraOnTheConnectionAxis(1.0f)",
+        "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.EnteringTheSeamOffCentre_KeepsTheCameraOnTheConnectionAxis(-1.0f)",
         "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.WalkingWestIntoTheSeam_ResolvesTheWestwardSlideConnection",
         "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.TheP5Area_StillTravelsWithoutAnyConnectionRecord"
       ]

@@ -5,13 +5,19 @@ using UnityEngine;
 namespace Momotaro.Editor.Phase55
 {
     /// <summary>
-    /// P5.5 の実ワールド配置の出力先と ID（仕様書 §3.1／§3.2）。
+    /// P5.5 の実ワールド配置の出力先と ID（仕様書 §3.1／§3.2／付録 B.5）。
     ///
-    /// <b>AreaId・EntryId は P5 のものを再利用する</b>（§3.2「接続のために進行 ID を振り直さない」）。
-    /// 別なのは<b>置き場所と配置</b>だけ——Scene・Area Data・カタログを
-    /// <c>Phase55</c> フォルダへ分けて作り、P5 の受入用 Scene をそのまま残す。
-    /// 同じ AreaId の P5／P5.5 カタログは別の試遊構成として選ぶもので、
-    /// 同じ Session へ混在させない（§3.2）。
+    /// <b>P5 と P5.5 は独立した試遊構成として別の AreaId を使う</b>（付録 B.5 の裁定）。
+    /// 入口・仕掛け・調査・発見の ID は再利用するが、<b>構成間の進行引き継ぎは保証しない</b>——
+    /// <c>GameSessionState</c> は AreaId をキーにエリア進行（仕掛け・調査・Encounter の記録）を
+    /// 持つので、子の ID が同じでも P5 と P5.5 の進行は別物になる。
+    /// 同一 Session に両構成を混在させない。
+    ///
+    /// <b>これは試遊構成の併存に対する措置で、地形や配置を変えるたびに AreaId を
+    /// 変える規則ではない。</b>
+    ///
+    /// Scene・Area Data・カタログは <c>Phase55</c> フォルダへ分けて作り、
+    /// P5 の受入用 Scene をそのまま残す（§3.2）。
     /// </summary>
     public static class Phase55WorldIds
     {
@@ -45,11 +51,11 @@ namespace Momotaro.Editor.Phase55
         /// <summary>
         /// この配置のエリア A の安定 ID。
         ///
-        /// <b>P5 とは別の ID を使う。</b> 仕様書 §3.2 は AreaId の再利用を求めているが、
-        /// この repo には「Data Asset の安定 ID はプロジェクト全体で一意」という不変条件が
-        /// 別にあり、同じ AreaId の <c>AreaDefinition</c> を 2 つ置くとそこで落ちる。
-        /// 理由と判断は <c>Phase5BuildTargets.AreaAId</c> に書いてある。
-        /// <b>入口・仕掛け・調査・発見の ID は P5 のものを再利用する</b>（進行に効くのはこちら）。
+        /// <b>P5 とは別の ID を使う</b>（付録 B.5 の裁定）。Data Asset の安定 ID は
+        /// プロジェクト全体で一意という不変条件があり、同じ AreaId の
+        /// <c>AreaDefinition</c> を 2 つ置くとそこで落ちる。
+        /// 入口・仕掛け・調査・発見の ID は再利用するが、
+        /// <b>構成間の進行引き継ぎは保証しない</b>（詳細は <c>Phase5BuildTargets.AreaAId</c>）。
         /// </summary>
         public static readonly StableId AreaA = new StableId("area_p55_a");
 
@@ -67,6 +73,12 @@ namespace Momotaro.Editor.Phase55
 
         /// <summary>B の西の出入口（A へ）。</summary>
         public static readonly StableId ExitBWest = new StableId("exit_p55_b_west");
+
+        /// <summary>A 側の境界寄せカメラ領域（§7.1）。</summary>
+        public static readonly StableId RegionASeam = new StableId("region_p55_a_seam");
+
+        /// <summary>B 側の境界寄せカメラ領域。</summary>
+        public static readonly StableId RegionBSeam = new StableId("region_p55_b_seam");
 
         /// <summary>A → B（東へ）の接続。</summary>
         public static readonly StableId ConnectionAToB = new StableId("conn_p55_a_east_to_b");
@@ -104,12 +116,17 @@ namespace Momotaro.Editor.Phase55
             new Vector3(SeamX + Phase5Layout.AreaBWidth * 0.5f, 0f, 0f);
 
         /// <summary>
-        /// 接続通路の中心 Z。<b>0（両 Area の Camera 領域の中心）</b>。
+        /// 接続通路の中心 Z。<b>0 を接続軸にする</b>。
         ///
-        /// §7.1 は「東西なら Camera の移動は X だけ」と定める。A の東通路（奥行 18）と
-        /// B の全体（奥行 22）はどちらも見える範囲より深いので、clamp は<b>領域の中心へ寄る</b>。
-        /// P5 の z=6 のままだと A 側は約 2.9、B 側は約 4.9 へ寄って<b>Z にもずれる</b>。
-        /// 両方の領域中心が z=0 なので、通路も z=0 に置く。
+        /// §7.1 は「東西なら Camera の移動は X だけ」と定める。P5 の z=6 のままだと
+        /// A の東通路（奥行 18・clamp 範囲 ±2.90）と B の全体（奥行 22・±4.90）で
+        /// 寄せ先が違い、Z にもずれる。
+        ///
+        /// <b>ただし z=0 に置くだけでは足りない。</b> 領域が見える奥行より深いと
+        /// clamp は範囲内で<b>追従先の Z をそのまま残す</b>ので、通路の端（z=±1 など）から
+        /// 入れば Camera も z=±1 に居る。以前ここに書いていた「領域が画面より広いので
+        /// 中心へ寄る」は誤りだった（GPT レビュー R14 の指摘 2）。
+        /// 軸に乗せるのは下の<b>境界寄せ領域</b>の仕事である。
         /// </summary>
         public const float SeamZ = 0f;
 
@@ -123,6 +140,32 @@ namespace Momotaro.Editor.Phase55
         /// 開口の北端 −4 より北、通路の南端（−2）より南に置く。
         /// </summary>
         public const float AreaAGateZ = -3.2f;
+
+        /// <summary>
+        /// 境界寄せカメラ領域の奥行（§7.1）。<b>見える奥行より狭いこと</b>が条件。
+        ///
+        /// 見える奥行の半分は <c>orthographicSize / sin(俯角)</c> ＝ 5/sin55° ≒ 6.10 で、
+        /// 画面比に依らない。奥行 8（半分 4 &lt; 6.10）なので <c>ClampFocus</c> は
+        /// Z を<b>領域の中央＝接続軸</b>へ固定する。
+        /// <b>この関係は定数で信じず検査で見る</b>——俯角や投影サイズを変えたら壊れる。
+        /// </summary>
+        public const float SeamCameraRegionDepth = 8f;
+
+        /// <summary>
+        /// A 側の境界寄せ領域（中心 X, 幅。Area ローカル）。東の通路をそのまま覆う。
+        /// 幅 6 は見える横幅（≒17.8）より狭いので、X も通路の中央へ固定される——
+        /// 境界での画面が止まるので、スライドは純粋な X の移動になる。
+        /// </summary>
+        public static readonly Vector2 SeamCameraRegionA =
+            new Vector2(Phase5Layout.AreaAEastRegionCenter.x, Phase5Layout.AreaAEastRegionSize.x);
+
+        /// <summary>
+        /// B 側の境界寄せ領域（中心 X, 幅。Area ローカル）。西端から 10m を覆う。
+        /// <b>B の全体を覆わない</b>——覆うと戦闘区画（z −8〜8）でも Z が固定され、
+        /// 追従の見え方が変わってしまう。
+        /// </summary>
+        public static readonly Vector2 SeamCameraRegionB =
+            new Vector2(-Phase5Layout.AreaBWidth * 0.5f + 5f, 10f);
 
         /// <summary>接続境界へ向かう向き（A から見て東）。</summary>
         public static readonly Vector3 EastwardStep = Vector3.right;
@@ -153,6 +196,11 @@ namespace Momotaro.Editor.Phase55
             ExitBToA = Phase55WorldIds.ExitBWest,
             SeamZ = SeamZ,
             AreaAGateZ = AreaAGateZ,
+            SeamCameraRegionDepth = SeamCameraRegionDepth,
+            SeamCameraRegionAId = Phase55WorldIds.RegionASeam,
+            SeamCameraRegionBId = Phase55WorldIds.RegionBSeam,
+            SeamCameraRegionA = SeamCameraRegionA,
+            SeamCameraRegionB = SeamCameraRegionB,
         };
     }
 }

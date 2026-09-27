@@ -412,28 +412,68 @@ namespace Momotaro.Editor.Phase55
         /// <summary>
         /// 東西の接続では<b>Camera の移動が X だけ</b>であること（§7.1）。
         ///
-        /// 両 Area の領域は見える範囲より深いので、clamp の結果は領域の中心へ寄る。
-        /// 中心 Z の違う領域どうしを繋ぐと、スライドが接続軸以外（Z）へもずれる——
-        /// 「接続軸以外にずれる設計は Validator で不合格」。
+        /// <b>入口の中心だけを比べては足りない</b>（GPT レビュー R14 の指摘 2）。
+        /// 出入口には幅があるので、通路の端（z=±1 など）から入ることができる。
+        /// 領域が見える奥行より深いと clamp は<b>追従先の Z をそのまま残す</b>ので、
+        /// そこから入ると東西の接続なのに Camera が Z へも動く。
+        /// 中心だけ見る検査では、ちょうど一致してしまって通ってしまった。
+        ///
+        /// ここでは<b>通路の幅いっぱいに刻んだ進入位置</b>と、境界へ近づく数点を
+        /// 両側でなめて、すべてで Camera の Z が接続軸に乗ることを求める。
+        /// 「領域が広いから中心へ寄る」という思い込みを、検査が否定できる形にしてある。
         /// </summary>
         private static void ValidateCameraAxis(AreaFacts a, AreaFacts b, List<string> errors)
         {
+            float seamX = a.FloorBounds.max.x;
+            float axisZ = Phase55WorldLayout.SeamZ;
+            float half = Phase55WorldLayout.PassageWidth * 0.5f;
+
+            // 通路の中心と両端（少し内側）から、境界へ向かって近づく道のり。
+            float[] zs = { axisZ, axisZ + half - 0.5f, axisZ - half + 0.5f };
+            float[] aXs = { seamX - 0.5f, seamX - 1.5f, seamX - 2.5f };
+            float[] bXs = { seamX + 0.5f, seamX + 1.5f, seamX + 2.5f };
+
+            AssertApproachStaysOnAxis(a, "A", zs, aXs, axisZ, errors);
+            AssertApproachStaysOnAxis(b, "B", zs, bXs, axisZ, errors);
+
             if (!TryFocus(a, Phase5AreaIds.AreaAFromB, out Vector3 focusInA, errors)
                 || !TryFocus(b, Phase5AreaIds.AreaBFromA, out Vector3 focusInB, errors))
             {
                 return;
             }
 
-            if (Mathf.Abs(focusInA.z - focusInB.z) > 0.05f)
+            if (Mathf.Abs(focusInA.z - axisZ) > 0.05f || Mathf.Abs(focusInB.z - axisZ) > 0.05f)
             {
-                errors.Add("東西の接続なのにカメラの Z が動きます（A 側 z=" + focusInA.z
-                    + " B 側 z=" + focusInB.z + "）。接続軸以外にずれる設計は不合格（§7.1）。");
+                errors.Add("到着時のカメラが接続軸に乗っていません（A 側 z=" + focusInA.z
+                    + " B 側 z=" + focusInB.z + " 軸 z=" + axisZ + "。§7.1）。");
             }
 
             if (Mathf.Abs(focusInA.x - focusInB.x) < 0.5f)
             {
                 errors.Add("カメラが X へ動きません（両側 x≈" + focusInA.x
                     + "）。スライドする意味が無い配置です（§7.1）。");
+            }
+        }
+
+        /// <summary>境界へ近づく道のりのどこからでも、カメラの Z が接続軸に乗ること。</summary>
+        private static void AssertApproachStaysOnAxis(
+            AreaFacts facts, string label, float[] zs, float[] xs, float axisZ, List<string> errors)
+        {
+            for (int xi = 0; xi < xs.Length; xi++)
+            {
+                for (int zi = 0; zi < zs.Length; zi++)
+                {
+                    var at = new Vector3(xs[xi], 0f, zs[zi]);
+                    Vector3 focus = FocusAt(facts, at);
+                    if (Mathf.Abs(focus.z - axisZ) > 0.05f)
+                    {
+                        errors.Add(label + " 側の進入位置 " + at + " でカメラの Z が接続軸から外れます"
+                            + "（カメラ z=" + focus.z + " 軸 z=" + axisZ
+                            + "）。東西の接続で Z へ動く配置は不合格（§7.1）。"
+                            + " 境界寄せの領域が足りていません。");
+                        return;
+                    }
+                }
             }
         }
 
@@ -448,14 +488,23 @@ namespace Momotaro.Editor.Phase55
                 return false;
             }
 
-            // 領域選択も clamp も<b>実行時と同じ純粋関数</b>を使う（別の期待値を作らない）。
-            if (!CameraRegionSelector.TrySelect(facts.Regions, arrival, out CameraRegionDefinition region))
+            focus = FocusAt(facts, arrival);
+            return true;
+        }
+
+        /// <summary>
+        /// その位置を追従したときのカメラ基準位置。
+        /// <b>領域選択も clamp も実行時と同じ純粋関数</b>を使う（別の期待値を作らない）。
+        /// </summary>
+        private static Vector3 FocusAt(AreaFacts facts, Vector3 worldPosition)
+        {
+            if (!CameraRegionSelector.TrySelect(
+                    facts.Regions, worldPosition, out CameraRegionDefinition region))
             {
                 region = facts.DefaultRegion;
             }
 
-            focus = CameraBoundsMath.ClampFocus(arrival, region, HalfFootprint());
-            return true;
+            return CameraBoundsMath.ClampFocus(worldPosition, region, HalfFootprint());
         }
 
         private static Vector2 HalfFootprint() => CameraBoundsMath.HalfFootprint(
