@@ -115,6 +115,17 @@ namespace Momotaro.Editor.Phase5
         /// <summary>B の既定領域。</summary>
         public static readonly StableId RegionBDefault = new StableId("region_p5_b_default");
 
+        // ---- P5.5-03b：単一常駐 CameraRig（付録 A）----
+
+        /// <summary>
+        /// 常駐 CameraRig の Prefab（付録 A.1／A.2）。
+        ///
+        /// Camera・AudioListener・画面揺れ・基準照明を抱え、Area をまたいで生き続ける。
+        /// Area Scene の領域集合部品がこれを参照し、<b>まだ常駐 Rig が無いときにだけ</b>生成する。
+        /// </summary>
+        public const string ResidentCameraRigPrefabPath =
+            "Assets/_Project/Prefabs/Cameras/PF_ResidentCameraRig.prefab";
+
         /// <summary>調査の設定 Asset（P4 の試遊と同じものを使う）。</summary>
         public const string InvestigationSettingsPath = "Assets/_Project/Data/Exploration/SO_Investigation_Trial.asset";
     }

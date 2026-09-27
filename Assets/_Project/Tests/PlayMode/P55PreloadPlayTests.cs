@@ -8,6 +8,7 @@ using Momotaro.Gameplay.Modes;
 using Momotaro.Gameplay.Session;
 using Momotaro.Infrastructure.Bootstrap;
 using Momotaro.Infrastructure.World;
+using Momotaro.Presentation.Cameras;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.AI;
@@ -23,8 +24,10 @@ namespace Momotaro.Tests.PlayMode
     /// 同時に働く——本物の Area B を A の隣へ<b>追加で</b>読み込み、
     /// 「載っているのに何も起きていない」ことを実 Scene で確かめる。
     ///
-    /// <b>カメラの一本化はまだしていない</b>（§4.3 の Rig 単一化は P55-03）。
-    /// この段階では B 側のカメラとライトも活きているので、見た目は正しくない。
+    /// <b>カメラの一本化は P55-03b で入った</b>（§4.3／付録 A）。Area Scene は Camera・
+    /// AudioListener・基準照明を持たず、常駐 Rig が 1 台だけ描く。この工程で書いたときは
+    /// まだ B 側のカメラが活きていたので、表示系の主張は<b>そのとき置き換えた</b>
+    /// （「開けば 2 台」→「開いても 1 台のまま・常駐を作り直さない」）。
     /// ここで見たいのは活動と登録であって、見せ方ではない。
     /// </summary>
     public sealed class P55PreloadPlayTests
@@ -45,6 +48,9 @@ namespace Momotaro.Tests.PlayMode
         [SetUp]
         public void SetUp()
         {
+            // 前のテストが残した常駐 CameraRig を持ち込まない（P5.5 付録 A.2）。
+            P55ResidentRig.Reset();
+
             AreaStagingRequest.ResetForTests();
             AreaBundleDirectory.ClearForTests();
             CurrentAreaProvider.ClearForTests();
@@ -85,6 +91,12 @@ namespace Momotaro.Tests.PlayMode
             DestroyTrialLaunchers();
             yield return null;
             DestroyTrialLaunchers();
+
+            // <b>常駐 CameraRig を次のテストへ残さない。</b> Scene を読み替えても消えないので、
+            // 残すと次のテストが試遊 Scene の自前カメラと二重になる（P5.5 付録 A.2）。
+            // Scene から抜けた<b>あと</b>に消す——先に消すと、まだ載っている Area の
+            // 領域集合が「常駐が居ない」と見て作り直す。
+            P55ResidentRig.Reset();
 
             if (BootstrapRoot.HasInstance)
             {
@@ -246,10 +258,16 @@ namespace Momotaro.Tests.PlayMode
         }
 
         /// <summary>
-        /// 先読みしても <b>Camera と AudioListener は 1 つのまま</b>（P5.5 §4.1）。
+        /// 先読みしても <b>Camera と AudioListener は 1 つのまま</b>（P5.5 §4.1／付録 A.7）。
         ///
         /// ここが漏れると、隣 Area のカラが同じ画面へ描き、音も二重に聞こえる。
         /// <b>見た目の壊れ方なので自動テストで気付きにくい</b>——数で落とす。
+        ///
+        /// <b>後半は置き換えた。</b> P55-03a では B 側の Camera が「止まっているだけ」で
+        /// Scene に居たので、ゲートを開ければ 2 台になるのが正しい姿だった。
+        /// 付録 A.1 で所有を常駐側へ移した今は<b>B に Camera が無い</b>ので、
+        /// 開いても 1 台のまま——そして常駐 Rig が<b>再生成も再 Bind もされない</b>ことが
+        /// 見るべき性質になった（付録 A.7 の最後の項目）。
         /// </summary>
         [UnityTest]
         public IEnumerator PreloadingTheNeighbour_DoesNotAddASecondCameraOrListener()
@@ -275,12 +293,29 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(1, CountEnabled<Camera>(), "先読みしても描く Camera は 1 台。");
             Assert.AreEqual(1, CountEnabled<AudioListener>(), "聞く AudioListener も 1 つ。");
 
-            // 開けば B 側も動き出す（止めたままにならない）。
+            // <b>常駐 Rig は先読みで作り直されない</b>（付録 A.2 の ensure-create／A.7）。
+            // B 側の領域集合も ensure-create を呼ぶので、そこが「無ければ作る」でなく
+            // 「毎回作る」になっていると、ここで 2 つ目が生まれる。
+            Assert.AreEqual(1, AreaCameraRigHost.CreatedCount, "常駐 Rig を先読みで作り直さない。");
+            Assert.AreEqual("area_p5_a", AreaCameraRigHost.Instance.BoundArea.Value,
+                "先読み中も結び先は活動中の A（隣の領域で clamp しない）。");
+
+            int bindsBeforeOpening = AreaCameraRigHost.Instance.BindCount;
+
+            // 開けば B 側の Gameplay は動き出す（止めたままにならない）。
+            // <b>Camera は増えない</b>——B は Camera を持たないので（付録 A.1）。
             Assert.IsTrue(
                 AreaBundleDirectory.TryGetByScene(_preloader.StagedSceneHandle, out AreaRuntimeBundle staged));
             staged.ActivityGate.Open();
             yield return null;
-            Assert.AreEqual(2, CountEnabled<Camera>(), "開けば B の Camera も描く。");
+
+            Assert.AreEqual(1, CountEnabled<Camera>(), "開いても描く Camera は 1 台（B は持たない）。");
+            Assert.AreEqual(1, CountEnabled<AudioListener>(), "AudioListener も 1 つのまま。");
+            Assert.AreEqual(1, AreaCameraRigHost.CreatedCount, "ゲートを開けても作り直さない。");
+            Assert.AreEqual(bindsBeforeOpening, AreaCameraRigHost.Instance.BindCount,
+                "活動 Area が変わっていないので結び直さない（Commit まで A のまま。付録 A.5）。");
+            Assert.AreEqual("area_p5_a", AreaCameraRigHost.Instance.BoundArea.Value,
+                "結び先も A のまま。");
         }
 
         /// <summary>有効な部品の数（非 Active な物体の下は数えない）。</summary>

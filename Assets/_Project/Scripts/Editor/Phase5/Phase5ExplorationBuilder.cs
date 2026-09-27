@@ -118,34 +118,40 @@ namespace Momotaro.Editor.Phase5
 
             AssetDatabase.SaveAssets();
 
-            // 2. Scene を作る。どれか 1 つでも失敗したら、その時点で止める。
+            // 2. 常駐 CameraRig の Prefab を作る。Area Scene の領域集合がこれを参照するため、
+            //    Scene より先に用意する（付録 A.2 の ensure-create の相手）。
+            GameObject residentRig = EnsureResidentCameraRigPrefab();
+            outputs.Add(Phase5AreaIds.ResidentCameraRigPrefabPath);
+            AssetDatabase.SaveAssets();
+
+            // 3. Scene を作る。どれか 1 つでも失敗したら、その時点で止める。
             Phase5Placeholder.EnsureFolder(Phase5AreaIds.SceneFolder);
 
-            if (!BuildScene(Phase5AreaIds.AreaAScenePath, (root, rig) => PopulateAreaA(root, areaA, rig),
-                    withCameraRig: true, out string errorA))
+            if (!BuildScene(Phase5AreaIds.AreaAScenePath, root => PopulateAreaA(root, areaA, residentRig),
+                    isStartupScene: false, out string errorA))
             {
                 return new BuildResult(false, "エリア A の生成に失敗: " + errorA, outputs);
             }
 
             outputs.Add(Phase5AreaIds.AreaAScenePath);
 
-            if (!BuildScene(Phase5AreaIds.AreaBScenePath, (root, rig) => PopulateAreaB(root, areaB, rig),
-                    withCameraRig: true, out string errorB))
+            if (!BuildScene(Phase5AreaIds.AreaBScenePath, root => PopulateAreaB(root, areaB, residentRig),
+                    isStartupScene: false, out string errorB))
             {
                 return new BuildResult(false, "エリア B の生成に失敗: " + errorB, outputs);
             }
 
             outputs.Add(Phase5AreaIds.AreaBScenePath);
 
-            if (!BuildScene(Phase5AreaIds.TrialScenePath, (root, rig) => PopulateTrial(root),
-                    withCameraRig: false, out string errorT))
+            if (!BuildScene(Phase5AreaIds.TrialScenePath, root => PopulateTrial(root),
+                    isStartupScene: true, out string errorT))
             {
                 return new BuildResult(false, "統合起動 Scene の生成に失敗: " + errorT, outputs);
             }
 
             outputs.Add(Phase5AreaIds.TrialScenePath);
 
-            // 3. Build Settings は既存項目を維持して追記・更新する（§13.1）。
+            // 4. Build Settings は既存項目を維持して追記・更新する（§13.1）。
             int added = EnsureBuildSettings(new[]
             {
                 Phase5AreaIds.TrialScenePath, Phase5AreaIds.AreaAScenePath, Phase5AreaIds.AreaBScenePath,
@@ -158,7 +164,8 @@ namespace Momotaro.Editor.Phase5
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             return new BuildResult(true,
-                "Data 4 件（A／B／カタログ／Encounter）、Scene 3 件（A／B／統合起動）。Build Settings へ "
+                "Data 4 件（A／B／カタログ／Encounter）、Prefab 1 件（常駐 CameraRig）、"
+                + "Scene 3 件（A／B／統合起動）。Build Settings へ "
                 + added + " 件を追加。死亡再開点は " + Phase5AreaIds.AreaA.Value + "/" + Phase5AreaIds.AreaAStart.Value + "。",
                 outputs);
         }
@@ -282,14 +289,21 @@ namespace Momotaro.Editor.Phase5
         }
 
         private static bool BuildScene(
-            string path, System.Action<Transform, AreaCameraRig> populate, bool withCameraRig, out string error)
+            string path, System.Action<Transform> populate, bool isStartupScene, out string error)
         {
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             try
             {
                 var root = new GameObject("AreaRoot");
-                AreaCameraRig rig = CreateCommonSceneObjects(withCameraRig);
-                populate(root.transform, rig);
+
+                // Area Scene は Camera・AudioListener・基準照明を持たない（付録 A.2）。
+                // 常駐 Rig が所有するので、ここで置くと先読みで 2 台になる。
+                if (isStartupScene)
+                {
+                    CreateStartupSceneObjects();
+                }
+
+                populate(root.transform);
             }
             catch (System.Exception e)
             {
@@ -310,37 +324,22 @@ namespace Momotaro.Editor.Phase5
         }
 
         /// <summary>
-        /// どの Scene にも要る最小構成（カメラ・ライト）。<b>活動中は各 1 つ</b>（§11）。
+        /// 起動 Scene（エリアではない）の最小構成（カメラ・ライト）。
         ///
-        /// <b>Rig 親に追従・境界、Camera 子に揺れ</b>（§11）。同じ Transform を 2 人で書かないために、
-        /// 追従は Rig の <c>position</c>、揺れは Camera 子の <c>localPosition</c> と、書込み先を分けてある。
-        /// 分けないと、揺れの基準が追従で毎フレーム動き、戻り位置がずれる。
+        /// <b>Area Scene はこれを持たない。</b> P5.5 付録 A.1／A.2 で Camera・AudioListener・
+        /// 画面揺れ・基準照明は<b>常駐側の所有</b>へ移した。Area が提供するのは領域と追従対象だけで
+        /// （<see cref="AreaCameraRegionSet"/>）、Scene 内に 2 台目の Camera を作らないことが
+        /// 先読み（2 枚同時読込）の前提になる。
         ///
-        /// 起動 Scene（エリアではない）は領域も追従対象も持たないので、Rig を置かない。
-        /// 置くと「未配線」を毎回警告することになる。
+        /// 起動 Scene は Area ではないので常駐 Rig を立てる契機を持たない。ここが空だと
+        /// 起動の瞬間に何も映らないので、従来どおり自前のカメラを置く。Area へ入ると
+        /// Single 読込で置き換わるため、常駐 Rig と二重にはならない。
         /// </summary>
-        private static AreaCameraRig CreateCommonSceneObjects(bool withCameraRig)
+        private static void CreateStartupSceneObjects()
         {
-            var lightGo = new GameObject("Directional Light");
-            Light light = lightGo.AddComponent<Light>();
-            light.type = LightType.Directional;
-            lightGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
-
-            AreaCameraRig rig = null;
-            Transform cameraParent = null;
-            if (withCameraRig)
-            {
-                var rigGo = new GameObject("CameraRig");
-                rig = rigGo.AddComponent<AreaCameraRig>();
-                cameraParent = rigGo.transform;
-            }
+            CreateBaselineLight(null);
 
             var cameraGo = new GameObject("Main Camera");
-            if (cameraParent != null)
-            {
-                cameraGo.transform.SetParent(cameraParent, false);
-            }
-
             Camera camera = cameraGo.AddComponent<Camera>();
             camera.orthographic = true;
             camera.orthographicSize = Phase5Layout.CameraOrthographicSize;
@@ -350,19 +349,99 @@ namespace Momotaro.Editor.Phase5
             cameraGo.AddComponent<AudioListener>();
 
             // 揺れは既存の ShakePresenter を使う（§11。独自 HitStop を足さない）。
-            // 対象は自分＝Camera 子。Rig を揺らすと追従の書込みと競合する。
             CameraShakePresenter shake = cameraGo.AddComponent<CameraShakePresenter>();
             shake.Target = cameraGo.transform;
+        }
 
-            if (rig != null)
+        /// <summary>基準照明（Area 間で重複させない。付録 A.1）。</summary>
+        private static Light CreateBaselineLight(Transform parent)
+        {
+            var lightGo = new GameObject("Directional Light");
+            if (parent != null)
             {
-                var so = new SerializedObject(rig);
-                so.FindProperty("_camera").objectReferenceValue = camera;
-                so.FindProperty("_pitchDegrees").floatValue = Phase5Layout.CameraPitchDegrees;
-                so.ApplyModifiedPropertiesWithoutUndo();
+                lightGo.transform.SetParent(parent, false);
             }
 
-            return rig;
+            Light light = lightGo.AddComponent<Light>();
+            light.type = LightType.Directional;
+            lightGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+            return light;
+        }
+
+        /// <summary>
+        /// 常駐 CameraRig の Prefab を用意する（P5.5 付録 A.1／A.2）。
+        ///
+        /// <b>Camera・AudioListener・画面揺れ・基準照明はここが所有する。</b>
+        /// Area Scene の <see cref="AreaCameraRegionSet"/> がこの Prefab を参照し、
+        /// まだ常駐 Rig が無いときにだけ生成して <c>DontDestroyOnLoad</c> する（ensure-create）。
+        /// 直開き・統合起動・先読みのすべてが同じこの 1 本の経路を通る。
+        ///
+        /// <b>階層は従来の Area 内 Rig と同じにしてある</b>（§11 の書込み先の分離）。
+        /// 追従は Rig 親の <c>position</c>、揺れは Camera 子の <c>localPosition</c>。
+        /// 照明は Rig の外（根の直下）に置く——Rig は追従で毎フレーム動くので、
+        /// 下に入れると照明の Transform も一緒に動く。方向光では影響しないが、
+        /// 「動くもの」と「動かないもの」を混ぜない。
+        ///
+        /// <b>AreaContext は渡さない。</b> 渡すと <c>Prepared</c> で <c>SnapToTarget</c> が走り、
+        /// スライドが始まる前にカメラが跳ぶ（付録 A.3／§7.1）。
+        /// </summary>
+        private static GameObject EnsureResidentCameraRigPrefab()
+        {
+            var root = new GameObject("ResidentCameraRig");
+            try
+            {
+                AreaCameraRigHost host = root.AddComponent<AreaCameraRigHost>();
+
+                CreateBaselineLight(root.transform);
+
+                var rigGo = new GameObject("CameraRig");
+                rigGo.transform.SetParent(root.transform, false);
+                AreaCameraRig rig = rigGo.AddComponent<AreaCameraRig>();
+
+                var cameraGo = new GameObject("Main Camera");
+                cameraGo.transform.SetParent(rigGo.transform, false);
+                Camera camera = cameraGo.AddComponent<Camera>();
+                camera.orthographic = true;
+                camera.orthographicSize = Phase5Layout.CameraOrthographicSize;
+                camera.tag = "MainCamera";
+                cameraGo.transform.localPosition = Phase5Layout.CameraLocalOffset;
+                cameraGo.transform.localRotation =
+                    Quaternion.Euler(Phase5Layout.CameraPitchDegrees, 0f, 0f);
+                cameraGo.AddComponent<AudioListener>();
+
+                // 揺れの対象は自分＝Camera 子。Rig を揺らすと追従の書込みと競合する（§11）。
+                CameraShakePresenter shake = cameraGo.AddComponent<CameraShakePresenter>();
+                shake.Target = cameraGo.transform;
+
+                var rigSo = new SerializedObject(rig);
+                rigSo.FindProperty("_camera").objectReferenceValue = camera;
+                rigSo.FindProperty("_pitchDegrees").floatValue = Phase5Layout.CameraPitchDegrees;
+                rigSo.ApplyModifiedPropertiesWithoutUndo();
+
+                var hostSo = new SerializedObject(host);
+                hostSo.FindProperty("_rig").objectReferenceValue = rig;
+                hostSo.FindProperty("_camera").objectReferenceValue = camera;
+                hostSo.FindProperty("_shake").objectReferenceValue = shake;
+                hostSo.ApplyModifiedPropertiesWithoutUndo();
+
+                Phase5Placeholder.EnsureFolder(
+                    Path.GetDirectoryName(Phase5AreaIds.ResidentCameraRigPrefabPath).Replace('\\', '/'));
+
+                GameObject prefab = PrefabUtility.SaveAsPrefabAsset(
+                    root, Phase5AreaIds.ResidentCameraRigPrefabPath, out bool saved);
+                if (!saved || prefab == null)
+                {
+                    throw new System.InvalidOperationException(
+                        "常駐 CameraRig の Prefab 保存に失敗しました: "
+                        + Phase5AreaIds.ResidentCameraRigPrefabPath);
+                }
+
+                return prefab;
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
         }
 
         /// <summary>カメラ領域を 1 つ置く（§11。XZ の軸平行矩形。回転は持たない）。</summary>
@@ -470,7 +549,7 @@ namespace Momotaro.Editor.Phase5
 
         // ---------------------------------------------------------------- 地形
 
-        private static void PopulateAreaA(Transform root, AreaDefinition definition, AreaCameraRig rig)
+        private static void PopulateAreaA(Transform root, AreaDefinition definition, GameObject residentRig)
         {
             Material floorMat = Phase5Placeholder.EnsureMaterial("M_P5_Floor", Phase5Placeholder.FloorColor);
             Material wallMat = Phase5Placeholder.EnsureMaterial("M_P5_Wall", Phase5Placeholder.WallColor);
@@ -566,14 +645,14 @@ namespace Momotaro.Editor.Phase5
                 new List<AreaExitGate> { toB }, new List<AreaFlagDoor> { fixtures.Door },
                 null, new List<AreaFlagLever> { fixtures.Lever });
 
-            CreateAreaSystems(root, areaRoot, definition, fixtures, rig);
+            CreateAreaSystems(root, areaRoot, definition, fixtures, residentRig);
             BakeNavMesh(root, "NavMesh_P5_A");
 
             // NavMesh を焼いた<b>あと</b>で閉じる（先に閉じると Collider が収集対象から外れて、経路の無い NavMesh が焼ける）。
             CloseActivityGate(areaRoot);
         }
 
-        private static void PopulateAreaB(Transform root, AreaDefinition definition, AreaCameraRig rig)
+        private static void PopulateAreaB(Transform root, AreaDefinition definition, GameObject residentRig)
         {
             Material floorMat = Phase5Placeholder.EnsureMaterial("M_P5_Floor", Phase5Placeholder.FloorColor);
             Material wallMat = Phase5Placeholder.EnsureMaterial("M_P5_Wall", Phase5Placeholder.WallColor);
@@ -659,7 +738,7 @@ namespace Momotaro.Editor.Phase5
                 new List<AreaExitGate> { toA }, null,
                 new List<AreaTransitionDoor> { fixtures.TransitionDoor });
 
-            CreateAreaSystems(root, areaRoot, definition, fixtures, rig);
+            CreateAreaSystems(root, areaRoot, definition, fixtures, residentRig);
             BakeNavMesh(root, "NavMesh_P5_B");
 
             // NavMesh を焼いた<b>あと</b>で閉じる（先に閉じると Collider が収集対象から外れて、経路の無い NavMesh が焼ける）。
@@ -896,7 +975,8 @@ namespace Momotaro.Editor.Phase5
         }
 
         private static void CreateAreaSystems(
-            Transform root, AreaRoot areaRoot, AreaDefinition definition, Fixtures fixtures, AreaCameraRig rig)
+            Transform root, AreaRoot areaRoot, AreaDefinition definition, Fixtures fixtures,
+            GameObject residentRig)
         {
             var systems = new GameObject("AreaSystems");
             systems.transform.SetParent(root, false);
@@ -1101,10 +1181,10 @@ namespace Momotaro.Editor.Phase5
                 var feedbackGo = new GameObject("CombatFeedback");
                 feedbackGo.transform.SetParent(systems.transform, false);
 
-                // 揺れは Camera 子に付いている既存の ShakePresenter（§11）。新しく足さない。
-                CameraShakePresenter cameraShake = rig != null
-                    ? rig.GetComponentInChildren<CameraShakePresenter>(true)
-                    : null;
+                // <b>揺れは常駐側が持つ</b>（P5.5 付録 A.1）。Area Scene に Camera が無いので、
+                // ここで配線できる相手が居ない。調停役は自分の配線が空のときだけ
+                // <c>CameraShakeProvider</c> を見る（付録 A.2）。
+                // 新しい揺れを Area 側へ足さない——足すと常駐と 2 系統になる。
 
                 CombatFeedbackDispatcher dispatcher = feedbackGo.AddComponent<CombatFeedbackDispatcher>();
                 HitStopController hitStop = feedbackGo.AddComponent<HitStopController>();
@@ -1112,7 +1192,6 @@ namespace Momotaro.Editor.Phase5
                 CombatFeedbackPresenter feedback = feedbackGo.AddComponent<CombatFeedbackPresenter>();
                 feedback.HitStop = hitStop;
                 feedback.Flash = flash;
-                feedback.CameraShake = cameraShake;
 
                 // 生成直後の最初の命中を取りこぼさない（周期の再探索を待たせない）。
                 EncounterFeedbackBinder feedbackBinder = feedbackGo.AddComponent<EncounterFeedbackBinder>();
@@ -1150,17 +1229,26 @@ namespace Momotaro.Editor.Phase5
                 }
             }
 
-            // ---- カメラ（§11）----
+            // ---- カメラ（§11／P5.5 付録 A）----
             //
-            // 追従対象と領域を Rig へ渡す。初期化担当（Infrastructure）は Presentation を知らないので、
-            // 到着時の即時配置は AreaContext の準備完了通知を Rig が購読して行う（§5.1 手順 7）。
-            if (rig != null && fixtures != null && fixtures.DefaultCameraRegion != null)
+            // <b>Rig は Area が持たない。</b> Area が提供するのは領域と追従対象だけで、
+            // 常駐 Rig が活動 Area に応じて参照を切り替える（付録 A.1）。
+            //
+            // <b>活動ゲートの外へ置く。</b> 領域を提供することはゲーム的な活動ではないし、
+            // 先読み中（Staged）の隣 Area の到着点を<b>Commit 前に計算する</b>には、
+            // 閉じている間も領域の在処が分かる必要がある（付録 A.3）。
+            // ゲートが閉じるのは AreaRoot 直下のうち Gameplay の実体を抱えた根だけなので、
+            // 領域集合はそれらを持たない専用の子へ置く。
+            //
+            // <b>Bind に AreaContext を渡さない。</b> 渡すと Prepared で SnapToTarget が走り、
+            // スライドが始まる前にカメラが跳ぶ（付録 A.3／§7.1）。
+            if (fixtures != null && fixtures.DefaultCameraRegion != null)
             {
-                rig.Bind(playerRoot != null ? playerRoot.transform : null, null,
-                    fixtures.DefaultCameraRegion, fixtures.CameraRegions, context);
-
-                // 出荷時点でも入口を映した位置にしておく（Scene を開いた瞬間に原点を向かない）。
-                rig.SnapToTarget();
+                var cameraGo = new GameObject("AreaCamera");
+                cameraGo.transform.SetParent(areaRoot.transform, false);
+                AreaCameraRegionSet regionSet = cameraGo.AddComponent<AreaCameraRegionSet>();
+                regionSet.EditorSet(areaRoot, playerRoot != null ? playerRoot.transform : null,
+                    fixtures.DefaultCameraRegion, fixtures.CameraRegions, residentRig);
             }
 
             var catalog = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase5AreaIds.CatalogDataPath);

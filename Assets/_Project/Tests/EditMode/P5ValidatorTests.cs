@@ -11,6 +11,8 @@ using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Encounter;
 using Momotaro.Gameplay.Session;
 using Momotaro.Infrastructure.Input;
+using Momotaro.Presentation.Cameras;
+using Momotaro.Presentation.Combat;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -379,33 +381,67 @@ namespace Momotaro.Tests.EditMode
         }
 
         /// <summary>
-        /// 表示系が活動ゲートの管理外にあるなら検査で落とす（P5.5 §4.1）。
+        /// 表示系が Area Scene に居るなら検査で落とす（P5.5 付録 A.1／A.6）。
         ///
-        /// 先読みで 2 枚目の Area が載ったとき、ここが漏れていると
-        /// <b>Camera が 2 台描き、AudioListener が 2 つ聞く</b>。
+        /// <b>これは旧検査の置き換えである。</b> P55-03a では表示系を Scene に残したまま
+        /// 「活動ゲートの管理下にあること」を求めていた（<c>RequireStagedOnly</c>）。
+        /// 付録 A.1 で Camera・AudioListener・基準照明・画面揺れの所有を常駐側へ移したので、
+        /// 求めるものが<b>「管理下にある」から「そこに無い」へ変わった</b>。
+        /// 無効な Camera が Scene に残っていると「誰かが有効へ戻せる」状態が残るため、
+        /// 0 個を要求する方が強い。§9.1 に従い、旧テストは Skip にせずここで置き換える。
+        ///
+        /// 見張っている壊れ方は変わらない——先読みで 2 枚目の Area が載ったときに
+        /// <b>Camera が 2 台描き、AudioListener が 2 つ聞く</b>こと。
         /// 見た目の壊れ方なのでテストでは気付きにくく、検査で落とす価値が高い。
         /// </summary>
         [Test]
-        public void VisualsOutsideTheActivityGate_FailValidation()
+        public void VisualsInsideTheAreaScene_FailValidation()
         {
             Scene scene = EditorSceneManager.OpenScene(Phase5AreaIds.AreaBScenePath, OpenSceneMode.Single);
             Assert.AreEqual(0, RunScene(scene).errors.Count, "前提：出荷 Scene はエラー 0。");
 
-            List<AreaActivityGate> gates = Phase5ExplorationValidator.Components<AreaActivityGate>(scene);
-            Assert.AreEqual(1, gates.Count, "前提：活動ゲートは 1 つ。");
-            Assert.Greater(gates[0].StagedOnlyBehaviours.Count, 0, "前提：表示系を抱えている。");
+            // 前提：常駐へ移した分が Scene から消えている（旧構成なら 1 つずつ居た）。
+            Assert.AreEqual(0, Phase5ExplorationValidator.Count<Camera>(scene), "前提：Camera が居ない。");
+            Assert.AreEqual(0, Phase5ExplorationValidator.Count<AudioListener>(scene),
+                "前提：AudioListener が居ない。");
+            Assert.AreEqual(0, Phase5ExplorationValidator.Count<Light>(scene), "前提：基準照明が居ない。");
+            Assert.AreEqual(0, Phase5ExplorationValidator.Count<AreaCameraRig>(scene), "前提：Rig が居ない。");
 
-            // 一覧を空にする（取りこぼしの再現）。
-            var so = new SerializedObject(gates[0]);
-            so.FindProperty("_stagedOnlyBehaviours").ClearArray();
-            so.ApplyModifiedPropertiesWithoutUndo();
-
-            AssertHasError(scene, "Camera が活動ゲートの管理外", "Camera の取りこぼし");
-            AssertHasError(scene, "AudioListener が活動ゲートの管理外", "AudioListener の取りこぼし");
+            // 1 つずつ戻してみる（まとめて足すと、どれが検出されたのか分からない）。
+            AssertPlacingComponentFails<Camera>(scene, "Camera は常駐側", "Camera の混入");
+            AssertPlacingComponentFails<AudioListener>(scene, "AudioListener は常駐側", "AudioListener の混入");
+            AssertPlacingComponentFails<Light>(scene, "基準照明は常駐側", "基準照明の混入");
+            AssertPlacingComponentFails<AreaCameraRig>(scene, "カメラの Rig（AreaCameraRig）は常駐側",
+                "Rig の混入");
+            AssertPlacingComponentFails<AreaCameraRigHost>(scene, "常駐 CameraRig の宿", "常駐の焼き付け");
+            AssertPlacingComponentFails<CameraShakePresenter>(scene, "画面揺れ（CameraShakePresenter）は常駐側",
+                "揺れの混入");
 
             // 壊したまま次へ進まない。
             scene = EditorSceneManager.OpenScene(Phase5AreaIds.AreaBScenePath, OpenSceneMode.Single);
             Assert.AreEqual(0, RunScene(scene).errors.Count, "前提：開き直してエラー 0 に戻る。");
+        }
+
+        /// <summary>
+        /// その部品を Scene へ足すと検査が落ちることを見て、<b>足した分を必ず取り除く</b>。
+        /// 取り除きを忘れると、次の主張が「前の混入」で通ってしまう。
+        /// </summary>
+        private static void AssertPlacingComponentFails<T>(Scene scene, string fragment, string label)
+            where T : Component
+        {
+            var go = new GameObject("Intruder_" + typeof(T).Name);
+            SceneManager.MoveGameObjectToScene(go, scene);
+            try
+            {
+                go.AddComponent<T>();
+                AssertHasError(scene, fragment, label);
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+
+            Assert.AreEqual(0, RunScene(scene).errors.Count, label + "：取り除くとエラー 0 に戻る。");
         }
 
         /// <summary>

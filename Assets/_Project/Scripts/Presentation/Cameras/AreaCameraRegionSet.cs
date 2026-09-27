@@ -66,6 +66,17 @@ namespace Momotaro.Presentation.Cameras
             // 直開き・統合起動・先読みのすべてが同じこの経路を通る。
             // すでにあれば何もしないので、先読み Scene のロードで再生成されることはない。
             AreaCameraRigHost.EnsureExists(_residentRigPrefab);
+
+            // <b>ここで結び直しを促してはいけない。</b>
+            //
+            // OnEnable は Scene の読み込み中に走るので、この時点の主人公は<b>まだ入口へ
+            // 置かれていない</b>（配置は初期化担当が Awake／Start で行う）。
+            // ここで結び直すと保存位置で即時配置してしまい、そのあと入口へ移った主人公を
+            // 追って<b>部屋を跨ぐ補間が始まる</b>——到着の瞬間にカメラが滑ってくる
+            // （実際に踏んだ：B→A の復帰でカメラが 5m 手前から流れてきた）。
+            //
+            // 結び直しは常駐 Rig の LateUpdate が拾う。LateUpdate は Awake／Start より後、
+            // 描画より前なので、<b>最初に描かれるフレームには正しい位置</b>になっている。
         }
 
         private void OnDisable()
@@ -157,6 +168,27 @@ namespace Momotaro.Presentation.Cameras
 
             set = Sets[0];
             return set != null;
+        }
+
+        /// <summary>いま載っている領域集合を文字で並べる（診断・失敗時の手掛かり）。</summary>
+        public static string Describe()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append("領域集合 ").Append(Sets.Count).Append(" 件:");
+            for (int i = 0; i < Sets.Count; i++)
+            {
+                AreaCameraRegionSet set = Sets[i];
+                sb.Append(' ');
+                if (set == null)
+                {
+                    sb.Append("[破棄済み]");
+                    continue;
+                }
+
+                sb.Append('[').Append(set.AreaId.Value).Append("@").Append(set.SceneHandle).Append(']');
+            }
+
+            return sb.ToString();
         }
 
         /// <summary>テスト間で状態を持ち越さないための掃除（テスト専用）。</summary>

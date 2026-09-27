@@ -100,7 +100,9 @@ namespace Momotaro.Editor.Phase5
             RequireOne<InvestigationRecordHolder>(scene, "調査記録の保持先（InvestigationRecordHolder）", errors);
             RequireOne<CompanionActivityContext>(scene, "仲間の活動 Context（CompanionActivityContext）", errors);
 
-            RequireOne<AreaCameraRig>(scene, "カメラの Rig（AreaCameraRig）", errors);
+            // カメラの領域集合（P5.5 付録 A.1）。Rig は常駐側が持つので Scene には無い。
+            // これが欠けると常駐 Rig が領域を引けず、どこにも収まらないまま主人公を追う。
+            RequireOne<AreaCameraRegionSet>(scene, "カメラの領域集合（AreaCameraRegionSet）", errors);
             RequireOne<AreaNavigationBinder>(scene, "経路 Adapter の配線役（AreaNavigationBinder）", errors);
 
             // 死亡再開（§9.1）。A にも B にも要る：死は戦闘の中だけで起きるものではない。
@@ -135,6 +137,32 @@ namespace Momotaro.Editor.Phase5
                 "旧試遊の Retry 入力（CombatRetryInput）は P5 Area に置かない", errors);
             ForbidAll<CombatOutcomeController>(scene,
                 "旧試遊の勝敗・Retry 制御（CombatOutcomeController）は P5 Area に置かない", errors);
+
+            // ---- 表示系は常駐側の所有（P5.5 付録 A.1／A.2。§9.1 に従う置換）----
+            //
+            // 旧前提は「Area Scene に有効な Camera が 1 台」だった。<b>2 Area 同時読込では
+            // 「Scene 内 1 台」でも合計 2 台になりうる</b>ので、個数では唯一性を示せない。
+            // 所有を常駐側へ移し、<b>Area Scene には 0 個</b>を要求する形へ置き換える。
+            // 活動可能数が 1 であることは実行時に見る（§11 P12。付録 A.6 の対応表）。
+            //
+            // 出荷時に無効化しておく形（P55-03a の staged-only）ではなく 0 個にしたのは、
+            // 無効な Camera が Scene に残っていると「誰かが有効へ戻せる」状態が残るため。
+            ForbidAll<AreaCameraRig>(scene,
+                "カメラの Rig（AreaCameraRig）は常駐側が持つので P5.5 の Area に置かない（付録 A.1）", errors);
+            ForbidAll<AreaCameraRigHost>(scene,
+                "常駐 CameraRig の宿（AreaCameraRigHost）は Prefab から生成する。Scene へ焼き付けない（付録 A.2）",
+                errors);
+            ForbidAll<Camera>(scene,
+                "Camera は常駐側が持つので P5.5 の Area に置かない（付録 A.1）", errors);
+            ForbidAll<AudioListener>(scene,
+                "AudioListener は常駐側が持つので P5.5 の Area に置かない（付録 A.1）", errors);
+            ForbidAll<Light>(scene,
+                "基準照明は常駐側が持つので P5.5 の Area に置かない（Area 間で重複させない。付録 A.1）", errors);
+
+            // 揺れも常駐側（付録 A.1）。Area に置くと常駐と 2 系統になり、
+            // どちらが効いたかを画面から見分けられない。
+            ForbidAll<CameraShakePresenter>(scene,
+                "画面揺れ（CameraShakePresenter）は常駐側が持つので P5.5 の Area に置かない（付録 A.1）", errors);
         }
 
         // ---------------------------------------------------------------- 配線
@@ -145,7 +173,10 @@ namespace Momotaro.Editor.Phase5
             RequireWired<AreaActorTransferPort>(scene, "Actor 値の窓口", errors, x => x.IsWired);
             RequireWired<AreaInteractionController>(scene, "Interact の単一窓口", errors, x => x.IsWired);
             RequireWired<CompanionActivityContext>(scene, "仲間の活動 Context", errors, x => x.IsWired);
-            RequireWired<AreaCameraRig>(scene, "カメラの Rig", errors, x => x.IsWired);
+            // 常駐 Rig が活動 Area の領域集合と Bind できているかは<b>実行時に見る</b>
+            // （Bind 先が Scene ごとに入れ替わるので静的検査では表せない。付録 A.6）。
+            // ここで見られるのは「Area が提供する側の配線」だけ。
+            RequireWired<AreaCameraRegionSet>(scene, "カメラの領域集合", errors, x => x.IsWired);
             RequireWired<AreaNavigationBinder>(scene, "経路 Adapter の配線役", errors, x => x.IsWired);
             RequireWired<CampaignRespawnRunner>(scene, "死亡再開の実行役", errors, x => x.IsWired);
             RequireWired<RespawnSubmitInput>(scene, "再開操作の仲介", errors, x => x.IsWired);
@@ -743,13 +774,10 @@ namespace Momotaro.Editor.Phase5
                     errors.Add("活動ゲートが開いたまま保存されています（§4.2）：" + reason);
                 }
 
-                // 表示系の取りこぼしを禁じる（P5.5 §4.1／§4.3）。
-                //
-                // 先読みで 2 枚目の Area が載ったとき、ここが漏れていると
-                // <b>Camera が 2 台描き、AudioListener が 2 つ聞く</b>。
-                // 活動ゲートの内側（非 Active になる根の下）にある分は除く。
-                RequireStagedOnly<Camera>(scene, gate, "Camera", errors);
-                RequireStagedOnly<AudioListener>(scene, gate, "AudioListener", errors);
+                // 表示系（Camera・AudioListener・基準照明）は<b>ここでは見ない</b>。
+                // 常駐側の所有へ移したので、Area Scene には 0 個を要求する形へ置き換えた
+                // （ValidateForbidden。P5.5 付録 A.1／A.6）。出荷時に無効化して持たせるより、
+                // 置かせないほうが「誰かが有効へ戻せる」状態を残さない。
 
                 // NavMesh の登録と carving も Area 所有（§4.3）。
                 // ここが漏れていると、先読みしただけで活動中 Area の経路が変わる。
@@ -759,42 +787,9 @@ namespace Momotaro.Editor.Phase5
         }
 
         /// <summary>
-        /// その型の部品がすべて活動ゲートの管理下にあることを確かめる（P5.5 §4.1）。
-        /// 根ごと非 Active になる側か、先読み時に無効になる側のどちらかに入っていればよい。
-        /// </summary>
-        private static void RequireStagedOnly<T>(
-            Scene scene, AreaActivityGate gate, string label, List<string> errors) where T : Behaviour
-        {
-            foreach (T component in Components<T>(scene))
-            {
-                if (IsUnderAnyGatedRoot(gate, component.transform))
-                {
-                    continue;
-                }
-
-                bool listed = false;
-                for (int i = 0; i < gate.StagedOnlyBehaviours.Count; i++)
-                {
-                    if (ReferenceEquals(gate.StagedOnlyBehaviours[i], component))
-                    {
-                        listed = true;
-                        break;
-                    }
-                }
-
-                if (!listed)
-                {
-                    errors.Add(label + " が活動ゲートの管理外にあります（"
-                        + GetHierarchyPath(component.transform)
-                        + "）。先読みで 2 枚目が載ると二重に動きます（§4.1）。");
-                }
-            }
-        }
-
-        /// <summary>
         /// その型の部品が<b>保存時から閉じられている</b>ことを確かめる（P5.5 §4.2／§4.3）。
         ///
-        /// 表示系（<see cref="RequireStagedOnly{T}"/>）と違って、こちらは<b>副作用がある</b>。
+        /// 表示系（Camera・AudioListener・基準照明）と違って、こちらは<b>副作用がある</b>。
         /// NavMeshSurface は <c>OnEnable</c> で NavMeshData を登録するので、
         /// 保存時に有効だと「読み込んだだけで経路に混じる」ことになる。
         /// </summary>
@@ -912,11 +907,22 @@ namespace Momotaro.Editor.Phase5
                 }
             }
 
+            // ---- 手応えの揺れ（§11／P5.5 付録 A.2）----
+            //
+            // 旧前提は「<c>CombatFeedbackPresenter.CameraShake</c> が配線されている」だった。
+            // 揺れは Camera 子に付くので、Camera の所有が常駐側へ移った時点で
+            // <b>Scene 構築時に配線できる相手が居なくなる</b>。
+            // ここを「配線されていること」のまま残すと、常駐化した正しい構成が必ず落ちる。
+            //
+            // 置換後は<b>Area 側が自前の揺れを持たないこと</b>だけを静的に見る（0 個は
+            // ValidateForbidden が見る）。実際に揺れが届くかは実行時の検査に委ねる
+            // （P5.5 §11 P12。付録 A.6 の対応表）——提供点の中身は Scene には現れない。
             foreach (CombatFeedbackPresenter presenter in Components<CombatFeedbackPresenter>(scene))
             {
-                if (presenter.CameraShake == null)
+                if (presenter.CameraShake != null)
                 {
-                    errors.Add("手応えの揺れ（CameraShakePresenter）が配線されていません（§11）。");
+                    errors.Add("手応えの揺れが Area Scene の CameraShakePresenter へ配線されています（"
+                        + presenter.name + "）。揺れは常駐側が持ち、実行時に解決する（付録 A.2）。");
                 }
             }
         }

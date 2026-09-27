@@ -64,7 +64,12 @@
     },
     {
       "id": "P55-APPA",
-      "summary": "単一常駐 CameraRig の契約（付録 A）。領域集合の Scene handle 鍵・提供点の所有者一致・到着点の計算が実カメラを動かさないこと。§11 の P12／E05 は配線後の工程で追加",
+      "summary": "単一常駐 CameraRig の契約（付録 A）。領域集合の Scene handle 鍵・提供点の所有者一致・到着点の計算が実カメラを動かさないこと。実 Scene の起動経路は P55-P12A が見る。§11 の E05（補間）は P55-04 で追加",
+      "stage": "P55-03"
+    },
+    {
+      "id": "P55-P12A",
+      "summary": "常駐 CameraRig の実 Scene 受入（§11 の P12 のうち唯一性・同一インスタンス維持・直開き・先読みで再生成しない分。付録 A.7）。スライド中の書込み一系統と補間（E05）は P55-04 で追加する",
       "stage": "P55-03"
     }
   ],
@@ -236,7 +241,7 @@
         "Momotaro.Tests.EditMode.P55ActivityGateTests.IsClosedAsSaved_NamesWhateverWasLeftOpen",
         "Momotaro.Tests.EditMode.P55ActivityGateTests.Open_TurnsOnAllThreeKinds_AndCloseTurnsThemBack",
         "Momotaro.Tests.EditMode.P55ActivityGateTests.Open_IsIdempotentAndSurvivesBrokenReferences",
-        "Momotaro.Tests.EditMode.P5ValidatorTests.VisualsOutsideTheActivityGate_FailValidation",
+        "Momotaro.Tests.EditMode.P5ValidatorTests.VisualsInsideTheAreaScene_FailValidation",
         "Momotaro.Tests.EditMode.P55ActivityGateTests.StagedOnlyVisuals_ShipEnabled_AndAreNotPartOfTheSavedClosedState",
         "Momotaro.Tests.EditMode.P55ActivityGateTests.Close_AlsoStopsTheVisuals_AndOpenBringsThemBack",
         "Momotaro.Tests.EditMode.P55ActivityGateTests.ReopeningTheGate_DoesNotCloseADoorThatWasAlreadyOpened",
@@ -271,6 +276,21 @@
         "Momotaro.Tests.EditMode.P55ResidentCameraTests.RegionSetRegistry_IsKeyedBySceneHandle",
         "Momotaro.Tests.EditMode.P55ResidentCameraTests.RegionSetRegistry_DoesNotGuessWhenTwoAreasAreLoaded",
         "Momotaro.Tests.EditMode.P55ResidentCameraTests.CameraOwnerProvider_IsOwnerMatched"
+      ]
+    },
+    {
+      "requirementId": "P55-P12A",
+      "stage": "P55-03",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.RoundTrip_KeepsTheSameCameraAndDoesNotJumpTheFrameAfterCommit",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.OpeningAreaBDirectly_StandsUpTheResidentRigOnce",
+        "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.AreaScenes_OwnNoCameraOrListenerOrLightOfTheirOwn",
+        "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.CameraTransition_PreservesBoundsAndShakeBase",
+        "Momotaro.Tests.PlayMode.P55PreloadPlayTests.PreloadingTheNeighbour_DoesNotAddASecondCameraOrListener",
+        "Momotaro.Tests.EditMode.P5ValidatorTests.VisualsInsideTheAreaScene_FailValidation"
       ]
     }
   ],

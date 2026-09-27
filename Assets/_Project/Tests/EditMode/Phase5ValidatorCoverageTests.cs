@@ -40,9 +40,10 @@ namespace Momotaro.Tests.EditMode
         private static readonly Dictionary<string, string> Exempt = new Dictionary<string, string>
         {
             // --- Unity 標準。Area の成立条件ではなく、欠けても Validator の役目ではない ---
-            { "Camera", "Unity 標準。カメラの成立は AreaCameraRig の配線検査が見る。" },
-            { "AudioListener", "Unity 標準。音の有無は Scene 検査の対象外（P10b）。" },
-            { "Light", "Unity 標準。見た目の明るさは検査対象外（P10b）。" },
+            //
+            // Camera・AudioListener・Light は<b>免除から外した</b>（P5.5 付録 A.1）。
+            // 常駐側の所有へ移した結果、Area Scene に 0 個であることが成立条件になり、
+            // Validator が直接見るようになったため免除が要らなくなった。
             { "NavMeshModifier", "Unity AI Navigation の標準部品。焼き込みの結果は NavMesh 検査が見る。" },
 
             // --- 間接的に必ず検出される ---

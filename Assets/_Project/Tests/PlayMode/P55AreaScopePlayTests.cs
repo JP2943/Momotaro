@@ -38,6 +38,9 @@ namespace Momotaro.Tests.PlayMode
         [SetUp]
         public void SetUp()
         {
+            // 前のテストが残した常駐 CameraRig を持ち込まない（P5.5 付録 A.2）。
+            P55ResidentRig.Reset();
+
             AreaBundleDirectory.ClearForTests();
             CurrentAreaProvider.ClearForTests();
             AreaScope.ResetDiagnostics();
@@ -66,6 +69,12 @@ namespace Momotaro.Tests.PlayMode
 
             _neighbourScene = default;
             _plainScene = default;
+
+            // <b>常駐 CameraRig を次のテストへ残さない。</b> Scene を読み替えても消えないので、
+            // 残すと次のテストが試遊 Scene の自前カメラと二重になる（P5.5 付録 A.2）。
+            // Scene から抜けた<b>あと</b>に消す——先に消すと、まだ載っている Area の
+            // 領域集合が「常駐が居ない」と見て作り直す。
+            P55ResidentRig.Reset();
 
             for (int i = 0; i < _spawned.Count; i++)
             {

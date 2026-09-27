@@ -447,3 +447,37 @@ Camera／入力／報酬の唯一性を確認する」と定める。常駐化�
 - **Commit 翌フレームに位置が跳ばない**。
 - **A／B の直開きが成立する**（常駐 Rig が一度だけ生成され、Area の領域と Bind される）。
 - 先読み Scene のロードで Rig が再生成・再 Bind されない。
+
+## A.8 置き換えた既存テストの対応表（§9.1 末尾の要求）
+
+§9.1 は「単純に Fail する旧テストを Skip へ変更しない」と定める。
+常駐化で**前提が変わった**テストは、Skip にせず主張を書き換えた。追記日：2026-09-27（工程 P55-03b）。
+
+| 旧テスト | 旧前提 | 置換後の主張 | P5.5 の検査 ID |
+|---|---|---|---|
+| `P5ExplorationPlayTests.CameraTransition_PreservesBoundsAndShakeBase`（**P5-P17**） | Area Scene に `AreaCameraRig` が 1 つ／`Prepared` で `SnapToTarget` が走る／到着で旧 Rig は残らない（別インスタンス） | Area Scene に Rig・Camera は 0 個／`Prepared` では `SnapCount` が増えない（計算だけ）／往復しても**同じ** Rig・Camera が生き続ける | **P55-P12A** |
+| 同（揺れの配線） | `CombatFeedbackPresenter.CameraShake` が配線されている | Scene 側は未配線で、`ResolvedCameraShake` が常駐の揺れへ解決できる | **P55-P12A** |
+| `P5ValidatorTests.VisualsOutsideTheActivityGate_FailValidation` → `VisualsInsideTheAreaScene_FailValidation` | 表示系は Scene に残し、活動ゲートの管理下にあること | 表示系は Area Scene に**居ないこと**（無効な Camera を残すと誰かが有効へ戻せる） | **P55-P12A** |
+| `P55PreloadPlayTests.PreloadingTheNeighbour_DoesNotAddASecondCameraOrListener` | ゲートを開けば B の Camera も描く（合計 2 台） | 開いても 1 台のまま。常駐 Rig を**再生成も再 Bind もしない** | **P55-P12A** |
+| `Phase5ValidatorCoverageTests` の免除表 | `Camera`／`AudioListener`／`Light` は Unity 標準として検査を免除 | 免除から外す。Validator が 0 個を直接見るようになったため | — |
+
+**P5-E24（`CameraBounds_HandlePitchAspectAndSmallRooms`）は変更していない。**
+俯角・画面比・小部屋の計算は `CameraBoundsMath` の純粋関数で、所有が移っても答えは変わらない。
+
+### A.9 実装で分かった補足
+
+- **結び先の同一性は Scene handle で判定してはいけない。** Single 読込で A を捨てて B を載せると
+  Unity は**同じ Scene handle を使い回す**ことがある。handle で「もう結び付いている」と判定すると
+  破棄済みの追従対象を持ち続ける（B 到着後も結び先が A のまま、`IsWired` が false）。
+  領域集合の**参照の同一性**で判定する。
+- **結び直しは領域集合の `OnEnable` で行ってはいけない。** `OnEnable` は Scene 読込中に走るので、
+  主人公はまだ入口へ置かれていない（配置は初期化担当が `Awake`／`Start` で行う）。
+  そこで即時配置すると、そのあと入口へ移った主人公を追って**部屋を跨ぐ補間が始まる**。
+  結び直しは常駐 Rig の `LateUpdate` が拾う——`Awake`／`Start` より後、描画より前なので、
+  **最初に描かれるフレームには正しい位置**になっている。
+- **到着直後の位置は座標の差で検査しない。** 入口の当たりからの押し出しが数フレーム続くので、
+  主人公は静止していない。見るのは「カメラが領域に収めた追従先に張り付いているか」と
+  「補間が走っていないか」。
+- **起動 Scene（エリアではない）は自前のカメラを残す。** Area ではないので常駐 Rig を立てる契機が無い。
+  Area へ入ると Single 読込で置き換わるため二重にはならない。
+- **Area Scene を Editor で単体で開くと暗い。** 基準照明が常駐側へ移ったため。実行時は常駐が点ける。

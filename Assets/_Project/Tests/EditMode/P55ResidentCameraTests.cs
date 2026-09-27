@@ -40,6 +40,7 @@ namespace Momotaro.Tests.EditMode
             AreaCameraOwnerProvider.ClearForTests();
             CurrentAreaProvider.ClearForTests();
             AreaBundleDirectory.ClearForTests();
+            AreaCameraRigHost.ResetDiagnosticsForTests();
 
             for (int i = 0; i < _spawned.Count; i++)
             {
@@ -151,7 +152,100 @@ namespace Momotaro.Tests.EditMode
             Assert.IsFalse(rig.TryComputeFocus(out _), "未配線なら計算しない（当て推量の位置を返さない）。");
         }
 
+        // ---------------------------------------------------------------- 結び直し
+
+        /// <summary>
+        /// <b>同じ Scene に居る別の Area へも結び直る</b>（P5.5 付録 A.5／§4.3）。
+        ///
+        /// これは<b>実際に踏んだ欠陥の据え置き</b>である。当初は「結び先が変わったか」を
+        /// 領域集合の <c>SceneHandle</c> で判定していた。ところが Single 読込で A を捨てて
+        /// B を載せると Unity は<b>同じ Scene handle を使い回す</b>ことがあり、
+        /// そのとき「すでに結び付いている」と誤判定して<b>破棄済みの A の追従対象を
+        /// 持ち続けた</b>（B 到着後も結び先が A のまま、<c>IsWired</c> が false）。
+        ///
+        /// <b>handle の衝突を実 Scene で狙って起こすことはできない</b>——割り当ては
+        /// それまでに何枚読んだかで変わるので、全件実行では出るのに絞った実行では出ない。
+        /// ここでは<b>同じ Scene に 2 つの領域集合を置く</b>ことで handle 一致を
+        /// 確実に作り、参照の同一性で判定していることを決定的に固定する。
+        /// </summary>
+        [Test]
+        public void TheResidentRig_RebindsToAnotherAreaEvenWhenTheSceneHandleIsTheSame()
+        {
+            AreaCameraRigHost host = NewHost();
+
+            AreaCameraRegionSet first = NewWiredRegionSet(out Transform firstTarget);
+            AreaCameraRegionSet second = NewWiredRegionSet(out Transform secondTarget);
+            Assert.AreEqual(first.SceneHandle, second.SceneHandle,
+                "前提：同じ Scene なので handle が一致する（これが実 Scene での取り違えの再現）。");
+            Assert.AreNotSame(firstTarget, secondTarget, "前提：追従対象は別物。");
+
+            // 1 件だけ載っている状態を作って結び付ける（2 件では当て推量しない。§4.3）。
+            AreaCameraRegionSetRegistry.ClearForTests();
+            AreaCameraRegionSetRegistry.Register(first);
+            Assert.IsTrue(host.TryBindActiveArea(), "1 件目へ結び付く。");
+            Assert.AreEqual(1, host.BindCount);
+            Assert.AreSame(firstTarget, BoundTarget(host), "追従対象は 1 件目のもの。");
+
+            Assert.IsTrue(host.TryBindActiveArea(), "同じ集合なら何度呼んでも通る。");
+            Assert.AreEqual(1, host.BindCount, "同じ集合では結び直さない（参照を触らない）。");
+
+            // 入れ替える（実 Scene の Commit に相当）。handle は変わらない。
+            AreaCameraRegionSetRegistry.ClearForTests();
+            AreaCameraRegionSetRegistry.Register(second);
+
+            Assert.IsTrue(host.TryBindActiveArea(), "2 件目へ結び直す。");
+            Assert.AreEqual(2, host.BindCount, "handle が同じでも結び直す（付録 A.5）。");
+            Assert.AreSame(secondTarget, BoundTarget(host), "追従対象が 2 件目へ差し替わる。");
+        }
+
         // ---------------------------------------------------------------- 補助
+
+        /// <summary>常駐 Rig の宿を最小構成で組む（Prefab を使わずに配線する）。</summary>
+        private AreaCameraRigHost NewHost()
+        {
+            var rootGo = new GameObject("ResidentCameraRig");
+            _spawned.Add(rootGo);
+
+            AreaCameraRig rig = NewRig(out _);
+            rig.transform.SetParent(rootGo.transform, false);
+            Camera camera = rig.GetComponentInChildren<Camera>(true);
+
+            AreaCameraRigHost host = rootGo.AddComponent<AreaCameraRigHost>();
+            var so = new UnityEditor.SerializedObject(host);
+            so.FindProperty("_rig").objectReferenceValue = rig;
+            so.FindProperty("_camera").objectReferenceValue = camera;
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            Assert.IsFalse(host.IsWired, "前提：まだどの Area にも結び付いていない。");
+            return host;
+        }
+
+        /// <summary>追従対象・既定領域まで揃えた領域集合（<see cref="AreaRoot"/> は使わない）。</summary>
+        private AreaCameraRegionSet NewWiredRegionSet(out Transform followTarget)
+        {
+            var targetGo = new GameObject("FollowTarget");
+            _spawned.Add(targetGo);
+            followTarget = targetGo.transform;
+
+            var regionGo = new GameObject("DefaultRegion");
+            _spawned.Add(regionGo);
+            AreaCameraRegion region = regionGo.AddComponent<AreaCameraRegion>();
+            region.Configure(new StableId("region_set_test"), 0, new Vector2(40f, 40f));
+
+            AreaCameraRegionSet set = NewRegionSet();
+            set.EditorSet(null, followTarget, region, null, null);
+            return set;
+        }
+
+        /// <summary>Rig が実際に掴んでいる追従対象（private な配線の照合用）。</summary>
+        private static Transform BoundTarget(AreaCameraRigHost host)
+        {
+            System.Reflection.FieldInfo field = typeof(AreaCameraRig).GetField(
+                "_target",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.IsNotNull(field, "AreaCameraRig._target が見つからない（名前が変わった）。");
+            return field.GetValue(host.Rig) as Transform;
+        }
 
         private AreaCameraRig NewRig(out Transform target)
         {

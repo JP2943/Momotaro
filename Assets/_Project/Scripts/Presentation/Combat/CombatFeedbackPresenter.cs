@@ -61,6 +61,17 @@ namespace Momotaro.Presentation.Combat
         /// <summary>カメラ揺れ（Scene 構築 P3.5-06・テストが設定）。</summary>
         public CameraShakePresenter CameraShake { get => _shake; set => _shake = value; }
 
+        /// <summary>
+        /// 実際に使う揺れ。<b>自分の配線が空のときだけ常駐の提供点を見る</b>（P5.5 付録 A.2）。
+        ///
+        /// P5.5 の Area Scene は Camera を持たないので、揺れも Scene 内に無い。
+        /// Scene 構築時に配線できないものを実行時に解決するための一段だけの退避経路で、
+        /// <b>配線がある構成（P3.5 の試遊 Scene・従来 P5）の挙動は変えない</b>——
+        /// 配線が入っていればそちらが必ず勝つ。
+        /// </summary>
+        public CameraShakePresenter ResolvedCameraShake =>
+            _shake != null ? _shake : CameraShakeProvider.Current;
+
         /// <summary>仮 SE 再生（Scene 構築 P3.5-06・テストが設定）。</summary>
         public CombatSePlayer Se { get => _se; set => _se = value; }
 
@@ -138,7 +149,7 @@ namespace Momotaro.Presentation.Combat
             {
                 case HitResultKind.Damage:
                     if (_flash != null) _flash.Trigger(r.Target, _damageFlash);
-                    if (_shake != null) _shake.Shake(_damageShake, _shakeSeconds);
+                    Shake(_damageShake);
                     break;
 
                 case HitResultKind.Guard:
@@ -147,17 +158,27 @@ namespace Momotaro.Presentation.Combat
 
                 case HitResultKind.JustGuard:
                     if (_flash != null) _flash.Trigger(r.Target, _justGuardFlash);
-                    if (_shake != null) _shake.Shake(_justGuardShake, _shakeSeconds); // 強調。
+                    Shake(_justGuardShake); // 強調。
                     break;
 
                 case HitResultKind.JustEvade:
                     // ジャスト回避（P3.5-09）：回避成功の中でも「弾き回避」。点滅＋控えめのカメラ揺れで手応えを出す（ヒットストップ・SE は Cue で処理済み）。
                     if (_flash != null) _flash.Trigger(r.Target, _justEvadeFlash);
-                    if (_shake != null) _shake.Shake(_justEvadeShake, _shakeSeconds);
+                    Shake(_justEvadeShake);
                     break;
 
                 default:
                     break; // Evade / Rejected は点滅・揺れなし（SE は上で処理済み）。
+            }
+        }
+
+        /// <summary>揺れを要求する（解決できなければ何もしない）。</summary>
+        private void Shake(float magnitude)
+        {
+            CameraShakePresenter shake = ResolvedCameraShake;
+            if (shake != null)
+            {
+                shake.Shake(magnitude, _shakeSeconds);
             }
         }
     }

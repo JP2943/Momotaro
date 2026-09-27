@@ -70,6 +70,9 @@ namespace Momotaro.Tests.PlayMode
         [SetUp]
         public void SetUp()
         {
+            // 前のテストが残した常駐 CameraRig を持ち込まない（P5.5 付録 A.2）。
+            P55ResidentRig.Reset();
+
             // 前のテストの静的状態を持ち込まない（`CLAUDE.md` の PlayMode の落とし穴）。
             // <b>Action Map の後始末は「モードを戻す」だけでは足りない。</b>
             //
@@ -117,6 +120,12 @@ namespace Momotaro.Tests.PlayMode
             yield return SceneManager.LoadSceneAsync(TrialScene, LoadSceneMode.Single);
             DestroyTrialLaunchers();
             yield return null;
+
+            // <b>常駐 CameraRig を次のテストへ残さない。</b> Scene を読み替えても消えないので、
+            // 残すと次のテストが試遊 Scene の自前カメラと二重になる（P5.5 付録 A.2）。
+            // Scene から抜けた<b>あと</b>に消す——先に消すと、まだ載っている Area の
+            // 領域集合が「常駐が居ない」と見て作り直す。
+            P55ResidentRig.Reset();
 
             // 統合起動 Scene の起動役を残さない。
             //
@@ -3076,7 +3085,15 @@ namespace Momotaro.Tests.PlayMode
 
             var presenter = Object.FindFirstObjectByType<CombatFeedbackPresenter>();
             Assert.IsNotNull(presenter, "手応え演出の調停役がある。");
-            Assert.IsNotNull(presenter.CameraShake, "揺れは Camera 子の既存 ShakePresenter を使う（§11）。");
+            // 揺れは<b>常駐側</b>の Camera 子に付く（P5.5 付録 A.1）。Area Scene は Camera を
+            // 持たないので Scene 構築時には配線できず、実行時に提供点から解決する（付録 A.2）。
+            // 旧前提「serialize 済みの参照が入っている」はここで置き換わる（付録 A.6 の対応表）。
+            Assert.IsNull(presenter.CameraShake,
+                "Area Scene 側には揺れを配線しない（常駐が持つ。付録 A.2）。");
+            Assert.IsNotNull(presenter.ResolvedCameraShake,
+                "揺れは常駐の提供点から解決できる（§11。独自 HitStop を足さない）。");
+            Assert.AreSame(AreaCameraRigHost.Instance.Shake, presenter.ResolvedCameraShake,
+                "解決先は常駐 Rig が所有する揺れ（Scene 側の別物ではない）。");
 
             var binder = Object.FindFirstObjectByType<EncounterFeedbackBinder>();
             Assert.IsNotNull(binder, "生成直後に購読し直す橋渡しがある。");
@@ -3378,8 +3395,22 @@ namespace Momotaro.Tests.PlayMode
 
             AssertSingleOwners("A 直開き");
 
-            var rig = Object.FindFirstObjectByType<AreaCameraRig>();
-            Assert.IsNotNull(rig, "エリアにカメラ Rig がある。");
+            // <b>Rig は Area の中には無い</b>（P5.5 付録 A.1）。Area が提供するのは領域と追従対象で、
+            // Rig・Camera・AudioListener・揺れ・基準照明は常駐側が所有する。
+            // 旧前提「Area Scene に AreaCameraRig が 1 つ」はここで置き換わる（付録 A.6 の対応表）。
+            Assert.AreEqual(0, ComponentsInScene<AreaCameraRig>(AreaAScene),
+                "Area Scene に Rig を焼き付けない（付録 A.1）。");
+            Assert.AreEqual(0, ComponentsInScene<Camera>(AreaAScene),
+                "Area Scene に Camera を焼き付けない（2 枚同時読込で 2 台になる）。");
+
+            AreaCameraRigHost host = AreaCameraRigHost.Instance;
+            Assert.IsNotNull(host, "A の直開きでも常駐 Rig が立つ（付録 A.2 の ensure-create）。");
+            Assert.AreEqual(1, AreaCameraRigHost.CreatedCount, "常駐 Rig は一度だけ生成する。");
+            Assert.IsTrue(host.IsWired, "常駐 Rig が活動 Area の領域集合と結び付いている（付録 A.6）。");
+            Assert.AreEqual("area_p5_a", host.BoundArea.Value, "結び付いた先は A。");
+
+            AreaCameraRig rig = host.Rig;
+            Assert.IsNotNull(rig, "常駐 Rig の中に追従・clamp を行う Rig がある。");
             Assert.IsTrue(rig.IsWired, "追従対象・カメラ・既定領域が配線されている。");
 
             Camera camera = Camera.main;
@@ -3463,22 +3494,31 @@ namespace Momotaro.Tests.PlayMode
                     "入りきらない軸は中央固定（東の通路の中心 x=9）。x=" + rig.transform.position.x);
                 AssertFocusIsClamped(rig, playerRoot.transform.position, "東の通路");
 
-                // ---- 準備完了の報告は<b>補間を打ち切って</b>即時配置する（§5.1 手順 7／§11）----
+                // ---- 準備完了の報告では<b>実カメラへ触らない</b>（P5.5 付録 A.3／§7.1）----
                 //
-                // Scene 到着・死亡再開でカメラが前の部屋から滑ってくると、居なかった場所に居たように見える。
-                // 初期化担当（Infrastructure）は Presentation を知らないので、この即時配置は
-                // AreaContext の準備完了通知を Rig が購読して行う。
+                // 旧前提はここで <c>SnapToTarget()</c> が走ることだった（§5.1 手順 7）。
+                // P5.5 では準備完了は<b>スライドが始まる前</b>に来るので、そこで移動先へ
+                // 跳ばせると「事前に境界位置へ瞬間移動させない」（§7.1）が破れる。
+                // 到着点は<b>計算だけ</b>行い、適用はスライド担当と Commit 後の追従復帰に任せる。
+                // 置換の根拠は付録 A.6 の対応表 4 行目。即時配置そのものは
+                // <b>活動 Area が入れ替わったとき</b>に常駐 Rig が行う（下の B 到着で見る）。
                 yield return MovePlayerTo(new Vector3(-1f, 0f, 2f));
                 rig.Tick(0.001f);
                 Assert.IsTrue(rig.Blend.IsBlending, "前提：部屋を跨いだので補間が始まっている。");
 
                 int snapsBefore = rig.SnapCount;
-                context.MarkPrepared();
+                int appliesBefore = host.ApplyCount;
+                Assert.IsTrue(host.TryComputeArrivalPoint(out Vector3 arrival),
+                    "到着点は準備完了の時点でも計算できる（付録 A.3）。");
 
-                // まず<b>振る舞い</b>を見る。回数は「即時配置を通った」ことの裏取り。
-                Assert.IsFalse(rig.Blend.IsBlending, "即時配置は補間を打ち切る（前の部屋から滑ってこない）。");
-                AssertFocusIsClamped(rig, playerRoot.transform.position, "準備完了");
-                Assert.AreEqual(snapsBefore + 1, rig.SnapCount, "準備完了の報告で即時配置する。");
+                context.MarkPrepared();
+                yield return null; // 常駐 Rig の LateUpdate を 1 回通す（購読の取りこぼしも見る）。
+
+                Assert.AreEqual(snapsBefore, rig.SnapCount,
+                    "準備完了では実カメラへ適用しない（§7.1「事前に境界位置へ瞬間移動させない」）。");
+                Assert.AreEqual(appliesBefore, host.ApplyCount, "適用回数も増えない。");
+                Assert.IsTrue(host.TryComputeArrivalPoint(out Vector3 arrivalAgain), "計算は何度でもできる。");
+                Assert.AreEqual(arrival, arrivalAgain, "計算は副作用を持たない（同じ答えを返す）。");
             }
             finally
             {
@@ -3522,17 +3562,73 @@ namespace Momotaro.Tests.PlayMode
             }
 
             Assert.AreEqual(1, coordinator.CompletedCount, "B へ到着する。");
+
+            // <b>1 フレーム置いてから常駐の結び直しを見る。</b>
+            //
+            // テストの Coroutine は Update で再開するので、到着を観測した時点では
+            // そのフレームの LateUpdate がまだ来ていない——常駐 Rig は LateUpdate で
+            // 活動 Area の入れ替わりを拾う。<b>これは遅れではない</b>：描画は LateUpdate の
+            // あとなので、最初に描かれるフレームではもう B の位置になっている。
+            // ここで yield せずに見ると「まだ A に結び付いている」を掴んでしまう
+            // （実際に踏んだ：BoundArea が A のまま、結び直し回数 1、手動呼び出しでは成功）。
+            yield return null;
+
             AssertSingleOwners("B 到着");
 
-            var rigB = Object.FindFirstObjectByType<AreaCameraRig>();
-            Assert.IsNotNull(rigB, "B にもカメラ Rig がある。");
-            Assert.AreNotSame(rig, rigB, "旧 Scene の Rig は残らない。");
+            // <b>Commit で Camera を交換しない</b>（付録 A.5）。領域と追従対象の参照だけが入れ替わる。
+            // 旧前提は「旧 Scene の Rig は残らない（別インスタンスになる）」だったが、
+            // 常駐化した今それは<b>逆</b>——同じ Rig・同じ Camera が生き続けるのが正しい。
+            AreaCameraRig rigB = AreaCameraRigHost.Instance.Rig;
+            Assert.AreSame(rig, rigB, "同じ Rig が生き続ける（付録 A.5）。");
+            Assert.AreSame(camera, Camera.main, "同じ Camera インスタンスを維持する（付録 A.7）。");
+            Assert.AreEqual(1, AreaCameraRigHost.CreatedCount, "B へ移っても再生成しない。");
+            Assert.AreEqual("area_p5_b", AreaCameraRigHost.Instance.BoundArea.Value,
+                "領域集合は B のものへ結び直る。"
+                + " 活動 handle=" + CurrentAreaProvider.ActiveSceneHandle
+                + " 結び先 handle=" + AreaCameraRigHost.Instance.BoundSceneHandle
+                + " 結び直し=" + AreaCameraRigHost.Instance.BindCount
+                + " 監視=" + AreaCameraRigHost.Instance.PollCount
+                + " " + AreaCameraRegionSetRegistry.Describe());
             Assert.IsTrue(rigB.IsWired);
             Assert.GreaterOrEqual(rigB.SnapCount, 1, "到着で即時配置している（補間で滑ってこない）。");
             Assert.IsFalse(rigB.Blend.IsBlending, "到着の直後に補間が走っていない。");
 
+            // 翌フレームに跳ね返らない（付録 A.7）。結び直しで追従の内部状態も終点へ揃えている。
+            //
+            // <b>座標の差で見ない。</b> 到着直後の主人公はまだ静止していない（入口の当たりからの
+            // 押し出しが数フレーム続く）。見るのは「カメラが追従先に張り付いているか」で、
+            // 両フレームで同じ純粋関数の答えと一致し、かつ補間が走っていないこと。
+            var playerAtB = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(playerAtB, "B に主人公が居る。");
+            AssertFocusIsClamped(rigB, playerAtB.transform.position, "B 到着");
+
+            yield return null;
+
+            Assert.IsFalse(rigB.Blend.IsBlending, "翌フレームも補間していない（前の Area から滑ってこない）。");
+            AssertFocusIsClamped(rigB, playerAtB.transform.position, "B 到着の翌フレーム");
+
             var playerB = Object.FindFirstObjectByType<PlayerRoot>();
             AssertFocusIsClamped(rigB, playerB.transform.position, "B 到着");
+        }
+
+        /// <summary>
+        /// その Scene に載っている部品の数を数える（<b>常駐を含めない</b>）。
+        ///
+        /// <c>FindObjectsByType</c> は <c>DontDestroyOnLoad</c> の常駐も拾うので、
+        /// 「Area Scene には 0 個」（P5.5 付録 A.6）を見るには Scene を特定して数える必要がある。
+        /// </summary>
+        private static int ComponentsInScene<T>(string scenePath) where T : Component
+        {
+            UnityEngine.SceneManagement.Scene scene = SceneManager.GetSceneByPath(scenePath);
+            Assert.IsTrue(scene.IsValid() && scene.isLoaded, "前提：Scene が読み込まれている: " + scenePath);
+
+            int n = 0;
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                n += root.GetComponentsInChildren<T>(true).Length;
+            }
+
+            return n;
         }
 
         /// <summary>
@@ -5346,6 +5442,11 @@ namespace Momotaro.Tests.PlayMode
 
             AreaInitializer initB = FindInitializer();
             Assert.IsTrue(initB.Initialized, "B が初期化される。理由=" + initB.FailureReason);
+
+            // 常駐 Rig は LateUpdate で活動 Area の入れ替わりを拾う。Coroutine は Update で
+            // 再開するので、観測の前に 1 フレーム置く（描画は LateUpdate の後なので遅れではない）。
+            yield return null;
+
             AssertAreaWiredWithoutHelp("B");
 
             var runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
@@ -5392,7 +5493,14 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsNotNull(progress, label + "：進行の書込先がある。");
             Assert.IsTrue(progress.IsBound, label + "：進行が共有 State へ束ねられている（§4.2）。");
 
-            var rig = Object.FindFirstObjectByType<AreaCameraRig>();
+            // <b>Rig は常駐が 1 つだけ</b>（P5.5 付録 A.1／A.7）。
+            // 「活動中は各 1 つ」を Scene 内の個数ではなく<b>所有者</b>で見る（§9.1）。
+            AreaCameraRigHost host = AreaCameraRigHost.Instance;
+            Assert.IsNotNull(host, label + "：常駐 CameraRig が立っている（付録 A.2）。");
+            Assert.AreEqual(1, AreaCameraRigHost.CreatedCount, label + "：常駐 Rig は一度だけ生成する。");
+            Assert.AreSame(host, AreaCameraOwnerProvider.Current, label + "：常駐が提供点を所有している。");
+
+            AreaCameraRig rig = host.Rig;
             Assert.IsNotNull(rig, label + "：カメラの Rig がある。");
             Assert.IsTrue(rig.IsWired, label + "：カメラが配線されている。");
             Assert.GreaterOrEqual(rig.SnapCount, 1, label + "：到着で即時配置されている（§11）。");
