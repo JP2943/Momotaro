@@ -43,11 +43,8 @@ namespace Momotaro.Gameplay.Session
         [SerializeField] private CampaignRespawnRunner _respawn;
 
         [Header("活動ゲート（§4.2）")]
-        [Tooltip("Gameplay の根。保存時から非 Active。Commit でだけ有効化する。")]
-        [SerializeField] private GameObject _gameplayRoot;
-
-        [Tooltip("物理の根。保存時から非 Active。")]
-        [SerializeField] private GameObject _physicsRoot;
+        [Tooltip("活動ゲート。閉じた状態で出荷され、読込時または Commit で開く。")]
+        [SerializeField] private AreaActivityGate _activityGate;
 
         /// <summary>このエリアの根。</summary>
         public AreaRoot Root => _areaRoot;
@@ -67,11 +64,8 @@ namespace Momotaro.Gameplay.Session
         /// <summary>死亡再開の実行役。</summary>
         public CampaignRespawnRunner Respawn => _respawn;
 
-        /// <summary>Gameplay の根（活動ゲートの対象）。</summary>
-        public GameObject GameplayRoot => _gameplayRoot;
-
-        /// <summary>物理の根（活動ゲートの対象）。</summary>
-        public GameObject PhysicsRoot => _physicsRoot;
+        /// <summary>活動ゲート（§4.2）。</summary>
+        public AreaActivityGate ActivityGate => _activityGate;
 
         /// <summary>このエリアの安定 ID（根が未配線なら空）。</summary>
         public StableId AreaId => _areaRoot != null ? _areaRoot.AreaId : default;
@@ -158,8 +152,7 @@ namespace Momotaro.Gameplay.Session
             AreaTransitionConditionsSource conditions = null,
             AreaEncounterRunner encounter = null,
             CampaignRespawnRunner respawn = null,
-            GameObject gameplayRoot = null,
-            GameObject physicsRoot = null)
+            AreaActivityGate activityGate = null)
         {
             _areaRoot = areaRoot;
             _context = context;
@@ -167,8 +160,7 @@ namespace Momotaro.Gameplay.Session
             _conditions = conditions;
             _encounter = encounter;
             _respawn = respawn;
-            _gameplayRoot = gameplayRoot;
-            _physicsRoot = physicsRoot;
+            _activityGate = activityGate;
         }
 #endif
     }

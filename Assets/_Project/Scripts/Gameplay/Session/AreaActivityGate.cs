@@ -1,0 +1,304 @@
+using System.Collections.Generic;
+using Momotaro.Core.Identification;
+using UnityEngine;
+
+namespace Momotaro.Gameplay.Session
+{
+    /// <summary>
+    /// Area の活動ゲート（P5.5 仕様書 §4.2）。<b>閉じた状態で出荷される。</b>
+    ///
+    /// <b>「読み込んでから Find して無効化する」では間に合わない。</b> Scene が読み終わった時点で
+    /// <c>Awake</c>／<c>OnEnable</c> はもう走っており、Provider の奪い合いも Registry への登録も
+    /// 済んでしまっている。だから<b>保存状態そのものを閉じておく</b>のが唯一の確実な手（§4.2）。
+    ///
+    /// 閉じ方は 3 通り。地形と仕掛けの<b>見た目は残したまま</b>、活動だけを止めるため。
+    /// <list type="bullet">
+    /// <item><description><b>根を非 Active に</b>：Gameplay 一式（AreaSystems）。中身は丸ごと動かない。</description></item>
+    /// <item><description><b>Collider を無効に</b>：地形・仕掛けの物理。見た目はそのままで、当たらなくなる。</description></item>
+    /// <item><description><b>部品を無効に</b>：仕掛けの登録（レバー・扉・調査対象）。見た目はそのままで、
+    /// <c>OnEnable</c> が走らないので登録簿に載らない。</description></item>
+    /// </list>
+    ///
+    /// <b>既定は「読み込んだらすぐ開ける」。</b> 先読みを頼まれていないときは <c>Awake</c> で開ける。
+    /// これで P3.5／P4／P5 の単一 Area 構成・直開き・既存のテストは従来どおり動く
+    /// （§1.2「Camera を一括改造しない」と同じ考え方で、既存経路を条件分岐で守る）。
+    /// 閉じたままにするのは、常駐が <see cref="AreaStagingRequest"/> でこの Area を名指しで頼んだときだけ。
+    /// </summary>
+    [DisallowMultipleComponent]
+    public sealed class AreaActivityGate : MonoBehaviour
+    {
+        [Tooltip("この Area の根。先読み要求の宛先照合に使う。")]
+        [SerializeField] private AreaRoot _areaRoot;
+
+        [Tooltip("閉じている間は非 Active にする根（Gameplay 一式）。保存時から非 Active。")]
+        [SerializeField] private List<GameObject> _gatedRoots = new List<GameObject>();
+
+        [Tooltip("閉じている間は無効にする Collider（地形・仕掛けの物理）。保存時から無効。")]
+        [SerializeField] private List<Collider> _gatedColliders = new List<Collider>();
+
+        [Tooltip("閉じている間は無効にする部品（仕掛けの登録など）。保存時から無効。")]
+        [SerializeField] private List<MonoBehaviour> _gatedBehaviours = new List<MonoBehaviour>();
+
+        /// <summary>いま開いているか。</summary>
+        public bool IsOpen { get; private set; }
+
+        /// <summary>開けた回数（診断・テスト用）。</summary>
+        public int OpenCount { get; private set; }
+
+        /// <summary>閉めた回数（診断・テスト用）。</summary>
+        public int CloseCount { get; private set; }
+
+        /// <summary>読み込み時にその場で開けたか（診断・テスト用）。先読みなら false。</summary>
+        public bool OpenedOnLoad { get; private set; }
+
+        /// <summary>この Area の安定 ID（根が未配線なら空）。</summary>
+        public StableId AreaId => _areaRoot != null ? _areaRoot.AreaId : default;
+
+        /// <summary>閉じる対象（読み取り専用。Validator・テスト用）。</summary>
+        public IReadOnlyList<GameObject> GatedRoots => _gatedRoots;
+
+        /// <summary>無効にする Collider（読み取り専用）。</summary>
+        public IReadOnlyList<Collider> GatedColliders => _gatedColliders;
+
+        /// <summary>無効にする部品（読み取り専用）。</summary>
+        public IReadOnlyList<MonoBehaviour> GatedBehaviours => _gatedBehaviours;
+
+        /// <summary>
+        /// 配線が揃っているか。<b>根が 1 つも無いゲートは配線漏れ</b>——
+        /// 「閉じているつもりで何も閉じていない」が一番危ない状態なので、空を通さない。
+        /// Collider・部品は構成によって無い場合があるので必須に含めない。
+        /// </summary>
+        public bool IsWired
+        {
+            get
+            {
+                if (_areaRoot == null || _gatedRoots == null || _gatedRoots.Count == 0)
+                {
+                    return false;
+                }
+
+                for (int i = 0; i < _gatedRoots.Count; i++)
+                {
+                    if (_gatedRoots[i] == null)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// 保存状態が閉じているか（Validator の検査対象。§10.2）。
+        /// <b>Edit モードで見ることに意味がある。</b> 実行時は <c>Awake</c> が開けてしまうので、
+        /// 「出荷時に閉じているか」は Scene を開いた状態でしか確かめられない。
+        /// </summary>
+        public bool IsClosedAsSaved(out string reason)
+        {
+            for (int i = 0; i < _gatedRoots.Count; i++)
+            {
+                GameObject go = _gatedRoots[i];
+                if (go != null && go.activeSelf)
+                {
+                    reason = "根が Active のまま保存されています（" + go.name + "）。";
+                    return false;
+                }
+            }
+
+            for (int i = 0; i < _gatedColliders.Count; i++)
+            {
+                Collider c = _gatedColliders[i];
+                if (c != null && c.enabled)
+                {
+                    reason = "Collider が有効のまま保存されています（" + c.name + "）。";
+                    return false;
+                }
+            }
+
+            for (int i = 0; i < _gatedBehaviours.Count; i++)
+            {
+                MonoBehaviour b = _gatedBehaviours[i];
+                if (b != null && b.enabled)
+                {
+                    reason = "部品が有効のまま保存されています（" + b.name + " / " + b.GetType().Name + "）。";
+                    return false;
+                }
+            }
+
+            reason = string.Empty;
+            return true;
+        }
+
+        private void Awake()
+        {
+            // 名指しで先読みを頼まれている Area だけ、閉じたまま待つ。
+            //
+            // 宛先を照合するのは、要求が漏れ残ったときの壊れ方を軽くするため。
+            // 無条件フラグにすると、要求したのに読まれなかった場合、
+            // <b>次に直開きした Scene が閉じたまま起動する</b>（＝何も動かないゲームに見える）。
+            if (AreaStagingRequest.TryConsumeFor(AreaId))
+            {
+                IsOpen = false;
+                return;
+            }
+
+            Open();
+            OpenedOnLoad = true;
+        }
+
+        /// <summary>活動を許可する（§4.2）。二度呼んでも同じ状態に落ち着く。</summary>
+        public void Open()
+        {
+            Apply(true);
+            IsOpen = true;
+            OpenCount++;
+        }
+
+        /// <summary>活動を止める（撤去・先読みのやり直し）。</summary>
+        public void Close()
+        {
+            Apply(false);
+            IsOpen = false;
+            CloseCount++;
+        }
+
+        private void Apply(bool active)
+        {
+            for (int i = 0; i < _gatedRoots.Count; i++)
+            {
+                GameObject go = _gatedRoots[i];
+                if (go != null)
+                {
+                    go.SetActive(active);
+                }
+            }
+
+            for (int i = 0; i < _gatedColliders.Count; i++)
+            {
+                Collider c = _gatedColliders[i];
+                if (c != null)
+                {
+                    c.enabled = active;
+                }
+            }
+
+            for (int i = 0; i < _gatedBehaviours.Count; i++)
+            {
+                MonoBehaviour b = _gatedBehaviours[i];
+                if (b != null)
+                {
+                    b.enabled = active;
+                }
+            }
+        }
+
+#if UNITY_EDITOR
+        /// <summary>Builder から組み立てるための設定入口（Editor 専用）。</summary>
+        public void EditorSet(
+            AreaRoot areaRoot,
+            List<GameObject> gatedRoots,
+            List<Collider> gatedColliders = null,
+            List<MonoBehaviour> gatedBehaviours = null)
+        {
+            _areaRoot = areaRoot;
+            _gatedRoots = gatedRoots ?? new List<GameObject>();
+            _gatedColliders = gatedColliders ?? new List<Collider>();
+            _gatedBehaviours = gatedBehaviours ?? new List<MonoBehaviour>();
+        }
+
+        /// <summary>
+        /// 出荷状態（閉じた状態）にして保存させる（Editor 専用）。
+        /// <b>NavMesh の焼き込みが終わったあとに呼ぶ。</b> 先に閉じると Collider が
+        /// 収集対象から外れて、経路の無い NavMesh が焼ける。
+        /// </summary>
+        public void EditorCloseForShipping()
+        {
+            Apply(false);
+            IsOpen = false;
+        }
+#endif
+    }
+
+    /// <summary>
+    /// 「次に読む Area は閉じたまま待たせる」という常駐からの申し入れ（P5.5 §4.2／§5）。
+    ///
+    /// <b>Scene 側に判断させない。</b> 先読みかどうかを知っているのは常駐だけで、
+    /// Area Scene は自分が先読みされているのか直接開かれたのかを知らない。
+    ///
+    /// <b>宛先を持たせている。</b> 無条件のフラグにすると、要求したのに Scene が読まれなかった場合
+    /// （開始失敗・タイムアウト）にフラグが残り、次に直開きした Scene が閉じたまま起動する。
+    /// 「何も動かないゲーム」は原因が最も追いにくい壊れ方なので、宛先違いなら素通りさせる。
+    /// </summary>
+    public static class AreaStagingRequest
+    {
+        /// <summary>いま要求があるか。</summary>
+        public static bool IsRequested { get; private set; }
+
+        /// <summary>要求の宛先（無ければ空）。</summary>
+        public static StableId AreaId { get; private set; }
+
+        /// <summary>要求した回数（診断・テスト用）。</summary>
+        public static int RequestedCount { get; private set; }
+
+        /// <summary>宛先が一致して消費された回数（診断・テスト用）。</summary>
+        public static int ConsumedCount { get; private set; }
+
+        /// <summary>宛先が違って素通りさせた回数（診断・テスト用）。</summary>
+        public static int MismatchCount { get; private set; }
+
+        /// <summary>要求する。<b>重ねて要求しない</b>（直列化は在留台帳が持つ）。</summary>
+        public static bool TryRequest(StableId areaId)
+        {
+            if (!areaId.IsValid || IsRequested)
+            {
+                return false;
+            }
+
+            IsRequested = true;
+            AreaId = areaId;
+            RequestedCount++;
+            return true;
+        }
+
+        /// <summary>取り下げる（読込の開始失敗・タイムアウト・テストの後始末）。</summary>
+        public static void Clear()
+        {
+            IsRequested = false;
+            AreaId = default;
+        }
+
+        /// <summary>
+        /// 宛先が一致すれば消費して true（＝閉じたまま待つ）。
+        /// 一致しなければ要求はそのまま残し、false を返す（その Scene は通常どおり開く）。
+        /// </summary>
+        public static bool TryConsumeFor(StableId areaId)
+        {
+            if (!IsRequested)
+            {
+                return false;
+            }
+
+            if (!areaId.IsValid || !areaId.Equals(AreaId))
+            {
+                MismatchCount++;
+                return false;
+            }
+
+            IsRequested = false;
+            AreaId = default;
+            ConsumedCount++;
+            return true;
+        }
+
+        /// <summary>診断値ごと戻す（テストの後始末）。</summary>
+        public static void ResetForTests()
+        {
+            IsRequested = false;
+            AreaId = default;
+            RequestedCount = 0;
+            ConsumedCount = 0;
+            MismatchCount = 0;
+        }
+    }
+}

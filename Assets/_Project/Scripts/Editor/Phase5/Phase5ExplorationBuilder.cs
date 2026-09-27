@@ -568,6 +568,9 @@ namespace Momotaro.Editor.Phase5
 
             CreateAreaSystems(root, areaRoot, definition, fixtures, rig);
             BakeNavMesh(root, "NavMesh_P5_A");
+
+            // NavMesh を焼いた<b>あと</b>で閉じる（先に閉じると Collider が収集対象から外れて、経路の無い NavMesh が焼ける）。
+            CloseActivityGate(areaRoot);
         }
 
         private static void PopulateAreaB(Transform root, AreaDefinition definition, AreaCameraRig rig)
@@ -658,6 +661,9 @@ namespace Momotaro.Editor.Phase5
 
             CreateAreaSystems(root, areaRoot, definition, fixtures, rig);
             BakeNavMesh(root, "NavMesh_P5_B");
+
+            // NavMesh を焼いた<b>あと</b>で閉じる（先に閉じると Collider が収集対象から外れて、経路の無い NavMesh が焼ける）。
+            CloseActivityGate(areaRoot);
         }
 
         /// <summary>
@@ -1202,6 +1208,109 @@ namespace Momotaro.Editor.Phase5
             // 無効になって「読み込んだのに部品の在処が分からない」状態になる。
             AreaRuntimeBundle bundle = areaRoot.gameObject.AddComponent<AreaRuntimeBundle>();
             bundle.EditorSet(areaRoot, context, port, conditions, encounterRunner, respawn);
+        }
+
+        /// <summary>
+        /// 活動ゲートを置いて、<b>閉じた状態で保存する</b>（P5.5 §4.2）。
+        ///
+        /// 閉じ方は 3 通り。地形と仕掛けの<b>見た目は残したまま</b>、活動だけを止める
+        /// （§4.1「Staged は地形・仕掛けの表示準備だけ済んだ」）。
+        /// <list type="bullet">
+        /// <item><description>Gameplay 一式（AreaSystems）は<b>根ごと非 Active</b>。</description></item>
+        /// <item><description>地形・仕掛けの <b>Collider を無効</b>（見えるが当たらない）。</description></item>
+        /// <item><description>仕掛けの<b>登録する部品を無効</b>（OnEnable が走らない）。</description></item>
+        /// </list>
+        ///
+        /// AreaSystems の下は根ごと止まるので、Collider・部品の一覧には<b>入れない</b>。
+        /// 二重に持たせると、開けるときに「根は Active なのに部品だけ無効」の組み合わせを作れてしまう。
+        /// </summary>
+        private static void CloseActivityGate(AreaRoot areaRoot)
+        {
+            // 根ごと止めるのは、AreaRoot の直下のうち<b>Gameplay の実体を抱えているもの</b>。
+            //
+            // AreaSystems だけでは足りない——主人公と犬丸は AreaRoot の直下に居るので、
+            // AreaSystems だけ閉じても <b>索敵対象として登録され、AI と物理が動き出す</b>
+            // （実際に踏んだ：登録簿が空のはずのところで 2 体載っていた）。
+            // 名前でなく部品で見分けるのは、将来 Prefab 名や配置が変わっても漏れないため。
+            var gatedRoots = new List<GameObject>();
+            foreach (Transform child in areaRoot.transform)
+            {
+                GameObject go = child.gameObject;
+                bool holdsGameplay =
+                    go.GetComponentInChildren<AreaContext>(true) != null
+                    || go.GetComponentInChildren<PlayerRoot>(true) != null
+                    || go.GetComponentInChildren<CompanionActor>(true) != null;
+                if (holdsGameplay)
+                {
+                    gatedRoots.Add(go);
+                }
+            }
+
+            if (gatedRoots.Count == 0)
+            {
+                throw new System.InvalidOperationException(
+                    "活動ゲートの対象が見つかりません（AreaContext／主人公／犬丸のいずれも無し）。");
+            }
+
+            var gatedColliders = new List<Collider>();
+            var gatedBehaviours = new List<MonoBehaviour>();
+
+            foreach (Collider collider in areaRoot.GetComponentsInChildren<Collider>(true))
+            {
+                if (!IsUnderAny(collider.transform, gatedRoots))
+                {
+                    gatedColliders.Add(collider);
+                }
+            }
+
+            foreach (MonoBehaviour behaviour in areaRoot.GetComponentsInChildren<MonoBehaviour>(true))
+            {
+                if (behaviour == null || IsUnderAny(behaviour.transform, gatedRoots))
+                {
+                    continue;
+                }
+
+                // 登録簿に載る部品と、Trigger で範囲を見る部品だけを止める。
+                // 見た目（Renderer・Label）は止めない——止めると Staged で地形が見えなくなる。
+                if (behaviour is IAreaInteractable
+                    || behaviour is IInvestigationPoint
+                    || behaviour is AreaExitGate
+                    || behaviour is AreaFlagDoor
+                    || behaviour is AreaTransitionDoor)
+                {
+                    gatedBehaviours.Add(behaviour);
+                }
+            }
+
+            AreaActivityGate gate = areaRoot.gameObject.AddComponent<AreaActivityGate>();
+            gate.EditorSet(areaRoot, gatedRoots, gatedColliders, gatedBehaviours);
+
+            var bundle = areaRoot.GetComponent<AreaRuntimeBundle>();
+            if (bundle != null)
+            {
+                var so = new SerializedObject(bundle);
+                so.FindProperty("_activityGate").objectReferenceValue = gate;
+                so.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            gate.EditorCloseForShipping();
+        }
+
+        /// <summary>その Transform がいずれかの根の下にあるか（自分自身を含む）。</summary>
+        private static bool IsUnderAny(Transform candidate, List<GameObject> roots)
+        {
+            for (Transform t = candidate; t != null; t = t.parent)
+            {
+                for (int i = 0; i < roots.Count; i++)
+                {
+                    if (roots[i] != null && t == roots[i].transform)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

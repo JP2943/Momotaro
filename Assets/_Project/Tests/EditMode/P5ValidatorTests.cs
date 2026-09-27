@@ -340,6 +340,43 @@ namespace Momotaro.Tests.EditMode
                 "片付けたら正規 Data は全件合格へ戻る。");
         }
 
+        /// <summary>
+        /// 活動ゲートが<b>開いたまま保存されていたら検査で落とす</b>（P5.5 §4.2／§10.2）。
+        ///
+        /// ここだけが出荷状態を見られる場所。実行時は <c>Awake</c> が開けてしまうので、
+        /// PlayMode では「保存時から閉じているか」を確かめられない。
+        /// 3 通りの閉じ方をそれぞれ独立に崩して、どれを見落としても検査が気付くことを固める。
+        /// </summary>
+        [Test]
+        public void AnOpenActivityGate_FailsValidation()
+        {
+            Scene scene = EditorSceneManager.OpenScene(Phase5AreaIds.AreaBScenePath, OpenSceneMode.Single);
+            Assert.AreEqual(0, RunScene(scene).errors.Count, "前提：出荷 Scene はエラー 0。");
+
+            List<AreaActivityGate> gates = Phase5ExplorationValidator.Components<AreaActivityGate>(scene);
+            Assert.AreEqual(1, gates.Count, "前提：活動ゲートは 1 つ。");
+            AreaActivityGate gate = gates[0];
+
+            Assert.Greater(gate.GatedRoots.Count, 0, "前提：閉じる根がある。");
+            gate.GatedRoots[0].SetActive(true);
+            AssertHasError(scene, "開いたまま保存", "活動ゲートの開放（根）");
+            gate.GatedRoots[0].SetActive(false);
+            Assert.AreEqual(0, RunScene(scene).errors.Count, "戻したらエラー 0。");
+
+            Assert.Greater(gate.GatedColliders.Count, 0, "前提：閉じる Collider がある。");
+            gate.GatedColliders[0].enabled = true;
+            AssertHasError(scene, "Collider が有効", "活動ゲートの開放（Collider）");
+            gate.GatedColliders[0].enabled = false;
+
+            Assert.Greater(gate.GatedBehaviours.Count, 0, "前提：閉じる部品がある。");
+            gate.GatedBehaviours[0].enabled = true;
+            AssertHasError(scene, "部品が有効", "活動ゲートの開放（部品）");
+
+            // 壊したまま次へ進まない：Scene を開き直して出荷状態へ戻す。
+            scene = EditorSceneManager.OpenScene(Phase5AreaIds.AreaBScenePath, OpenSceneMode.Single);
+            Assert.AreEqual(0, RunScene(scene).errors.Count, "前提：開き直してエラー 0 に戻る。");
+        }
+
         // ---------------------------------------------------------------- ヘルパ
 
         private static (List<string> errors, List<string> warnings) RunScene(Scene scene)

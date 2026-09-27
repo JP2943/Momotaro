@@ -111,6 +111,9 @@ namespace Momotaro.Editor.Phase5
             // この Area Scene の参照集合（P5.5 §4.3）。常駐はこれ経由で Scene 側を触るので、
             // 無いと全 Scene 検索の互換経路へ黙って落ちる。
             RequireOne<AreaRuntimeBundle>(scene, "Area の参照集合（AreaRuntimeBundle）", errors);
+
+            // 活動ゲート（P5.5 §4.2）。無いと Staged で Awake／OnEnable の副作用が走る。
+            RequireOne<AreaActivityGate>(scene, "活動ゲート（AreaActivityGate）", errors);
         }
 
         // ---------------------------------------------------------------- 混入禁止（§13.3 の 4 行目）
@@ -147,6 +150,7 @@ namespace Momotaro.Editor.Phase5
             RequireWired<CampaignRespawnRunner>(scene, "死亡再開の実行役", errors, x => x.IsWired);
             RequireWired<RespawnSubmitInput>(scene, "再開操作の仲介", errors, x => x.IsWired);
             RequireWired<AreaRuntimeBundle>(scene, "Area の参照集合", errors, x => x.IsWired);
+            RequireWired<AreaActivityGate>(scene, "活動ゲート", errors, x => x.IsWired);
 
             // 出入口は<b>自分の Trigger で範囲を見る</b>ので、主人公の根が配線されていないと一度も反応しない。
             // 実際に試遊で A→B が動かず、原因がこの配線漏れだった（Gate を直接叩くテストでは気付けない）。
@@ -662,6 +666,19 @@ namespace Momotaro.Editor.Phase5
                 if (door.IsOpened)
                 {
                     errors.Add("門 " + door.FlagId.Value + " が初期状態で開通しています（記録から復元する。§4.3）。");
+                }
+            }
+
+            // 活動ゲートは<b>閉じた状態で保存されている</b>こと（P5.5 §4.2／§10.2）。
+            //
+            // ここだけが出荷状態を見られる場所。実行時は Awake が開けてしまうので、
+            // 「保存時から非 Active」は Scene を開いた状態でしか確かめられない。
+            // 読み込んでから無効化する形では Awake／OnEnable の副作用に間に合わない（§4.2）。
+            foreach (AreaActivityGate gate in Components<AreaActivityGate>(scene))
+            {
+                if (!gate.IsClosedAsSaved(out string reason))
+                {
+                    errors.Add("活動ゲートが開いたまま保存されています（§4.2）：" + reason);
                 }
             }
         }

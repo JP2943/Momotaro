@@ -51,6 +51,11 @@
       "id": "P55-SEC4-3B",
       "summary": "登録簿の Area 帰属（仕様書 §4.3）。境界越しの索敵・Interact・調査を起こさない。指定が無いときと Area 外の登録は絞らない",
       "stage": "P55-02"
+    },
+    {
+      "id": "P55-SEC4-2",
+      "summary": "活動ゲート（仕様書 §4.2）。保存時から閉じておき、先読みでは Awake／OnEnable の副作用を一切走らせない。既定は読込時に開く（既存の単一 Area 構成）",
+      "stage": "P55-02"
     }
   ],
   "tests": [
@@ -177,6 +182,35 @@
         "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.Perception_WithoutAnActiveArea_SeesEverything",
         "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.Perception_StillSeesTargetsOutsideAnyArea",
         "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.BelongsTo_TellsApartTheTwoAreas"
+      ]
+    },
+    {
+      "requirementId": "P55-SEC4-2",
+      "stage": "P55-02",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55ActivityGatePlayTests.WithAStagingRequest_NothingWakesUpUntilTheGateOpens",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55ActivityGatePlayTests.WithoutAStagingRequest_TheGateOpensOnLoad",
+        "Momotaro.Tests.PlayMode.P55ActivityGatePlayTests.AStagingRequestForAnotherArea_DoesNotHoldThisOneBack"
+      ]
+    },
+    {
+      "requirementId": "P55-SEC4-2",
+      "stage": "P55-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P5ValidatorTests.AnOpenActivityGate_FailsValidation",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.StagingRequest_IsSingleAndNeedsAValidArea",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.StagingRequest_IsConsumedOnlyByItsOwnArea",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.StagingRequest_CanBeWithdrawn",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.IsWired_RefusesAGateThatClosesNothing",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.IsClosedAsSaved_NamesWhateverWasLeftOpen",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.Open_TurnsOnAllThreeKinds_AndCloseTurnsThemBack",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.Open_IsIdempotentAndSurvivesBrokenReferences"
       ]
     }
   ],
