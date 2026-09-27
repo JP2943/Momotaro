@@ -186,7 +186,10 @@ namespace Momotaro.Tests.EditMode
             Assert.IsTrue(gate.Systems.activeSelf);
             Assert.IsTrue(gate.Collider.enabled);
             Assert.IsTrue(gate.Behaviour.enabled);
-            Assert.AreEqual(2, gate.Component.OpenCount, "呼んだ回数はそのまま数える。");
+
+            // 2 回目は<b>無操作</b>（重複呼び出しで状態を押し直さない。R12）。
+            Assert.AreEqual(1, gate.Component.OpenCount, "実際に開けたのは 1 回。");
+            Assert.AreEqual(1, gate.Component.RedundantOpenCount, "2 回目は無操作として数える。");
         }
 
         // ---------------------------------------------------------------- 表示系（先読みのときだけ）
@@ -345,6 +348,108 @@ namespace Momotaro.Tests.EditMode
             closed.Bind(new StableId("flag_y"), closedBlocker, null);
             Assert.IsFalse(closed.TryReapplyOpened(out string _), "開通していない門を勝手に開けない。");
             Assert.IsTrue(closedBlocker.enabled);
+        }
+
+        /// <summary>
+        /// <b>初回起動のあとに門を開通しても、重複 Open で塞がらない</b>（R12 の経路 1）。
+        ///
+        /// この時点では復元記録がまだ無いので、打ち切りがなければ
+        /// <c>Apply(true)</c> が門の Collider／Obstacle を再有効化してしまう。
+        /// </summary>
+        [Test]
+        public void ADoorOpenedAfterTheFirstStart_SurvivesARedundantOpen()
+        {
+            DoorFixture door = NewGateWithDoor();
+            door.Gate.Component.EditorCloseForShipping();
+            door.Gate.Component.Open();
+            Assert.IsFalse(door.Gate.Component.HasRestoreState, "前提：復元記録はまだ無い。");
+
+            Assert.IsTrue(door.Door.TryApplyOpened(out string _));
+            AssertDoorStaysOpen(door, "前提");
+
+            door.Gate.Component.Open();
+
+            AssertDoorStaysOpen(door, "重複 Open のあと");
+            Assert.AreEqual(1, door.Gate.Component.RedundantOpenCount);
+        }
+
+        /// <summary>
+        /// <b>再開のあとに門を開通しても、重複 Open で塞がらない</b>（R12 の経路 2）。
+        ///
+        /// 復元記録には「門が閉じていた状態」が入っているので、
+        /// 打ち切りがなければそれを復元して<b>開通を巻き戻す</b>。
+        /// </summary>
+        [Test]
+        public void ADoorOpenedAfterAReopen_SurvivesARedundantOpen()
+        {
+            DoorFixture door = NewGateWithDoor();
+            door.Gate.Component.EditorCloseForShipping();
+            door.Gate.Component.Open();
+
+            // 門は閉じたまま閉めて、その状態を復元記録に入れる。
+            Assert.IsTrue(door.Blocker.enabled, "前提：門は閉じている。");
+            door.Gate.Component.Close();
+            door.Gate.Component.Open();
+            Assert.IsTrue(door.Gate.Component.HasRestoreState, "前提：復元記録に「閉じていた」が入っている。");
+            Assert.IsTrue(door.Blocker.enabled, "前提：復元でも閉じたまま。");
+
+            // そのあとに開通する。
+            Assert.IsTrue(door.Door.TryApplyOpened(out string _));
+            AssertDoorStaysOpen(door, "前提");
+
+            door.Gate.Component.Open();
+
+            AssertDoorStaysOpen(door, "重複 Open のあと");
+            Assert.AreEqual(1, door.Gate.Component.RedundantOpenCount);
+        }
+
+        // ---------------------------------------------------------------- 門付きの組み立て
+
+        private struct DoorFixture
+        {
+            public Gate Gate;
+            public AreaFlagDoor Door;
+            public Collider Blocker;
+            public UnityEngine.AI.NavMeshObstacle Obstacle;
+            public GameObject ClosedVisual;
+        }
+
+        /// <summary>実 Scene と同じ構成（門の Collider／Obstacle もゲートの停止対象）を作る。</summary>
+        private DoorFixture NewGateWithDoor()
+        {
+            Gate gate = NewGate();
+            var doorGo = new GameObject("Door");
+            _spawned.Add(doorGo);
+            doorGo.transform.SetParent(gate.Root.transform, false);
+            var visualGo = new GameObject("ClosedVisual");
+            visualGo.transform.SetParent(doorGo.transform, false);
+            Collider blocker = doorGo.AddComponent<BoxCollider>();
+            var obstacle = doorGo.AddComponent<UnityEngine.AI.NavMeshObstacle>();
+            AreaFlagDoor door = doorGo.AddComponent<AreaFlagDoor>();
+            door.Bind(new StableId("flag_x"), blocker, visualGo, obstacle);
+
+            gate.Component.EditorSet(
+                gate.Root,
+                new List<GameObject> { gate.Systems },
+                new List<Collider> { gate.Collider, blocker },
+                new List<Behaviour> { gate.Behaviour, obstacle, door });
+
+            return new DoorFixture
+            {
+                Gate = gate,
+                Door = door,
+                Blocker = blocker,
+                Obstacle = obstacle,
+                ClosedVisual = visualGo,
+            };
+        }
+
+        private static void AssertDoorStaysOpen(DoorFixture door, string label)
+        {
+            Assert.IsFalse(door.Blocker.enabled, label + "：通行が開いている。");
+            Assert.IsFalse(door.Obstacle.enabled, label + "：くり抜きが外れている。");
+            Assert.IsFalse(door.ClosedVisual.activeSelf, label + "：見た目も開通している。");
+            Assert.AreEqual(1, door.Door.AppliedCount, label + "：開通回数は 1。");
         }
 
         // ---------------------------------------------------------------- 補助

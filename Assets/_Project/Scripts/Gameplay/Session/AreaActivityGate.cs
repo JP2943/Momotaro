@@ -54,6 +54,9 @@ namespace Momotaro.Gameplay.Session
         /// <summary>開けた回数（診断・テスト用）。</summary>
         public int OpenCount { get; private set; }
 
+        /// <summary>すでに開いているのに <see cref="Open"/> を呼ばれて無操作とした回数（診断・テスト用）。</summary>
+        public int RedundantOpenCount { get; private set; }
+
         /// <summary>閉めた回数（診断・テスト用）。</summary>
         public int CloseCount { get; private set; }
 
@@ -185,6 +188,22 @@ namespace Momotaro.Gameplay.Session
         /// </summary>
         public void Open()
         {
+            // <b>すでに開いているなら何も書き換えない</b>（GPT レビュー R12）。
+            //
+            // 重複呼び出しで状態を押し直すと、開いている間に仕掛けが自分で変えた状態を壊す。
+            // 残っていた経路は二つ。
+            // （1）初回起動→門開通→重複 Open：復元記録が無いので、一律に有効化して
+            //     門の Collider／Obstacle を再有効化してしまう。
+            // （2）門が閉じた状態で Close→Open→門開通→重複 Open：
+            //     過去の「門が閉じていた状態」を復元して再び塞ぐ。
+            // 明示的な再同期が必要なときは別の入口で扱う
+            // （門なら <c>AreaFlagDoor.TryReapplyOpened</c>）。
+            if (IsOpen)
+            {
+                RedundantOpenCount++;
+                return;
+            }
+
             if (_hasRestoreState)
             {
                 Restore();

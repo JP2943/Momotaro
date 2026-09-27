@@ -237,7 +237,9 @@
         "Momotaro.Tests.EditMode.P55ActivityGateTests.ReopeningTheGate_DoesNotCloseADoorThatWasAlreadyOpened",
         "Momotaro.Tests.EditMode.P55ActivityGateTests.TheFirstOpen_EnablesEverything_BecauseThereIsNothingToRestore",
         "Momotaro.Tests.EditMode.P55ActivityGateTests.ReapplyingAnOpenedDoor_FixesThePhysicsWithoutCountingAgain",
-        "Momotaro.Tests.EditMode.P5ValidatorTests.ForeignNavMesh_MakesTheRouteCheckReportThatItCannotJudge"
+        "Momotaro.Tests.EditMode.P5ValidatorTests.ForeignNavMesh_MakesTheRouteCheckReportThatItCannotJudge",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.ADoorOpenedAfterTheFirstStart_SurvivesARedundantOpen",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.ADoorOpenedAfterAReopen_SurvivesARedundantOpen"
       ]
     },
     {
