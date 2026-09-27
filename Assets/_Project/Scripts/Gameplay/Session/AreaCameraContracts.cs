@@ -28,18 +28,43 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>
         /// 活動 Area（<see cref="CurrentAreaProvider"/>）の領域集合へ結び直す。
-        /// <b>参照を差し替えるだけ</b>で、Camera インスタンスは交換しない（付録 A.5）。
+        /// <b>参照を差し替えるだけ</b>で、Camera インスタンスは交換しないし
+        /// 実カメラの位置も動かさない（付録 A.5／A.10）。
         /// </summary>
         bool TryBindActiveArea();
 
         /// <summary>
-        /// 到着点を<b>計算するだけ</b>（実カメラへは触らない。付録 A.3）。
+        /// <b>いま結び付いている Area</b>での追従位置を計算するだけ（実カメラへは触らない。付録 A.3）。
         /// 計算できなければ false。
         /// </summary>
         bool TryComputeArrivalPoint(out UnityEngine.Vector3 point);
 
         /// <summary>
-        /// 計算した位置を実カメラへ適用する。<b>Commit 後の追従復帰と演出担当だけが呼ぶ。</b>
+        /// <b>移動先</b>の到着点を、現在の結び先を変えずに計算するだけ（付録 A.3／A.10）。
+        ///
+        /// 引数なしの版は結び先＝活動 Area の位置しか返せないので、
+        /// 「A を遊んでいる間に B の到着点を知りたい」には答えられない。
+        /// スライドの終点を決めるにはこちらを使う。
+        /// <b>結び先を切り替えて測ってはいけない</b>——切り替えるだけで領域と追従対象が
+        /// 入れ替わり、スライドが始まる前にカメラが動く（§7.1）。
+        /// </summary>
+        /// <param name="destination">移動先の読み込み実体（<see cref="AreaRuntimeBundle.Instance"/>）。</param>
+        /// <param name="arrivalPosition">その Area での到着位置（入口の世界座標）。</param>
+        bool TryComputeArrivalPoint(
+            AreaInstanceHandle destination, UnityEngine.Vector3 arrivalPosition,
+            out UnityEngine.Vector3 point);
+
+        /// <summary>
+        /// 計算した位置を実カメラへ適用する（付録 A.10）。
+        ///
+        /// 適用するのは次の 3 か所だけで、それ以外からは呼ばない。
+        /// <list type="number">
+        /// <item><description><b>初回配置</b>——常駐 Rig が立った Area の入口配置が終わったとき。</description></item>
+        /// <item><description><b>Single 遷移の到着</b>——活動 Area が入れ替わり、入口配置が終わったとき。</description></item>
+        /// <item><description><b>スライドの Commit 後</b>——演出担当が書込みを手放して追従へ戻すとき。</description></item>
+        /// </list>
+        /// <b>Prepared だけでは呼ばない。</b> 先読みで載った Area の準備完了は、
+        /// まだ活動 Area ではないので適用の合図ではない（§7.1）。
         /// </summary>
         void ApplyArrival();
     }

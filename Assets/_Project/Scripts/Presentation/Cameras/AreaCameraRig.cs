@@ -56,6 +56,15 @@ namespace Momotaro.Presentation.Cameras
         /// <summary>補間せずに配置した回数（診断・テスト用）。</summary>
         public int SnapCount { get; private set; }
 
+        /// <summary>
+        /// 通常追従を止める（P5.5 付録 A.10）。<b>既定は false。</b>
+        ///
+        /// 常駐 Rig が「結び直したが、まだその Area の入口配置が終わっていない」区間で立てる。
+        /// 止めないと、<b>保存位置を追って部屋を跨ぐ補間が始まる</b>——そのあと入口へ置かれた
+        /// 主人公へ向かって滑ってくる。P3.5／P4／従来 P5 の Scene は立てないので影響しない。
+        /// </summary>
+        public bool FollowSuspended { get; set; }
+
         /// <summary>Scene 構築・テストからの注入。</summary>
         public void Bind(Transform target, Camera camera, AreaCameraRegion defaultRegion,
             IReadOnlyList<AreaCameraRegion> regions = null, AreaContext context = null)
@@ -152,6 +161,26 @@ namespace Momotaro.Presentation.Cameras
         public Vector2 HalfFootprint() =>
             CameraBoundsMath.HalfFootprint(_camera.orthographicSize, _camera.aspect, _pitchDegrees);
 
+        /// <summary>
+        /// 床で見える範囲の半分。<b>追従対象や領域が決まっていなくても答えられる</b>
+        /// （画角はカメラと俯角だけで決まる。P5.5 付録 A.10）。
+        ///
+        /// <see cref="HalfFootprint"/> と違って未配線でも呼べる。移動先の到着点を
+        /// 現在の Bind 先とは無関係に計算するために要る——Bind を切り替えてから
+        /// 測ると、それだけでカメラが動いてしまう。
+        /// </summary>
+        public bool TryGetHalfFootprint(out Vector2 half)
+        {
+            if (_camera == null)
+            {
+                half = default;
+                return false;
+            }
+
+            half = CameraBoundsMath.HalfFootprint(_camera.orthographicSize, _camera.aspect, _pitchDegrees);
+            return true;
+        }
+
         private CameraRegionDefinition ResolveRegion()
         {
             _buffer.Clear();
@@ -224,6 +253,13 @@ namespace Momotaro.Presentation.Cameras
 
         private void LateUpdate()
         {
+            if (FollowSuspended)
+            {
+                // 準備前は実カメラへ書かない（付録 A.10）。未配線の警告も出さない——
+                // 「まだ結び付ける前」は異常ではなく、順序として分かっている状態である。
+                return;
+            }
+
             if (!IsWired)
             {
                 GameLog.WarningOnce(LogCategory.Scene, "area_camera_unwired",

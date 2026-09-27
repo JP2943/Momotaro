@@ -1248,7 +1248,7 @@ namespace Momotaro.Editor.Phase5
                 cameraGo.transform.SetParent(areaRoot.transform, false);
                 AreaCameraRegionSet regionSet = cameraGo.AddComponent<AreaCameraRegionSet>();
                 regionSet.EditorSet(areaRoot, playerRoot != null ? playerRoot.transform : null,
-                    fixtures.DefaultCameraRegion, fixtures.CameraRegions, residentRig);
+                    fixtures.DefaultCameraRegion, fixtures.CameraRegions, residentRig, context);
             }
 
             var catalog = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase5AreaIds.CatalogDataPath);

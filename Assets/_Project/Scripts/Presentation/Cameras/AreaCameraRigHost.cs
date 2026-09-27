@@ -30,6 +30,7 @@ namespace Momotaro.Presentation.Cameras
 
         private AreaCameraRegionSet _boundSet;
         private int _boundSceneHandle;
+        private bool _arrivalPending;
 
         /// <summary>いま生きている常駐 Rig（無ければ null）。</summary>
         public static AreaCameraRigHost Instance { get; private set; }
@@ -60,6 +61,12 @@ namespace Momotaro.Presentation.Cameras
 
         /// <summary>結び直しを試した回数（診断・テスト用。毎フレーム増える）。</summary>
         public int PollCount { get; private set; }
+
+        /// <summary>
+        /// 結び直したが<b>まだ実カメラへ適用していない</b>（診断・テスト用）。
+        /// この間は通常追従を止める（付録 A.10）。
+        /// </summary>
+        public bool ArrivalPending => _arrivalPending;
 
         /// <summary>この Rig が所有する画面揺れ（Validator・テスト用）。</summary>
         public CameraShakePresenter Shake => _shake;
@@ -120,13 +127,68 @@ namespace Momotaro.Presentation.Cameras
             BoundArea = set.AreaId;
             BindCount++;
 
-            // <b>結び直した直後は補間しない</b>（§11「Scene 到着・死亡再開では補間せず即時配置」）。
+            // <b>ここでは実カメラへ触らない</b>（付録 A.10）。
             //
-            // 前の Area の位置から滑ってくると、居なかった場所に居たように見える。
-            // ここを通るのは<b>活動 Area が入れ替わったとき</b>だけで、Prepared では通らない
-            // （付録 A.3。準備完了の時点では到着点を計算するだけ）。
-            // 先読みで 2 枚目が載っても活動 Area は変わらないので、ここも通らない。
-            ApplyArrival();
+            // 結び直しが起きるのは Scene が載った直後で、その時点の主人公はまだ
+            // <b>保存位置</b>に居ることがある（入口への配置は初期化担当が行う）。
+            // ここで即時配置すると保存位置を基準に置いてしまい、そのあと入口へ移った
+            // 主人公を追って<b>部屋を跨ぐ補間が始まる</b>（実際に踏んだ：B→A の復帰で
+            // カメラが 5m 手前から流れてきた）。
+            //
+            // 適用は「その Area の入口配置が終わった」ことを確かめてから
+            // （<see cref="TryApplyPendingArrival"/>）。それまでは通常追従も止める。
+            _arrivalPending = true;
+            SuspendFollowWhilePending();
+            return true;
+        }
+
+        /// <summary>
+        /// 移動先の到着点を<b>現在の Bind を変えずに</b>計算する（付録 A.3／A.10）。
+        ///
+        /// 引数なしの <see cref="TryComputeArrivalPoint(out Vector3)"/> は
+        /// <b>いま結び付いている Area</b>の追従位置を返すので、
+        /// 「A を遊んでいる間に B の到着点を知りたい」には答えられない。
+        /// スライドの開始・終了点を決めるにはこちらを使う。
+        ///
+        /// <b>Bind を切り替えて測ってはいけない。</b> 切り替えるとそれだけで
+        /// 領域・追従対象が入れ替わり、スライドが始まる前にカメラが動く（§7.1）。
+        /// 画角はカメラと俯角だけで決まるので、Bind 先とは無関係に測れる。
+        /// </summary>
+        /// <param name="destination">移動先の読み込み実体（<see cref="AreaRuntimeBundle.Instance"/>）。</param>
+        /// <param name="arrivalPosition">その Area での到着位置（入口の世界座標）。</param>
+        public bool TryComputeArrivalPoint(
+            AreaInstanceHandle destination, Vector3 arrivalPosition, out Vector3 point)
+        {
+            point = default;
+            if (_rig == null || _camera == null || !destination.IsValid)
+            {
+                return false;
+            }
+
+            if (!AreaBundleDirectory.TryGetByInstance(destination, out AreaRuntimeBundle bundle)
+                || bundle == null)
+            {
+                return false;
+            }
+
+            if (!AreaCameraRegionSetRegistry.TryGetByScene(bundle.SceneHandle,
+                    out AreaCameraRegionSet set))
+            {
+                return false;
+            }
+
+            if (!set.TryResolveRegion(arrivalPosition, out CameraRegionDefinition region))
+            {
+                return false;
+            }
+
+            if (!_rig.TryGetHalfFootprint(out Vector2 half))
+            {
+                return false;
+            }
+
+            // 領域選択も clamp も Rig と同じ純粋関数（§11 の期待値をテストが作るのと同じもの）。
+            point = CameraBoundsMath.ClampFocus(arrivalPosition, region, half);
             return true;
         }
 
@@ -153,6 +215,46 @@ namespace Momotaro.Presentation.Cameras
 
             _rig.SnapToTarget();
             ApplyCount++;
+
+            // 適用したので保留を解き、通常追従を戻す（付録 A.10）。
+            _arrivalPending = false;
+            _rig.FollowSuspended = false;
+        }
+
+        /// <summary>
+        /// 結び直しの保留を<b>準備完了を確かめてから</b>適用する（付録 A.10）。
+        ///
+        /// 「準備完了」はその Area の初期化担当が<b>到着位置へ置いたあと</b>に出す報告
+        /// （<see cref="AreaCameraRegionSet.IsReadyForArrival"/>）。それを待つことで、
+        /// 保存位置ではなく到着位置を基準に配置できる。
+        ///
+        /// <b>先読みで載った Area はここを通らない。</b> 結び付ける相手は活動 Area だけなので
+        /// （<see cref="TryResolveActiveSet"/>）、Staged の Area が準備完了を報告しても
+        /// 実カメラは動かない——§7.1「事前に境界位置へ瞬間移動させない」が守られる。
+        /// </summary>
+        private bool TryApplyPendingArrival()
+        {
+            if (!_arrivalPending || !IsWired || !_rig.IsWired)
+            {
+                return false;
+            }
+
+            if (!_boundSet.IsReadyForArrival)
+            {
+                return false; // まだ入口へ置かれていない。追従も止めたまま待つ。
+            }
+
+            ApplyArrival();
+            return true;
+        }
+
+        /// <summary>保留中は通常追従を止める（準備前の書込みを一切させない）。</summary>
+        private void SuspendFollowWhilePending()
+        {
+            if (_rig != null)
+            {
+                _rig.FollowSuspended = _arrivalPending;
+            }
         }
 
         private bool TryResolveActiveSet(out AreaCameraRegionSet set)
@@ -198,19 +300,36 @@ namespace Momotaro.Presentation.Cameras
 
         private void OnEnable()
         {
-            // 最初のフレームから結び付いていること。
+            // <b>参照を結ぶだけ。</b> 実カメラへは触らない（付録 A.10）。
             //
-            // <see cref="LateUpdate"/> だけに任せると、同じフレームに走る
-            // <c>AreaCameraRig.LateUpdate</c> との順序が保証されず、
-            // 未配線の警告を 1 度出してから結び付くことがある（実行順は宣言できない）。
+            // 最初のフレームから配線が揃っているようにしておく——同じフレームに走る
+            // <c>AreaCameraRig.LateUpdate</c> との実行順は宣言できないので、
+            // 結び付けを後回しにすると未配線の警告を 1 度出してから結び付くことがある。
+            // 適用は <see cref="Update"/> が準備完了を確かめて行う。
             TryBindActiveArea();
         }
 
-        private void LateUpdate()
+        /// <summary>
+        /// <b>Update で回す（LateUpdate ではない）。</b>
+        ///
+        /// 追従を書くのは <c>AreaCameraRig.LateUpdate</c> なので、結び直しと即時配置は
+        /// それより<b>確実に前</b>で起きる必要がある。Unity は同じフレームの
+        /// すべての Update をすべての LateUpdate より前に回すので、
+        /// ここに置けば<b>実行順を宣言せずに</b>順序が決まる
+        /// （どちらも LateUpdate だと、どちらが先か分からない）。
+        ///
+        /// <c>Awake</c>／<c>Start</c> より後なので、その Area の初期化（入口配置と
+        /// 準備完了の報告）は同じフレームのここまでに済んでいる。
+        /// </summary>
+        private void Update()
         {
-            // 活動 Area が変わったら結び直す。変わっていなければ何もしない。
             PollCount++;
+
+            // 1. 活動 Area が変わったら参照を結び直す（実カメラへは触らない）。
             TryBindActiveArea();
+
+            // 2. 入口配置が終わっていれば即時配置する。終わっていなければ追従ごと待つ。
+            TryApplyPendingArrival();
         }
     }
 }

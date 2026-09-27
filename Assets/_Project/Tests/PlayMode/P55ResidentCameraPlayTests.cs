@@ -10,6 +10,7 @@ using Momotaro.Gameplay.Session;
 using Momotaro.Infrastructure.Bootstrap;
 using Momotaro.Infrastructure.World;
 using Momotaro.Presentation.Cameras;
+using Momotaro.Data.World;
 using Momotaro.Presentation.Combat;
 using NUnit.Framework;
 using UnityEngine;
@@ -50,6 +51,9 @@ namespace Momotaro.Tests.PlayMode
         private static readonly StableId AreaBFromA = new StableId("area_p5_b_from_a");
 
         private GameObject _bootstrap;
+        private AreaResidencyLedger _ledger;
+        private AreaPreloader _preloader;
+        private readonly object _owner = new object();
 
         [SetUp]
         public void SetUp()
@@ -57,6 +61,7 @@ namespace Momotaro.Tests.PlayMode
             // 前のテストが残した常駐 CameraRig を持ち込まない（付録 A.2）。
             P55ResidentRig.Reset();
 
+            AreaStagingRequest.ResetForTests();
             AreaBundleDirectory.ClearForTests();
             CurrentAreaProvider.ClearForTests();
             PerceptionTargetRegistry.Clear();
@@ -74,6 +79,23 @@ namespace Momotaro.Tests.PlayMode
         [UnityTearDown]
         public IEnumerator TearDownRoutine()
         {
+            // 追加で読んだ Scene を残さない（次のテストが 2 枚載った状態で始まらないように）。
+            if (_preloader != null && _preloader.StagedSceneHandle != 0)
+            {
+                _preloader.ClearRequest();
+                float waited = 0f;
+                while (_preloader.Phase == AreaPreloadPhase.Releasing && waited < 6f)
+                {
+                    _preloader.Poll();
+                    waited += Time.unscaledDeltaTime;
+                    yield return null;
+                }
+            }
+
+            _preloader = null;
+            _ledger = null;
+            AreaStagingRequest.ResetForTests();
+
             if (GameModeProvider.Current != null && GameModeProvider.Current.Current != GameMode.Exploration)
             {
                 GameModeProvider.Current.ChangeMode(GameMode.Exploration);
@@ -232,6 +254,181 @@ namespace Momotaro.Tests.PlayMode
             yield return AssertDoesNotJumpNextFrame(rig, playerA.transform, "A 復帰");
         }
 
+        // ---------------------------------------------------------------- 初回配置の時機（付録 A.10）
+
+        /// <summary>
+        /// <b>保存位置と到着位置が別の領域にあっても、最初の描画で到着位置に居る</b>（付録 A.10）。
+        ///
+        /// A の主人公は<b>既定入口（西の大部屋）</b>の位置で保存されている。そこへ
+        /// 「東の通路の入口へ着く」要求を入れて直開きすると、保存位置と到着位置が
+        /// <b>別のカメラ領域</b>になる——常駐 Rig が結び付けた瞬間に即時配置してしまうと、
+        /// 西を基準に置いたあと東へ移った主人公を追って<b>部屋を跨ぐ補間が始まる</b>。
+        ///
+        /// だから見るのは最後の 1 枚ではなく<b>最初の何フレームか全部</b>：
+        /// その間 1 度も補間が走らず、即時配置は 1 回だけであること。
+        /// 入口配置の前に置いてしまう実装では、ここで補間が立つ。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator DirectOpen_PlacesTheCameraAtTheEntryEvenWhenTheSavedPositionIsInAnotherRegion()
+        {
+            AssertSceneRegistered(AreaAScene);
+            yield return CreateBootstrap();
+
+            // 到着要求を入れておく（遷移サービスを通さず、到着先だけを指定する）。
+            // 活動許可は出ないが、入口配置と準備完了の報告は行われる——カメラの検査には足りる。
+            AreaPendingArrival.Set(9901, AreaA, AreaAFromB);
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+
+            // <b>最初に描かれるフレームから見る。</b> 端の 1 枚だけ見ると、
+            // 「一度跳んでから戻った」を見逃す。
+            for (int frame = 0; frame < 8; frame++)
+            {
+                yield return new WaitForEndOfFrame();
+
+                AreaCameraRigHost watching = AreaCameraRigHost.Instance;
+                if (watching == null || watching.Rig == null)
+                {
+                    continue; // まだ立っていない。
+                }
+
+                Assert.IsFalse(watching.Rig.Blend.IsBlending,
+                    "frame " + frame + "：一度も補間が走らない（保存位置から滑ってこない）。"
+                    + " 位置=" + watching.Rig.transform.position);
+                Assert.LessOrEqual(watching.Rig.SnapCount, 1,
+                    "frame " + frame + "：即時配置は 1 回だけ（置き直していない）。");
+            }
+
+            AreaCameraRigHost host = AreaCameraRigHost.Instance;
+            Assert.IsNotNull(host, "常駐 Rig が立っている。");
+            Assert.IsFalse(host.ArrivalPending, "適用が済んでいる（保留が残っていない）。");
+            Assert.IsFalse(host.Rig.FollowSuspended, "通常追従が戻っている。");
+            Assert.AreEqual(1, host.Rig.SnapCount, "即時配置は 1 回。");
+
+            AreaInitializer initializer = FindInitializer();
+            Assert.IsTrue(initializer.Initialized, "前提：初期化が成立している。理由=" + initializer.FailureReason);
+
+            // 前提：保存位置（既定入口）と到着位置（東の入口）が別の領域である。
+            // これが崩れていると、この検査は何も見ていない。
+            Assert.IsTrue(AreaCameraRegionSetRegistry.TryGetSingle(out AreaCameraRegionSet set));
+            AreaRoot areaRoot = Object.FindFirstObjectByType<AreaRoot>();
+            Assert.IsNotNull(areaRoot);
+            Vector3 savedSpot = EntryPosition(areaRoot, areaRoot.Definition.DefaultEntryId);
+            Vector3 arrivalSpot = EntryPosition(areaRoot, AreaAFromB);
+            Assert.IsTrue(set.TryResolveRegion(savedSpot, out CameraRegionDefinition savedRegion));
+            Assert.IsTrue(set.TryResolveRegion(arrivalSpot, out CameraRegionDefinition arrivalRegion));
+            Assert.AreNotEqual(savedRegion.RegionId.Value, arrivalRegion.RegionId.Value,
+                "前提：保存位置と到着位置は別のカメラ領域（" + savedRegion.RegionId.Value + "）。");
+
+            PlayerRoot player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, "主人公が居る。");
+            Assert.AreEqual(arrivalRegion.RegionId.Value, host.Rig.CurrentRegion.RegionId.Value,
+                "カメラが見ている領域は到着側（東の通路）。");
+            AssertPinnedToTarget(host.Rig, player.transform, "直開き（別領域の入口）");
+        }
+
+        // ---------------------------------------------------------------- 移動先の到着点（付録 A.10）
+
+        /// <summary>
+        /// <b>A を追従したまま B の到着点を計算できる</b>（付録 A.3／A.10）。
+        ///
+        /// スライドの終点を決めるには、Commit の<b>前に</b>移動先の到着点が要る。
+        /// 「先に Bind を B へ切り替えて測る」やり方は使えない——切り替えた瞬間に
+        /// 領域と追従対象が入れ替わり、§7.1 の「事前に境界位置へ瞬間移動させない」が破れる。
+        ///
+        /// ここで固めるのは 2 つ。計算が<b>B の領域</b>を使うこと（A の領域で clamp しない）、
+        /// そして計算しても<b>Camera 位置・結び先・配置回数・適用回数が 1 つも変わらない</b>こと。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ComputingTheDestinationArrivalPoint_UsesTheDestinationRegionsAndChangesNothing()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized, "前提：A の初期化が成立している。");
+
+            AreaCameraRigHost host = AreaCameraRigHost.Instance;
+            Assert.IsNotNull(host);
+            Assert.AreEqual(AreaA.Value, host.BoundArea.Value, "前提：A へ結び付いている。");
+
+            // B を先読みする（載っているが活動していない＝スライド前の状態）。
+            _ledger = new AreaResidencyLedger();
+            AreaInstanceHandle activeHandle = _ledger.NextHandle(AreaA);
+            Assert.IsTrue(_ledger.TryAdmitStaged(activeHandle));
+            Assert.IsTrue(_ledger.TrySetPhase(activeHandle, AreaActivationPhase.Active));
+            _preloader = new AreaPreloader(_ledger, new UnityAreaSceneHost(), _owner);
+
+            Assert.IsTrue(_preloader.Request(AreaB, AreaBScene));
+            float waited = 0f;
+            while (_preloader.Phase == AreaPreloadPhase.Loading && waited < 10f)
+            {
+                _preloader.Poll();
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            Assert.AreEqual(AreaPreloadPhase.Staged, _preloader.Phase,
+                "前提：B が載っている。理由=" + _preloader.FailureReason);
+
+            Assert.IsTrue(
+                AreaBundleDirectory.TryGetByScene(_preloader.StagedSceneHandle, out AreaRuntimeBundle staged));
+            staged.BindInstance(_preloader.StagedArea);
+            Assert.IsTrue(staged.Instance.IsValid, "前提：B の実体識別子が付いている。");
+
+            // B の到着位置（A から入る入口）。
+            AreaRoot bRoot = staged.Root;
+            Assert.IsNotNull(bRoot, "B の根へ辿れる。");
+            Vector3 arrivalInB = EntryPosition(bRoot, AreaBFromA);
+
+            // B の領域集合から期待値を作る（同じ純粋関数で。絶対値を書かない）。
+            Assert.IsTrue(
+                AreaCameraRegionSetRegistry.TryGetByScene(staged.SceneHandle, out AreaCameraRegionSet setB),
+                "B の領域集合を Scene handle で引ける。");
+            Assert.IsTrue(setB.TryResolveRegion(arrivalInB, out CameraRegionDefinition regionInB));
+            Assert.AreNotEqual(host.Rig.CurrentRegion.RegionId.Value, regionInB.RegionId.Value,
+                "前提：B の領域はいま見ている A の領域とは別物（" + regionInB.RegionId.Value + "）。");
+            Assert.IsTrue(host.Rig.TryGetHalfFootprint(out Vector2 half));
+            Vector3 expected = CameraBoundsMath.ClampFocus(arrivalInB, regionInB, half);
+
+            // ---- 計算する前の状態を覚える ----
+            Vector3 cameraBefore = host.Rig.transform.position;
+            Vector3 worldBefore = host.Camera.transform.position;
+            string boundBefore = host.BoundArea.Value;
+            int bindsBefore = host.BindCount;
+            int snapsBefore = host.Rig.SnapCount;
+            int appliesBefore = host.ApplyCount;
+            Assert.IsTrue(host.TryComputeArrivalPoint(out Vector3 followingA),
+                "前提：いまの結び先（A）の追従位置も取れる。");
+
+            // ---- 移動先を明示して計算する ----
+            Assert.IsTrue(host.TryComputeArrivalPoint(staged.Instance, arrivalInB, out Vector3 point),
+                "B の到着点を計算できる。");
+
+            Assert.AreEqual(expected.x, point.x, 0.001f, "B の領域で clamp した位置（期待=" + expected + "）。");
+            Assert.AreEqual(expected.z, point.z, 0.001f);
+            Assert.Greater(Vector3.Distance(point, followingA), 0.1f,
+                "A の追従位置とは別の答えになる（結び先の値を返していない）。");
+
+            // ---- 何も動いていないこと（§7.1）----
+            Assert.AreEqual(cameraBefore, host.Rig.transform.position, "Rig の位置が変わらない。");
+            Assert.AreEqual(worldBefore, host.Camera.transform.position, "Camera の世界位置も変わらない。");
+            Assert.AreEqual(boundBefore, host.BoundArea.Value, "結び先が変わらない（B へ寄らない）。");
+            Assert.AreEqual(bindsBefore, host.BindCount, "結び直しも起きない。");
+            Assert.AreEqual(snapsBefore, host.Rig.SnapCount, "配置回数が増えない。");
+            Assert.AreEqual(appliesBefore, host.ApplyCount, "適用回数も増えない。");
+            Assert.IsFalse(host.Rig.Blend.IsBlending, "補間も始まらない。");
+
+            // 無効な指定では当て推量しない。
+            Assert.IsFalse(host.TryComputeArrivalPoint(AreaInstanceHandle.None, arrivalInB, out _),
+                "実体識別子が無効なら計算しない。");
+            Assert.IsFalse(
+                host.TryComputeArrivalPoint(new AreaInstanceHandle(AreaB, 99), arrivalInB, out _),
+                "載っていない実体でも計算しない（別世代を取り違えない）。");
+        }
+
         // ---------------------------------------------------------------- Scene の持ち物（付録 A.1）
 
         /// <summary>
@@ -339,6 +536,14 @@ namespace Momotaro.Tests.PlayMode
                 area.Value + " へ到着する（待ち " + waited + " 秒）。");
 
             yield return null;
+        }
+
+        /// <summary>その入口の世界座標（Scene の入口定義が正本）。</summary>
+        private static Vector3 EntryPosition(AreaRoot areaRoot, StableId entryId)
+        {
+            Assert.IsTrue(areaRoot.TryGetEntryPoint(entryId, out AreaEntryPoint entry),
+                "入口が Scene にありません: " + entryId.Value);
+            return entry.transform.position;
         }
 
         /// <summary>有効な部品の数（非 Active な物体の下は数えない）。</summary>

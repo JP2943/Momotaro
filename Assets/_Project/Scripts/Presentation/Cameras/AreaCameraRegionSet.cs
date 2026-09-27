@@ -34,6 +34,11 @@ namespace Momotaro.Presentation.Cameras
         [Tooltip("常駐 Rig の Prefab。まだ常駐 Rig が無いときにだけ生成する（付録 A.2）。")]
         [SerializeField] private GameObject _residentRigPrefab;
 
+        [Tooltip("この Area の初期化状態。入口配置が終わったかを常駐 Rig が確かめる（付録 A.10）。")]
+        [SerializeField] private AreaContext _context;
+
+        private readonly List<CameraRegionDefinition> _buffer = new List<CameraRegionDefinition>();
+
         /// <summary>この Area の安定 ID（根が未配線なら空）。</summary>
         public StableId AreaId => _areaRoot != null ? _areaRoot.AreaId : default;
 
@@ -52,10 +57,22 @@ namespace Momotaro.Presentation.Cameras
         /// <summary>常駐 Rig の Prefab（Validator・テスト用）。</summary>
         public GameObject ResidentRigPrefab => _residentRigPrefab;
 
+        /// <summary>この Area の初期化状態（Validator・テスト用）。</summary>
+        public AreaContext Context => _context;
+
+        /// <summary>
+        /// この Area の<b>入口配置が終わっている</b>か（付録 A.10）。
+        ///
+        /// 常駐 Rig はこれが真になるまで実カメラへ適用しない。準備完了の報告は
+        /// 初期化担当が<b>到着位置へ置いたあと</b>に出すので、これが「保存位置ではなく
+        /// 到着位置で配置してよい」の合図になる。
+        /// </summary>
+        public bool IsReadyForArrival => _context != null && _context.IsPrepared;
+
         /// <summary>配線が揃っているか。</summary>
         public bool IsWired =>
             _areaRoot != null && _followTarget != null && _defaultRegion != null
-            && _residentRigPrefab != null;
+            && _residentRigPrefab != null && _context != null;
 
         private void OnEnable()
         {
@@ -84,6 +101,40 @@ namespace Momotaro.Presentation.Cameras
             AreaCameraRegionSetRegistry.Unregister(this);
         }
 
+        /// <summary>
+        /// その位置が属するカメラ領域を選ぶ（P5.5 付録 A.10）。
+        ///
+        /// <b>Rig と同じ純粋関数を使う</b>（<see cref="CameraRegionSelector"/>）。
+        /// 移動先の到着点を、現在の Bind 先を変えずに計算するために公開してある——
+        /// 「Bind を切り替えてから測る」やり方だと、測るだけでカメラが動いてしまう。
+        /// どの領域にも入らなければ既定領域（§11）。
+        /// </summary>
+        public bool TryResolveRegion(Vector3 worldPosition, out CameraRegionDefinition region)
+        {
+            _buffer.Clear();
+            for (int i = 0; i < _regions.Count; i++)
+            {
+                if (_regions[i] != null)
+                {
+                    _buffer.Add(_regions[i].Definition);
+                }
+            }
+
+            if (CameraRegionSelector.TrySelect(_buffer, worldPosition, out region))
+            {
+                return true;
+            }
+
+            if (_defaultRegion != null)
+            {
+                region = _defaultRegion.Definition;
+                return true;
+            }
+
+            region = default;
+            return false;
+        }
+
 #if UNITY_EDITOR
         /// <summary>Builder から組み立てるための設定入口（Editor 専用）。</summary>
         public void EditorSet(
@@ -91,13 +142,15 @@ namespace Momotaro.Presentation.Cameras
             Transform followTarget,
             AreaCameraRegion defaultRegion,
             List<AreaCameraRegion> regions,
-            GameObject residentRigPrefab)
+            GameObject residentRigPrefab,
+            AreaContext context)
         {
             _areaRoot = areaRoot;
             _followTarget = followTarget;
             _defaultRegion = defaultRegion;
             _regions = regions ?? new List<AreaCameraRegion>();
             _residentRigPrefab = residentRigPrefab;
+            _context = context;
         }
 #endif
     }

@@ -182,9 +182,30 @@ namespace Momotaro.Tests.EditMode
             // 1 件だけ載っている状態を作って結び付ける（2 件では当て推量しない。§4.3）。
             AreaCameraRegionSetRegistry.ClearForTests();
             AreaCameraRegionSetRegistry.Register(first);
+
+            Vector3 before = host.Rig.transform.position;
             Assert.IsTrue(host.TryBindActiveArea(), "1 件目へ結び付く。");
             Assert.AreEqual(1, host.BindCount);
             Assert.AreSame(firstTarget, BoundTarget(host), "追従対象は 1 件目のもの。");
+
+            // <b>Bind は Snap ではない</b>（付録 A.10）。結び付けただけでは実カメラへ触らない。
+            // 入口配置が終わる前に置くと、保存位置を基準に配置してしまう。
+            Assert.AreEqual(before, host.Rig.transform.position, "結び付けただけでは Rig を動かさない。");
+            Assert.AreEqual(0, host.Rig.SnapCount, "配置回数も増えない。");
+            Assert.AreEqual(0, host.ApplyCount, "適用回数も増えない。");
+            Assert.IsTrue(host.ArrivalPending, "適用は保留される（準備完了を待つ）。");
+            Assert.IsTrue(host.Rig.FollowSuspended, "保留中は通常追従も止める。");
+
+            // 準備が終われば適用でき、保留と追従の停止が解ける。
+            first.Context.BeginInitialize(new StableId("area_test"), new StableId("entry_test"));
+            first.Context.MarkPrepared();
+            Assert.IsTrue(first.Context.IsPrepared, "前提：準備完了が立つ。");
+
+            host.ApplyArrival();
+            Assert.AreEqual(1, host.Rig.SnapCount, "準備が終わってから即時配置する。");
+            Assert.AreEqual(1, host.ApplyCount);
+            Assert.IsFalse(host.ArrivalPending, "保留が解ける。");
+            Assert.IsFalse(host.Rig.FollowSuspended, "通常追従が戻る。");
 
             Assert.IsTrue(host.TryBindActiveArea(), "同じ集合なら何度呼んでも通る。");
             Assert.AreEqual(1, host.BindCount, "同じ集合では結び直さない（参照を触らない）。");
@@ -232,8 +253,13 @@ namespace Momotaro.Tests.EditMode
             AreaCameraRegion region = regionGo.AddComponent<AreaCameraRegion>();
             region.Configure(new StableId("region_set_test"), 0, new Vector2(40f, 40f));
 
+            var contextGo = new GameObject("AreaContext");
+            _spawned.Add(contextGo);
+            AreaContext context = contextGo.AddComponent<AreaContext>();
+
             AreaCameraRegionSet set = NewRegionSet();
-            set.EditorSet(null, followTarget, region, null, null);
+            set.EditorSet(null, followTarget, region, null, null, context);
+            Assert.IsFalse(set.IsReadyForArrival, "前提：まだ入口配置が終わっていない（付録 A.10）。");
             return set;
         }
 
@@ -289,6 +315,13 @@ namespace Momotaro.Tests.EditMode
             public int ApplyCount => 0;
             public bool TryBindActiveArea() => true;
             public bool TryComputeArrivalPoint(out Vector3 point)
+            {
+                point = default;
+                return false;
+            }
+
+            public bool TryComputeArrivalPoint(
+                AreaInstanceHandle destination, Vector3 arrivalPosition, out Vector3 point)
             {
                 point = default;
                 return false;
