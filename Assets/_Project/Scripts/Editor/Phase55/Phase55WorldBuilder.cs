@@ -59,17 +59,20 @@ namespace Momotaro.Editor.Phase55
         /// <summary>Scene・Data・接続一覧を生成する。</summary>
         public static BuildResult BuildAll()
         {
+            // <b>接続を Scene より先に作る。</b> Area Scene の初期化担当がこの Asset を
+            // 参照するので、あとから作ると参照が空のまま保存される。
+            AreaConnectionData connections = EnsureConnections();
+            AssetDatabase.SaveAssets();
+
             Phase5BuildTargets targets = Phase55WorldLayout.Targets();
 
             Phase5ExplorationBuilder.BuildResult scenes = Phase5ExplorationBuilder.Build(targets);
             var outputs = new List<string>(scenes.Outputs);
+            outputs.Add(Phase55WorldIds.ConnectionDataPath);
             if (!scenes.Success)
             {
                 return new BuildResult(false, scenes.Message, outputs);
             }
-
-            AreaConnectionData connections = EnsureConnections();
-            outputs.Add(Phase55WorldIds.ConnectionDataPath);
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();

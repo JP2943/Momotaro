@@ -50,6 +50,8 @@ namespace Momotaro.Editor.Phase55
             public readonly Dictionary<string, Vector3> Entries = new Dictionary<string, Vector3>();
             public readonly Dictionary<string, Vector3> Exits = new Dictionary<string, Vector3>();
             public readonly List<Bounds> SideWalls = new List<Bounds>();
+            public string CatalogPath;
+            public string ConnectionPath;
         }
 
         [MenuItem("Momotaro/Phase 5.5/Validate Connected World")]
@@ -129,6 +131,31 @@ namespace Momotaro.Editor.Phase55
             ValidateCameraAxis(a, b, errors);
             ValidateSlideIsCovered(a, b, errors);
             ValidateConnections(a, b, errors);
+            ValidateBoundData(a, errors);
+            ValidateBoundData(b, errors);
+        }
+
+        /// <summary>
+        /// Area Scene が<b>この配置の</b>カタログと接続一覧を指していること（§3.1／§3.2）。
+        ///
+        /// ここを取り違えても Scene は成立してしまう——実行時に初めて
+        /// 「この Area はカタログに無い」「出入口の接続が引けない」という形で壊れる。
+        /// 実際に踏んだ：生成器がカタログのパスを P5 に固定していたため、
+        /// P5.5 の Area Scene が P5 のカタログを指していた。
+        /// </summary>
+        private static void ValidateBoundData(AreaFacts facts, List<string> errors)
+        {
+            if (facts.CatalogPath != Phase55WorldIds.CatalogDataPath)
+            {
+                errors.Add(facts.ScenePath + ": 初期化担当が P5.5 のカタログを指していません（実際="
+                    + (facts.CatalogPath ?? "未設定") + "）。");
+            }
+
+            if (facts.ConnectionPath != Phase55WorldIds.ConnectionDataPath)
+            {
+                errors.Add(facts.ScenePath + ": 初期化担当が P5.5 の接続一覧を指していません（実際="
+                    + (facts.ConnectionPath ?? "未設定") + "）。出入口から接続を引けません（§3.1）。");
+            }
         }
 
         // ---------------------------------------------------------------- 事実の採取
@@ -237,6 +264,20 @@ namespace Momotaro.Editor.Phase55
                     collected.Regions.Add(set.Regions[i].Definition);
                 }
             }
+
+            // 初期化担当が渡す Data。<b>配置ごとに正しいものを指しているか</b>を見る。
+            List<Momotaro.Infrastructure.World.AreaInitializer> initializers =
+                Phase5ExplorationValidator.Components<Momotaro.Infrastructure.World.AreaInitializer>(scene);
+            if (initializers.Count != 1)
+            {
+                errors.Add(scenePath + ": エリア初期化担当が 1 つではありません。");
+                return false;
+            }
+
+            collected.CatalogPath = initializers[0].Catalog != null
+                ? AssetDatabase.GetAssetPath(initializers[0].Catalog) : null;
+            collected.ConnectionPath = initializers[0].Connections != null
+                ? AssetDatabase.GetAssetPath(initializers[0].Connections) : null;
 
             facts = collected;
             return true;

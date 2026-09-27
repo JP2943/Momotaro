@@ -81,6 +81,11 @@
       "id": "P55-V02",
       "summary": "壊した配置を検出する（§11 の V02）。接続ズレ・通路の塞ぎ・接続軸以外へのカメラずれ。いずれも Scene 1 枚ずつの検査では言えない",
       "stage": "P55-03"
+    },
+    {
+      "id": "P55-SEC3-1",
+      "summary": "実入力から接続レコードが解決される（仕様書 §3.1／§6.1）。出入口の ExitId で東西の接続を引き、受理時に見せ方・向き・所要秒・到着入口を固定する。接続を持たない P5 の構成は従来経路のまま。スライド演出と Additive の受け渡しは P55-04",
+      "stage": "P55-03"
     }
   ],
   "tests": [
@@ -327,6 +332,18 @@
       "supportingTests": [
         "Momotaro.Tests.EditMode.P55WorldLayoutTests.WallingUpThePassage_FailsValidation",
         "Momotaro.Tests.EditMode.P55WorldLayoutTests.MovingThePassageOffTheRegionCentre_FailsValidation"
+      ]
+    },
+    {
+      "requirementId": "P55-SEC3-1",
+      "stage": "P55-03",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.WalkingEastIntoTheSeam_ResolvesTheEastwardSlideConnection",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.WalkingWestIntoTheSeam_ResolvesTheWestwardSlideConnection",
+        "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.TheP5Area_StillTravelsWithoutAnyConnectionRecord"
       ]
     }
   ],

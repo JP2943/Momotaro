@@ -141,6 +141,7 @@ namespace Momotaro.Editor.Phase55
             CatalogDataPath = Phase55WorldIds.CatalogDataPath,
             CatalogId = Phase55WorldIds.Catalog,
             CatalogDisplayName = "P5.5 エリアカタログ（実ワールド配置）",
+            ConnectionDataPath = Phase55WorldIds.ConnectionDataPath,
             TrialHeadline = "P5.5 エリア接続試遊（起動）",
             AreaAId = Phase55WorldIds.AreaA,
             AreaBId = Phase55WorldIds.AreaB,

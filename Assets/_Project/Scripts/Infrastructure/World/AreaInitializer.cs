@@ -67,6 +67,15 @@ namespace Momotaro.Infrastructure.World
         [Tooltip("P5 のエリアカタログ。遷移サービスへ渡す。")]
         [SerializeField] private AreaCatalogData _catalog;
 
+        [Tooltip("エリア接続の一覧（P5.5 §3.1）。P5 の構成では未設定でよい。")]
+        [SerializeField] private AreaConnectionData _connections;
+
+        /// <summary>この Area が渡すカタログ（Validator・テスト用）。</summary>
+        public AreaCatalogData Catalog => _catalog;
+
+        /// <summary>この Area が渡す接続一覧（Validator・テスト用。無ければ null）。</summary>
+        public AreaConnectionData Connections => _connections;
+
         /// <summary>初期化が成功したか（診断・テスト用）。</summary>
         public bool Initialized { get; private set; }
 
@@ -198,6 +207,13 @@ namespace Momotaro.Infrastructure.World
             if (!transitions.Bind(_catalog, _conditions))
             {
                 return Fail("Area カタログを構築できませんでした（Data の不整合）。");
+            }
+
+            // 接続一覧（P5.5 §3.1）。<b>未設定は失敗ではない</b>——P5 の Area は接続を持たず、
+            // 出入口が行き先を直接指す。設定されているのに壊れている場合だけ失敗にする。
+            if (!transitions.BindConnections(_connections))
+            {
+                return Fail("エリア接続を構築できませんでした（Data の不整合）。");
             }
 
             // 5b. 死亡再開の実行役へ Session と遷移役を渡す（§9.1）。

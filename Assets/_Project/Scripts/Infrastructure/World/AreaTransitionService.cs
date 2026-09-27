@@ -39,6 +39,9 @@ namespace Momotaro.Infrastructure.World
         private int _respawnRequestId;
 
         private AreaCatalog _catalog;
+
+        /// <summary>接続一覧（P5.5 §3.1）。P5 の構成では null のまま。</summary>
+        private AreaConnectionCatalog _connections;
         private AreaTransitionCoordinator _coordinator;
         private IAreaTransitionConditions _conditions;
         private Coroutine _running;
@@ -170,6 +173,72 @@ namespace Momotaro.Infrastructure.World
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// 接続一覧を注入する（P5.5 §3.1）。
+        ///
+        /// <b>null は「接続を持たない構成」</b>——P5 の Area はこちらで、
+        /// 出入口は従来どおり行き先の Area／入口を直接指す。必須にすると
+        /// 既存の Scene が一斉に動かなくなる。
+        ///
+        /// カタログと同じく<b>一度作ったら作り直さない</b>。走っている遷移が受理時に固定した
+        /// 接続を見ている最中に差し替わると、途中で値が変わる（§3.1 末尾）。
+        /// </summary>
+        public bool BindConnections(AreaConnectionData connectionData)
+        {
+            if (connectionData == null || _connections != null)
+            {
+                return true;
+            }
+
+            if (!AreaConnectionCatalog.TryBuild(connectionData, out AreaConnectionCatalog built,
+                    out System.Collections.Generic.List<string> errors))
+            {
+                foreach (string e in errors)
+                {
+                    GameLog.Error(LogCategory.Scene, "Area connection error: " + e);
+                }
+
+                return false;
+            }
+
+            _connections = built;
+            return true;
+        }
+
+        /// <summary>接続一覧（無ければ null。§3.1）。</summary>
+        public AreaConnectionCatalog Connections => _connections;
+
+        /// <summary>
+        /// 直近に受理した接続（診断・テスト用）。<b>受理できたときだけ更新する</b>——
+        /// 拒否された要求で上書きすると、走っている遷移の正本が別の接続に見える。
+        /// </summary>
+        public AreaConnectionSnapshot LastAcceptedConnection { get; private set; }
+
+        /// <summary>接続を指定して受理された回数（診断・テスト用）。</summary>
+        public int ConnectionTravelCount { get; private set; }
+
+        /// <summary>
+        /// <b>接続を指定して</b>遷移を要求する（P5.5 §3.1／§6.1）。
+        ///
+        /// 受理できた時点で接続の値（見せ方・向き・所要秒・到着入口）を固定する。
+        /// 走っている遷移はこの固定値だけを見る——途中で SO を読み直すと、
+        /// 編集中の値が演出の最中に効いてしまう（§3.1 末尾）。
+        ///
+        /// <b>転送そのものはまだ従来経路である。</b> スライド演出と Additive の受け渡しは
+        /// P55-04 の担当で、ここは「実入力から接続が解決され、その値で受理される」ところまで。
+        /// </summary>
+        public AreaTransitionDecision TryTravel(in AreaConnectionSnapshot connection)
+        {
+            AreaTransitionDecision decision = TryTravel(connection.ToAreaId, connection.EntryId);
+            if (decision.Accepted)
+            {
+                LastAcceptedConnection = connection;
+                ConnectionTravelCount++;
+            }
+
+            return decision;
         }
 
         /// <summary>

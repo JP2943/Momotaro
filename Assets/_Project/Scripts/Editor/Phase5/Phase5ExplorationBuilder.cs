@@ -667,7 +667,7 @@ namespace Momotaro.Editor.Phase5
                 new List<AreaExitGate> { toB }, new List<AreaFlagDoor> { fixtures.Door },
                 null, new List<AreaFlagLever> { fixtures.Lever });
 
-            CreateAreaSystems(root, areaRoot, definition, fixtures, residentRig);
+            CreateAreaSystems(root, areaRoot, definition, fixtures, residentRig, t);
 
             // <b>世界座標へ移してから焼く</b>（§3.2。ここが唯一の local→world 変換点）。
             ApplyAuthoringOrigin(root, t.AreaAOrigin);
@@ -770,7 +770,7 @@ namespace Momotaro.Editor.Phase5
                 new List<AreaExitGate> { toA }, null,
                 new List<AreaTransitionDoor> { fixtures.TransitionDoor });
 
-            CreateAreaSystems(root, areaRoot, definition, fixtures, residentRig);
+            CreateAreaSystems(root, areaRoot, definition, fixtures, residentRig, t);
 
             // <b>世界座標へ移してから焼く</b>（§3.2。ここが唯一の local→world 変換点）。
             ApplyAuthoringOrigin(root, t.AreaBOrigin);
@@ -1096,7 +1096,7 @@ namespace Momotaro.Editor.Phase5
 
         private static void CreateAreaSystems(
             Transform root, AreaRoot areaRoot, AreaDefinition definition, Fixtures fixtures,
-            GameObject residentRig)
+            GameObject residentRig, Phase5BuildTargets t)
         {
             var systems = new GameObject("AreaSystems");
             systems.transform.SetParent(root, false);
@@ -1371,7 +1371,10 @@ namespace Momotaro.Editor.Phase5
                     fixtures.DefaultCameraRegion, fixtures.CameraRegions, residentRig, context);
             }
 
-            var catalog = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase5AreaIds.CatalogDataPath);
+            // <b>この配置のカタログ</b>を渡す（P5.5 §3.2）。
+            // ここを P5 のパス固定にしていたので、P5.5 の Area Scene が P5 のカタログを
+            // 指していた——実行時には「この Area がカタログに無い」形で壊れる。
+            var catalog = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(t.CatalogDataPath);
 
             // ---- 本編型死亡再開（§9.1）----
             //
@@ -1406,6 +1409,13 @@ namespace Momotaro.Editor.Phase5
             so.FindProperty("_progress").objectReferenceValue = progress;
             so.FindProperty("_record").objectReferenceValue = record;
             so.FindProperty("_catalog").objectReferenceValue = catalog;
+
+            // 接続一覧（P5.5 §3.1）。P5 の構成では空のまま——接続を持たない。
+            // <b>ここで読む。</b> 事前に掴んだ参照は生成中の Refresh で無効になりうる。
+            so.FindProperty("_connections").objectReferenceValue =
+                string.IsNullOrEmpty(t.ConnectionDataPath)
+                    ? null
+                    : AssetDatabase.LoadAssetAtPath<AreaConnectionData>(t.ConnectionDataPath);
             so.FindProperty("_respawn").objectReferenceValue = respawn;
             so.ApplyModifiedPropertiesWithoutUndo();
 

@@ -118,6 +118,20 @@ namespace Momotaro.Editor.Phase5
         /// <summary>カタログの表示名。</summary>
         public string CatalogDisplayName { get; set; }
 
+        /// <summary>
+        /// この配置の接続一覧の<b>パス</b>（P5.5 §3.1）。空なら接続を持たない構成。
+        ///
+        /// Area Scene の初期化担当がこの Asset を遷移サービスへ渡す。渡さないと、出入口は
+        /// 従来どおり行き先を直接指すだけになり「東へスライドする」情報がどこにも無い。
+        ///
+        /// <b>Asset の参照ではなくパスで持つ。</b> 生成の途中には
+        /// <c>AssetDatabase.Refresh</c>／<c>SaveAssets</c> が何度も挟まり、
+        /// 事前に掴んだ <c>ScriptableObject</c> の参照は<b>そこで無効になることがある</b>
+        /// （実際に踏んだ：接続を渡したのに Scene には未設定で保存された）。
+        /// カタログも同じ理由でパスで持っている。
+        /// </summary>
+        public string ConnectionDataPath { get; set; }
+
         /// <summary>エリア A の Authoring 原点（世界座標）。</summary>
         public Vector3 AreaAOrigin { get; set; } = Vector3.zero;
 

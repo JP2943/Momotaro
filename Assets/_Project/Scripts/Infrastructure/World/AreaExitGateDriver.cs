@@ -70,9 +70,32 @@ namespace Momotaro.Infrastructure.World
                 }
 
                 // 受付条件（§6.1）は遷移サービス側が見る。ここは要求するだけ。
-                transitions.TryTravel(gate.DestinationAreaId, gate.DestinationEntryId);
+                RequestTravel(transitions, gate);
                 return; // 1 フレームに 1 件だけ。
             }
+        }
+
+        /// <summary>
+        /// その出入口の遷移を要求する（P5.5 §3.1）。
+        ///
+        /// <b>接続レコードがあればそれを通す。</b> 接続は見せ方・向き・所要秒・到着入口を持ち、
+        /// 受理時に値が固定される——出入口が行き先を直接指す従来の形だと、
+        /// 「東へスライドする」という情報がどこにも無い。
+        ///
+        /// <b>無ければ従来どおり</b>（§3.1「既存未指定は Fade にして既存 Data の挙動を保持」）。
+        /// 接続を必須にすると P5 の Area が一斉に動かなくなる。
+        /// </summary>
+        private void RequestTravel(AreaTransitionService transitions, AreaExitGate gate)
+        {
+            if (transitions.Connections != null && gate.ExitId.IsValid && _areaRoot.AreaId.IsValid
+                && transitions.Connections.TryGetFromExit(
+                    _areaRoot.AreaId, gate.ExitId, out AreaConnectionSnapshot connection))
+            {
+                transitions.TryTravel(connection);
+                return;
+            }
+
+            transitions.TryTravel(gate.DestinationAreaId, gate.DestinationEntryId);
         }
 
         private Vector3 ResolveMoveInput()
