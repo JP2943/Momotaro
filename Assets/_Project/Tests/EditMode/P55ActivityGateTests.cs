@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Momotaro.Core.Identification;
 using Momotaro.Core.World;
 using Momotaro.Data.World;
+using Momotaro.Gameplay.Interaction;
 using Momotaro.Gameplay.Session;
 using NUnit.Framework;
 using UnityEngine;
@@ -221,6 +222,129 @@ namespace Momotaro.Tests.EditMode
             gate.Component.Open();
             Assert.IsTrue(gate.Visual.enabled);
             Assert.IsTrue(gate.Systems.activeSelf);
+        }
+
+        // ---------------------------------------------------------------- 再開と仕掛けの状態
+
+        /// <summary>
+        /// <b>開通済みの門が再開で再び塞がらない</b>（GPT レビュー R11 の指摘 2）。
+        ///
+        /// 門は開通したときに自分の Collider と Obstacle を無効にする。
+        /// ゲートが再開で一律に有効化すると、<b>見た目は開いているのに通れない</b>になる。
+        /// 遷移失敗から出発側を再開する経路で起きる。
+        /// </summary>
+        [Test]
+        public void ReopeningTheGate_DoesNotCloseADoorThatWasAlreadyOpened()
+        {
+            Gate gate = NewGate();
+            var doorGo = new GameObject("Door");
+            _spawned.Add(doorGo);
+            doorGo.transform.SetParent(gate.Root.transform, false);
+            var visualGo = new GameObject("ClosedVisual");
+            visualGo.transform.SetParent(doorGo.transform, false);
+            Collider blocker = doorGo.AddComponent<BoxCollider>();
+            var obstacle = doorGo.AddComponent<UnityEngine.AI.NavMeshObstacle>();
+            AreaFlagDoor door = doorGo.AddComponent<AreaFlagDoor>();
+            door.Bind(new StableId("flag_x"), blocker, visualGo, obstacle);
+
+            // 門の Collider／Obstacle もゲートの停止対象（実 Scene と同じ構成）。
+            gate.Component.EditorSet(
+                gate.Root,
+                new List<GameObject> { gate.Systems },
+                new List<Collider> { gate.Collider, blocker },
+                new List<Behaviour> { gate.Behaviour, obstacle, door });
+            gate.Component.EditorCloseForShipping();
+            gate.Component.Open();
+
+            // 1. 門を開通させる。
+            Assert.IsTrue(door.TryApplyOpened(out string _));
+            Assert.IsTrue(door.IsOpened);
+            Assert.IsFalse(blocker.enabled, "前提：通行が開いている。");
+            Assert.IsFalse(obstacle.enabled, "前提：くり抜きも外れている。");
+            Assert.IsFalse(visualGo.activeSelf, "前提：見た目も開いている。");
+            Assert.AreEqual(1, door.AppliedCount);
+
+            // 2. 活動ゲートを閉めて、3. 開け直す。
+            gate.Component.Close();
+            gate.Component.Open();
+
+            // 4. 門の状態は保たれている。
+            Assert.IsFalse(blocker.enabled, "再開で門が再び塞がらない。");
+            Assert.IsFalse(obstacle.enabled, "くり抜きも戻らない。");
+            Assert.IsFalse(visualGo.activeSelf, "見た目も開通のまま。");
+            Assert.AreEqual(1, door.AppliedCount, "開通回数は増やさない（§7.3）。");
+
+            // その他の停止対象はちゃんと戻っている。
+            Assert.IsTrue(gate.Collider.enabled, "門以外の物理は戻る。");
+            Assert.IsTrue(gate.Systems.activeSelf, "Gameplay も戻る。");
+
+            // 重複した Open() でも壊れない。
+            gate.Component.Open();
+            Assert.IsFalse(blocker.enabled);
+            Assert.AreEqual(1, door.AppliedCount);
+        }
+
+        /// <summary>
+        /// 初回起動は「保存時のすべて停止」と別扱いで、一律に有効化する（§4.2）。
+        /// ここを復元にしてしまうと、何も覚えていないので Area が永久に止まる。
+        /// </summary>
+        [Test]
+        public void TheFirstOpen_EnablesEverything_BecauseThereIsNothingToRestore()
+        {
+            Gate gate = NewGate();
+            gate.Component.EditorCloseForShipping();
+
+            Assert.IsFalse(gate.Component.HasRestoreState, "出荷状態では覚えていない。");
+
+            gate.Component.Open();
+
+            Assert.IsTrue(gate.Systems.activeSelf);
+            Assert.IsTrue(gate.Collider.enabled);
+            Assert.IsTrue(gate.Behaviour.enabled);
+
+            gate.Component.Close();
+            Assert.IsTrue(gate.Component.HasRestoreState, "閉めれば覚える。");
+        }
+
+        /// <summary>
+        /// 門の開通状態は<b>改めて適用し直せる</b>（§4.2の再同期の土台）。
+        /// 以前は <c>IsOpened</c> なら即座に true を返していたため、何も直らなかった。
+        /// </summary>
+        [Test]
+        public void ReapplyingAnOpenedDoor_FixesThePhysicsWithoutCountingAgain()
+        {
+            var doorGo = new GameObject("Door");
+            _spawned.Add(doorGo);
+            var visualGo = new GameObject("ClosedVisual");
+            visualGo.transform.SetParent(doorGo.transform, false);
+            Collider blocker = doorGo.AddComponent<BoxCollider>();
+            var obstacle = doorGo.AddComponent<UnityEngine.AI.NavMeshObstacle>();
+            AreaFlagDoor door = doorGo.AddComponent<AreaFlagDoor>();
+            door.Bind(new StableId("flag_x"), blocker, visualGo, obstacle);
+
+            Assert.IsTrue(door.TryApplyOpened(out string _));
+            Assert.AreEqual(1, door.AppliedCount);
+
+            // 他の事情で物理が有効に戻ってしまった状況を作る。
+            blocker.enabled = true;
+            obstacle.enabled = true;
+            visualGo.SetActive(true);
+
+            Assert.IsTrue(door.TryApplyOpened(out string _), "開通済みでも真として返る。");
+            Assert.IsFalse(blocker.enabled, "再適用で通行が直る。");
+            Assert.IsFalse(obstacle.enabled, "くり抜きも直る。");
+            Assert.IsFalse(visualGo.activeSelf, "見た目も直る。");
+            Assert.AreEqual(1, door.AppliedCount, "開通回数は増やさない。");
+            Assert.AreEqual(1, door.ReappliedCount, "押し直した回数は別に数える。");
+
+            // 開通していない門には何もしない。
+            var closedGo = new GameObject("ClosedDoor");
+            _spawned.Add(closedGo);
+            Collider closedBlocker = closedGo.AddComponent<BoxCollider>();
+            AreaFlagDoor closed = closedGo.AddComponent<AreaFlagDoor>();
+            closed.Bind(new StableId("flag_y"), closedBlocker, null);
+            Assert.IsFalse(closed.TryReapplyOpened(out string _), "開通していない門を勝手に開けない。");
+            Assert.IsTrue(closedBlocker.enabled);
         }
 
         // ---------------------------------------------------------------- 補助

@@ -490,21 +490,35 @@ namespace Momotaro.Editor.Phase5
         private static void ValidateNavigationRoutesOnNavMesh(
             Scene scene, List<string> errors, List<string> warnings, List<NavMeshDataInstance> temporaryData)
         {
-            NavMeshTriangulation triangulation = NavMesh.CalculateTriangulation();
-            if (triangulation.indices == null || triangulation.indices.Length == 0)
+            // <b>グローバルな三角形の有無を「対象 Scene が登録済みか」の判定に使わない。</b>
+            //
+            // 使っていたときは、別 Scene の NavMesh が登録済みだと対象 Scene の data を追加せず、
+            // <b>その別 Scene の NavMesh で到達性を判定していた</b>（GPT レビュー R11 の指摘 3）。
+            // Editor の開き方やテストの実行順によって誤判定する。
+            //
+            // 隣の登録をこちらから外すのは危険（他の持ち主のものを壊す）なので、
+            // <b>隣隢できないときは合否を出さず「検査不能」を明示する</b>。
+            NavMeshTriangulation existing = NavMesh.CalculateTriangulation();
+            bool somethingElseRegistered = existing.indices != null && existing.indices.Length > 0;
+            if (somethingElseRegistered)
             {
-                foreach (Unity.AI.Navigation.NavMeshSurface surface
-                    in Components<Unity.AI.Navigation.NavMeshSurface>(scene))
-                {
-                    if (surface.navMeshData != null)
-                    {
-                        temporaryData.Add(NavMesh.AddNavMeshData(surface.navMeshData));
-                    }
-                }
-
-                triangulation = NavMesh.CalculateTriangulation();
+                warnings.Add("別の NavMesh がすでに登録されているため、この Scene だけを隣隢して"
+                    + "経路を見られませんでした（三角形 " + (existing.indices.Length / 3)
+                    + " 枚）。<b>別 Scene の NavMesh で合否を出してはいけない</b>ので検査をやめます。"
+                    + "PlayMode の受入で確認してください。");
+                return;
             }
 
+            foreach (Unity.AI.Navigation.NavMeshSurface surface
+                in Components<Unity.AI.Navigation.NavMeshSurface>(scene))
+            {
+                if (surface.navMeshData != null)
+                {
+                    temporaryData.Add(NavMesh.AddNavMeshData(surface.navMeshData));
+                }
+            }
+
+            NavMeshTriangulation triangulation = NavMesh.CalculateTriangulation();
             if (triangulation.indices == null || triangulation.indices.Length == 0)
             {
                 warnings.Add("NavMesh の焼き込み data を追加しても三角形が取れないため、"

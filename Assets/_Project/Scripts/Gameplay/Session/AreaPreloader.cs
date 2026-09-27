@@ -229,15 +229,16 @@ namespace Momotaro.Gameplay.Session
                     // <b>実 Scene が残っている。</b> 新しいロードは出さず、撤去のやり直しだけを狙う。
                     // 台帳からも外していないので、在留枠を食ったままになる——それが正しい
                     // （空きがあると誤認して 3 枚目を読むより、先読みが止まるほうが軽い）。
-                    if (TakeRetryPermission())
+                    if (!HasRetryPermission())
                     {
-                        BeginRelease();
+                        return;
                     }
 
+                    BeginRelease();
                     return;
 
                 case AreaPreloadPhase.Failed:
-                    if (!TakeRetryPermission())
+                    if (!HasRetryPermission())
                     {
                         return;
                     }
@@ -267,7 +268,7 @@ namespace Momotaro.Gameplay.Session
         }
 
         /// <summary>再試行の許可を 1 回分消費する。許可が無ければ見送った回数を数える。</summary>
-        private bool TakeRetryPermission()
+        private bool HasRetryPermission()
         {
             if (!_retryArmed)
             {
@@ -276,8 +277,13 @@ namespace Momotaro.Gameplay.Session
                 return false;
             }
 
-            _retryArmed = false;
             return true;
+        }
+
+        /// <summary>Scene 操作を掴めた時点で再試行の許可を 1 回分消費する。</summary>
+        private void ConsumeRetryPermission()
+        {
+            _retryArmed = false;
         }
 
         private void PollLoading()
@@ -370,6 +376,8 @@ namespace Momotaro.Gameplay.Session
                 return; // 他の Scene 操作が走っている。失敗ではない。
             }
 
+            ConsumeRetryPermission();
+
             AreaInstanceHandle handle = _ledger.NextHandle(_desiredArea);
             if (!_ledger.TryAdmitStaged(handle))
             {
@@ -426,6 +434,8 @@ namespace Momotaro.Gameplay.Session
             {
                 return;
             }
+
+            ConsumeRetryPermission();
 
             _ledger.TrySetPhase(StagedArea, AreaActivationPhase.Retiring);
             _operation = _host.Unload(StagedSceneHandle);

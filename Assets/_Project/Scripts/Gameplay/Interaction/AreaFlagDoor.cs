@@ -61,7 +61,15 @@ namespace Momotaro.Gameplay.Interaction
 
         /// <summary>
         /// 開いた状態を適用する。<b>通行を開けてから見た目を変える。</b>
-        /// すでに適用済みなら何もせず true（再入・再表示で二重に適用しない）。
+        ///
+        /// <b>すでに開通済みでも、物理と見た目を改めて適用する</b>（GPT レビュー R11 の指摘 2）。
+        /// 以前は <c>IsOpened</c> なら即座に true を返していたため、他の事情で
+        /// Collider／Obstacle が有効に戻っていたときに<b>再適用で直しようがなかった</b>。
+        /// 「見た目は開いているのに通れない」は §7.3 が受入にしない状態なので、
+        /// 再適用は<b>常に効く</b>ようにする。
+        ///
+        /// ただし <see cref="AppliedCount"/> は増やさない——「いま開通した」の回数なので、
+        /// 復元や再同期で増えると §7.3 の「1 を超えてはいけない」が意味を失う。
         /// </summary>
         public bool TryApplyOpened(out string error)
         {
@@ -69,7 +77,8 @@ namespace Momotaro.Gameplay.Interaction
 
             if (IsOpened)
             {
-                return true;
+                // 適用済みの状態を改めて押し直す。回数は増やさない。
+                return TryReapplyOpened(out error);
             }
 
             if (_blocker == null)
@@ -101,6 +110,49 @@ namespace Momotaro.Gameplay.Interaction
             LastFailure = string.Empty;
             return true;
         }
+
+        /// <summary>
+        /// 開通済みの状態を<b>改めて適用し直す</b>（回数は増やさない）。
+        ///
+        /// 使い道は二つ。活動ゲートを開け直したときの後始末と、
+        /// §4.2「受理後に最新値で表示を再同期する」。
+        /// <b>開通していない門には何もしない</b>（勝手に開けない）。
+        /// </summary>
+        public bool TryReapplyOpened(out string error)
+        {
+            error = string.Empty;
+
+            if (!IsOpened)
+            {
+                return false;
+            }
+
+            if (_blocker == null)
+            {
+                error = "門の Collider が未配線です（flag=" + _flagId + "）。";
+                LastFailure = error;
+                return false;
+            }
+
+            _blocker.enabled = false;
+
+            if (_navObstacle != null)
+            {
+                _navObstacle.enabled = false;
+            }
+
+            if (_closedVisual != null)
+            {
+                _closedVisual.SetActive(false);
+            }
+
+            ReappliedCount++;
+            LastFailure = string.Empty;
+            return true;
+        }
+
+        /// <summary>開通状態を押し直した回数（診断・テスト用。上限はない）。</summary>
+        public int ReappliedCount { get; private set; }
 
         /// <summary>
         /// Area の初期化時に、記録から開通状態を復元する（§4.3。通知は出さない）。

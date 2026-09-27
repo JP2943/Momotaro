@@ -42,6 +42,12 @@ namespace Momotaro.Gameplay.Session
         [Tooltip("先読みのときだけ無効にする表示系（Camera／AudioListener／Light）。<b>保存時は有効</b>。")]
         [SerializeField] private List<Behaviour> _stagedOnlyBehaviours = new List<Behaviour>();
 
+        private readonly List<bool> _rootState = new List<bool>();
+        private readonly List<bool> _colliderState = new List<bool>();
+        private readonly List<bool> _behaviourState = new List<bool>();
+        private readonly List<bool> _stagedOnlyState = new List<bool>();
+        private bool _hasRestoreState;
+
         /// <summary>いま開いているか。</summary>
         public bool IsOpen { get; private set; }
 
@@ -164,20 +170,120 @@ namespace Momotaro.Gameplay.Session
             OpenedOnLoad = true;
         }
 
-        /// <summary>活動を許可する（§4.2）。二度呼んでも同じ状態に落ち着く。</summary>
+        /// <summary>
+        /// 活動を許可する（§4.2）。二度呼んでも同じ状態に落ち着く。
+        ///
+        /// <b>一律に有効化しない。</b> 閉める直前の有効状態を覚えていればそれを復元する
+        /// （GPT レビュー R11 の指摘 2）。
+        ///
+        /// 一律に有効化すると、<b>開通済みの門が再び塞がる</b>——門は開通したときに
+        /// 自分の Collider と Obstacle を無効にしているので、ゲートがそれを有効に戻すと
+        /// 「見た目は開いているのに通れない」になる。遷移失敗から出発側を再開する経路で起きる。
+        ///
+        /// <b>初回起動は別扱い。</b> 保存状態は「すべて停止」で、復元すべき前の状態がないので、
+        /// そのときだけ一律に有効化する。
+        /// </summary>
         public void Open()
         {
-            Apply(true);
+            if (_hasRestoreState)
+            {
+                Restore();
+            }
+            else
+            {
+                Apply(true);
+            }
+
             IsOpen = true;
             OpenCount++;
         }
 
-        /// <summary>活動を止める（撤去・先読みのやり直し）。</summary>
+        /// <summary>
+        /// 活動を止める（撤去・先読みのやり直し）。
+        /// <b>止める前の有効状態を覚えておく</b>——次の <see cref="Open"/> でそれを戻す。
+        /// </summary>
         public void Close()
         {
+            // <b>開いているときだけ覚える。</b> 既に閉じている状態を覚えると
+            // 「すべて停止」が復元対象になり、次の Open() で Area が永久に目覚めなくなる
+            // （出荷状態の直後に Close を呼ばれる経路で実際に踏んだ）。
+            // 「止める前の状態」は「最後に動いていたときの状態」のこと。
+            if (IsOpen)
+            {
+                CaptureRestoreState();
+            }
+
             Apply(false);
             IsOpen = false;
             CloseCount++;
+        }
+
+        /// <summary>閉める前の有効状態を覚えているか（診断・テスト用）。</summary>
+        public bool HasRestoreState => _hasRestoreState;
+
+        private void CaptureRestoreState()
+        {
+            _rootState.Clear();
+            for (int i = 0; i < _gatedRoots.Count; i++)
+            {
+                _rootState.Add(_gatedRoots[i] != null && _gatedRoots[i].activeSelf);
+            }
+
+            _colliderState.Clear();
+            for (int i = 0; i < _gatedColliders.Count; i++)
+            {
+                _colliderState.Add(_gatedColliders[i] != null && _gatedColliders[i].enabled);
+            }
+
+            _behaviourState.Clear();
+            for (int i = 0; i < _gatedBehaviours.Count; i++)
+            {
+                _behaviourState.Add(_gatedBehaviours[i] != null && _gatedBehaviours[i].enabled);
+            }
+
+            _stagedOnlyState.Clear();
+            for (int i = 0; i < _stagedOnlyBehaviours.Count; i++)
+            {
+                _stagedOnlyState.Add(_stagedOnlyBehaviours[i] != null && _stagedOnlyBehaviours[i].enabled);
+            }
+
+            _hasRestoreState = true;
+        }
+
+        /// <summary>覚えている有効状態を戻す。順序は <see cref="Apply"/> と同じ規律。</summary>
+        private void Restore()
+        {
+            for (int i = 0; i < _gatedColliders.Count && i < _colliderState.Count; i++)
+            {
+                if (_gatedColliders[i] != null)
+                {
+                    _gatedColliders[i].enabled = _colliderState[i];
+                }
+            }
+
+            for (int i = 0; i < _gatedBehaviours.Count && i < _behaviourState.Count; i++)
+            {
+                if (_gatedBehaviours[i] != null)
+                {
+                    _gatedBehaviours[i].enabled = _behaviourState[i];
+                }
+            }
+
+            for (int i = 0; i < _stagedOnlyBehaviours.Count && i < _stagedOnlyState.Count; i++)
+            {
+                if (_stagedOnlyBehaviours[i] != null)
+                {
+                    _stagedOnlyBehaviours[i].enabled = _stagedOnlyState[i];
+                }
+            }
+
+            for (int i = 0; i < _gatedRoots.Count && i < _rootState.Count; i++)
+            {
+                if (_gatedRoots[i] != null)
+                {
+                    _gatedRoots[i].SetActive(_rootState[i]);
+                }
+            }
         }
 
         /// <summary>

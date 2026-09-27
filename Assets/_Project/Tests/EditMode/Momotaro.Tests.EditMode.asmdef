@@ -12,7 +12,8 @@
         "Momotaro.Editor",
         "Momotaro.EditorBridge",
         "Unity.InputSystem",
-        "Momotaro.Tests.Support"
+        "Momotaro.Tests.Support",
+        "Unity.AI.Navigation"
     ],
     "includePlatforms": [
         "Editor"

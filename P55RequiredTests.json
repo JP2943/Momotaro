@@ -131,7 +131,9 @@
         "Momotaro.Tests.EditMode.P55PreloadTests.AFailedUnload_KeepsTheLedgerSlotAndTheHandle_WhileTheSceneIsStillLoaded",
         "Momotaro.Tests.EditMode.P55PreloadTests.AnInvalidRequest_IsRefusedWithoutTouchingAnything",
         "Momotaro.Tests.EditMode.P55PreloadTests.SwitchingToAnotherCandidate_ClearsAPreviousLoadFailure",
-        "Momotaro.Tests.EditMode.P55PreloadTests.AFailedUnloadNotification_FreesTheSlotWhenTheSceneIsActuallyGone"
+        "Momotaro.Tests.EditMode.P55PreloadTests.AFailedUnloadNotification_FreesTheSlotWhenTheSceneIsActuallyGone",
+        "Momotaro.Tests.EditMode.P55PreloadTests.RetryPermission_SurvivesASerializationWait_ForALoad",
+        "Momotaro.Tests.EditMode.P55PreloadTests.RetryPermission_SurvivesASerializationWait_ForARelease"
       ]
     },
     {
@@ -231,7 +233,11 @@
         "Momotaro.Tests.EditMode.P55ActivityGateTests.Open_IsIdempotentAndSurvivesBrokenReferences",
         "Momotaro.Tests.EditMode.P5ValidatorTests.VisualsOutsideTheActivityGate_FailValidation",
         "Momotaro.Tests.EditMode.P55ActivityGateTests.StagedOnlyVisuals_ShipEnabled_AndAreNotPartOfTheSavedClosedState",
-        "Momotaro.Tests.EditMode.P55ActivityGateTests.Close_AlsoStopsTheVisuals_AndOpenBringsThemBack"
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.Close_AlsoStopsTheVisuals_AndOpenBringsThemBack",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.ReopeningTheGate_DoesNotCloseADoorThatWasAlreadyOpened",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.TheFirstOpen_EnablesEverything_BecauseThereIsNothingToRestore",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.ReapplyingAnOpenedDoor_FixesThePhysicsWithoutCountingAgain",
+        "Momotaro.Tests.EditMode.P5ValidatorTests.ForeignNavMesh_MakesTheRouteCheckReportThatItCannotJudge"
       ]
     },
     {

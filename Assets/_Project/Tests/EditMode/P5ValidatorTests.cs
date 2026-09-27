@@ -15,6 +15,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.AI;
 using UnityEngine.SceneManagement;
 
 namespace Momotaro.Tests.EditMode
@@ -405,6 +406,67 @@ namespace Momotaro.Tests.EditMode
             // 壊したまま次へ進まない。
             scene = EditorSceneManager.OpenScene(Phase5AreaIds.AreaBScenePath, OpenSceneMode.Single);
             Assert.AreEqual(0, RunScene(scene).errors.Count, "前提：開き直してエラー 0 に戻る。");
+        }
+
+        /// <summary>
+        /// 別の NavMesh が登録されているときは、<b>それで合否を出してはいけない</b>
+        /// （P5.5 §4.3。GPT レビュー R11 の指摘 3）。
+        ///
+        /// 以前は「グローバルな三角形が 0 枚なら対象 Scene の data を追加する」という判定で、
+        /// 別 Scene の NavMesh が登録済みだと<b>その別 Scene の経路で到達性を判定していた</b>。
+        /// Editor の開き方やテストの実行順で誤判定する。
+        /// </summary>
+        [Test]
+        public void ForeignNavMesh_MakesTheRouteCheckReportThatItCannotJudge()
+        {
+            Scene scene = EditorSceneManager.OpenScene(Phase5AreaIds.AreaBScenePath, OpenSceneMode.Single);
+            Assert.AreEqual(0, RunScene(scene).errors.Count, "前提：出荷 Scene はエラー 0。");
+
+            List<Unity.AI.Navigation.NavMeshSurface> surfaces =
+                Phase5ExplorationValidator.Components<Unity.AI.Navigation.NavMeshSurface>(scene);
+            Assert.AreEqual(1, surfaces.Count, "前提：NavMeshSurface は 1 つ。");
+            Assert.IsNotNull(surfaces[0].navMeshData, "前提：焼いた data がある。");
+            Assert.IsFalse(surfaces[0].enabled, "前提：出荷状態では無効（§4.3）。");
+
+            int trianglesBefore = CountNavMeshTriangles();
+            Assert.AreEqual(0, trianglesBefore, "前提：何も登録されていない。");
+
+            // 「別の誰かが登録した NavMesh」を作る。
+            NavMeshDataInstance foreign = NavMesh.AddNavMeshData(surfaces[0].navMeshData);
+            try
+            {
+                Assert.Greater(CountNavMeshTriangles(), 0, "前提：登録された。");
+
+                (List<string> errors, List<string> warnings) = RunScene(scene);
+
+                // 合否を出さず、検査不能を明示する。
+                Assert.IsTrue(warnings.Exists(w => w.Contains("別の NavMesh がすでに登録")),
+                    "検査不能を明示する:\n- " + string.Join("\n- ", warnings));
+                Assert.AreEqual(0, errors.Count, "別 Scene の NavMesh で不合格にしない。");
+            }
+            finally
+            {
+                if (foreign.valid)
+                {
+                    foreign.Remove();
+                }
+            }
+
+            // 後始末：検査が追加した分を残していない。
+            Assert.AreEqual(trianglesBefore, CountNavMeshTriangles(),
+                "検査の前後で登録数が変わらない（NavMeshDataInstance の残留を作らない。§4.3）。");
+
+            // 隣隢できる状態に戻れば、検査はまた動く。
+            (List<string> _, List<string> warningsAgain) = RunScene(scene);
+            Assert.IsFalse(warningsAgain.Exists(w => w.Contains("別の NavMesh がすでに登録")),
+                "隣隢できれば検査する。");
+        }
+
+        /// <summary>いま登録されている NavMesh の三角形数。</summary>
+        private static int CountNavMeshTriangles()
+        {
+            NavMeshTriangulation t = NavMesh.CalculateTriangulation();
+            return t.indices == null ? 0 : t.indices.Length / 3;
         }
 
         // ---------------------------------------------------------------- ヘルパ

@@ -363,6 +363,89 @@ namespace Momotaro.Tests.EditMode
             Assert.IsFalse(AreaStagingRequest.IsRequested);
         }
 
+        // ---------------------------------------------------------------- 再試行の許可と直列化
+
+        /// <summary>
+        /// 直列化待ちで<b>再試行の許可を失わない</b>（読込失敗側。GPT レビュー R11 の指摘 1）。
+        ///
+        /// 許可を先に消費してから直列化で弾かれると、状態は Failed のまま
+        /// <b>許可だけが消える</b>。他の操作が終わっても再試行されず、
+        /// ユーザーにもう一度操作を要求することになる。
+        /// </summary>
+        [Test]
+        public void RetryPermission_SurvivesASerializationWait_ForALoad()
+        {
+            _preloader.Request(AreaB, PathB);
+            _host.FailLoad();
+            _preloader.Poll();
+            Assert.AreEqual(AreaPreloadPhase.Failed, _preloader.Phase);
+            Assert.AreEqual(1, _host.LoadCount);
+
+            // 遷移が Scene 操作を掴んでいる間に再試行を許可する。
+            Assert.IsTrue(_ledger.TryBeginSceneOperation());
+            Assert.IsTrue(_preloader.ArmRetry());
+            Assert.AreEqual(AreaPreloadPhase.Failed, _preloader.Phase, "直列化待ちなのでまだ始まらない。");
+            Assert.AreEqual(1, _host.LoadCount);
+
+            // 何度 Poll しても始まらないが、<b>許可は残っている</b>。
+            for (int i = 0; i < 3; i++)
+            {
+                _preloader.Poll();
+            }
+
+            Assert.AreEqual(1, _host.LoadCount);
+
+            _ledger.EndSceneOperation();
+            _preloader.Poll();
+
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase, "空いたところで 1 回だけ読む。");
+            Assert.AreEqual(2, _host.LoadCount);
+
+            // 許可は使い切っている。
+            _host.FailLoad();
+            _preloader.Poll();
+            for (int i = 0; i < 3; i++)
+            {
+                _preloader.Poll();
+            }
+
+            Assert.AreEqual(2, _host.LoadCount, "許可は 1 回分しかない。");
+        }
+
+        /// <summary>直列化待ちで再試行の許可を失わない（<b>撤去失敗側</b>）。</summary>
+        [Test]
+        public void RetryPermission_SurvivesASerializationWait_ForARelease()
+        {
+            _preloader.Request(AreaB, PathB);
+            _host.CompleteLoad(1111);
+            _preloader.Poll();
+
+            _preloader.ClearRequest();
+            _host.FailUnloadAndKeepScene();
+            _preloader.Poll();
+            Assert.AreEqual(AreaPreloadPhase.ReleaseFailed, _preloader.Phase);
+            Assert.AreEqual(1, _host.UnloadCount);
+
+            Assert.IsTrue(_ledger.TryBeginSceneOperation());
+            Assert.IsTrue(_preloader.ArmRetry());
+            Assert.AreEqual(AreaPreloadPhase.ReleaseFailed, _preloader.Phase);
+            Assert.AreEqual(1, _host.UnloadCount, "直列化待ちなのでまだ始まらない。");
+
+            for (int i = 0; i < 3; i++)
+            {
+                _preloader.Poll();
+            }
+
+            Assert.AreEqual(1, _host.UnloadCount);
+
+            _ledger.EndSceneOperation();
+            _preloader.Poll();
+
+            Assert.AreEqual(AreaPreloadPhase.Releasing, _preloader.Phase, "空いたところで 1 回だけ撤去する。");
+            Assert.AreEqual(2, _host.UnloadCount);
+            Assert.AreEqual(1111, _host.LastUnloadHandle);
+        }
+
         // ---------------------------------------------------------------- 差し替え
 
         /// <summary>
