@@ -244,6 +244,60 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsTrue(remaining.Context.IsAreaReady);
         }
 
+        /// <summary>
+        /// 先読みしても <b>Camera と AudioListener は 1 つのまま</b>（P5.5 §4.1）。
+        ///
+        /// ここが漏れると、隣 Area のカラが同じ画面へ描き、音も二重に聞こえる。
+        /// <b>見た目の壊れ方なので自動テストで気付きにくい</b>——数で落とす。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator PreloadingTheNeighbour_DoesNotAddASecondCameraOrListener()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            int camerasWithAOnly = CountEnabled<Camera>();
+            int listenersWithAOnly = CountEnabled<AudioListener>();
+            Assert.AreEqual(1, camerasWithAOnly, "前提：A だけなら Camera は 1 台。");
+            Assert.AreEqual(1, listenersWithAOnly, "前提：AudioListener も 1 つ。");
+
+            CreatePreloader(activeArea: AreaA);
+            Assert.IsTrue(_preloader.Request(AreaB, AreaBScene));
+            yield return PollUntilNotLoading(10f);
+            Assert.AreEqual(AreaPreloadPhase.Staged, _preloader.Phase, _preloader.FailureReason);
+
+            Assert.AreEqual(1, CountEnabled<Camera>(), "先読みしても描く Camera は 1 台。");
+            Assert.AreEqual(1, CountEnabled<AudioListener>(), "聞く AudioListener も 1 つ。");
+
+            // 開けば B 側も動き出す（止めたままにならない）。
+            Assert.IsTrue(
+                AreaBundleDirectory.TryGetByScene(_preloader.StagedSceneHandle, out AreaRuntimeBundle staged));
+            staged.ActivityGate.Open();
+            yield return null;
+            Assert.AreEqual(2, CountEnabled<Camera>(), "開けば B の Camera も描く。");
+        }
+
+        /// <summary>有効な部品の数（非 Active な物体の下は数えない）。</summary>
+        private static int CountEnabled<T>() where T : Behaviour
+        {
+            T[] found = Object.FindObjectsByType<T>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            int n = 0;
+            for (int i = 0; i < found.Length; i++)
+            {
+                if (found[i] != null && found[i].isActiveAndEnabled)
+                {
+                    n++;
+                }
+            }
+
+            return n;
+        }
+
         // ---------------------------------------------------------------- 補助
 
         /// <summary>

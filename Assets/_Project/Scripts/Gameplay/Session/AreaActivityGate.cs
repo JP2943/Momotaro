@@ -39,6 +39,9 @@ namespace Momotaro.Gameplay.Session
         [Tooltip("閉じている間は無効にする部品（仕掛けの登録など）。保存時から無効。")]
         [SerializeField] private List<MonoBehaviour> _gatedBehaviours = new List<MonoBehaviour>();
 
+        [Tooltip("先読みのときだけ無効にする表示系（Camera／AudioListener／Light）。<b>保存時は有効</b>。")]
+        [SerializeField] private List<Behaviour> _stagedOnlyBehaviours = new List<Behaviour>();
+
         /// <summary>いま開いているか。</summary>
         public bool IsOpen { get; private set; }
 
@@ -62,6 +65,17 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>無効にする部品（読み取り専用）。</summary>
         public IReadOnlyList<MonoBehaviour> GatedBehaviours => _gatedBehaviours;
+
+        /// <summary>
+        /// 先読みのときだけ無効にする表示系（読み取り専用）。
+        ///
+        /// <b>これだけは保存時に有効のままにする。</b> Camera・AudioListener・Light には
+        /// 登録や購読の副作用が無い——「描く」「聞く」だけなので、
+        /// <c>Awake</c> で切れば 1 フレームも描かれずに済む。保存時から切っておくと
+        /// Editor で Scene を開いたときに Game ビューが真っ黒になるので、
+        /// <b>作業中の見やすさを壊さない側に寄せた</b>。
+        /// </summary>
+        public IReadOnlyList<Behaviour> StagedOnlyBehaviours => _stagedOnlyBehaviours;
 
         /// <summary>
         /// 配線が揃っているか。<b>根が 1 つも無いゲートは配線漏れ</b>——
@@ -139,6 +153,9 @@ namespace Momotaro.Gameplay.Session
             // <b>次に直開きした Scene が閉じたまま起動する</b>（＝何も動かないゲームに見える）。
             if (AreaStagingRequest.TryConsumeFor(AreaId))
             {
+                // 表示系はここで切る。<b>最初の描画の前</b>なので、
+                // 2 枚目の Camera と AudioListener が一瞬でも活きることはない。
+                ApplyStagedOnly(false);
                 IsOpen = false;
                 return;
             }
@@ -191,6 +208,21 @@ namespace Momotaro.Gameplay.Session
                     b.enabled = active;
                 }
             }
+
+            ApplyStagedOnly(active);
+        }
+
+        /// <summary>表示系の開閉（保存状態は有効なので、閉めるのは先読みのときだけ）。</summary>
+        private void ApplyStagedOnly(bool active)
+        {
+            for (int i = 0; i < _stagedOnlyBehaviours.Count; i++)
+            {
+                Behaviour b = _stagedOnlyBehaviours[i];
+                if (b != null)
+                {
+                    b.enabled = active;
+                }
+            }
         }
 
 #if UNITY_EDITOR
@@ -199,12 +231,14 @@ namespace Momotaro.Gameplay.Session
             AreaRoot areaRoot,
             List<GameObject> gatedRoots,
             List<Collider> gatedColliders = null,
-            List<MonoBehaviour> gatedBehaviours = null)
+            List<MonoBehaviour> gatedBehaviours = null,
+            List<Behaviour> stagedOnlyBehaviours = null)
         {
             _areaRoot = areaRoot;
             _gatedRoots = gatedRoots ?? new List<GameObject>();
             _gatedColliders = gatedColliders ?? new List<Collider>();
             _gatedBehaviours = gatedBehaviours ?? new List<MonoBehaviour>();
+            _stagedOnlyBehaviours = stagedOnlyBehaviours ?? new List<Behaviour>();
         }
 
         /// <summary>
@@ -215,6 +249,11 @@ namespace Momotaro.Gameplay.Session
         public void EditorCloseForShipping()
         {
             Apply(false);
+
+            // <b>表示系は有効のまま出荷する。</b> 保存時に切ると
+            // Editor で Scene を開いたときに Game ビューが真っ黒になる。
+            // 副作用が無いので、先読みのときに Awake で切れば間に合う。
+            ApplyStagedOnly(true);
             IsOpen = false;
         }
 #endif

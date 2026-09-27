@@ -377,6 +377,36 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(0, RunScene(scene).errors.Count, "前提：開き直してエラー 0 に戻る。");
         }
 
+        /// <summary>
+        /// 表示系が活動ゲートの管理外にあるなら検査で落とす（P5.5 §4.1）。
+        ///
+        /// 先読みで 2 枚目の Area が載ったとき、ここが漏れていると
+        /// <b>Camera が 2 台描き、AudioListener が 2 つ聞く</b>。
+        /// 見た目の壊れ方なのでテストでは気付きにくく、検査で落とす価値が高い。
+        /// </summary>
+        [Test]
+        public void VisualsOutsideTheActivityGate_FailValidation()
+        {
+            Scene scene = EditorSceneManager.OpenScene(Phase5AreaIds.AreaBScenePath, OpenSceneMode.Single);
+            Assert.AreEqual(0, RunScene(scene).errors.Count, "前提：出荷 Scene はエラー 0。");
+
+            List<AreaActivityGate> gates = Phase5ExplorationValidator.Components<AreaActivityGate>(scene);
+            Assert.AreEqual(1, gates.Count, "前提：活動ゲートは 1 つ。");
+            Assert.Greater(gates[0].StagedOnlyBehaviours.Count, 0, "前提：表示系を抱えている。");
+
+            // 一覧を空にする（取りこぼしの再現）。
+            var so = new SerializedObject(gates[0]);
+            so.FindProperty("_stagedOnlyBehaviours").ClearArray();
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            AssertHasError(scene, "Camera が活動ゲートの管理外", "Camera の取りこぼし");
+            AssertHasError(scene, "AudioListener が活動ゲートの管理外", "AudioListener の取りこぼし");
+
+            // 壊したまま次へ進まない。
+            scene = EditorSceneManager.OpenScene(Phase5AreaIds.AreaBScenePath, OpenSceneMode.Single);
+            Assert.AreEqual(0, RunScene(scene).errors.Count, "前提：開き直してエラー 0 に戻る。");
+        }
+
         // ---------------------------------------------------------------- ヘルパ
 
         private static (List<string> errors, List<string> warnings) RunScene(Scene scene)

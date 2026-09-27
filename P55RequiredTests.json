@@ -208,7 +208,8 @@
       "implemented": true,
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55ActivityGatePlayTests.WithoutAStagingRequest_TheGateOpensOnLoad",
-        "Momotaro.Tests.PlayMode.P55ActivityGatePlayTests.AStagingRequestForAnotherArea_DoesNotHoldThisOneBack"
+        "Momotaro.Tests.PlayMode.P55ActivityGatePlayTests.AStagingRequestForAnotherArea_DoesNotHoldThisOneBack",
+        "Momotaro.Tests.PlayMode.P55PreloadPlayTests.PreloadingTheNeighbour_DoesNotAddASecondCameraOrListener"
       ]
     },
     {
@@ -225,7 +226,10 @@
         "Momotaro.Tests.EditMode.P55ActivityGateTests.IsWired_RefusesAGateThatClosesNothing",
         "Momotaro.Tests.EditMode.P55ActivityGateTests.IsClosedAsSaved_NamesWhateverWasLeftOpen",
         "Momotaro.Tests.EditMode.P55ActivityGateTests.Open_TurnsOnAllThreeKinds_AndCloseTurnsThemBack",
-        "Momotaro.Tests.EditMode.P55ActivityGateTests.Open_IsIdempotentAndSurvivesBrokenReferences"
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.Open_IsIdempotentAndSurvivesBrokenReferences",
+        "Momotaro.Tests.EditMode.P5ValidatorTests.VisualsOutsideTheActivityGate_FailValidation",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.StagedOnlyVisuals_ShipEnabled_AndAreNotPartOfTheSavedClosedState",
+        "Momotaro.Tests.EditMode.P55ActivityGateTests.Close_AlsoStopsTheVisuals_AndOpenBringsThemBack"
       ]
     },
     {

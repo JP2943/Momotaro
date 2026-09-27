@@ -188,6 +188,41 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(2, gate.Component.OpenCount, "呼んだ回数はそのまま数える。");
         }
 
+        // ---------------------------------------------------------------- 表示系（先読みのときだけ）
+
+        /// <summary>
+        /// 表示系（Camera／AudioListener／Light）は<b>有効のまま出荷する</b>（P5.5 §4.2）。
+        ///
+        /// 保存時に切っておくと、Editor で Scene を開いたときに Game ビューが真っ黒になる。
+        /// これらには登録や購読の副作用が無いので、先読みのときに <c>Awake</c> で切れば間に合う。
+        /// </summary>
+        [Test]
+        public void StagedOnlyVisuals_ShipEnabled_AndAreNotPartOfTheSavedClosedState()
+        {
+            Gate gate = NewGate();
+            gate.Component.EditorCloseForShipping();
+
+            Assert.IsFalse(gate.Systems.activeSelf, "Gameplay は閉じて出荷する。");
+            Assert.IsTrue(gate.Visual.enabled, "表示系は有効のまま出荷する。");
+            Assert.IsTrue(gate.Component.IsClosedAsSaved(out string _),
+                "表示系が有効でも「閉じている」と見なす。");
+        }
+
+        /// <summary>閉めれば表示系も止まり、開けば戻る（先読みのやり直しに必要）。</summary>
+        [Test]
+        public void Close_AlsoStopsTheVisuals_AndOpenBringsThemBack()
+        {
+            Gate gate = NewGate();
+            gate.Component.EditorCloseForShipping();
+
+            gate.Component.Close();
+            Assert.IsFalse(gate.Visual.enabled, "閉めれば Camera も描かない。");
+
+            gate.Component.Open();
+            Assert.IsTrue(gate.Visual.enabled);
+            Assert.IsTrue(gate.Systems.activeSelf);
+        }
+
         // ---------------------------------------------------------------- 補助
 
         private struct Gate
@@ -197,6 +232,7 @@ namespace Momotaro.Tests.EditMode
             public GameObject Systems;
             public Collider Collider;
             public MonoBehaviour Behaviour;
+            public Behaviour Visual;
         }
 
         private Gate NewGate()
@@ -218,12 +254,18 @@ namespace Momotaro.Tests.EditMode
             fixture.transform.SetParent(rootGo.transform, false);
             MonoBehaviour behaviour = fixture.AddComponent<AreaEntryPoint>();
 
+            // 表示系は AreaRoot の外（実 Scene と同じ配置）。
+            var cameraGo = new GameObject("Main Camera");
+            _spawned.Add(cameraGo);
+            Behaviour visual = cameraGo.AddComponent<Camera>();
+
             AreaActivityGate gate = rootGo.AddComponent<AreaActivityGate>();
             gate.EditorSet(
                 root,
                 new List<GameObject> { systems },
                 new List<Collider> { collider },
-                new List<MonoBehaviour> { behaviour });
+                new List<MonoBehaviour> { behaviour },
+                new List<Behaviour> { visual });
 
             return new Gate
             {
@@ -232,6 +274,7 @@ namespace Momotaro.Tests.EditMode
                 Systems = systems,
                 Collider = collider,
                 Behaviour = behaviour,
+                Visual = visual,
             };
         }
 

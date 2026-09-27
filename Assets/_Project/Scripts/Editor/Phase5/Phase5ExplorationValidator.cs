@@ -680,7 +680,66 @@ namespace Momotaro.Editor.Phase5
                 {
                     errors.Add("活動ゲートが開いたまま保存されています（§4.2）：" + reason);
                 }
+
+                // 表示系の取りこぼしを禁じる（P5.5 §4.1／§4.3）。
+                //
+                // 先読みで 2 枚目の Area が載ったとき、ここが漏れていると
+                // <b>Camera が 2 台描き、AudioListener が 2 つ聞く</b>。
+                // 活動ゲートの内側（非 Active になる根の下）にある分は除く。
+                RequireStagedOnly<Camera>(scene, gate, "Camera", errors);
+                RequireStagedOnly<AudioListener>(scene, gate, "AudioListener", errors);
             }
+        }
+
+        /// <summary>
+        /// その型の部品がすべて活動ゲートの管理下にあることを確かめる（P5.5 §4.1）。
+        /// 根ごと非 Active になる側か、先読み時に無効になる側のどちらかに入っていればよい。
+        /// </summary>
+        private static void RequireStagedOnly<T>(
+            Scene scene, AreaActivityGate gate, string label, List<string> errors) where T : Behaviour
+        {
+            foreach (T component in Components<T>(scene))
+            {
+                if (IsUnderAnyGatedRoot(gate, component.transform))
+                {
+                    continue;
+                }
+
+                bool listed = false;
+                for (int i = 0; i < gate.StagedOnlyBehaviours.Count; i++)
+                {
+                    if (ReferenceEquals(gate.StagedOnlyBehaviours[i], component))
+                    {
+                        listed = true;
+                        break;
+                    }
+                }
+
+                if (!listed)
+                {
+                    errors.Add(label + " が活動ゲートの管理外にあります（"
+                        + GetHierarchyPath(component.transform)
+                        + "）。先読みで 2 枚目が載ると二重に動きます（§4.1）。");
+                }
+            }
+        }
+
+        /// <summary>その Transform が活動ゲートの閉じる根の下にあるか。</summary>
+        private static bool IsUnderAnyGatedRoot(AreaActivityGate gate, Transform candidate)
+        {
+            for (Transform t = candidate; t != null; t = t.parent)
+            {
+                for (int i = 0; i < gate.GatedRoots.Count; i++)
+                {
+                    GameObject root = gate.GatedRoots[i];
+                    if (root != null && t == root.transform)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         // ---------------------------------------------------------------- 遭遇戦（§8）

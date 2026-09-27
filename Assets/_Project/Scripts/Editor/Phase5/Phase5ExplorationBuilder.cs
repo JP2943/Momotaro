@@ -1282,8 +1282,27 @@ namespace Momotaro.Editor.Phase5
                 }
             }
 
+            // 表示系（Camera／AudioListener／Light）は AreaRoot の<b>外</b>にあるので、Scene の根から集める。
+            //
+            // 先読みで 2 枚目の Area が載ると、こちらを止めない限り
+            // <b>Camera が 2 台描き、AudioListener が 2 つ聞く</b>。
+            // ただしこれらには登録や購読の副作用が無いので、保存時は有効のままにして
+            // 先読みのときだけ Awake で切る（Editor で Game ビューが真っ黒にならないように）。
+            var stagedOnly = new List<Behaviour>();
+            foreach (GameObject sceneRoot in areaRoot.gameObject.scene.GetRootGameObjects())
+            {
+                if (sceneRoot == areaRoot.gameObject)
+                {
+                    continue;
+                }
+
+                stagedOnly.AddRange(sceneRoot.GetComponentsInChildren<Camera>(true));
+                stagedOnly.AddRange(sceneRoot.GetComponentsInChildren<AudioListener>(true));
+                stagedOnly.AddRange(sceneRoot.GetComponentsInChildren<Light>(true));
+            }
+
             AreaActivityGate gate = areaRoot.gameObject.AddComponent<AreaActivityGate>();
-            gate.EditorSet(areaRoot, gatedRoots, gatedColliders, gatedBehaviours);
+            gate.EditorSet(areaRoot, gatedRoots, gatedColliders, gatedBehaviours, stagedOnly);
 
             var bundle = areaRoot.GetComponent<AreaRuntimeBundle>();
             if (bundle != null)
