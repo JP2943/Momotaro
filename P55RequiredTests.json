@@ -71,6 +71,16 @@
       "id": "P55-P12A",
       "summary": "常駐 CameraRig の実 Scene 受入（§11 の P12 のうち唯一性・同一インスタンス維持・直開き・先読みで再生成しない分。付録 A.7）。初回配置の時機と移動先到着点の計算（付録 A.10）も含む。スライド中の書込み一系統と補間（E05）は P55-04 で追加する",
       "stage": "P55-03"
+    },
+    {
+      "id": "P55-V01",
+      "summary": "正規生成物が検査を通り、P5 の受入用生成物を汚さない（§11 の V01）。P5.5 の Scene／Data は Phase55 フォルダの別 Asset・別カタログ ID で、AreaId だけを再利用する（§3.2）",
+      "stage": "P55-03"
+    },
+    {
+      "id": "P55-V02",
+      "summary": "壊した配置を検出する（§11 の V02）。接続ズレ・通路の塞ぎ・接続軸以外へのカメラずれ。いずれも Scene 1 枚ずつの検査では言えない",
+      "stage": "P55-03"
     }
   ],
   "tests": [
@@ -294,6 +304,29 @@
         "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.CameraTransition_PreservesBoundsAndShakeBase",
         "Momotaro.Tests.PlayMode.P55PreloadPlayTests.PreloadingTheNeighbour_DoesNotAddASecondCameraOrListener",
         "Momotaro.Tests.EditMode.P5ValidatorTests.VisualsInsideTheAreaScene_FailValidation"
+      ]
+    },
+    {
+      "requirementId": "P55-V01",
+      "stage": "P55-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55WorldLayoutTests.TheGeneratedWorld_PassesTheConnectionValidator",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55WorldLayoutTests.TheP5AndP55Catalogs_StayIndependent"
+      ]
+    },
+    {
+      "requirementId": "P55-V02",
+      "stage": "P55-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55WorldLayoutTests.MovingAnAreaOffTheSeam_FailsValidation",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55WorldLayoutTests.WallingUpThePassage_FailsValidation",
+        "Momotaro.Tests.EditMode.P55WorldLayoutTests.MovingThePassageOffTheRegionCentre_FailsValidation"
       ]
     }
   ],

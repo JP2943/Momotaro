@@ -37,6 +37,9 @@ namespace Momotaro.Gameplay.Session
         /// <summary>要求までに必要な連続入力の秒数（§6.1）。</summary>
         public const float RequiredHoldSeconds = 0.15f;
 
+        [Tooltip("この出入口の安定 ID。接続レコードを引くための鍵（P5.5 §3.1）。")]
+        [SerializeField] private StableId _exitId;
+
         [Tooltip("行き先のエリア。")]
         [SerializeField] private StableId _destinationAreaId;
 
@@ -55,6 +58,17 @@ namespace Momotaro.Gameplay.Session
         private bool _playerInside;
         private bool _requiresRelease;
         private float _held;
+
+        /// <summary>
+        /// この出入口の安定 ID（P5.5 §3.1 の <c>ExitId</c>）。
+        ///
+        /// <b>接続レコードを引くための鍵</b>で、行き先そのものではない。行き先は接続レコード側に
+        /// 正本があり（<c>ToAreaId</c>／<c>EntryId</c>）、ここの行き先指定は
+        /// P5 の直接遷移が使う従来の経路である。
+        /// <b>空でもよい</b>——P5 の Area は接続レコードを持たないので、
+        /// 必須にすると従来の Scene が一斉に不合格になる。P5.5 の Scene 検査だけが必須にする。
+        /// </summary>
+        public StableId ExitId => _exitId;
 
         /// <summary>行き先のエリア。</summary>
         public StableId DestinationAreaId => _destinationAreaId;
@@ -112,6 +126,12 @@ namespace Momotaro.Gameplay.Session
 
             var root = other.GetComponentInParent<PlayerRoot>();
             return root != null && root == _player;
+        }
+
+        /// <summary>この出入口の ID を割り当てる（Builder・テストが呼ぶ。P5.5 §3.1）。</summary>
+        public void ConfigureExitId(StableId exitId)
+        {
+            _exitId = exitId;
         }
 
         /// <summary>配線する（Builder・テストが呼ぶ）。</summary>

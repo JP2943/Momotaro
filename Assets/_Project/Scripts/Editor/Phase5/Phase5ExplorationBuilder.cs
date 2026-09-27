@@ -77,7 +77,16 @@ namespace Momotaro.Editor.Phase5
         /// 3 Scene・Data カタログ・仮地形を生成する（ダイアログ無し。ブリッジとテストから呼ぶ）。
         /// 未保存の Scene 変更があれば<b>何も変更せずに</b>失敗を返す。
         /// </summary>
-        public static BuildResult BuildAll()
+        public static BuildResult BuildAll() => Build(Phase5BuildTargets.Phase5());
+
+        /// <summary>
+        /// 指定の配置で生成する（P5.5 仕様書 §3.2）。
+        ///
+        /// <b>生成器は 1 つ、設定は 2 つ。</b> P5 の受入用 Scene と P5.5 の実ワールド配置は
+        /// 別フォルダの別 Asset として作る。地形・仕掛け・システムの組み立ては同じものなので、
+        /// Builder を写すと必ず片方だけ直された状態になる。
+        /// </summary>
+        public static BuildResult Build(Phase5BuildTargets t)
         {
             if (TryFindDirtyScene(out string dirty))
             {
@@ -89,10 +98,10 @@ namespace Momotaro.Editor.Phase5
             var outputs = new List<string>();
 
             // 1. Data を先に作る。Scene 側の AreaRoot がこれを参照するため。
-            Phase5Placeholder.EnsureFolder(Phase5AreaIds.DataFolder);
+            Phase5Placeholder.EnsureFolder(t.DataFolder);
             AreaDefinition areaA = EnsureAreaDefinition(
-                Phase5AreaIds.AreaADataPath, Phase5AreaIds.AreaA, "エリア A（試作）",
-                Phase5AreaIds.AreaAScenePath,
+                t.AreaADataPath, t.AreaAId, "エリア A（試作）",
+                t.AreaAScenePath,
                 new[]
                 {
                     (Phase5AreaIds.AreaAStart, CardinalDirection.North),
@@ -101,19 +110,19 @@ namespace Momotaro.Editor.Phase5
                 Phase5AreaIds.AreaAStart);
 
             AreaDefinition areaB = EnsureAreaDefinition(
-                Phase5AreaIds.AreaBDataPath, Phase5AreaIds.AreaB, "エリア B（試作）",
-                Phase5AreaIds.AreaBScenePath,
+                t.AreaBDataPath, t.AreaBId, "エリア B（試作）",
+                t.AreaBScenePath,
                 new[]
                 {
                     (Phase5AreaIds.AreaBFromA, CardinalDirection.East),
                 },
                 Phase5AreaIds.AreaBFromA);
 
-            AreaCatalogData catalog = EnsureCatalog(areaA, areaB);
+            AreaCatalogData catalog = EnsureCatalog(t, areaA, areaB);
             EnsureEncounterDefinition();
-            outputs.Add(Phase5AreaIds.AreaADataPath);
-            outputs.Add(Phase5AreaIds.AreaBDataPath);
-            outputs.Add(Phase5AreaIds.CatalogDataPath);
+            outputs.Add(t.AreaADataPath);
+            outputs.Add(t.AreaBDataPath);
+            outputs.Add(t.CatalogDataPath);
             outputs.Add(Phase5AreaIds.EncounterBDataPath);
 
             AssetDatabase.SaveAssets();
@@ -125,36 +134,36 @@ namespace Momotaro.Editor.Phase5
             AssetDatabase.SaveAssets();
 
             // 3. Scene を作る。どれか 1 つでも失敗したら、その時点で止める。
-            Phase5Placeholder.EnsureFolder(Phase5AreaIds.SceneFolder);
+            Phase5Placeholder.EnsureFolder(t.SceneFolder);
 
-            if (!BuildScene(Phase5AreaIds.AreaAScenePath, root => PopulateAreaA(root, areaA, residentRig),
+            if (!BuildScene(t.AreaAScenePath, root => PopulateAreaA(root, areaA, residentRig, t),
                     isStartupScene: false, out string errorA))
             {
                 return new BuildResult(false, "エリア A の生成に失敗: " + errorA, outputs);
             }
 
-            outputs.Add(Phase5AreaIds.AreaAScenePath);
+            outputs.Add(t.AreaAScenePath);
 
-            if (!BuildScene(Phase5AreaIds.AreaBScenePath, root => PopulateAreaB(root, areaB, residentRig),
+            if (!BuildScene(t.AreaBScenePath, root => PopulateAreaB(root, areaB, residentRig, t),
                     isStartupScene: false, out string errorB))
             {
                 return new BuildResult(false, "エリア B の生成に失敗: " + errorB, outputs);
             }
 
-            outputs.Add(Phase5AreaIds.AreaBScenePath);
+            outputs.Add(t.AreaBScenePath);
 
-            if (!BuildScene(Phase5AreaIds.TrialScenePath, root => PopulateTrial(root),
+            if (!BuildScene(t.TrialScenePath, root => PopulateTrial(root, t),
                     isStartupScene: true, out string errorT))
             {
                 return new BuildResult(false, "統合起動 Scene の生成に失敗: " + errorT, outputs);
             }
 
-            outputs.Add(Phase5AreaIds.TrialScenePath);
+            outputs.Add(t.TrialScenePath);
 
             // 4. Build Settings は既存項目を維持して追記・更新する（§13.1）。
             int added = EnsureBuildSettings(new[]
             {
-                Phase5AreaIds.TrialScenePath, Phase5AreaIds.AreaAScenePath, Phase5AreaIds.AreaBScenePath,
+                t.TrialScenePath, t.AreaAScenePath, t.AreaBScenePath,
             });
 
             AssetDatabase.SaveAssets();
@@ -166,7 +175,7 @@ namespace Momotaro.Editor.Phase5
             return new BuildResult(true,
                 "Data 4 件（A／B／カタログ／Encounter）、Prefab 1 件（常駐 CameraRig）、"
                 + "Scene 3 件（A／B／統合起動）。Build Settings へ "
-                + added + " 件を追加。死亡再開点は " + Phase5AreaIds.AreaA.Value + "/" + Phase5AreaIds.AreaAStart.Value + "。",
+                + added + " 件を追加。死亡再開点は " + t.AreaAId.Value + "/" + Phase5AreaIds.AreaAStart.Value + "。",
                 outputs);
         }
 
@@ -229,25 +238,29 @@ namespace Momotaro.Editor.Phase5
             return asset;
         }
 
-        private static AreaCatalogData EnsureCatalog(AreaDefinition areaA, AreaDefinition areaB)
+        private static AreaCatalogData EnsureCatalog(
+            Phase5BuildTargets t, AreaDefinition areaA, AreaDefinition areaB)
         {
-            var asset = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase5AreaIds.CatalogDataPath);
+            var asset = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(t.CatalogDataPath);
             if (asset == null)
             {
                 asset = ScriptableObject.CreateInstance<AreaCatalogData>();
-                AssetDatabase.CreateAsset(asset, Phase5AreaIds.CatalogDataPath);
+                AssetDatabase.CreateAsset(asset, t.CatalogDataPath);
             }
 
-            SetIdentity(asset, Phase5AreaIds.Catalog, "P5 エリアカタログ");
+            SetIdentity(asset, t.CatalogId, t.CatalogDisplayName);
             asset.EditorSet(
                 new List<AreaDefinition> { areaA, areaB },
-                Phase5AreaIds.AreaA, Phase5AreaIds.AreaAStart);
+                t.AreaAId, Phase5AreaIds.AreaAStart);
             EditorUtility.SetDirty(asset);
             return asset;
         }
 
-        /// <summary>GameDataAsset の共通フィールド（安定 ID・表示名）は private なので SerializedObject で書く。</summary>
-        private static void SetIdentity(Object asset, StableId id, string displayName)
+        /// <summary>
+        /// GameDataAsset の共通フィールド（安定 ID・表示名）は private なので SerializedObject で書く。
+        /// P5.5 の生成器も同じ書き方を使うので internal で開けてある（写すと片方だけ直る）。
+        /// </summary>
+        internal static void SetIdentity(Object asset, StableId id, string displayName)
         {
             var so = new SerializedObject(asset);
             SerializedProperty idProp = so.FindProperty("_id");
@@ -549,7 +562,8 @@ namespace Momotaro.Editor.Phase5
 
         // ---------------------------------------------------------------- 地形
 
-        private static void PopulateAreaA(Transform root, AreaDefinition definition, GameObject residentRig)
+        private static void PopulateAreaA(
+            Transform root, AreaDefinition definition, GameObject residentRig, Phase5BuildTargets t)
         {
             Material floorMat = Phase5Placeholder.EnsureMaterial("M_P5_Floor", Phase5Placeholder.FloorColor);
             Material wallMat = Phase5Placeholder.EnsureMaterial("M_P5_Wall", Phase5Placeholder.WallColor);
@@ -562,7 +576,7 @@ namespace Momotaro.Editor.Phase5
             const float d = Phase5Layout.AreaADepth;
 
             CreateFloor(env.transform, Vector3.zero, w, d, floorMat);
-            CreateOuterWalls(env.transform, Vector3.zero, w, d, wallMat);
+            CreateOuterWalls(env.transform, Vector3.zero, w, d, wallMat, t.AreaASeam);
 
             // L 字通路：西の大部屋と東の通路を仕切り、南側だけ開ける。
             // 直線追従では仕切りに当たり、NavMesh 経路なら南の開口を回って到達できる（§3.2）。
@@ -594,7 +608,8 @@ namespace Momotaro.Editor.Phase5
             var markers = new GameObject("Markers");
             markers.transform.SetParent(root, false);
             Phase5Placeholder.CreateLabel("エリア A", markers.transform, new Vector3(0f, 0.2f, -1.5f), Color.white, 0.5f);
-            CreateMarker(markers.transform, "ExitToB", Phase5Layout.AreaAExitToB,
+            Vector3 exitToB = ShiftToSeam(Phase5Layout.AreaAExitToB, t.SeamZ);
+            CreateMarker(markers.transform, "ExitToB", exitToB,
                 Phase5Placeholder.EntryColor, "B へ", new Vector3(0.6f, 1.6f, Phase5Layout.CorridorWidth));
 
             // 入口。
@@ -603,10 +618,16 @@ namespace Momotaro.Editor.Phase5
             AreaEntryPoint start = CreateEntryPoint(entries.transform, Phase5AreaIds.AreaAStart,
                 Phase5Layout.AreaAStart, Phase5Layout.AreaAStartAlternates, "開始／再開");
             AreaEntryPoint fromB = CreateEntryPoint(entries.transform, Phase5AreaIds.AreaAFromB,
-                Phase5Layout.AreaAFromB, Phase5Layout.AreaAFromBAlternates, "B から");
+                ShiftToSeam(Phase5Layout.AreaAFromB, t.SeamZ),
+                ShiftToSeam(Phase5Layout.AreaAFromBAlternates, t.SeamZ), "B から");
 
-            AreaExitGate toB = CreateExitGate(root, "ExitGate_ToB", Phase5Layout.AreaAExitToB,
-                Phase5AreaIds.AreaB, Phase5AreaIds.AreaBFromA, Vector3.right);
+            AreaExitGate toB = CreateExitGate(root, "ExitGate_ToB", exitToB,
+                t.AreaBId, Phase5AreaIds.AreaBFromA, Vector3.right);
+            if (t.ExitAToB.IsValid)
+            {
+                // 接続レコードを引くための鍵（P5.5 §3.1）。P5 では割り当てない。
+                toB.ConfigureExitId(t.ExitAToB);
+            }
 
             // 仕掛け（§7）。目印ではなく実物を置く。
             var fixtures = new Fixtures();
@@ -617,7 +638,8 @@ namespace Momotaro.Editor.Phase5
             // 迂回できてしまうと「開通しないと進めない」という §7.3 の意味が消える。
             // 通路は仕切り（x=6）と外壁（x=12）の間の 6m なので、少し余らせて 6.2m で塞ぐ。
             fixtures.Door = CreateFlagDoor(fixtureRoot.transform, Phase5AreaIds.FlagAGate,
-                Phase5Layout.AreaAGate, new Vector3(6.2f, Phase5Layout.WallHeight, 0.6f));
+                new Vector3(Phase5Layout.AreaAGate.x, Phase5Layout.AreaAGate.y, t.AreaAGateZ),
+                new Vector3(6.2f, Phase5Layout.WallHeight, 0.6f));
             fixtures.Lever = CreateFlagLever(fixtureRoot.transform, Phase5AreaIds.FlagAGate,
                 definition.Id, fixtures.Door, Phase5Layout.AreaALever);
             fixtures.Points.Add(CreateInvestigationPoint(fixtureRoot.transform, "Investigation",
@@ -646,13 +668,17 @@ namespace Momotaro.Editor.Phase5
                 null, new List<AreaFlagLever> { fixtures.Lever });
 
             CreateAreaSystems(root, areaRoot, definition, fixtures, residentRig);
-            BakeNavMesh(root, "NavMesh_P5_A");
+
+            // <b>世界座標へ移してから焼く</b>（§3.2。ここが唯一の local→world 変換点）。
+            ApplyAuthoringOrigin(root, t.AreaAOrigin);
+            BakeNavMesh(root, t.NavMeshAssetName("A"), t.DataFolder);
 
             // NavMesh を焼いた<b>あと</b>で閉じる（先に閉じると Collider が収集対象から外れて、経路の無い NavMesh が焼ける）。
             CloseActivityGate(areaRoot);
         }
 
-        private static void PopulateAreaB(Transform root, AreaDefinition definition, GameObject residentRig)
+        private static void PopulateAreaB(
+            Transform root, AreaDefinition definition, GameObject residentRig, Phase5BuildTargets t)
         {
             Material floorMat = Phase5Placeholder.EnsureMaterial("M_P5_Floor", Phase5Placeholder.FloorColor);
             Material wallMat = Phase5Placeholder.EnsureMaterial("M_P5_Wall", Phase5Placeholder.WallColor);
@@ -664,7 +690,7 @@ namespace Momotaro.Editor.Phase5
             const float d = Phase5Layout.AreaBDepth;
 
             CreateFloor(env.transform, Vector3.zero, w, d, floorMat);
-            CreateOuterWalls(env.transform, Vector3.zero, w, d, wallMat);
+            CreateOuterWalls(env.transform, Vector3.zero, w, d, wallMat, t.AreaBSeam);
 
             var markers = new GameObject("Markers");
             markers.transform.SetParent(root, false);
@@ -703,10 +729,16 @@ namespace Momotaro.Editor.Phase5
             var entries = new GameObject("Entries");
             entries.transform.SetParent(root, false);
             AreaEntryPoint fromA = CreateEntryPoint(entries.transform, Phase5AreaIds.AreaBFromA,
-                Phase5Layout.AreaBFromA, Phase5Layout.AreaBFromAAlternates, "A から");
+                ShiftToSeam(Phase5Layout.AreaBFromA, t.SeamZ),
+                ShiftToSeam(Phase5Layout.AreaBFromAAlternates, t.SeamZ), "A から");
 
-            AreaExitGate toA = CreateExitGate(root, "ExitGate_ToA", Phase5Layout.AreaBDoorToA,
-                Phase5AreaIds.AreaA, Phase5AreaIds.AreaAFromB, Vector3.left);
+            Vector3 doorToA = ShiftToSeam(Phase5Layout.AreaBDoorToA, t.SeamZ);
+            AreaExitGate toA = CreateExitGate(root, "ExitGate_ToA", doorToA,
+                t.AreaAId, Phase5AreaIds.AreaAFromB, Vector3.left);
+            if (t.ExitBToA.IsValid)
+            {
+                toA.ConfigureExitId(t.ExitBToA);
+            }
 
             // A へ戻る扉（§6.1 の 2 行目。押下 1 回で要求する）。
             // 同じ場所の開放出入口と併存させる：方向入力でも Interact でも戻れる。
@@ -715,7 +747,7 @@ namespace Momotaro.Editor.Phase5
             fixtureRoot.transform.SetParent(root, false);
             fixtures.TransitionDoor = CreateTransitionDoor(fixtureRoot.transform, "DoorToA",
                 Phase5AreaIds.DoorBToA, definition.Id,
-                Phase5AreaIds.AreaA, Phase5AreaIds.AreaAFromB, Phase5Layout.AreaBDoorToA);
+                t.AreaAId, Phase5AreaIds.AreaAFromB, doorToA);
 
             // 調査地点（§7.2）。アリーナの外に置き、調査中の戦闘開始を作れるようにする（§8.3）。
             fixtures.Points.Add(CreateInvestigationPoint(fixtureRoot.transform, "Investigation",
@@ -739,7 +771,10 @@ namespace Momotaro.Editor.Phase5
                 new List<AreaTransitionDoor> { fixtures.TransitionDoor });
 
             CreateAreaSystems(root, areaRoot, definition, fixtures, residentRig);
-            BakeNavMesh(root, "NavMesh_P5_B");
+
+            // <b>世界座標へ移してから焼く</b>（§3.2。ここが唯一の local→world 変換点）。
+            ApplyAuthoringOrigin(root, t.AreaBOrigin);
+            BakeNavMesh(root, t.NavMeshAssetName("B"), t.DataFolder);
 
             // NavMesh を焼いた<b>あと</b>で閉じる（先に閉じると Collider が収集対象から外れて、経路の無い NavMesh が焼ける）。
             CloseActivityGate(areaRoot);
@@ -755,7 +790,7 @@ namespace Momotaro.Editor.Phase5
         /// くり抜き（<c>NavMeshObstacle</c>）で行い、開通時にくり抜きを外す。
         /// こうしておくと「開通したのに NavMesh に穴が残ったまま」にならない。
         /// </summary>
-        private static void BakeNavMesh(Transform root, string assetName)
+        private static void BakeNavMesh(Transform root, string assetName, string folder)
         {
             // <b>面は根に付ける。</b> Children で集める設定なので、子オブジェクトに付けると
             // 「自分の子」＝空を焼くことになり、NavMesh がどこにも生成されない（実際に踏んだ）。
@@ -775,7 +810,6 @@ namespace Momotaro.Editor.Phase5
                 return;
             }
 
-            string folder = Phase5AreaIds.DataFolder;
             if (!AssetDatabase.IsValidFolder(folder))
             {
                 Directory.CreateDirectory(folder);
@@ -791,10 +825,10 @@ namespace Momotaro.Editor.Phase5
         /// 統合起動 Scene（§3.1）。AreaId は持たず、初期化後に A へ移動する。
         /// Session の生成と自動遷移の配線は P5-03b の仕事なので、ここでは目印だけ置く。
         /// </summary>
-        private static void PopulateTrial(Transform root)
+        private static void PopulateTrial(Transform root, Phase5BuildTargets t)
         {
             root.gameObject.name = "Phase5TrialRoot";
-            Phase5Placeholder.CreateLabel("P5 探索試遊（起動）", root, new Vector3(0f, 0f, 0f), Color.white, 0.5f);
+            Phase5Placeholder.CreateLabel(t.TrialHeadline, root, new Vector3(0f, 0f, 0f), Color.white, 0.5f);
             Phase5Placeholder.CreateLabel("Play すると エリア A の開始点へ移動します",
                 root, new Vector3(0f, 0f, -1.5f), Color.white, 0.2f);
 
@@ -802,7 +836,7 @@ namespace Momotaro.Editor.Phase5
             Phase5TrialLauncher launcher = root.gameObject.AddComponent<Phase5TrialLauncher>();
             var so = new SerializedObject(launcher);
             so.FindProperty("_catalog").objectReferenceValue =
-                AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase5AreaIds.CatalogDataPath);
+                AssetDatabase.LoadAssetAtPath<AreaCatalogData>(t.CatalogDataPath);
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
@@ -813,7 +847,9 @@ namespace Momotaro.Editor.Phase5
                 new Vector3(width, Phase5Layout.FloorThickness, depth), mat);
         }
 
-        private static void CreateOuterWalls(Transform parent, Vector3 center, float width, float depth, Material mat)
+        private static void CreateOuterWalls(
+            Transform parent, Vector3 center, float width, float depth, Material mat,
+            Phase5SeamOpening seam)
         {
             float hx = width * 0.5f;
             float hz = depth * 0.5f;
@@ -823,16 +859,100 @@ namespace Momotaro.Editor.Phase5
                 new Vector3(width + t, Phase5Layout.WallHeight, t), mat);
             CreateWall(parent, "Wall_South", center + new Vector3(0f, 0f, -hz),
                 new Vector3(width + t, Phase5Layout.WallHeight, t), mat);
-            CreateWall(parent, "Wall_East", center + new Vector3(hx, 0f, 0f),
-                new Vector3(t, Phase5Layout.WallHeight, depth + t), mat);
-            CreateWall(parent, "Wall_West", center + new Vector3(-hx, 0f, 0f),
-                new Vector3(t, Phase5Layout.WallHeight, depth + t), mat);
+
+            CreateSideWall(parent, "Wall_East", center.x + hx, center.z, depth, mat,
+                seam.Side == Phase5SeamSide.East ? seam : Phase5SeamOpening.None);
+            CreateSideWall(parent, "Wall_West", center.x - hx, center.z, depth, mat,
+                seam.Side == Phase5SeamSide.West ? seam : Phase5SeamOpening.None);
+        }
+
+        /// <summary>
+        /// 東西の外周壁。接続口があるときは<b>その Z 区間だけ空けて 2 本に分ける</b>
+        /// （P5.5 §7.3「その区間の見た目は通路として開いていること」）。
+        ///
+        /// 壁を残したまま Collider だけ通す形は使わない。スライド中は両 Area が描かれているので、
+        /// 境界に壁が立っていると<b>画面を覆う壁</b>として見えてしまう。
+        /// </summary>
+        private static void CreateSideWall(
+            Transform parent, string name, float wallX, float centerZ, float depth, Material mat,
+            Phase5SeamOpening seam)
+        {
+            float t = Phase5Layout.WallThickness;
+            float full = depth + t;
+
+            if (!seam.IsSet)
+            {
+                CreateWall(parent, name, new Vector3(wallX, 0f, centerZ),
+                    new Vector3(t, Phase5Layout.WallHeight, full), mat);
+                return;
+            }
+
+            float minZ = centerZ - full * 0.5f;
+            float maxZ = centerZ + full * 0.5f;
+            float gapMin = seam.CenterZ - seam.Width * 0.5f;
+            float gapMax = seam.CenterZ + seam.Width * 0.5f;
+
+            CreateWallSegment(parent, name + "_South", wallX, minZ, gapMin, t, mat);
+            CreateWallSegment(parent, name + "_North", wallX, gapMax, maxZ, t, mat);
+        }
+
+        /// <summary>Z の区間 [from, to] を埋める壁。区間が無いなら作らない。</summary>
+        private static void CreateWallSegment(
+            Transform parent, string name, float wallX, float from, float to, float thickness, Material mat)
+        {
+            float length = to - from;
+            if (length <= 0.01f)
+            {
+                return;
+            }
+
+            CreateWall(parent, name, new Vector3(wallX, 0f, from + length * 0.5f),
+                new Vector3(thickness, Phase5Layout.WallHeight, length), mat);
+        }
+
+        /// <summary>
+        /// Area の中身をまとめて世界座標へ移す（P5.5 §3.2 の local→world 変換）。
+        ///
+        /// <b>ここが唯一の変換点である。</b> 中身はすべて <c>AreaRoot</c> の下にローカル座標で
+        /// 組んであり、入口・Camera 領域・Spawn・水場はどれも Transform を live で読む。
+        /// 個々の定数へオフセットを足す形にすると、必ずどれかを足し忘れる。
+        ///
+        /// <b>NavMesh を焼く前に呼ぶ。</b> 焼いたあとに動かすと NavMesh だけ元の位置に残る
+        /// （§3.2「先読み時・スライド中・到着時に NavMesh 付き root を移動しない」）。
+        /// </summary>
+        private static void ApplyAuthoringOrigin(Transform root, Vector3 origin)
+        {
+            if (origin != Vector3.zero)
+            {
+                root.position = origin;
+            }
         }
 
         private static void CreateWall(Transform parent, string name, Vector3 center, Vector3 size, Material mat)
         {
             Phase5Placeholder.CreateBox(name, parent,
                 new Vector3(center.x, size.y * 0.5f, center.z), size, mat);
+        }
+
+        /// <summary>
+        /// 接続通路の Z へ合わせて平行移動する（P5.5 §7.1）。
+        ///
+        /// 出入口・入口・代替配置・目印を<b>同じ規則で</b>動かすための 1 か所。
+        /// 個別に座標を渡す形にすると、代替配置や目印だけ古い Z に取り残される。
+        /// </summary>
+        private static Vector3 ShiftToSeam(Vector3 position, float seamZ) =>
+            new Vector3(position.x, position.y, position.z - Phase5Layout.SeamDefaultZ + seamZ);
+
+        /// <summary>代替配置をまとめて平行移動する。</summary>
+        private static Vector3[] ShiftToSeam(Vector3[] positions, float seamZ)
+        {
+            var shifted = new Vector3[positions.Length];
+            for (int i = 0; i < positions.Length; i++)
+            {
+                shifted[i] = ShiftToSeam(positions[i], seamZ);
+            }
+
+            return shifted;
         }
 
         /// <summary>矩形の外枠を薄い板 4 本で描く（当たり判定なし。見て分かるようにするだけ）。</summary>

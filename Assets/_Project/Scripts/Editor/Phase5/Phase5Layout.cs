@@ -24,6 +24,13 @@ namespace Momotaro.Editor.Phase5
         /// <summary>正常ルートの通路幅（最大通行 Actor の直径＋0.4 以上。§3.2）。</summary>
         public const float CorridorWidth = 4.0f;
 
+        /// <summary>
+        /// P5 の接続通路の中心 Z。P5 は Scene を読み替える遷移なので、
+        /// 出入口の Z は見た目の都合だけで決められた（§3.2 の座標統一は P5.5 の要求）。
+        /// P5.5 はここを <see cref="Phase5BuildTargets.SeamZ"/> で上書きする。
+        /// </summary>
+        public const float SeamDefaultZ = 6f;
+
         // ---- エリア A ----
 
         /// <summary>A の床の広がり（X）。</summary>

@@ -50,12 +50,24 @@ namespace Momotaro.EditorBridge
         /// <summary>P5 の探索試遊を Scene・Asset の両面から検査する（P5-09。仕様書 §16.1）。</summary>
         public const string ValidateExplorationTrial = "validate-exploration-trial";
 
+        /// <summary>
+        /// P5.5 の実ワールド配置（A の東に B・接続 Data）を再生成する（P55-03c。仕様書 §3.2）。
+        /// P5 の受入用 Scene は作り替えない（別フォルダへ出す）。
+        /// </summary>
+        public const string BuildPhase55World = "build-phase55-world";
+
+        /// <summary>
+        /// P5.5 の実ワールド配置を検査する（P55-03c。仕様書 §3.2／§7.1／§7.3／§10）。
+        /// 2 つの Scene の<b>関係</b>（境界・通路・並び・カメラ軸・覆い・接続 Data）を見る。
+        /// </summary>
+        public const string ValidatePhase55World = "validate-phase55-world";
+
         /// <summary>実行できる操作の一覧（エラーメッセージにそのまま出す）。</summary>
         public static readonly string[] All =
         {
             BuildInumaru, ValidateProjectData, VerifyRequiredTests,
             BuildCompanionField, BuildCompanionTrial, BuildExplorationTrial,
-            ValidateExplorationTrial,
+            ValidateExplorationTrial, BuildPhase55World, ValidatePhase55World,
         };
 
         /// <summary>実行結果。</summary>
@@ -83,7 +95,8 @@ namespace Momotaro.EditorBridge
         {
             return op == BuildInumaru || op == ValidateProjectData || op == VerifyRequiredTests
                 || op == BuildCompanionField || op == BuildCompanionTrial || op == BuildExplorationTrial
-                || op == ValidateExplorationTrial;
+                || op == ValidateExplorationTrial || op == BuildPhase55World
+                || op == ValidatePhase55World;
         }
 
         /// <summary>操作を実行する。未知の操作・呼び出し失敗は <see cref="OperationResult.Success"/> false で返す。</summary>
@@ -109,6 +122,12 @@ namespace Momotaro.EditorBridge
 
                     case ValidateExplorationTrial:
                         return RunValidateExplorationTrial();
+
+                    case BuildPhase55World:
+                        return RunBuilder(Phase55WorldBuilderType);
+
+                    case ValidatePhase55World:
+                        return RunPhase55WorldValidation();
 
                     case BuildCompanionField:
                         return RunBuildCompanionField();
@@ -289,6 +308,8 @@ namespace Momotaro.EditorBridge
         private const string ExplorationBuilderType = "Momotaro.Editor.Phase5.Phase5ExplorationBuilder";
         private const string ExplorationValidatorType = "Momotaro.Editor.Phase5.Phase5ExplorationValidator";
         private const string ExplorationAssetValidatorType = "Momotaro.Editor.Phase5.Phase5AssetValidator";
+        private const string Phase55WorldBuilderType = "Momotaro.Editor.Phase55.Phase55WorldBuilder";
+        private const string Phase55WorldValidatorType = "Momotaro.Editor.Phase55.Phase55WorldValidator";
 
         private static OperationResult RunBuildInumaru()
         {
@@ -526,19 +547,86 @@ namespace Momotaro.EditorBridge
         /// （`CLAUDE.md`「Scene を作り直す操作を載せてよいのは、未保存の変更があるとき自分で断る場合だけ」）。
         /// 本アセンブリは Momotaro.Editor を参照しないので、既存の Scene 生成と同じく反射で呼ぶ。
         /// </summary>
-        private static OperationResult RunBuildExplorationTrial()
+        private static OperationResult RunBuildExplorationTrial() => RunBuilder(ExplorationBuilderType);
+
+        /// <summary>
+        /// P5.5 の実ワールド配置を検査する（P55-03c）。
+        ///
+        /// <b>Scene を開く操作なので、未保存の変更があれば断る</b>（生成と同じ扱い）。
+        /// </summary>
+        private static OperationResult RunPhase55WorldValidation()
         {
-            Type builder = FindType(ExplorationBuilderType);
+            for (int i = 0; i < UnityEditor.SceneManagement.EditorSceneManager.sceneCount; i++)
+            {
+                UnityEngine.SceneManagement.Scene open =
+                    UnityEditor.SceneManagement.EditorSceneManager.GetSceneAt(i);
+                if (open.isDirty)
+                {
+                    return new OperationResult(false,
+                        "未保存の変更がある Scene が開いているため検査しません（"
+                        + (string.IsNullOrEmpty(open.path) ? "(無題 Scene)" : open.path)
+                        + "）。保存するか破棄してから再実行してください。");
+                }
+            }
+
+            Type validator = FindType(Phase55WorldValidatorType);
+            if (validator == null)
+            {
+                return new OperationResult(false, "型が見つかりません: " + Phase55WorldValidatorType);
+            }
+
+            MethodInfo validate = validator.GetMethod(
+                "Validate", BindingFlags.Public | BindingFlags.Static, null,
+                new[] { typeof(List<string>), typeof(List<string>) }, null);
+            if (validate == null)
+            {
+                return new OperationResult(false,
+                    Phase55WorldValidatorType + ".Validate(List<string>, List<string>) が見つかりません。");
+            }
+
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            validate.Invoke(null, new object[] { errors, warnings });
+
+            var details = new List<string>();
+            for (int i = 0; i < warnings.Count; i++)
+            {
+                details.Add("[警告] " + warnings[i]);
+            }
+
+            for (int i = 0; i < errors.Count; i++)
+            {
+                details.Add("[エラー] " + errors[i]);
+            }
+
+            if (errors.Count > 0)
+            {
+                return new OperationResult(false,
+                    "P5.5 実ワールド配置の検査でエラー " + errors.Count + " 件（警告 "
+                    + warnings.Count + " 件）。", details);
+            }
+
+            return new OperationResult(true,
+                "P5.5 実ワールド配置の検査を通りました（警告 " + warnings.Count + " 件）。", details);
+        }
+
+        /// <summary>
+        /// 引数なしの <c>BuildAll()</c> を持つ生成器を反射で呼ぶ（P5／P5.5 で同じ形）。
+        /// 戻り値は <c>Success</c>／<c>Message</c>／<c>Outputs</c> を持つ構造体であることを期待する。
+        /// </summary>
+        private static OperationResult RunBuilder(string builderTypeName)
+        {
+            Type builder = FindType(builderTypeName);
             if (builder == null)
             {
-                return new OperationResult(false, "型が見つかりません: " + ExplorationBuilderType);
+                return new OperationResult(false, "型が見つかりません: " + builderTypeName);
             }
 
             MethodInfo build = builder.GetMethod(
                 "BuildAll", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
             if (build == null)
             {
-                return new OperationResult(false, ExplorationBuilderType + ".BuildAll() が見つかりません。");
+                return new OperationResult(false, builderTypeName + ".BuildAll() が見つかりません。");
             }
 
             object result = build.Invoke(null, null);
