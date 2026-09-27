@@ -456,11 +456,59 @@ namespace Momotaro.Editor.Phase5
         /// </summary>
         private static void ValidateNavigationRoutes(Scene scene, List<string> errors, List<string> warnings)
         {
+            // 活動ゲートが NavMeshSurface を<b>閉じて出荷する</b>ようになったので（P5.5 §4.3）、
+            // Editor では三角形が 1 枚も取れない。そのままだとこの検査が<b>常に Warning へ逃げてしまう</b>ので、
+            // 焼いた data を一時的に追加して検査し、<b>必ず外す</b>。
+            //
+            // Scene を変更しないところが要点。部品の enabled をトグルすると Scene が dirty になり、
+            // 次の生成操作が「未保存の Scene がある」で止まる。
+            var temporaryData = new List<NavMeshDataInstance>();
+            try
+            {
+                ValidateNavigationRoutesOnNavMesh(scene, errors, warnings, temporaryData);
+            }
+            finally
+            {
+                for (int i = 0; i < temporaryData.Count; i++)
+                {
+                    if (temporaryData[i].valid)
+                    {
+                        temporaryData[i].Remove();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 焼いた NavMesh の上で経路を見る。
+        ///
+        /// <b>門の carving はここでは効かない。</b> NavMeshObstacle も活動ゲートが閉じて出荷するので、
+        /// この検査が見るのは「<b>門を除いた地形の到達性</b>」。
+        /// 門を開通したときに渡れるかは PlayMode の
+        /// <c>GateOpened_MakesTheGatedRouteTraversable</c> が受入条件（§4.3「固定 1 フレーム待ちだけで成功としない」）。
+        /// </summary>
+        private static void ValidateNavigationRoutesOnNavMesh(
+            Scene scene, List<string> errors, List<string> warnings, List<NavMeshDataInstance> temporaryData)
+        {
             NavMeshTriangulation triangulation = NavMesh.CalculateTriangulation();
             if (triangulation.indices == null || triangulation.indices.Length == 0)
             {
-                warnings.Add("NavMesh が Editor 上で有効化されていないため、経路の到達可否は検査できませんでした"
-                    + "（焼いた data は在ります）。PlayMode の受入で確認してください。");
+                foreach (Unity.AI.Navigation.NavMeshSurface surface
+                    in Components<Unity.AI.Navigation.NavMeshSurface>(scene))
+                {
+                    if (surface.navMeshData != null)
+                    {
+                        temporaryData.Add(NavMesh.AddNavMeshData(surface.navMeshData));
+                    }
+                }
+
+                triangulation = NavMesh.CalculateTriangulation();
+            }
+
+            if (triangulation.indices == null || triangulation.indices.Length == 0)
+            {
+                warnings.Add("NavMesh の焼き込み data を追加しても三角形が取れないため、"
+                    + "経路の到達可否は検査できませんでした。PlayMode の受入で確認してください。");
                 return;
             }
 
@@ -688,6 +736,11 @@ namespace Momotaro.Editor.Phase5
                 // 活動ゲートの内側（非 Active になる根の下）にある分は除く。
                 RequireStagedOnly<Camera>(scene, gate, "Camera", errors);
                 RequireStagedOnly<AudioListener>(scene, gate, "AudioListener", errors);
+
+                // NavMesh の登録と carving も Area 所有（§4.3）。
+                // ここが漏れていると、先読みしただけで活動中 Area の経路が変わる。
+                RequireGated<UnityEngine.AI.NavMeshObstacle>(scene, gate, "NavMeshObstacle", errors);
+                RequireGated<Unity.AI.Navigation.NavMeshSurface>(scene, gate, "NavMeshSurface", errors);
             }
         }
 
@@ -720,6 +773,42 @@ namespace Momotaro.Editor.Phase5
                     errors.Add(label + " が活動ゲートの管理外にあります（"
                         + GetHierarchyPath(component.transform)
                         + "）。先読みで 2 枚目が載ると二重に動きます（§4.1）。");
+                }
+            }
+        }
+
+        /// <summary>
+        /// その型の部品が<b>保存時から閉じられている</b>ことを確かめる（P5.5 §4.2／§4.3）。
+        ///
+        /// 表示系（<see cref="RequireStagedOnly{T}"/>）と違って、こちらは<b>副作用がある</b>。
+        /// NavMeshSurface は <c>OnEnable</c> で NavMeshData を登録するので、
+        /// 保存時に有効だと「読み込んだだけで経路に混じる」ことになる。
+        /// </summary>
+        private static void RequireGated<T>(
+            Scene scene, AreaActivityGate gate, string label, List<string> errors) where T : Behaviour
+        {
+            foreach (T component in Components<T>(scene))
+            {
+                if (IsUnderAnyGatedRoot(gate, component.transform))
+                {
+                    continue;
+                }
+
+                bool listed = false;
+                for (int i = 0; i < gate.GatedBehaviours.Count; i++)
+                {
+                    if (ReferenceEquals(gate.GatedBehaviours[i], component))
+                    {
+                        listed = true;
+                        break;
+                    }
+                }
+
+                if (!listed)
+                {
+                    errors.Add(label + " が活動ゲートの停止対象に入っていません（"
+                        + GetHierarchyPath(component.transform)
+                        + "）。先読みした Area の登録が活動中 Area の経路に混じります（§4.3）。");
                 }
             }
         }

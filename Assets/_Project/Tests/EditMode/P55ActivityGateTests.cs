@@ -177,7 +177,7 @@ namespace Momotaro.Tests.EditMode
                 gate.Root,
                 new List<GameObject> { gate.Systems, null },
                 new List<Collider> { gate.Collider, null },
-                new List<MonoBehaviour> { gate.Behaviour, null });
+                new List<Behaviour> { gate.Behaviour, null });
 
             gate.Component.Open();
             gate.Component.Open();
@@ -264,7 +264,7 @@ namespace Momotaro.Tests.EditMode
                 root,
                 new List<GameObject> { systems },
                 new List<Collider> { collider },
-                new List<MonoBehaviour> { behaviour },
+                new List<Behaviour> { behaviour },
                 new List<Behaviour> { visual });
 
             return new Gate

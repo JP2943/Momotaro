@@ -2,7 +2,7 @@ using Momotaro.Core.Identification;
 
 namespace Momotaro.Gameplay.Session
 {
-    /// <summary>先読みの段階（P5.5 §4.1／§11 の E04）。</summary>
+    /// <summary>先読みの段階（P5.5 §4.1／§5／§11 の E04）。</summary>
     public enum AreaPreloadPhase
     {
         /// <summary>何も先読みしていない。</summary>
@@ -17,8 +17,17 @@ namespace Momotaro.Gameplay.Session
         /// <summary>撤去中。</summary>
         Releasing = 3,
 
-        /// <summary>失敗した。<b>次の要求は受け付ける</b>（詰まらせない）。</summary>
+        /// <summary>
+        /// 読込に失敗した。<b>自動では再試行しない</b>（§5「自動で毎フレーム再試行しない。
+        /// 次の新しい遷移操作で一度だけ再試行できる」）。
+        /// </summary>
         Failed = 4,
+
+        /// <summary>
+        /// 撤去に失敗し、<b>実 Scene がまだ載っている</b>（§5「終端して隔離 Area を unload してから
+        /// ロードを発行する」）。この間は新しいロードを出さない。
+        /// </summary>
+        ReleaseFailed = 5,
     }
 
     /// <summary>先読みを断った理由（§11 の E04）。</summary>
@@ -38,6 +47,9 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>先読み要求（活動ゲートへの申し入れ）が通らなかった。</summary>
         StagingRequestRefused = 4,
+
+        /// <summary>前の失敗を抱えているので、自動では再試行しない（§5）。</summary>
+        AwaitingRetryPermission = 5,
     }
 
     /// <summary>
@@ -48,6 +60,10 @@ namespace Momotaro.Gameplay.Session
     /// 「読み込め」「撤去せよ」という命令形にすると、プレイヤーが出入口の間を行き来するたびに
     /// 呼び出し側が「いま何が載っているか」を数え、撤去と読込の順序を自分で組むことになる。
     /// そこがずれると<b>二重ロード</b>か<b>撤去されない Area の積み上がり</b>になる。
+    ///
+    /// <b>失敗したら自分では再試行しない</b>（§5）。毎フレーム読み直すと、恒久的に失敗する先
+    /// （壊れた Scene パス・容量不足）へ延々とロードを出し続ける。再試行は
+    /// <see cref="ArmRetry"/> を通じて<b>外から一度だけ</b>許可する。
     ///
     /// <b>上限と直列化は持たない。</b> どちらも <see cref="AreaResidencyLedger"/> が正本で、
     /// ここは台帳に伺いを立てるだけ（§2「Scene 操作の発行は単一の管理者が直列化する」）。
@@ -67,6 +83,7 @@ namespace Momotaro.Gameplay.Session
 
         private IAreaSceneOperation _operation;
         private AreaInstanceHandle _loading;
+        private bool _retryArmed;
 
         /// <summary>作る。<paramref name="owner"/> は現行 Area の指定に使う所有者（§5.2 の所有者一致）。</summary>
         public AreaPreloader(AreaResidencyLedger ledger, IAreaSceneHost host, object owner)
@@ -79,10 +96,10 @@ namespace Momotaro.Gameplay.Session
         /// <summary>いまの段階。</summary>
         public AreaPreloadPhase Phase { get; private set; } = AreaPreloadPhase.Idle;
 
-        /// <summary>閉じたまま待っている Area（無ければ無効ハンドル）。</summary>
+        /// <summary>閉じたまま待っている Area（無ければ無効ハンドル）。撤去失敗中は残したままにする。</summary>
         public AreaInstanceHandle StagedArea { get; private set; }
 
-        /// <summary>閉じたまま待っている Scene の handle（無ければ 0）。</summary>
+        /// <summary>閉じたまま待っている Scene の handle（無ければ 0）。撤去失敗中は残したままにする。</summary>
         public int StagedSceneHandle { get; private set; }
 
         /// <summary>いま望んでいる先（無ければ空）。</summary>
@@ -90,6 +107,10 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>失敗の理由（成功なら空）。</summary>
         public string FailureReason { get; private set; } = string.Empty;
+
+        /// <summary>失敗を抱えているか（<see cref="ArmRetry"/> を待っている状態）。</summary>
+        public bool HasFailure =>
+            Phase == AreaPreloadPhase.Failed || Phase == AreaPreloadPhase.ReleaseFailed;
 
         /// <summary>読込を始めた回数（診断・テスト用）。</summary>
         public int LoadStartedCount { get; private set; }
@@ -106,12 +127,22 @@ namespace Momotaro.Gameplay.Session
         /// <summary>断った回数（診断・テスト用）。</summary>
         public int RefusedCount { get; private set; }
 
+        /// <summary>失敗を抱えたまま自動再試行を見送った回数（診断・テスト用）。</summary>
+        public int SuppressedRetryCount { get; private set; }
+
+        /// <summary>外から許可された再試行の回数（診断・テスト用）。</summary>
+        public int ArmedRetryCount { get; private set; }
+
         /// <summary>最後に断った理由（診断・テスト用）。</summary>
         public AreaPreloadRejection LastRejection { get; private set; }
 
         /// <summary>
         /// 望む先を宣言する。<b>同じ先なら何もしない</b>（読み直さない）。
         /// 別の先なら、撤去してから読み込む（候補切替）。実際の進行は <see cref="Poll"/> が行う。
+        ///
+        /// <b>失敗を抱えているときに同じ先を言い直しても再試行しない</b>（§5）。
+        /// 別の先を宣言した場合は新しい候補なので、読込失敗の抱え込みは解く
+        /// （撤去失敗は解かない——実 Scene が残っているので先に片付ける必要がある）。
         /// </summary>
         public bool Request(StableId areaId, string scenePath)
         {
@@ -126,12 +157,20 @@ namespace Momotaro.Gameplay.Session
             {
                 // すでにこの先を望んでいる。読込中でも Staged でも、何もしないのが正しい。
                 ReusedCount++;
+                Poll();
                 return true;
             }
 
             if (_desiredArea.IsValid)
             {
                 SwitchedCount++;
+            }
+
+            if (Phase == AreaPreloadPhase.Failed)
+            {
+                // 別の候補は「新しい先読み」なので、前の読込失敗は持ち越さない。
+                Phase = AreaPreloadPhase.Idle;
+                FailureReason = string.Empty;
             }
 
             _desiredArea = areaId;
@@ -146,6 +185,26 @@ namespace Momotaro.Gameplay.Session
             _desiredArea = default;
             _desiredPath = null;
             Poll();
+        }
+
+        /// <summary>
+        /// <b>新しい遷移操作に対応した再試行入口</b>（§5「次の新しい遷移操作で一度だけ再試行できる」）。
+        ///
+        /// 失敗を抱えていないときは何もしない。抱えているときは<b>一度だけ</b>進める——
+        /// 読込失敗なら読み直し、撤去失敗なら残った Scene の撤去をやり直す。
+        /// 再び失敗すれば、また外から許可されるまで止まる。
+        /// </summary>
+        public bool ArmRetry()
+        {
+            if (!HasFailure)
+            {
+                return false;
+            }
+
+            _retryArmed = true;
+            ArmedRetryCount++;
+            Poll();
+            return true;
         }
 
         /// <summary>
@@ -165,9 +224,28 @@ namespace Momotaro.Gameplay.Session
                 case AreaPreloadPhase.Releasing:
                     PollReleasing();
                     return;
+
+                case AreaPreloadPhase.ReleaseFailed:
+                    // <b>実 Scene が残っている。</b> 新しいロードは出さず、撤去のやり直しだけを狙う。
+                    // 台帳からも外していないので、在留枠を食ったままになる——それが正しい
+                    // （空きがあると誤認して 3 枚目を読むより、先読みが止まるほうが軽い）。
+                    if (TakeRetryPermission())
+                    {
+                        BeginRelease();
+                    }
+
+                    return;
+
+                case AreaPreloadPhase.Failed:
+                    if (!TakeRetryPermission())
+                    {
+                        return;
+                    }
+
+                    break;
             }
 
-            // Idle／Staged／Failed：望む先と実際のずれを詰める。
+            // Idle／Staged／（許可された）Failed：望む先と実際のずれを詰める。
             bool wantsSomething = _desiredArea.IsValid;
             bool hasStaged = Phase == AreaPreloadPhase.Staged && StagedArea.IsValid;
 
@@ -188,6 +266,20 @@ namespace Momotaro.Gameplay.Session
             }
         }
 
+        /// <summary>再試行の許可を 1 回分消費する。許可が無ければ見送った回数を数える。</summary>
+        private bool TakeRetryPermission()
+        {
+            if (!_retryArmed)
+            {
+                SuppressedRetryCount++;
+                LastRejection = AreaPreloadRejection.AwaitingRetryPermission;
+                return false;
+            }
+
+            _retryArmed = false;
+            return true;
+        }
+
         private void PollLoading()
         {
             if (_operation == null || !_operation.IsDone)
@@ -202,9 +294,9 @@ namespace Momotaro.Gameplay.Session
 
             // <b>終端したら自分の申し入れは必ず引っ込む。</b>
             //
-            // 読み終わった時点で目的の Area の <c>Awake</c> は走っているので、
+            // 読み終わった時点で目的の Area の Awake は走っているので、
             // 通常はゲートがすでに消費していてここは空転する。そうでない場合
-            // （ゲートのない Scene・宛先違い・失敗）に残すと、<b>次の先読みが一切通らなくなる</b>し、
+            // （ゲートのない Scene・宛先違い・失敗）に残すと、次の先読みが一切通らなくなるし、
             // 次に直開きした Scene が閉じたまま起動する（＝何も動かないゲーム）。
             AreaStagingRequest.Clear();
 
@@ -212,7 +304,8 @@ namespace Momotaro.Gameplay.Session
             {
                 _ledger.Remove(_loading);
                 _loading = AreaInstanceHandle.None;
-                Fail(failed ? "先読みの読込が失敗しました。" : "読み込んだ Scene を特定できませんでした。");
+                Fail(AreaPreloadPhase.Failed,
+                    failed ? "先読みの読込が失敗しました。" : "読み込んだ Scene を特定できませんでした。");
                 return;
             }
 
@@ -236,21 +329,38 @@ namespace Momotaro.Gameplay.Session
             bool failed = _operation.HasError;
             _operation = null;
             _ledger.EndSceneOperation();
-            _ledger.Remove(StagedArea);
-            StagedArea = AreaInstanceHandle.None;
-            StagedSceneHandle = 0;
 
             if (failed)
             {
-                // 撤去に失敗しても台帳からは外す。
-                // 残すと在留上限を食い続けて、以降の先読みが一切通らなくなる（§9.1）。
-                Fail("先読みした Scene の撤去が失敗しました。");
+                // <b>撤去できたと決めつけない。</b> 実際に Scene が消えたかを確かめる。
+                //
+                // 確かめずに台帳を空けると、A ＋ B が載ったままなのに「空きあり」と見なして
+                // C を読み、実 Scene が 3 枚になる。しかも B をもう一度撤去するための
+                // handle まで失う（GPT レビュー R10 の指摘 2）。
+                if (_host.IsLoaded(StagedSceneHandle))
+                {
+                    Fail(AreaPreloadPhase.ReleaseFailed,
+                        "先読みした Scene の撤去が失敗し、まだ載っています。");
+                    return;
+                }
+
+                // Scene は消えている（撤去の通知だけが失敗した）。枠は返してよい。
+                FinishRelease();
+                Fail(AreaPreloadPhase.Failed, "撤去の完了通知が失敗しましたが、Scene は消えています。");
                 return;
             }
 
+            FinishRelease();
             Phase = AreaPreloadPhase.Idle;
             FailureReason = string.Empty;
             Poll();
+        }
+
+        private void FinishRelease()
+        {
+            _ledger.Remove(StagedArea);
+            StagedArea = AreaInstanceHandle.None;
+            StagedSceneHandle = 0;
         }
 
         private void BeginLoad()
@@ -266,7 +376,7 @@ namespace Momotaro.Gameplay.Session
                 _ledger.EndSceneOperation();
                 RefusedCount++;
                 LastRejection = AreaPreloadRejection.AtCapacity;
-                Fail("在留上限に達しているため先読みできません（上限 "
+                Fail(AreaPreloadPhase.Failed, "在留上限に達しているため先読みできません（上限 "
                     + AreaResidencyLedger.MaxResidentAreas + "）。");
                 return;
             }
@@ -287,7 +397,8 @@ namespace Momotaro.Gameplay.Session
                 _ledger.EndSceneOperation();
                 RefusedCount++;
                 LastRejection = AreaPreloadRejection.StagingRequestRefused;
-                Fail("先読み要求が通りませんでした（すでに別の Area を待たせています）。");
+                Fail(AreaPreloadPhase.Failed,
+                    "先読み要求が通りませんでした（すでに別の Area を待たせています）。");
                 return;
             }
 
@@ -320,6 +431,7 @@ namespace Momotaro.Gameplay.Session
             _operation = _host.Unload(StagedSceneHandle);
             ReleaseStartedCount++;
             Phase = AreaPreloadPhase.Releasing;
+            FailureReason = string.Empty;
 
             if (_operation == null || _operation.HasError)
             {
@@ -327,12 +439,13 @@ namespace Momotaro.Gameplay.Session
             }
         }
 
-        private void Fail(string reason)
+        private void Fail(AreaPreloadPhase phase, string reason)
         {
-            Phase = AreaPreloadPhase.Failed;
+            Phase = phase;
             FailureReason = reason;
+            _retryArmed = false;
 
-            // <b>失敗しても望みは残す。</b> 次の Poll で読み直せる。
+            // <b>失敗しても望みは残す。</b> 外から再試行を許可されたときに読み直せる。
             // ここで望みまで消すと、呼び出し側が「先読みされている」と思い込んだまま進む。
         }
     }

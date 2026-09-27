@@ -44,5 +44,14 @@ namespace Momotaro.Gameplay.Session
         /// <b>handle で指定する</b>——同じ path の別インスタンスを取り違えないため。
         /// </summary>
         IAreaSceneOperation Unload(int sceneHandle);
+
+        /// <summary>
+        /// その Scene がまだ載っているか（§5 「終端して隔離 Area を unload してからロードを発行する」）。
+        ///
+        /// <b>撤去の成否と、実際に消えたかは別。</b> 撤去操作が失敗を返しても Scene が
+        /// 消えていることはあるし、逆もある。在留台帳の枕を返すのは
+        /// <b>実 Scene の不在を確かめられたときだけ</b>にしたいので、その問い口を分けて持つ。
+        /// </summary>
+        bool IsLoaded(int sceneHandle);
     }
 }

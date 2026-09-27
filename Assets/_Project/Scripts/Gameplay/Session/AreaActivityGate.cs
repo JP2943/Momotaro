@@ -37,7 +37,7 @@ namespace Momotaro.Gameplay.Session
         [SerializeField] private List<Collider> _gatedColliders = new List<Collider>();
 
         [Tooltip("閉じている間は無効にする部品（仕掛けの登録など）。保存時から無効。")]
-        [SerializeField] private List<MonoBehaviour> _gatedBehaviours = new List<MonoBehaviour>();
+        [SerializeField] private List<Behaviour> _gatedBehaviours = new List<Behaviour>();
 
         [Tooltip("先読みのときだけ無効にする表示系（Camera／AudioListener／Light）。<b>保存時は有効</b>。")]
         [SerializeField] private List<Behaviour> _stagedOnlyBehaviours = new List<Behaviour>();
@@ -64,7 +64,7 @@ namespace Momotaro.Gameplay.Session
         public IReadOnlyList<Collider> GatedColliders => _gatedColliders;
 
         /// <summary>無効にする部品（読み取り専用）。</summary>
-        public IReadOnlyList<MonoBehaviour> GatedBehaviours => _gatedBehaviours;
+        public IReadOnlyList<Behaviour> GatedBehaviours => _gatedBehaviours;
 
         /// <summary>
         /// 先読みのときだけ無効にする表示系（読み取り専用）。
@@ -132,7 +132,7 @@ namespace Momotaro.Gameplay.Session
 
             for (int i = 0; i < _gatedBehaviours.Count; i++)
             {
-                MonoBehaviour b = _gatedBehaviours[i];
+                Behaviour b = _gatedBehaviours[i];
                 if (b != null && b.enabled)
                 {
                     reason = "部品が有効のまま保存されています（" + b.name + " / " + b.GetType().Name + "）。";
@@ -180,7 +180,33 @@ namespace Momotaro.Gameplay.Session
             CloseCount++;
         }
 
+        /// <summary>
+        /// 開閉を適用する。<b>順序が意味を持つ。</b>
+        ///
+        /// 開けるときは<b>物理・NavMesh が先、Gameplay が後</b>。
+        /// 逆にすると、NavMesh が登録される前に NavMeshAgent が目覚めて
+        /// 「近くに NavMesh がない」で警告を出し、主人公や犬丸が動かない。
+        /// 閉めるときはその逆で、Gameplay を先に止めてから土台を外す
+        /// （§4.3「到着側を有効化する際は出発側を先に閉じる」と同じ規律）。
+        /// </summary>
         private void Apply(bool active)
+        {
+            if (active)
+            {
+                ApplyColliders(true);
+                ApplyBehaviours(true);
+                ApplyStagedOnly(true);
+                ApplyRoots(true);
+                return;
+            }
+
+            ApplyRoots(false);
+            ApplyBehaviours(false);
+            ApplyColliders(false);
+            ApplyStagedOnly(false);
+        }
+
+        private void ApplyRoots(bool active)
         {
             for (int i = 0; i < _gatedRoots.Count; i++)
             {
@@ -190,7 +216,10 @@ namespace Momotaro.Gameplay.Session
                     go.SetActive(active);
                 }
             }
+        }
 
+        private void ApplyColliders(bool active)
+        {
             for (int i = 0; i < _gatedColliders.Count; i++)
             {
                 Collider c = _gatedColliders[i];
@@ -199,17 +228,18 @@ namespace Momotaro.Gameplay.Session
                     c.enabled = active;
                 }
             }
+        }
 
+        private void ApplyBehaviours(bool active)
+        {
             for (int i = 0; i < _gatedBehaviours.Count; i++)
             {
-                MonoBehaviour b = _gatedBehaviours[i];
+                Behaviour b = _gatedBehaviours[i];
                 if (b != null)
                 {
                     b.enabled = active;
                 }
             }
-
-            ApplyStagedOnly(active);
         }
 
         /// <summary>表示系の開閉（保存状態は有効なので、閉めるのは先読みのときだけ）。</summary>
@@ -231,13 +261,13 @@ namespace Momotaro.Gameplay.Session
             AreaRoot areaRoot,
             List<GameObject> gatedRoots,
             List<Collider> gatedColliders = null,
-            List<MonoBehaviour> gatedBehaviours = null,
+            List<Behaviour> gatedBehaviours = null,
             List<Behaviour> stagedOnlyBehaviours = null)
         {
             _areaRoot = areaRoot;
             _gatedRoots = gatedRoots ?? new List<GameObject>();
             _gatedColliders = gatedColliders ?? new List<Collider>();
-            _gatedBehaviours = gatedBehaviours ?? new List<MonoBehaviour>();
+            _gatedBehaviours = gatedBehaviours ?? new List<Behaviour>();
             _stagedOnlyBehaviours = stagedOnlyBehaviours ?? new List<Behaviour>();
         }
 

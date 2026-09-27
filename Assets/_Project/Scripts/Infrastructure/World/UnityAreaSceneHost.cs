@@ -60,6 +60,9 @@ namespace Momotaro.Infrastructure.World
             }
         }
 
+        /// <inheritdoc />
+        public bool IsLoaded(int sceneHandle) => TryFindScene(sceneHandle, out _);
+
         /// <summary>handle から読み込まれている Scene を引く。</summary>
         private static bool TryFindScene(int sceneHandle, out Scene found)
         {

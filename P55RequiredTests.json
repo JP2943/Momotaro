@@ -127,9 +127,11 @@
         "Momotaro.Tests.EditMode.P55PreloadTests.WhileAnotherSceneOperationRuns_ThePreloadWaitsInsteadOfFailing",
         "Momotaro.Tests.EditMode.P55PreloadTests.TheStagedAreaIsAdmittedToTheLedgerAsStaged",
         "Momotaro.Tests.EditMode.P55PreloadTests.ClearingTheRequest_RetiresTheStagedArea",
-        "Momotaro.Tests.EditMode.P55PreloadTests.AFailedLoad_LeavesNoStagingRequestAndNoLedgerEntry",
-        "Momotaro.Tests.EditMode.P55PreloadTests.AFailedUnload_StillFreesTheLedgerSlot",
-        "Momotaro.Tests.EditMode.P55PreloadTests.AnInvalidRequest_IsRefusedWithoutTouchingAnything"
+        "Momotaro.Tests.EditMode.P55PreloadTests.AFailedLoad_LeavesNoStagingRequestAndDoesNotRetryByItself",
+        "Momotaro.Tests.EditMode.P55PreloadTests.AFailedUnload_KeepsTheLedgerSlotAndTheHandle_WhileTheSceneIsStillLoaded",
+        "Momotaro.Tests.EditMode.P55PreloadTests.AnInvalidRequest_IsRefusedWithoutTouchingAnything",
+        "Momotaro.Tests.EditMode.P55PreloadTests.SwitchingToAnotherCandidate_ClearsAPreviousLoadFailure",
+        "Momotaro.Tests.EditMode.P55PreloadTests.AFailedUnloadNotification_FreesTheSlotWhenTheSceneIsActuallyGone"
       ]
     },
     {
@@ -240,7 +242,8 @@
       "requirementIds": [],
       "implemented": true,
       "supportingTests": [
-        "Momotaro.Tests.PlayMode.P55PreloadPlayTests.ClearingThePreload_UnloadsTheNeighbourAndLeavesTheActiveAreaAlone"
+        "Momotaro.Tests.PlayMode.P55PreloadPlayTests.ClearingThePreload_UnloadsTheNeighbourAndLeavesTheActiveAreaAlone",
+        "Momotaro.Tests.PlayMode.P55PreloadPlayTests.PreloadingTheNeighbour_DoesNotChangeTheActiveAreaNavMesh"
       ]
     }
   ],

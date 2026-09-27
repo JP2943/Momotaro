@@ -187,10 +187,15 @@ namespace Momotaro.Tests.EditMode
             Assert.IsFalse(_ledger.IsSceneOperationInFlight, "断っても Scene 操作を掴んだままにしない。");
             Assert.IsFalse(AreaStagingRequest.IsRequested, "先読み要求も残さない。");
 
-            // 空きができれば通る（詰まったままにしない）。
+            // 空きができても<b>自動では再試行しない</b>（§5）。
             Assert.IsTrue(_ledger.Remove(second));
             _preloader.Poll();
-            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase, "空いたら読み直せる。");
+            Assert.AreEqual(AreaPreloadPhase.Failed, _preloader.Phase, "自動では読み直さない。");
+            Assert.AreEqual(0, _host.LoadCount);
+
+            // 新しい遷移操作で許可されたときに初めて読む。
+            Assert.IsTrue(_preloader.ArmRetry());
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase, "許可されれば読み直せる。");
         }
 
         // ---------------------------------------------------------------- 直列化
@@ -219,7 +224,7 @@ namespace Momotaro.Tests.EditMode
         // ---------------------------------------------------------------- 失敗
 
         [Test]
-        public void AFailedLoad_LeavesNoStagingRequestAndNoLedgerEntry()
+        public void AFailedLoad_LeavesNoStagingRequestAndDoesNotRetryByItself()
         {
             _preloader.Request(AreaB, PathB);
             Assert.IsTrue(AreaStagingRequest.IsRequested, "前提：活動ゲートへ申し入れている。");
@@ -235,28 +240,112 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(0, _ledger.ResidentCount, "台帳にも残さない。");
             Assert.IsFalse(_ledger.IsSceneOperationInFlight);
 
-            // 望みは残るので、次の Poll で読み直せる。
-            Assert.AreEqual(AreaB, _preloader.DesiredArea);
-            _preloader.Poll();
+            // <b>自動では再試行しない</b>（仕様書 §5「自動で毎フレーム再試行しない」）。
+            //
+            // 壊れた Scene パスのような恒久的な失敗を目の前にすると、
+            // 毎フレームロードを発行し続けて出発側の進行まで巻き込む。
+            for (int i = 0; i < 5; i++)
+            {
+                _preloader.Poll();
+            }
+
+            Assert.AreEqual(1, _host.LoadCount, "何度 Poll しても読み直さない。");
+            Assert.AreEqual(AreaB, _preloader.DesiredArea, "望みは残る（外から許可されたときに読み直せる）。");
+            Assert.Greater(_preloader.SuppressedRetryCount, 0);
+
+            // 同じ先を言い直しても再試行にはならない。
+            Assert.IsTrue(_preloader.Request(AreaB, PathB));
+            Assert.AreEqual(1, _host.LoadCount, "同じ先の言い直しは再試行ではない。");
+
+            // <b>新しい遷移操作で一度だけ</b>再試行できる。
+            Assert.IsTrue(_preloader.ArmRetry());
             Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase);
+            Assert.AreEqual(2, _host.LoadCount, "許可 1 回で 1 回だけ読み直す。");
+
+            _host.FailLoad();
+            _preloader.Poll();
+            _preloader.Poll();
+            Assert.AreEqual(AreaPreloadPhase.Failed, _preloader.Phase);
+            Assert.AreEqual(2, _host.LoadCount, "再び失敗したらまた止まる。");
         }
 
         [Test]
-        public void AFailedUnload_StillFreesTheLedgerSlot()
+        public void SwitchingToAnotherCandidate_ClearsAPreviousLoadFailure()
+        {
+            _preloader.Request(AreaB, PathB);
+            _host.FailLoad();
+            _preloader.Poll();
+            Assert.AreEqual(AreaPreloadPhase.Failed, _preloader.Phase);
+
+            // 別の候補は「再試行」でなく「新しい先読み」なので、前の読込失敗は持ち越さない。
+            // （読込失敗では実 Scene が何も残っていないので、先に片付けるものがない。）
+            Assert.IsTrue(_preloader.Request(AreaC, PathC));
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase);
+            Assert.AreEqual(2, _host.LoadCount);
+        }
+
+        [Test]
+        public void AFailedUnload_KeepsTheLedgerSlotAndTheHandle_WhileTheSceneIsStillLoaded()
+        {
+            _preloader.Request(AreaB, PathB);
+            _host.CompleteLoad(1111);
+            _preloader.Poll();
+            AreaInstanceHandle staged = _preloader.StagedArea;
+
+            _preloader.ClearRequest();
+            _host.FailUnloadAndKeepScene();
+            _preloader.Poll();
+
+            Assert.AreEqual(AreaPreloadPhase.ReleaseFailed, _preloader.Phase);
+
+            // <b>枕を返してはいけない。</b> 実際には A ＋ B が載っているのに
+            // 「空きあり」と見なして C を読むと、実 Scene が 3 枚になる。
+            // handle を消すと B をもう一度撤去する手も失う（GPT レビュー R10 の指摘 2）。
+            Assert.AreEqual(1, _ledger.ResidentCount, "台帳の枕は持ったままにする。");
+            Assert.AreEqual(staged, _preloader.StagedArea, "実体ハンドルを失わない。");
+            Assert.AreEqual(1111, _preloader.StagedSceneHandle, "Scene handle も失わない。");
+            Assert.IsFalse(_ledger.IsSceneOperationInFlight);
+
+            // 新しいロードは禁止。自動で再試行もしない。
+            Assert.IsTrue(_preloader.Request(AreaC, PathC));
+            for (int i = 0; i < 5; i++)
+            {
+                _preloader.Poll();
+            }
+
+            Assert.AreEqual(1, _host.LoadCount, "撤去が終わるまで新しい Area を読まない。");
+            Assert.AreEqual(1, _host.UnloadCount, "自動では撤去もやり直さない。");
+
+            // 再試行は<b>残った Scene の撤去</b>を狭う。
+            Assert.IsTrue(_preloader.ArmRetry());
+            Assert.AreEqual(AreaPreloadPhase.Releasing, _preloader.Phase);
+            Assert.AreEqual(2, _host.UnloadCount);
+            Assert.AreEqual(1111, _host.LastUnloadHandle, "撤去するのは残っている Scene。");
+
+            _host.CompleteUnload();
+            _preloader.Poll();
+
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase, "片付いてから次を読む。");
+            Assert.AreEqual(2, _host.LoadCount);
+        }
+
+        [Test]
+        public void AFailedUnloadNotification_FreesTheSlotWhenTheSceneIsActuallyGone()
         {
             _preloader.Request(AreaB, PathB);
             _host.CompleteLoad(1111);
             _preloader.Poll();
 
             _preloader.ClearRequest();
-            _host.FailUnload();
+            _host.FailUnloadButSceneIsGone();
             _preloader.Poll();
 
-            Assert.AreEqual(AreaPreloadPhase.Failed, _preloader.Phase);
-
-            // 撤去に失敗しても枠は返す。返さないと在留上限を食い続けて、
-            // 以降の先読みが一切通らなくなる（§9.1）。
-            Assert.AreEqual(0, _ledger.ResidentCount, "枠は返す。");
+            // 実 Scene の不在を確かめられたのだから、枕は返す。
+            // 返さないと在留上限を食い続けて、以降の先読みが一切通らなくなる（§9.1）。
+            Assert.AreEqual(AreaPreloadPhase.Failed, _preloader.Phase,
+                "撤去失敗としては扱わない（Scene は消えている）。");
+            Assert.AreEqual(0, _ledger.ResidentCount, "枕は返す。");
+            Assert.AreEqual(0, _preloader.StagedSceneHandle);
             Assert.IsFalse(_ledger.IsSceneOperationInFlight);
         }
 
@@ -288,6 +377,14 @@ namespace Momotaro.Tests.EditMode
             public int UnloadCount { get; private set; }
             public int LastUnloadHandle { get; private set; }
 
+            /// <summary>
+            /// 実 Scene がまだ載っているか。<b>撤去の成否とは別に持つ</b>——
+            /// 撤去が失敗しても Scene が消えていることはあるし、逆もある。
+            /// </summary>
+            public bool SceneStillLoaded { get; set; }
+
+            public bool IsLoaded(int sceneHandle) => sceneHandle != 0 && SceneStillLoaded;
+
             public IAreaSceneOperation LoadAdditive(string scenePath)
             {
                 LoadCount++;
@@ -305,13 +402,33 @@ namespace Momotaro.Tests.EditMode
                 return op;
             }
 
-            public void CompleteLoad(int sceneHandle) => Finish(sceneHandle, error: false);
+            public void CompleteLoad(int sceneHandle)
+            {
+                SceneStillLoaded = true;
+                Finish(sceneHandle, error: false);
+            }
 
             public void FailLoad() => Finish(0, error: true);
 
-            public void CompleteUnload() => Finish(0, error: false);
+            public void CompleteUnload()
+            {
+                SceneStillLoaded = false;
+                Finish(0, error: false);
+            }
 
-            public void FailUnload() => Finish(0, error: true);
+            /// <summary>撤去が失敗し、<b>Scene はまだ載っている</b>。</summary>
+            public void FailUnloadAndKeepScene()
+            {
+                SceneStillLoaded = true;
+                Finish(0, error: true);
+            }
+
+            /// <summary>撤去の通知だけが失敗し、<b>Scene は消えている</b>。</summary>
+            public void FailUnloadButSceneIsGone()
+            {
+                SceneStillLoaded = false;
+                Finish(0, error: true);
+            }
 
             private void Finish(int sceneHandle, bool error)
             {

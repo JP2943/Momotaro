@@ -1253,7 +1253,7 @@ namespace Momotaro.Editor.Phase5
             }
 
             var gatedColliders = new List<Collider>();
-            var gatedBehaviours = new List<MonoBehaviour>();
+            var gatedBehaviours = new List<Behaviour>();
 
             foreach (Collider collider in areaRoot.GetComponentsInChildren<Collider>(true))
             {
@@ -1263,7 +1263,9 @@ namespace Momotaro.Editor.Phase5
                 }
             }
 
-            foreach (MonoBehaviour behaviour in areaRoot.GetComponentsInChildren<MonoBehaviour>(true))
+            // <b>MonoBehaviour だけでは足りない。</b> NavMeshObstacle は Behaviour 直下で、
+            // MonoBehaviour ではないので取りこぼしていた（GPT レビュー R10 の指摘 3）。
+            foreach (Behaviour behaviour in areaRoot.GetComponentsInChildren<Behaviour>(true))
             {
                 if (behaviour == null || IsUnderAny(behaviour.transform, gatedRoots))
                 {
@@ -1272,11 +1274,17 @@ namespace Momotaro.Editor.Phase5
 
                 // 登録簿に載る部品と、Trigger で範囲を見る部品だけを止める。
                 // 見た目（Renderer・Label）は止めない——止めると Staged で地形が見えなくなる。
+                // <b>NavMesh の登録と carving も Area 所有</b>（§4.3）。
+                // NavMeshSurface は OnEnable で NavMeshData を登録するので、
+                // 保存時から無効にしておかないと<b>先読みしただけで活動中 Area の経路に混じる</b>。
+                // 門の NavMeshObstacle も同じ——Collider と AreaFlagDoor を止めても carving は止まらない。
                 if (behaviour is IAreaInteractable
                     || behaviour is IInvestigationPoint
                     || behaviour is AreaExitGate
                     || behaviour is AreaFlagDoor
-                    || behaviour is AreaTransitionDoor)
+                    || behaviour is AreaTransitionDoor
+                    || behaviour is NavMeshSurface
+                    || behaviour is UnityEngine.AI.NavMeshObstacle)
                 {
                     gatedBehaviours.Add(behaviour);
                 }

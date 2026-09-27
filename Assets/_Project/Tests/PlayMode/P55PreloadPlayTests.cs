@@ -10,6 +10,7 @@ using Momotaro.Infrastructure.Bootstrap;
 using Momotaro.Infrastructure.World;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.AI;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
@@ -298,6 +299,92 @@ namespace Momotaro.Tests.PlayMode
             return n;
         }
 
+        /// <summary>
+        /// 先読みしても <b>活動中 Area の経路は変わらない</b>（P5.5 §4.3）。
+        ///
+        /// NavMeshSurface は <c>OnEnable</c> で NavMeshData を登録するので、保存時に有効なままだと
+        /// <b>読み込んだだけで隣 Area の床が経路に加わる</b>。門の NavMeshObstacle も同じで、
+        /// Collider と AreaFlagDoor を止めても carving は止まらない（GPT レビュー R10 の指摘 3）。
+        ///
+        /// 三角形分割の頂点数で見るのは、「登録されたか」が直接出る単一の値だから。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator PreloadingTheNeighbour_DoesNotChangeTheActiveAreaNavMesh()
+        {
+            AssertSceneRegistered(AreaAScene);
+            AssertSceneRegistered(AreaBScene);
+            yield return CreateBootstrap();
+
+            yield return SceneManager.LoadSceneAsync(AreaAScene, LoadSceneMode.Single);
+            yield return null;
+            Assert.IsTrue(FindInitializer().Initialized);
+
+            int verticesWithAOnly = NavMesh.CalculateTriangulation().vertices.Length;
+            Assert.Greater(verticesWithAOnly, 0, "前提：A の NavMesh が登録されている。");
+
+            NavMeshPath before = PathAcrossAreaA();
+
+            // <b>PathComplete を要求しない。</b> A の 2 つの入口は閉じた門を挙んでおり、
+            // 実行時は Obstacle の carving が効くので PathPartial になる（それが正しい）。
+            // ここで見たいのは「先読みで形が変わらない」ことだけ。
+            Assert.AreNotEqual(NavMeshPathStatus.PathInvalid, before.status,
+                "前提：A 内で経路の計算が成立する。");
+
+            CreatePreloader(activeArea: AreaA);
+            Assert.IsTrue(_preloader.Request(AreaB, AreaBScene));
+            yield return PollUntilNotLoading(10f);
+            Assert.AreEqual(AreaPreloadPhase.Staged, _preloader.Phase, _preloader.FailureReason);
+
+            Assert.AreEqual(verticesWithAOnly, NavMesh.CalculateTriangulation().vertices.Length,
+                "先読みしても NavMesh の登録は増えない。");
+
+            NavMeshPath during = PathAcrossAreaA();
+            Assert.AreEqual(before.status, during.status, "経路の成否が変わらない。");
+            Assert.AreEqual(before.corners.Length, during.corners.Length, "経路の形が変わらない。");
+
+            // 開けば B の床も経路に加わる（止めたままにならない）。
+            Assert.IsTrue(
+                AreaBundleDirectory.TryGetByScene(_preloader.StagedSceneHandle, out AreaRuntimeBundle staged));
+            staged.ActivityGate.Open();
+            yield return null;
+            Assert.Greater(NavMesh.CalculateTriangulation().vertices.Length, verticesWithAOnly,
+                "開けば B の NavMesh も登録される。");
+
+            // 撤去すれば登録は残らない。
+            _preloader.ClearRequest();
+            yield return PollUntilIdle(10f);
+            Assert.AreEqual(AreaPreloadPhase.Idle, _preloader.Phase, _preloader.FailureReason);
+            yield return null;
+            Assert.AreEqual(verticesWithAOnly, NavMesh.CalculateTriangulation().vertices.Length,
+                "撤去後に B の登録が残らない（NavMeshDataInstance の残留を作らない。§4.3）。");
+        }
+
+        /// <summary>A の入口同士を結ぶ経路を 1 本取る（形の変化を見るため）。</summary>
+        private static NavMeshPath PathAcrossAreaA()
+        {
+            AreaRoot root = null;
+            AreaRoot[] roots = Object.FindObjectsByType<AreaRoot>(FindObjectsSortMode.None);
+            for (int i = 0; i < roots.Length; i++)
+            {
+                if (roots[i].AreaId.Equals(AreaA))
+                {
+                    root = roots[i];
+                    break;
+                }
+            }
+
+            Assert.IsNotNull(root, "A の根が見つかりません。");
+            Assert.GreaterOrEqual(root.EntryPoints.Count, 2, "前提：入口が 2 つ以上ある。");
+
+            var path = new NavMeshPath();
+            NavMesh.CalculatePath(
+                root.EntryPoints[0].transform.position,
+                root.EntryPoints[1].transform.position,
+                NavMesh.AllAreas,
+                path);
+            return path;
+        }
+
         // ---------------------------------------------------------------- 補助
 
         /// <summary>
@@ -342,7 +429,8 @@ namespace Momotaro.Tests.PlayMode
             {
                 _preloader.Poll();
                 if (_preloader.Phase == AreaPreloadPhase.Idle
-                    || _preloader.Phase == AreaPreloadPhase.Failed)
+                    || _preloader.Phase == AreaPreloadPhase.Failed
+                    || _preloader.Phase == AreaPreloadPhase.ReleaseFailed)
                 {
                     yield break;
                 }
