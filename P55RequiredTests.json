@@ -86,6 +86,11 @@
       "id": "P55-SEC3-1",
       "summary": "実入力から接続レコードが解決される（仕様書 §3.1／§6.1）。出入口の ExitId で東西の接続を引き、受理時に見せ方・向き・所要秒・到着入口を固定する。接続を持たない P5 の構成は従来経路のまま。スライド演出と Additive の受け渡しは P55-04",
       "stage": "P55-03"
+    },
+    {
+      "id": "P55-P06A",
+      "summary": "遷移中の表示代理（§7.2／§11 P06 のうち代理の持ち物と犬丸の状態別扱い）。描画部品しか持たず、登録簿・物理・当たりを 1 つも増やさない。Away は代理も作らず、Down／Stagger は姿勢を保って位置だけ運ぶ。表示経路の安全判定と実スライドとの結線は P55-04",
+      "stage": "P55-03"
     }
   ],
   "tests": [
@@ -346,6 +351,23 @@
         "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.EnteringTheSeamOffCentre_KeepsTheCameraOnTheConnectionAxis(-1.0f)",
         "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.WalkingWestIntoTheSeam_ResolvesTheWestwardSlideConnection",
         "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.TheP5Area_StillTravelsWithoutAnyConnectionRecord"
+      ]
+    },
+    {
+      "requirementId": "P55-P06A",
+      "stage": "P55-03",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55DisplayProxyPlayTests.BuildingProxies_ChangesNothingInTheWorld",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55DisplayProxyPlayTests.AnAwayCompanion_GetsNoProxyAtAll",
+        "Momotaro.Tests.PlayMode.P55DisplayProxyPlayTests.ADownedCompanion_KeepsItsPostureAndStartsWhereItStands",
+        "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_CarriesNothingButItsRenderer",
+        "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_CopiesTheLookIncludingFootprintAndSorting",
+        "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_MovesOnlyByTheProgressItIsGiven",
+        "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_PlaysTheSixFrameCycleOnItsOwnUnscaledClock",
+        "Momotaro.Tests.EditMode.P55DisplayProxyTests.AFrozenProxy_KeepsItsPostureButStillTravels"
       ]
     }
   ],
