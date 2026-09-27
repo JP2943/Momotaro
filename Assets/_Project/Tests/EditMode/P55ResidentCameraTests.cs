@@ -330,6 +330,28 @@ namespace Momotaro.Tests.EditMode
             public void ApplyArrival()
             {
             }
+
+            public bool BeginSlide(Vector3 to, float seconds) => false;
+
+            public bool TickSlide(float unscaledDeltaTime) => false;
+
+            public void EndSlide()
+            {
+            }
+
+            public void CancelSlide()
+            {
+            }
+
+            public bool IsSliding => false;
+
+            public float SlideEased => 0f;
+
+            public bool TryGetRigPosition(out Vector3 position)
+            {
+                position = default;
+                return false;
+            }
         }
     }
 }

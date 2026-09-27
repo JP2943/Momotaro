@@ -85,6 +85,69 @@ namespace Momotaro.Tests.EditMode
             Assert.IsTrue(_ledger.SatisfiesResidencyRules(out string _));
         }
 
+        // ---------------------------------------------------------------- 遷移への引き渡し
+
+        /// <summary>
+        /// 遷移が引き取ったら、<b>先読みはもうその Area の面倒を見ない</b>（§6.2 手順 4）。
+        ///
+        /// 引き取りを忘れると、次に別の候補を望んだ瞬間に<b>いま遊んでいる Area を unload しにかかる</b>。
+        /// </summary>
+        [Test]
+        public void HandingTheStagedAreaToTheTransition_KeepsTheSceneAndTheResidencySlot()
+        {
+            _preloader.Request(AreaB, PathB);
+            _host.CompleteLoad(1234);
+            _preloader.Poll();
+            AreaInstanceHandle staged = _preloader.StagedArea;
+
+            Assert.IsTrue(_preloader.TryHandOffStaged(AreaB, out AreaInstanceHandle handed, out int scene));
+            Assert.AreEqual(staged, handed, "引き渡すのは Staged だった実体そのもの。");
+            Assert.AreEqual(1234, scene, "Scene handle も一緒に渡す。");
+
+            Assert.AreEqual(0, _host.UnloadCount, "撤去はしない（実 Scene は載ったまま）。");
+            Assert.AreEqual(1, _ledger.ResidentCount,
+                "在留枠は埋まったまま（空きがあると誤認して 3 枚目を読まない）。");
+            Assert.AreEqual(AreaPreloadPhase.Idle, _preloader.Phase, "先読みは手ぶらへ戻る。");
+            Assert.IsFalse(_preloader.StagedArea.IsValid, "預かりは残らない。");
+            Assert.AreEqual(1, _preloader.HandedOffCount);
+
+            // 引き渡したあとに別の候補を望んでも、渡した Area は撤去されない。
+            _preloader.Request(AreaC, PathC);
+            Assert.AreEqual(0, _host.UnloadCount, "遊んでいる Area を unload しにかからない。");
+            Assert.AreEqual(2, _host.LoadCount, "新しい候補は普通に読む。");
+        }
+
+        /// <summary>
+        /// <b>宛先違いは渡さない</b>（§6.2 手順 1「Area／Scene 世代を検証し」）。
+        /// 「いま Staged なもの」を無条件に渡す形だと、行き先と違う Area を活動させられる。
+        /// </summary>
+        [Test]
+        public void HandingOff_RefusesWhenTheNamedAreaIsNotTheStagedOne()
+        {
+            _preloader.Request(AreaB, PathB);
+            _host.CompleteLoad(1234);
+            _preloader.Poll();
+
+            Assert.IsFalse(_preloader.TryHandOffStaged(AreaC, out AreaInstanceHandle handed, out int scene));
+            Assert.IsFalse(handed.IsValid);
+            Assert.AreEqual(0, scene);
+            Assert.AreEqual(AreaPreloadPhase.Staged, _preloader.Phase, "預かりはそのまま。");
+            Assert.AreEqual(1234, _preloader.StagedSceneHandle);
+            Assert.AreEqual(0, _preloader.HandedOffCount);
+        }
+
+        /// <summary>読込中・手ぶらのときは渡せない（まだ誰も引き取れるものを持っていない）。</summary>
+        [Test]
+        public void HandingOff_RefusesBeforeTheDestinationIsStaged()
+        {
+            Assert.IsFalse(_preloader.TryHandOffStaged(AreaB, out _, out _), "手ぶらでは渡せない。");
+
+            _preloader.Request(AreaB, PathB);
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase);
+            Assert.IsFalse(_preloader.TryHandOffStaged(AreaB, out _, out _), "読込中は渡せない。");
+            Assert.AreEqual(0, _preloader.HandedOffCount);
+        }
+
         // ---------------------------------------------------------------- 候補切替
 
         [Test]

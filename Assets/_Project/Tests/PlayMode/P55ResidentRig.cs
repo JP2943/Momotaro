@@ -1,6 +1,7 @@
 using Momotaro.Gameplay.Session;
 using Momotaro.Presentation.Cameras;
 using Momotaro.Presentation.Combat;
+using Momotaro.Presentation.Transition;
 using UnityEngine;
 
 namespace Momotaro.Tests.PlayMode
@@ -42,6 +43,20 @@ namespace Momotaro.Tests.PlayMode
             AreaCameraRegionSetRegistry.ClearForTests();
             AreaCameraOwnerProvider.ClearForTests();
             CameraShakeProvider.ClearForTests();
+
+            // 遷移中の表示代理も常駐 Rig に同居している（§7.2）。Rig を消せば一緒に消えるが、
+            // 提供点は所有者一致で外れるだけなので、型で掃いて残骸を残さない。
+            AreaTransitionDisplayHost[] displays =
+                Object.FindObjectsByType<AreaTransitionDisplayHost>(FindObjectsSortMode.None);
+            for (int i = 0; i < displays.Length; i++)
+            {
+                if (displays[i] != null)
+                {
+                    Object.DestroyImmediate(displays[i]);
+                }
+            }
+
+            AreaTransitionDisplayProvider.ClearForTests();
         }
     }
 }

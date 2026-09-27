@@ -76,6 +76,22 @@ namespace Momotaro.Presentation.Cameras
         /// <summary>スライド中か。</summary>
         public bool IsSliding => _slide.IsRunning;
 
+        /// <inheritdoc />
+        public float SlideEased => _slide.Eased;
+
+        /// <inheritdoc />
+        public bool TryGetRigPosition(out Vector3 position)
+        {
+            if (_rig == null)
+            {
+                position = default;
+                return false;
+            }
+
+            position = _rig.transform.position;
+            return true;
+        }
+
         /// <summary>スライドを始めた回数（診断・テスト用）。</summary>
         public int SlideCount { get; private set; }
 
@@ -407,6 +423,15 @@ namespace Momotaro.Presentation.Cameras
             // 揺れも常駐側が所有する（付録 A.1）。Area Scene は Camera を持たないので、
             // 演出の調停役は Scene 構築時に配線できない——実行時にここから解決する（付録 A.2）。
             CameraShakeProvider.TrySetCurrent(this, _shake);
+
+            // <b>遷移中の表示代理も常駐で持つ</b>（§7.2）。代理は出発 Scene が撤去されても
+            // 運び続ける必要があるので Area Scene には置けない。Camera と同じ寿命・同じ唯一性で
+            // 管理したいので、同じ物体へ足す。Prefab 側の配線に頼らないのは、配線漏れが
+            // 「スライド中だけ主人公が消える」という追いにくい壊れ方になるため。
+            if (GetComponent<Transition.AreaTransitionDisplayHost>() == null)
+            {
+                gameObject.AddComponent<Transition.AreaTransitionDisplayHost>();
+            }
         }
 
         private void OnDestroy()

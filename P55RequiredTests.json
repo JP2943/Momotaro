@@ -96,6 +96,26 @@
       "id": "P55-E05A",
       "summary": "スライド演出そのもの（§7.1／付録 A.4／§11 E05 のうち曲線・所要時間・端の精度・書込の一系統化）。s(t)=3t²−2t³、unscaled、始点は受理時の実 Rig 位置、終点は厳密一致、期間中は通常追従が 1 度も書かない、終了後は結び直しまで終点に留まる。遷移トランザクションとの結線と Additive の受け渡しは P55-04b",
       "stage": "P55-04"
+    },
+    {
+      "id": "P55-P01",
+      "summary": "実 Scene と実移動入力で A→B（§11 の P01）。Gate／Driver／完了通知をテストから直接操作せず右スライドで到着する。途中の不変条件（Area 2 つ・到着側は未活動・訪問済みは Commit まで付かない・時計は凍結・表示代理が立つ・カメラは接続軸だけ動く）も同じテストで見る",
+      "stage": "P55-04"
+    },
+    {
+      "id": "P55-P02",
+      "summary": "同様に B→A の左スライド（§11 の P02）。押しっぱなしで逆戻りせず、離して再入力すると移動できる",
+      "stage": "P55-04"
+    },
+    {
+      "id": "P55-E07A",
+      "summary": "受理後・スライド開始前の準備失敗で出発 Area へ戻す（§8 の 2 行目／§11 の E07 のうち準備失敗）。暗転へ逃げず、進行値も訪問済みも変えない。スライド途中の失敗・遅延完了・unload 失敗は後続工程で足す",
+      "stage": "P55-04"
+    },
+    {
+      "id": "P55-SEC8-1",
+      "summary": "Fade と Slide が同じ遷移排他を共有する（仕様書 §8）。スライド中の Single／Fade 要求と、Fade 中のスライド要求を、どちらも AlreadyTransitioning で断る",
+      "stage": "P55-04"
     }
   ],
   "tests": [
@@ -394,6 +414,52 @@
         "Momotaro.Tests.EditMode.P55CameraSlideTests.Cancelling_DoesNotJumpToTheDestination",
         "Momotaro.Tests.EditMode.P55CameraSlideTests.AZeroDuration_FinishesImmediatelyWithoutDividingByZero"
       ]
+    },
+    {
+      "requirementId": "P55-P01",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WalkingEastIntoTheSeam_SlidesRightAndArrivesInB",
+      "requirementIds": [
+        "P55-E06"
+      ],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.WalkingEastIntoTheSeam_ResolvesTheEastwardSlideConnection",
+        "Momotaro.Tests.EditMode.P55PreloadTests.HandingTheStagedAreaToTheTransition_KeepsTheSceneAndTheResidencySlot"
+      ]
+    },
+    {
+      "requirementId": "P55-P02",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WalkingWestIntoTheSeam_SlidesLeftAndHoldingDoesNotBounceBack",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.WalkingWestIntoTheSeam_ResolvesTheWestwardSlideConnection"
+      ]
+    },
+    {
+      "requirementId": "P55-E07A",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenThePreloadFails_TheDepartureAreaBecomesPlayableAgain",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55PreloadTests.HandingOff_RefusesWhenTheNamedAreaIsNotTheStagedOne",
+        "Momotaro.Tests.EditMode.P55PreloadTests.HandingOff_RefusesBeforeTheDestinationIsStaged"
+      ]
+    },
+    {
+      "requirementId": "P55-SEC8-1",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.FadeAndSlide_ShareTheSameTransitionExclusion",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
     }
   ],
   "allowedSkips": []

@@ -85,6 +85,56 @@ namespace Momotaro.Presentation.Transition
         }
 
         /// <summary>
+        /// 到着側の実 Actor の Renderer を隠す（§6.2 手順 6「両方の実 Actor の Renderer は隠し」）。
+        ///
+        /// <b>代理は立てない。</b> 到着 Actor はすでに入口へ置かれているので、運ぶ絵は出発側の 1 組でよい。
+        /// 隠さないと、通路を渡る代理と入口で待っている到着 Actor が<b>同じ画面に二重で映る</b>。
+        /// 戻すのは <see cref="Release"/> ——出発側と同じ一覧で預かるので、
+        /// 畳むときに片方だけ戻し忘れることがない。
+        /// </summary>
+        public void HideArrivals(PlayerRoot player, CompanionActor companion)
+        {
+            HideRendererOf(player != null ? player.VisualRoot : null);
+
+            // <b>Away は隠さない。</b> 退場中は描かれていないので隠す相手が居らず、
+            // 一覧へ入れると畳んだときに「退場中の犬丸の Renderer を有効化する」ことになる。
+            if (companion != null && !companion.IsAway)
+            {
+                HideRendererOf(companion.transform);
+            }
+        }
+
+        private void HideRendererOf(Transform actorVisualRoot)
+        {
+            HideAllUnder(actorVisualRoot);
+        }
+
+        /// <summary>
+        /// その Actor の<b>見えている絵をすべて</b>隠し、畳むときに戻せるよう預かる。
+        ///
+        /// 本体 1 枚だけを隠すのでは足りない（上記）。逆に、もともと無効だった Renderer は
+        /// 預からない——預かると畳むときに<b>本来出ないはずの絵を有効化する</b>。
+        /// </summary>
+        private void HideAllUnder(Transform actorVisualRoot)
+        {
+            if (actorVisualRoot == null)
+            {
+                return;
+            }
+
+            foreach (SpriteRenderer candidate in actorVisualRoot.GetComponentsInChildren<SpriteRenderer>(true))
+            {
+                if (candidate == null || !candidate.enabled)
+                {
+                    continue;
+                }
+
+                candidate.enabled = false;
+                _hidden.Add(candidate);
+            }
+        }
+
+        /// <summary>
         /// 運ぶ区間を渡す（§7.2）。犬丸は<b>自分の居場所から</b>運ぶので、
         /// 主人公と同じ差分だけ動かす——主人公の足元へ寄せ集めない。
         /// </summary>
@@ -191,8 +241,12 @@ namespace Momotaro.Presentation.Transition
             _proxies.Add(proxy);
 
             // <b>同じフレームで</b>実 Renderer を隠す（二重表示を作らない。§7.2）。
-            source.enabled = false;
-            _hidden.Add(source);
+            //
+            // <b>代理が写した 1 枚だけでは足りない。</b> Actor には本体以外の飾り
+            // （犬丸の向き矢印、影、下敷き）が付いていて、本体だけ隠すと<b>飾りだけが残る</b>
+            // ——代理が通路を渡る間、出発地点に矢印が浮いたままになる。
+            // 実際に PlayMode で踏んだ（Inumaru/DirectionArrow が見えていた）。
+            HideAllUnder(actorVisualRoot);
             return proxy;
         }
 

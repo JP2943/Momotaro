@@ -153,7 +153,7 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual("area_p5_b_from_a", used.EntryId.Value, "到着入口は P5 のものを再利用（§3.2）。");
             Assert.Greater(used.SlideDuration, 0f, "所要秒が固定されている。");
 
-            // 到着まで通る（転送はまだ従来経路。演出は P55-04）。
+            // 到着まで通る（スライド演出そのものは P55SlideTransitionPlayTests が見る）。
             yield return WaitForArrival(transitions, 1);
             Assert.AreEqual("area_p55_b", FindAreaRoot().AreaId.Value, "B に居る。");
         }
@@ -214,9 +214,10 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsFalse(gate.ExitId.IsValid, "P5 の出入口は ExitId を持たない（空でよい）。");
 
             yield return StandJustBefore(gate, Vector3.left);
-            yield return HoldUntil(Key.D, () => transitions.CompletedCount > 0, 8f);
+            yield return HoldUntil(Key.D, () => transitions.ArrivalCount > 0, 8f);
 
             Assert.AreEqual(0, transitions.ConnectionTravelCount, "接続経路は通らない。");
+            Assert.AreEqual(1, transitions.CompletedCount, "従来の Single 経路で着く（Slide ではない）。");
             yield return WaitForArrival(transitions, 1);
             Assert.AreEqual("area_p5_b", FindAreaRoot().AreaId.Value, "従来どおり B へ着く。");
         }
@@ -364,15 +365,27 @@ namespace Momotaro.Tests.PlayMode
             yield return null;
         }
 
+        /// <summary>
+        /// 到着が確定し、旧 Area の撤去まで終わるのを待つ。
+        ///
+        /// <b>経路を問わず数える</b>（<see cref="AreaTransitionService.ArrivalCount"/>）——
+        /// P5.5 の接続は P55-04b からスライド経路を通るので、Single 経路の
+        /// <c>CompletedCount</c> だけを見ていると「着いていない」ことになる。
+        /// <b>Scene が 1 枚に戻るまで待つ</b>のは、スライド経路では Commit のあとに
+        /// 旧 Area の撤去が続くため（§6.2 手順 11）。そこを待たずに Scene を数えると
+        /// 撤去途中の 2 枚を掴む。
+        /// </summary>
         private static IEnumerator WaitForArrival(AreaTransitionService transitions, int expected)
         {
             float deadline = Time.realtimeSinceStartup + 20f;
-            while (transitions.CompletedCount < expected && Time.realtimeSinceStartup < deadline)
+            while ((transitions.ArrivalCount < expected || SceneManager.sceneCount > 1)
+                   && Time.realtimeSinceStartup < deadline)
             {
                 yield return null;
             }
 
-            Assert.AreEqual(expected, transitions.CompletedCount, "到着が確定する。");
+            Assert.AreEqual(expected, transitions.ArrivalCount, "到着が確定する。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "旧 Area の撤去まで終わっている。");
             yield return null;
         }
 

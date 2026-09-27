@@ -169,7 +169,7 @@ namespace Momotaro.Infrastructure.World
             if (_coordinator == null)
             {
                 _coordinator = new AreaTransitionCoordinator(
-                    _catalog, new ConditionsRelay(this), _clock, _timeoutSeconds);
+                    _catalog, ConditionsRelaySource, _clock, _timeoutSeconds);
             }
 
             return true;
@@ -210,6 +210,81 @@ namespace Momotaro.Infrastructure.World
         /// <summary>接続一覧（無ければ null。§3.1）。</summary>
         public AreaConnectionCatalog Connections => _connections;
 
+        private AreaSlideTransitionRunner _slideRunner;
+        private ConditionsRelay _conditionsRelay;
+
+        /// <summary>
+        /// スライド遷移の実行役（P5.5 §6.2。工程 P55-04b）。<b>初回参照で作る。</b>
+        ///
+        /// <b>同じ常駐が Fade と Slide の両方を持つ</b>——§8 が「同じ遷移排他・世代・Scene 操作管理を
+        /// 共有し、別サービスが同時ロードを発行しない」と定めているので、別の常駐にはできない。
+        /// </summary>
+        public AreaSlideTransitionRunner Slide => _slideRunner ??= new AreaSlideTransitionRunner(this);
+
+        /// <summary>
+        /// P5.5 の追加読込・撤去の実装（<b>テストが差し替える</b>）。
+        /// P5 の <see cref="Loader"/>（Single 読込）とは別の口である（§2）。
+        /// </summary>
+        public IAreaSceneHost SlideSceneHost { get; set; } = new UnityAreaSceneHost();
+
+        /// <summary>スライドで到着を確定した回数（診断・テスト用）。</summary>
+        public int SlideCommittedCount => _slideRunner != null ? _slideRunner.CommittedCount : 0;
+
+        /// <summary>スライドを出発側へ戻した回数（診断・テスト用）。</summary>
+        public int SlideRolledBackCount => _slideRunner != null ? _slideRunner.RolledBackCount : 0;
+
+        /// <summary>
+        /// 到着が確定した回数（Fade と Slide の合計。診断・テスト用）。
+        /// <b>経路を問わず「着いた回数」</b>を見たいテストはこちらを使う。
+        /// </summary>
+        public int ArrivalCount => CompletedCount + SlideCommittedCount;
+
+        /// <summary>差し替え可能な条件源への橋（スライドの受付条件も同じものを見る）。</summary>
+        internal IAreaTransitionConditions Conditions => ConditionsRelaySource;
+
+        private ConditionsRelay ConditionsRelaySource => _conditionsRelay ??= new ConditionsRelay(this);
+
+        /// <summary>スライドの実行役が自分の Coroutine を回すための口。</summary>
+        internal void StartSlideRoutine(IEnumerator routine)
+        {
+            StartCoroutine(routine);
+        }
+
+        /// <summary>
+        /// 到着を進行へ記録する（§6.2 手順 9／§4.1「Commit 時に行う」）。
+        ///
+        /// <b>Area の初期化担当ではなく、活動を許可した所有者が記録する。</b>
+        /// 初期化の時点で記録すると、隔離された Prepared や、タイムアウト後に遅れて着いた Scene が
+        /// 「訪問済み」を残してしまう（§11 の E06）。
+        /// </summary>
+        internal void NoteArrival(StableId areaId)
+        {
+            GameSessionProvider.Current?.MarkVisited(areaId);
+        }
+
+        /// <summary>
+        /// 受付条件の窓口を差し直す（スライド経路の Commit／Rollback から呼ぶ）。
+        ///
+        /// <b>戻したときに差し直さないと、二度と遷移できなくなる。</b>
+        /// 到着側の初期化担当は Prepared の時点で <see cref="Bind"/> を通るので、
+        /// そこで窓口は到着 Area のものへ変わる。そのまま Rollback して到着 Scene を撤去すると、
+        /// 窓口は<b>破棄済みの部品</b>を指したまま残る——受付条件が読めず、
+        /// 以後どの遷移も「分からない＝安全側」で断られる（実際に踏んだ）。
+        /// </summary>
+        internal void RebindConditions(IAreaTransitionConditions conditions)
+        {
+            if (conditions != null)
+            {
+                _conditions = conditions;
+            }
+        }
+
+        /// <summary>完了通知を出す（スライド経路から呼ぶ。購読者は同じ event を見る）。</summary>
+        internal void RaiseArrivalCompleted(StableId areaId)
+        {
+            ArrivalCompleted?.Invoke(areaId);
+        }
+
         /// <summary>
         /// 直近に受理した接続（診断・テスト用）。<b>受理できたときだけ更新する</b>——
         /// 拒否された要求で上書きすると、走っている遷移の正本が別の接続に見える。
@@ -226,12 +301,15 @@ namespace Momotaro.Infrastructure.World
         /// 走っている遷移はこの固定値だけを見る——途中で SO を読み直すと、
         /// 編集中の値が演出の最中に効いてしまう（§3.1 末尾）。
         ///
-        /// <b>転送そのものはまだ従来経路である。</b> スライド演出と Additive の受け渡しは
-        /// P55-04 の担当で、ここは「実入力から接続が解決され、その値で受理される」ところまで。
+        /// <b>見せ方で経路が分かれる。</b> Slide は Additive の受け渡しとスライド演出を伴う
+        /// <see cref="Slide"/> の経路へ、それ以外は従来の Single／Fade 経路へ流す
+        /// （§3.1「既存未指定は Fade にして既存 Data の挙動を保持」）。
         /// </summary>
         public AreaTransitionDecision TryTravel(in AreaConnectionSnapshot connection)
         {
-            AreaTransitionDecision decision = TryTravel(connection.ToAreaId, connection.EntryId);
+            AreaTransitionDecision decision = connection.IsSlide
+                ? Slide.TryTravel(connection)
+                : TryTravel(connection.ToAreaId, connection.EntryId);
             if (decision.Accepted)
             {
                 LastAcceptedConnection = connection;
@@ -249,6 +327,12 @@ namespace Momotaro.Infrastructure.World
             if (_coordinator == null)
             {
                 return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
+            }
+
+            // <b>スライドと排他を共有する</b>（§8）。同じ常駐が両方を持つので、ここで見るだけでよい。
+            if (_slideRunner != null && _slideRunner.IsTransitioning)
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.AlreadyTransitioning);
             }
 
             var request = new AreaTransitionRequest(areaId, entryId);
@@ -285,6 +369,11 @@ namespace Momotaro.Infrastructure.World
             if (_coordinator == null)
             {
                 return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
+            }
+
+            if (_slideRunner != null && _slideRunner.IsTransitioning)
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.AlreadyTransitioning);
             }
 
             var request = new AreaTransitionRequest(areaId, entryId, isRespawn: true);
@@ -552,6 +641,7 @@ namespace Momotaro.Infrastructure.World
                 yield break;
             }
 
+            NoteArrival(request.AreaId);
             arrived.Activate();
             GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
 
@@ -662,6 +752,7 @@ namespace Momotaro.Infrastructure.World
                 yield break;
             }
 
+            NoteArrival(_pendingTransfer.OriginAreaId);
             recovered.Activate();
             _coordinator.NotifyFailed(transitionId, oldSceneUsable: true);
             GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
@@ -874,6 +965,11 @@ namespace Momotaro.Infrastructure.World
         /// 旧 Scene の Actor 値を採取する（§6.2 手順 4 → 5）。
         /// Port が無い Scene（Actor を載せていない構成）では何も運ばない。
         /// </summary>
+        internal void CaptureActorsForTransition()
+        {
+            CaptureActors();
+        }
+
         private void CaptureActors()
         {
             AreaActorTransferPort port = ResolveTransferPort();

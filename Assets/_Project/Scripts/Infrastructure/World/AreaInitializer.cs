@@ -185,7 +185,14 @@ namespace Momotaro.Infrastructure.World
 
             // 4. 注入（Actor の活動開始より前。§4.2／§4.3）。
             AreaRuntimeState area = session.GetOrCreateArea(areaId);
-            session.MarkVisited(areaId);
+
+            // <b>ここで訪問済みにしない</b>（P5.5 §4.1／§11 の E06。工程 P55-04b）。
+            //
+            // P5.5 では到着側が「隔離された Prepared」まで進んでからスライドが走るので、
+            // 初期化の完了は<b>まだ着いていない</b>。ここで記録すると、Rollback した遷移や
+            // タイムアウト後に遅れて着いた Scene が訪問済みを残す。
+            // 記録するのは活動を許可した所有者（<see cref="AreaTransitionService.NoteArrival"/>）で、
+            // 所有者が居ない直開きだけ下で自分が記録する。
 
             if (_progress != null && !_progress.Bind(session.Progress))
             {
@@ -321,6 +328,8 @@ namespace Momotaro.Infrastructure.World
             else if (AreaPendingArrival.SelfActivationAllowed)
             {
                 // 直開き（遷移が 1 つも走っていない起動）。所有者が居ないので自分で許可する。
+                // 訪問済みの記録も、許可を出す者＝自分が行う。
+                session.MarkVisited(areaId);
                 _context.Activate();
                 GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
             }

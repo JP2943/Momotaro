@@ -188,6 +188,50 @@ namespace Momotaro.Gameplay.Session
         }
 
         /// <summary>
+        /// 閉じたまま待っている Area の<b>所有を遷移へ渡す</b>（§6.2 手順 4「対応する StagedReady を取得」）。
+        ///
+        /// <b>撤去しない。</b> 渡すのは「この Area の面倒を見る役」だけで、Scene も台帳の在留枠も
+        /// そのまま残る。渡さないまま遷移が活動させると、先読みは<b>まだ自分の預かり物だと思っている</b>——
+        /// 次に別の候補を望んだ瞬間に、いま遊んでいる Area を unload しにかかる。
+        ///
+        /// <b>宛先を名指しさせる。</b> 引数の Area と一致しなければ渡さない。
+        /// 「いま Staged なもの」を無条件に渡す形にすると、望みが切り替わった直後の
+        /// 別 Area を遷移が掴み、行き先と違う Area を活動させられる。
+        /// </summary>
+        /// <param name="areaId">遷移が引き取りたい Area。</param>
+        /// <param name="handle">引き取った実体ハンドル（失敗時は無効）。</param>
+        /// <param name="sceneHandle">引き取った Scene handle（失敗時は 0）。</param>
+        public bool TryHandOffStaged(StableId areaId, out AreaInstanceHandle handle, out int sceneHandle)
+        {
+            handle = AreaInstanceHandle.None;
+            sceneHandle = 0;
+
+            if (Phase != AreaPreloadPhase.Staged
+                || !StagedArea.IsValid || StagedSceneHandle == 0
+                || !areaId.IsValid || !StagedArea.AreaId.Equals(areaId))
+            {
+                return false;
+            }
+
+            handle = StagedArea;
+            sceneHandle = StagedSceneHandle;
+
+            // 預かりを手放す。<b>台帳には触らない</b>——在留枠は引き続き埋まっている
+            // （実 Scene は載ったままなので、空きがあると誤認させてはいけない）。
+            StagedArea = AreaInstanceHandle.None;
+            StagedSceneHandle = 0;
+            _desiredArea = default;
+            _desiredPath = null;
+            Phase = AreaPreloadPhase.Idle;
+            FailureReason = string.Empty;
+            HandedOffCount++;
+            return true;
+        }
+
+        /// <summary>遷移へ引き渡した回数（診断・テスト用）。</summary>
+        public int HandedOffCount { get; private set; }
+
+        /// <summary>
         /// <b>新しい遷移操作に対応した再試行入口</b>（§5「次の新しい遷移操作で一度だけ再試行できる」）。
         ///
         /// 失敗を抱えていないときは何もしない。抱えているときは<b>一度だけ</b>進める——

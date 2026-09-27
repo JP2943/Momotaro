@@ -67,6 +67,47 @@ namespace Momotaro.Gameplay.Session
         /// まだ活動 Area ではないので適用の合図ではない（§7.1）。
         /// </summary>
         void ApplyArrival();
+
+        /// <summary>
+        /// スライドを始める（§7.1／付録 A.4）。
+        ///
+        /// <b>始点は渡さない。</b> 始点は「受理時の実 Rig 位置」で、それを知っているのは Rig 自身である
+        /// （§7.1「事前に境界位置へ瞬間移動させない」）。呼び出し側が始点を渡せる形にすると、
+        /// 出発位置を計算で作れてしまい、その計算がずれた分だけ演出の初めに飛びが出る。
+        /// 終点は <see cref="TryComputeArrivalPoint(AreaInstanceHandle, UnityEngine.Vector3, out UnityEngine.Vector3)"/>
+        /// で先に測っておく。
+        /// </summary>
+        bool BeginSlide(UnityEngine.Vector3 to, float seconds);
+
+        /// <summary>
+        /// スライドを 1 フレーム進める（unscaled 秒を渡す）。戻り値は<b>まだ走っているか</b>。
+        /// 終わったフレームでも終点を適用してから false を返すので、呼び出し側は
+        /// 「false になったら <see cref="EndSlide"/>」でよい。
+        /// </summary>
+        bool TickSlide(float unscaledDeltaTime);
+
+        /// <summary>スライドを終える。終点を厳密に適用し、結び直しが来るまで終点に留まる。</summary>
+        void EndSlide();
+
+        /// <summary>スライドを打ち切って出発位置へ戻す（§8）。<b>終点へは進めない。</b></summary>
+        void CancelSlide();
+
+        /// <summary>いまスライド中か。</summary>
+        bool IsSliding { get; }
+
+        /// <summary>
+        /// いまの補間進行度（0〜1。<c>s(t)=3t²−2t³</c> を通した値）。
+        ///
+        /// <b>表示代理へ配るのはこの値</b>（§7.2「カメラと同じ補間進行度で移動する」）。
+        /// 呼び出し側が自前の時計から進行度を作ると、カメラと代理が別々の曲線で動き、
+        /// 主人公が画面の中で滑る。
+        /// </summary>
+        float SlideEased { get; }
+
+        /// <summary>
+        /// いまの実 Rig 位置（未配線なら false）。Rollback の戻り先と診断に使う。
+        /// </summary>
+        bool TryGetRigPosition(out UnityEngine.Vector3 position);
     }
 
     /// <summary>
