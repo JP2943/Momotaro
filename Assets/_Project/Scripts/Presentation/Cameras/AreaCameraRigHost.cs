@@ -28,9 +28,11 @@ namespace Momotaro.Presentation.Cameras
         [Tooltip("この Rig が所有する画面揺れ。Camera 子の localPosition へ書く（§11 の書込み先の分離）。")]
         [SerializeField] private CameraShakePresenter _shake;
 
+        private readonly AreaCameraSlide _slide = new AreaCameraSlide();
         private AreaCameraRegionSet _boundSet;
         private int _boundSceneHandle;
         private bool _arrivalPending;
+        private bool _holdingAfterSlide;
 
         /// <summary>いま生きている常駐 Rig（無ければ null）。</summary>
         public static AreaCameraRigHost Instance { get; private set; }
@@ -67,6 +69,23 @@ namespace Momotaro.Presentation.Cameras
         /// この間は通常追従を止める（付録 A.10）。
         /// </summary>
         public bool ArrivalPending => _arrivalPending;
+
+        /// <summary>いま走っているスライド（診断・テスト用）。</summary>
+        public AreaCameraSlide Slide => _slide;
+
+        /// <summary>スライド中か。</summary>
+        public bool IsSliding => _slide.IsRunning;
+
+        /// <summary>スライドを始めた回数（診断・テスト用）。</summary>
+        public int SlideCount { get; private set; }
+
+        /// <summary>
+        /// スライドが終わり、<b>結び直しを待って終点に留まっている</b>（診断・テスト用）。
+        ///
+        /// 終点は<b>到着 Area の</b>領域で収めた位置なので、出発 Area に結び付いたまま
+        /// 通常追従へ戻すと出発側へ引き戻される。結び直しが来るまでここで止める。
+        /// </summary>
+        public bool IsHoldingAfterSlide => _holdingAfterSlide;
 
         /// <summary>この Rig が所有する画面揺れ（Validator・テスト用）。</summary>
         public CameraShakePresenter Shake => _shake;
@@ -137,6 +156,8 @@ namespace Momotaro.Presentation.Cameras
             //
             // 適用は「その Area の入口配置が終わった」ことを確かめてから
             // （<see cref="TryApplyPendingArrival"/>）。それまでは通常追従も止める。
+            // スライド後の留まりは、結び直しが来た時点で解く（待っていたのはこれ）。
+            _holdingAfterSlide = false;
             _arrivalPending = true;
             SuspendFollowWhilePending();
             return true;
@@ -232,9 +253,110 @@ namespace Momotaro.Presentation.Cameras
         /// （<see cref="TryResolveActiveSet"/>）、Staged の Area が準備完了を報告しても
         /// 実カメラは動かない——§7.1「事前に境界位置へ瞬間移動させない」が守られる。
         /// </summary>
+        /// <summary>
+        /// スライドを始める（§7.1／付録 A.4。工程 P55-04a）。
+        ///
+        /// <b>始点は「いまの実 Rig 位置」</b>——事前に境界位置へ瞬間移動させない（§7.1）。
+        /// 終点は呼び出し側が <see cref="TryComputeArrivalPoint(AreaInstanceHandle, Vector3, out Vector3)"/>
+        /// で先に計算しておく（到着 Area の通常追従・clamp が算出する位置）。
+        ///
+        /// <b>期間中は通常追従の書込を止める</b>（付録 A.4 の「書込の一系統化」）。
+        /// 止めないと、同じフレームに追従とスライドが両方書いて、どちらが見えているのか
+        /// 分からなくなる。回転・投影・<c>orthographicSize</c> は<b>一切触らない</b>（§7.1）。
+        ///
+        /// <b>開始時に残留揺れをゼロへ</b>（§7.1）。揺れを残したまま始めると、
+        /// 演出の最中に前の戦闘の揺れが混じる。
+        /// </summary>
+        public bool BeginSlide(Vector3 to, float seconds)
+        {
+            if (_rig == null || _camera == null)
+            {
+                return false;
+            }
+
+            if (_shake != null)
+            {
+                _shake.Stop();
+            }
+
+            _rig.FollowSuspended = true;
+            _slide.Begin(_rig.transform.position, to, seconds);
+            SlideCount++;
+            return true;
+        }
+
+        /// <summary>
+        /// スライドを 1 フレーム進める（unscaled を渡す。§7.1）。
+        ///
+        /// 戻り値は<b>まだ走っているか</b>。終わったフレームでも終点は適用してから false を返すので、
+        /// 呼び出し側は「false になったら <see cref="EndSlide"/>」でよい。
+        /// </summary>
+        public bool TickSlide(float unscaledDeltaTime)
+        {
+            if (!_slide.IsRunning || _rig == null)
+            {
+                return false;
+            }
+
+            bool running = _slide.Tick(unscaledDeltaTime);
+            _rig.ApplySlidePosition(_slide.Position);
+            return running;
+        }
+
+        /// <summary>
+        /// スライドを終える（付録 A.4）。
+        ///
+        /// 終点を<b>厳密に</b>適用し、追従の内部状態も終点へ同期する——
+        /// 同期しないと次の <c>Tick</c> で前の値へ引き戻され、<b>翌フレームに跳ね返る</b>。
+        ///
+        /// <b>通常追従はここでは戻さない。</b> 終点は到着 Area の領域で収めた位置なので、
+        /// まだ出発 Area に結び付いたまま追従を戻すと、出発側の領域へ引き戻される。
+        /// 戻すのは<b>活動 Area が入れ替わって入口配置が終わったとき</b>——
+        /// 既にある結び直しと即時配置の経路（付録 A.10）へそのまま渡す。
+        /// </summary>
+        public void EndSlide()
+        {
+            if (_rig == null)
+            {
+                return;
+            }
+
+            _slide.Finish();
+            _rig.ApplySlidePosition(_slide.Position);
+            _rig.SyncFollowStateTo(_slide.Position);
+
+            // <b>結び直しを待って終点に留まる。</b>
+            //
+            // ここで「適用待ち」（<see cref="_arrivalPending"/>）にしてはいけない——
+            // 適用待ちは「結び先が変わった」ことの印で、いま結び付いているのは<b>出発</b> Area
+            // である。出発側は準備が済んでいるので、次のフレームに即時配置が走って
+            // <b>終点から出発側へ 12m 引き戻された</b>（実際に踏んだ）。
+            // 留まるのは別の状態として持ち、結び直しが来たときに解く。
+            _holdingAfterSlide = true;
+            _rig.FollowSuspended = true;
+        }
+
+        /// <summary>
+        /// スライドを打ち切って出発位置へ戻す（§8「同じ描画経路を逆向きに戻す」の土台）。
+        /// <b>終点へは進めない。</b> 失敗した遷移で到着側の位置を見せない。
+        /// </summary>
+        public void CancelSlide()
+        {
+            if (_rig == null)
+            {
+                return;
+            }
+
+            _slide.Cancel();
+            _rig.ApplySlidePosition(_slide.From);
+            _rig.SyncFollowStateTo(_slide.From);
+            _holdingAfterSlide = false;
+            _rig.FollowSuspended = false;
+        }
+
         private bool TryApplyPendingArrival()
         {
-            if (!_arrivalPending || !IsWired || !_rig.IsWired)
+            if (!_arrivalPending || _holdingAfterSlide || !IsWired || !_rig.IsWired)
             {
                 return false;
             }

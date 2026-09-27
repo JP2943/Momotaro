@@ -56,6 +56,12 @@ namespace Momotaro.Presentation.Cameras
         /// <summary>補間せずに配置した回数（診断・テスト用）。</summary>
         public int SnapCount { get; private set; }
 
+        /// <summary>通常追従が Rig 位置を書いた回数（診断・テスト用。付録 A.4）。</summary>
+        public int FollowWriteCount { get; private set; }
+
+        /// <summary>スライド担当が Rig 位置を書いた回数（診断・テスト用。付録 A.4）。</summary>
+        public int SlideWriteCount { get; private set; }
+
         /// <summary>
         /// 通常追従を止める（P5.5 付録 A.10）。<b>既定は false。</b>
         ///
@@ -201,11 +207,44 @@ namespace Momotaro.Presentation.Cameras
             return _defaultRegion.Definition;
         }
 
+        /// <summary>
+        /// スライド担当が Rig 位置を書く（P5.5 付録 A.4「スライド担当だけが Rig 位置を書く」）。
+        ///
+        /// <b>通常追従とは別の入口にしてある。</b> 同じ入口だと、期間中に追従が 1 回でも
+        /// 書いたことを後から言えない——数えられないものは守れない。
+        /// <b>Y は触らない</b>のは通常追従と同じ（高さは Camera 子のオフセットが持つ）。
+        /// </summary>
+        public void ApplySlidePosition(Vector3 focus)
+        {
+            transform.position = new Vector3(focus.x, transform.position.y, focus.z);
+            SlideWriteCount++;
+        }
+
+        /// <summary>
+        /// 追従の内部状態を終点へ同期する（付録 A.4「終了時は追従の内部状態も終点へ同期」）。
+        ///
+        /// <b>ここでは clamp し直さない。</b> 渡される終点は<b>到着 Area の</b>領域で
+        /// 収めた位置で、まだ結び付いていない出発 Area の領域で収め直すと終点が動く。
+        /// 収め直しは結び直しのあとの即時配置（<c>SnapToTarget</c>）が行う。
+        /// </summary>
+        public void SyncFollowStateTo(Vector3 focus)
+        {
+            _blend.AdoptSlideEnd(focus);
+        }
+
+        /// <summary>診断の数え直し（テスト専用）。</summary>
+        public void ResetWriteCountsForTests()
+        {
+            FollowWriteCount = 0;
+            SlideWriteCount = 0;
+        }
+
         /// <summary>Rig の位置だけを書く。Camera の子（揺れ）は触らない。</summary>
         private void Apply()
         {
             Vector3 focus = _blend.Current;
             transform.position = new Vector3(focus.x, transform.position.y, focus.z);
+            FollowWriteCount++;
         }
 
         private void OnEnable()

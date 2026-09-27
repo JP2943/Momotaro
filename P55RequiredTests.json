@@ -91,6 +91,11 @@
       "id": "P55-P06A",
       "summary": "遷移中の表示代理（§7.2／§11 P06 のうち代理の持ち物と犬丸の状態別扱い）。描画部品しか持たず、登録簿・物理・当たりを 1 つも増やさない。Away は代理も作らず、Down／Stagger は姿勢を保って位置だけ運ぶ。表示経路の安全判定と実スライドとの結線は P55-04",
       "stage": "P55-03"
+    },
+    {
+      "id": "P55-E05A",
+      "summary": "スライド演出そのもの（§7.1／付録 A.4／§11 E05 のうち曲線・所要時間・端の精度・書込の一系統化）。s(t)=3t²−2t³、unscaled、始点は受理時の実 Rig 位置、終点は厳密一致、期間中は通常追従が 1 度も書かない、終了後は結び直しまで終点に留まる。遷移トランザクションとの結線と Additive の受け渡しは P55-04b",
+      "stage": "P55-04"
     }
   ],
   "tests": [
@@ -368,6 +373,26 @@
         "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_MovesOnlyByTheProgressItIsGiven",
         "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_PlaysTheSixFrameCycleOnItsOwnUnscaledClock",
         "Momotaro.Tests.EditMode.P55DisplayProxyTests.AFrozenProxy_KeepsItsPostureButStillTravels"
+      ]
+    },
+    {
+      "requirementId": "P55-E05A",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55CameraSlidePlayTests.DuringTheSlide_OnlyTheSlideWritesTheRigPosition",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55CameraSlidePlayTests.AfterTheSlide_ThePositionDoesNotSpringBack",
+        "Momotaro.Tests.PlayMode.P55CameraSlidePlayTests.TheDisplayProxy_TravelsOnTheSameProgressAsTheCamera",
+        "Momotaro.Tests.PlayMode.P55CameraSlidePlayTests.TheHoldAfterTheSlide_IsReleasedWhenTheAreaIsRebound",
+        "Momotaro.Tests.PlayMode.P55CameraSlidePlayTests.CancellingTheSlide_ReturnsToTheDeparturePositionAndResumesFollow",
+        "Momotaro.Tests.EditMode.P55CameraSlideTests.TheCurve_IsSmoothStepWithExactEnds",
+        "Momotaro.Tests.EditMode.P55CameraSlideTests.TheSlide_LandsExactlyOnBothEndsAfterItsDuration",
+        "Momotaro.Tests.EditMode.P55CameraSlideTests.AnEastWestSlide_NeverMovesInZ",
+        "Momotaro.Tests.EditMode.P55CameraSlideTests.AHugeDelta_StopsAtTheEndInsteadOfOvershooting",
+        "Momotaro.Tests.EditMode.P55CameraSlideTests.Cancelling_DoesNotJumpToTheDestination",
+        "Momotaro.Tests.EditMode.P55CameraSlideTests.AZeroDuration_FinishesImmediatelyWithoutDividingByZero"
       ]
     }
   ],
