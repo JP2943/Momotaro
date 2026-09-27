@@ -127,6 +127,27 @@ namespace Momotaro.Presentation.Cameras
             Apply();
         }
 
+        /// <summary>
+        /// いまの追従・clamp が算出する位置を<b>計算するだけ</b>（P5.5 付録 A.3）。
+        ///
+        /// <b>実カメラには触れない。</b> §7.1 は「事前に境界位置へ瞬間移動させない」と定めているので、
+        /// 到着点は Prepared の時点で<b>計算だけ</b>行い、適用はスライド担当と
+        /// Commit 後の追従復帰に任せる。計算と適用を同じ入口にすると、
+        /// 「到着点を知りたい」だけの呼び出しでカメラが跳ぶ。
+        /// </summary>
+        public bool TryComputeFocus(out Vector3 focus)
+        {
+            focus = default;
+            if (!IsWired)
+            {
+                return false;
+            }
+
+            CameraRegionDefinition region = ResolveRegion();
+            focus = CameraBoundsMath.ClampFocus(_target.position, region, HalfFootprint());
+            return true;
+        }
+
         /// <summary>床で見える範囲の半分（俯角と画面比から）。</summary>
         public Vector2 HalfFootprint() =>
             CameraBoundsMath.HalfFootprint(_camera.orthographicSize, _camera.aspect, _pitchDegrees);

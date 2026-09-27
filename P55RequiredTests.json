@@ -61,6 +61,11 @@
       "id": "P55-P04",
       "summary": "先読みの実 Scene 検査（§11 の P04）。隣 Area を Additive で載せても、活動ゲートは閉じたままで登録簿にも混じらない。取り下げれば撤去される",
       "stage": "P55-02"
+    },
+    {
+      "id": "P55-APPA",
+      "summary": "単一常駐 CameraRig の契約（付録 A）。領域集合の Scene handle 鍵・提供点の所有者一致・到着点の計算が実カメラを動かさないこと。§11 の P12／E05 は配線後の工程で追加",
+      "stage": "P55-03"
     }
   ],
   "tests": [
@@ -252,6 +257,20 @@
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55PreloadPlayTests.ClearingThePreload_UnloadsTheNeighbourAndLeavesTheActiveAreaAlone",
         "Momotaro.Tests.PlayMode.P55PreloadPlayTests.PreloadingTheNeighbour_DoesNotChangeTheActiveAreaNavMesh"
+      ]
+    },
+    {
+      "requirementId": "P55-APPA",
+      "stage": "P55-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55ResidentCameraTests.ComputingTheArrivalPoint_DoesNotMoveTheCamera",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55ResidentCameraTests.ComputingTheArrivalPoint_FailsWhenTheRigIsNotWired",
+        "Momotaro.Tests.EditMode.P55ResidentCameraTests.RegionSetRegistry_IsKeyedBySceneHandle",
+        "Momotaro.Tests.EditMode.P55ResidentCameraTests.RegionSetRegistry_DoesNotGuessWhenTwoAreasAreLoaded",
+        "Momotaro.Tests.EditMode.P55ResidentCameraTests.CameraOwnerProvider_IsOwnerMatched"
       ]
     }
   ],
