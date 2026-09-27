@@ -353,3 +353,97 @@ static対象はPerception／Threat／Investigation／Interact／Projectile等を
 - Unity allowSceneActivation：https://docs.unity3d.com/6000.0/Documentation/ScriptReference/AsyncOperation-allowSceneActivation.html
 
 公式API資料は仕組みの確認に使用したもの。本書の状態管理・演出値・受入条件は桃太郎プロジェクト向けの設計であり、Unityが自動で保証する機能ではない。
+
+---
+
+# 付録 A：単一常駐 CameraRig（案 A）の起動・所有・依存関係
+
+- 追記日：2026-09-27／工程 P55-03b の着手前
+- 経緯：§4.3 の「P5.5 は単一常駐 CameraRig・Camera・AudioListener・入力サービスを使用」について、
+  実装形が二通り解釈できたため裁定を仰ぎ、**案 A（単一常駐 Rig）で確定**した。
+  本付録はその裁定を実装条件まで落としたもので、v1.0 本文の変更ではなく**補足**である。
+  本文と食い違う記述があれば本文（§4.3／§7.1／§9.1）が優先する。
+
+## A.1 所有の境界
+
+| 要素 | 所有先 | 備考 |
+|---|---|---|
+| CameraRig・Camera・AudioListener | **P5.5 セッションの常駐側**（`DontDestroyOnLoad`） | 一度だけ生成する |
+| 共通の基準照明 | 常駐側 | Area 間で重複させない |
+| `AreaCameraRegion`・領域設定・追従対象 | **各 Area** | 常駐化しない |
+| スライド中の Camera 座標更新 | 常駐 Rig の専用制御 | 書き込みは 1 系統 |
+| 通常追従 | 同じ常駐 Rig | スライド中は停止 |
+
+**`AreaCameraRegion` 自体を常駐化するわけではない。** Area が領域を提供し、
+常駐 Rig が**活動 Area に応じて参照先を切り替える**。切り替えの契機は Commit。
+
+## A.2 起動経路（直開きも合流する）
+
+常駐 Rig は**常駐の起動処理が一度だけ生成する**。P5.5 の A／B を直接開いた場合も同じ経路を通る。
+先読み Scene のロードでは再生成も再 Bind もしない。
+
+- 生成主体：**Area 所有の領域集合部品（Presentation）が、常駐 Rig の存在を保証する**。
+  部品は Rig の Prefab 参照を明示的に持ち、まだ常駐 Rig が無いときにだけ生成して
+  `DontDestroyOnLoad` する（ensure-create）。すでにあれば何もしないので、
+  **先読み Scene のロードでは再生成されない**。
+- この位置に置いた理由。当初 `BootstrapRoot`（Infrastructure）が Prefab 参照を持つ案を考えたが、
+  `BootstrapRoot` はテストが `AddComponent` で直接作る経路があり、
+  **その場合に Prefab 参照が空になる**（既存の `InputActionAsset` と同じ問題）。
+  Resources からの読み込みを導入すれば回避できるが、このリポジトリにない規約を
+  カメラ 1 件のために増やすのは重い。Area 側に置けば、生成経路は 1 本のままで
+  直開き・統合起動・先読みのすべてが同じコードを通る。
+- **Infrastructure → Presentation の参照は追加しない。** 上の形なら Infrastructure は Rig に
+  一切関与しない。遷移サービスが Commit 時に Rig へ用がある場合は、
+  共通層（Gameplay）の狭いインターフェース（所有者一致の Provider 付き）を通す。
+  Infrastructure は `AreaCameraRig` の具体型を知らない。
+- Area Scene は Camera・AudioListener・基準照明を**持たない**。
+  領域と追従対象だけを、Area 所有の部品として提供する。
+- P3.5／P4／従来 P5 互換モードの Scene は**一括変更しない**。常駐化は P5.5 の起動経路に限定する。
+
+## A.3 準備と適用を分ける
+
+§7.1 は「スライド開始位置は受理時の実 CameraRig 位置。事前に境界位置へ瞬間移動させない」と定める。
+現行 `AreaCameraRig` は `AreaContext.Prepared` の通知で `SnapToTarget()` を呼ぶため、
+**そのまま流用するとスライド前に跳ぶ**。
+
+- **Prepared 時点でカメラを移動先へ Snap しない。**
+- 到着点の**計算**（到着 Actor 位置に対する通常追従・clamp の結果）と、
+  **実カメラへの適用**を別の入口に分ける。Prepared では計算だけを行う。
+- 適用するのは、スライド担当（演出中）と Commit 後の追従復帰だけ。
+
+## A.4 書き込みの一系統化
+
+- スライド中は通常追従・通常 clamp の書込を停止し、スライド担当だけが Rig 位置を書く。
+- 終了時は**追従の内部状態も終点へ同期**する。翌フレームに跳ね返らせない。
+- 揺れは Camera 子 Transform の既存分離を維持する。開始時に残留揺れをゼロへ。
+- 回転・`orthographicSize`・投影は途中で変更しない。
+
+## A.5 Commit で Camera を交換しない
+
+**同じ Camera インスタンスを維持**し、領域・追従対象の**参照だけ**を切り替える。
+Commit で別の Camera へ渡すと、同じ Transform を保証しても
+Projection・後処理・Audio の担当が入れ替わる瞬間が生まれる。
+
+## A.6 §9.1 に従って置き換える P5 の検査前提
+
+§9.1 は「全 Scene の Component 数ではなく、活動可能数・所有者・Scene handle で
+Camera／入力／報酬の唯一性を確認する」と定める。常駐化に伴い、次の検査前提を置き換える。
+**単純に Fail する旧テストを Skip へ変更しない**（§9.1 末尾）。置換理由と P5.5 の検査 ID を対応表に残す。
+
+| 旧前提 | 置換後 | 置換理由 |
+|---|---|---|
+| Area Scene に `AreaCameraRig` が 1 つ | Area Scene に Camera・AudioListener・`AreaCameraRig` は**0 個**。常駐側に 1 つ | 常駐が所有するため、Scene 内の個数は唯一性の根拠にならない |
+| Area Scene に有効な Camera が 1 台 | **活動可能な Camera が 1 台**（所有者＝常駐） | 2 Area 同時読込では「Scene 内 1 台」でも合計 2 台になりうる |
+| `AreaCameraRig.IsWired` を Scene 検査で見る | 常駐 Rig が**活動 Area の領域集合と Bind できているか**を実行時に見る | Bind 先が Scene ごとに入れ替わるため、静的配線検査では表せない |
+| Prepared で `SnapToTarget()` が呼ばれる | Prepared では**到着点の計算だけ**が起きる（`SnapCount` は増えない） | §7.1「事前に境界位置へ瞬間移動させない」 |
+
+対応する P5.5 の検査は §11 の **P12**（Camera／AudioListener／入力／HUD の唯一性、
+移動中と翌フレームの Camera 飛び、通常 Follow との二重書込なし）と **E05**（補間の開始／中間／終了）。
+
+## A.7 受入で確かめること（§11 P12 に含める）
+
+- Camera・AudioListener の**数**（活動可能数）が常に 1。
+- A→B→A で**同一 Camera インスタンスが維持**される。
+- **Commit 翌フレームに位置が跳ばない**。
+- **A／B の直開きが成立する**（常駐 Rig が一度だけ生成され、Area の領域と Bind される）。
+- 先読み Scene のロードで Rig が再生成・再 Bind されない。
