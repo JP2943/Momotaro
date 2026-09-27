@@ -56,6 +56,11 @@
       "id": "P55-SEC4-2",
       "summary": "活動ゲート（仕様書 §4.2）。保存時から閉じておき、先読みでは Awake／OnEnable の副作用を一切走らせない。既定は読込時に開く（既存の単一 Area 構成）",
       "stage": "P55-02"
+    },
+    {
+      "id": "P55-P04",
+      "summary": "先読みの実 Scene 検査（§11 の P04）。隣 Area を Additive で載せても、活動ゲートは閉じたままで登録簿にも混じらない。取り下げれば撤去される",
+      "stage": "P55-02"
     }
   ],
   "tests": [
@@ -114,7 +119,17 @@
       "implemented": true,
       "supportingTests": [
         "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.Residency_HandsOverByLoweringTheOldOneFirst",
-        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.Residency_SerializesSceneOperations"
+        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.Residency_SerializesSceneOperations",
+        "Momotaro.Tests.EditMode.P55PreloadTests.RequestingTheSameDestinationTwice_DoesNotLoadItAgain",
+        "Momotaro.Tests.EditMode.P55PreloadTests.SwitchingTheCandidate_RetiresTheOldOneBeforeLoadingTheNew",
+        "Momotaro.Tests.EditMode.P55PreloadTests.SwitchingWhileStillLoading_TakesEffectWhenTheLoadFinishes",
+        "Momotaro.Tests.EditMode.P55PreloadTests.AtCapacity_ThePreloadIsRefusedInsteadOfPilingUp",
+        "Momotaro.Tests.EditMode.P55PreloadTests.WhileAnotherSceneOperationRuns_ThePreloadWaitsInsteadOfFailing",
+        "Momotaro.Tests.EditMode.P55PreloadTests.TheStagedAreaIsAdmittedToTheLedgerAsStaged",
+        "Momotaro.Tests.EditMode.P55PreloadTests.ClearingTheRequest_RetiresTheStagedArea",
+        "Momotaro.Tests.EditMode.P55PreloadTests.AFailedLoad_LeavesNoStagingRequestAndNoLedgerEntry",
+        "Momotaro.Tests.EditMode.P55PreloadTests.AFailedUnload_StillFreesTheLedgerSlot",
+        "Momotaro.Tests.EditMode.P55PreloadTests.AnInvalidRequest_IsRefusedWithoutTouchingAnything"
       ]
     },
     {
@@ -211,6 +226,17 @@
         "Momotaro.Tests.EditMode.P55ActivityGateTests.IsClosedAsSaved_NamesWhateverWasLeftOpen",
         "Momotaro.Tests.EditMode.P55ActivityGateTests.Open_TurnsOnAllThreeKinds_AndCloseTurnsThemBack",
         "Momotaro.Tests.EditMode.P55ActivityGateTests.Open_IsIdempotentAndSurvivesBrokenReferences"
+      ]
+    },
+    {
+      "requirementId": "P55-P04",
+      "stage": "P55-02",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55PreloadPlayTests.PreloadingTheNeighbour_LoadsItAsleepAndKeepsItOutOfTheRegistries",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55PreloadPlayTests.ClearingThePreload_UnloadsTheNeighbourAndLeavesTheActiveAreaAlone"
       ]
     }
   ],

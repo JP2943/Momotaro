@@ -1,0 +1,339 @@
+using System.Collections.Generic;
+using Momotaro.Core.Identification;
+using Momotaro.Gameplay.Session;
+using NUnit.Framework;
+
+namespace Momotaro.Tests.EditMode
+{
+    /// <summary>
+    /// 隣 Area の先読み（P5.5 仕様書 §4.1／§5／§11 の E04）。
+    ///
+    /// 固めるのは 4 つ——<b>同一先の再利用</b>、<b>候補切替</b>、<b>最大 2 Area</b>、
+    /// <b>ロードの直列化</b>。どれも「プレイヤーが出入口の間を行き来する」だけで踏む道で、
+    /// 外すと二重ロードか、撤去されない Area の積み上がりになる。
+    ///
+    /// Scene API の向こう側は差し替えるので、ここは決定的に回る。
+    /// 実 Scene での先読みは PlayMode（<c>P55PreloadPlayTests</c>）で見る。
+    /// </summary>
+    public sealed class P55PreloadTests
+    {
+        private static readonly StableId AreaB = new StableId("area_b");
+        private static readonly StableId AreaC = new StableId("area_c");
+        private const string PathB = "Assets/Scenes/B.unity";
+        private const string PathC = "Assets/Scenes/C.unity";
+
+        private AreaResidencyLedger _ledger;
+        private FakeHost _host;
+        private AreaPreloader _preloader;
+        private readonly object _owner = new object();
+
+        [SetUp]
+        public void SetUp()
+        {
+            AreaStagingRequest.ResetForTests();
+            AreaBundleDirectory.ClearForTests();
+            CurrentAreaProvider.ClearForTests();
+            _ledger = new AreaResidencyLedger();
+            _host = new FakeHost();
+            _preloader = new AreaPreloader(_ledger, _host, _owner);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            AreaStagingRequest.ResetForTests();
+            AreaBundleDirectory.ClearForTests();
+            CurrentAreaProvider.ClearForTests();
+        }
+
+        // ---------------------------------------------------------------- 同一先再利用
+
+        [Test]
+        public void RequestingTheSameDestinationTwice_DoesNotLoadItAgain()
+        {
+            Assert.IsTrue(_preloader.Request(AreaB, PathB));
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase);
+            Assert.AreEqual(1, _host.LoadCount);
+
+            // 読込中に同じ先を頼み直しても読み直さない。
+            Assert.IsTrue(_preloader.Request(AreaB, PathB));
+            Assert.AreEqual(1, _host.LoadCount, "読込中の同一先は読み直さない。");
+
+            _host.CompleteLoad(1234);
+            _preloader.Poll();
+            Assert.AreEqual(AreaPreloadPhase.Staged, _preloader.Phase);
+            Assert.AreEqual(1234, _preloader.StagedSceneHandle);
+
+            // 読み終わってから同じ先を頼み直しても読み直さない。
+            Assert.IsTrue(_preloader.Request(AreaB, PathB));
+            _preloader.Poll();
+            Assert.AreEqual(1, _host.LoadCount, "Staged の同一先も読み直さない。");
+            Assert.AreEqual(0, _host.UnloadCount, "撤去も起きない。");
+            Assert.AreEqual(2, _preloader.ReusedCount);
+        }
+
+        [Test]
+        public void TheStagedAreaIsAdmittedToTheLedgerAsStaged()
+        {
+            _preloader.Request(AreaB, PathB);
+            _host.CompleteLoad(1234);
+            _preloader.Poll();
+
+            Assert.AreEqual(1, _ledger.ResidentCount);
+            Assert.AreEqual(AreaActivationPhase.Staged, _ledger.PhaseOf(_preloader.StagedArea));
+            Assert.IsFalse(_ledger.IsSceneOperationInFlight, "読み終わったら Scene 操作は閉じる。");
+            Assert.IsTrue(_ledger.SatisfiesResidencyRules(out string _));
+        }
+
+        // ---------------------------------------------------------------- 候補切替
+
+        [Test]
+        public void SwitchingTheCandidate_RetiresTheOldOneBeforeLoadingTheNew()
+        {
+            _preloader.Request(AreaB, PathB);
+            _host.CompleteLoad(1111);
+            _preloader.Poll();
+            AreaInstanceHandle staledB = _preloader.StagedArea;
+
+            // 望む先を言い換えるだけ。撤去と読込の順序は呼び出し側が組まない。
+            _preloader.Request(AreaC, PathC);
+
+            Assert.AreEqual(AreaPreloadPhase.Releasing, _preloader.Phase,
+                "先に撤去する（2 枚載せたまま 3 枚目を読まない）。");
+            Assert.AreEqual(1, _host.UnloadCount);
+            Assert.AreEqual(1111, _host.LastUnloadHandle, "撤去するのは前の Scene。");
+            Assert.AreEqual(1, _host.LoadCount, "まだ新しい方は読んでいない。");
+
+            _host.CompleteUnload();
+            _preloader.Poll();
+
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase, "撤去が終わってから読む。");
+            Assert.AreEqual(2, _host.LoadCount);
+            Assert.AreEqual(AreaActivationPhase.Unloaded, _ledger.PhaseOf(staledB),
+                "前の実体は台帳から消える。");
+
+            _host.CompleteLoad(2222);
+            _preloader.Poll();
+            Assert.AreEqual(AreaPreloadPhase.Staged, _preloader.Phase);
+            Assert.AreEqual(AreaC, _preloader.StagedArea.AreaId);
+            Assert.AreEqual(1, _ledger.ResidentCount, "積み上がらない。");
+            Assert.AreEqual(1, _preloader.SwitchedCount);
+        }
+
+        [Test]
+        public void SwitchingWhileStillLoading_TakesEffectWhenTheLoadFinishes()
+        {
+            _preloader.Request(AreaB, PathB);
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase);
+
+            // 読込中に望む先が変わる（プレイヤーが別の出入口へ向き直した）。
+            // <b>走っている読込は止められない</b>（Unity の非同期ロードはキャンセル不可）。
+            // だから読み終わってから切り替える。
+            _preloader.Request(AreaC, PathC);
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase, "走っている読込は止めない。");
+            Assert.AreEqual(1, _host.LoadCount);
+
+            _host.CompleteLoad(1111);
+            _preloader.Poll();
+
+            Assert.AreEqual(AreaPreloadPhase.Releasing, _preloader.Phase,
+                "読み終わった B を撤去してから C を読む。");
+            _host.CompleteUnload();
+            _preloader.Poll();
+            _host.CompleteLoad(2222);
+            _preloader.Poll();
+
+            Assert.AreEqual(AreaC, _preloader.StagedArea.AreaId);
+            Assert.AreEqual(1, _ledger.ResidentCount);
+        }
+
+        [Test]
+        public void ClearingTheRequest_RetiresTheStagedArea()
+        {
+            _preloader.Request(AreaB, PathB);
+            _host.CompleteLoad(1111);
+            _preloader.Poll();
+
+            _preloader.ClearRequest();
+            Assert.AreEqual(AreaPreloadPhase.Releasing, _preloader.Phase);
+            _host.CompleteUnload();
+            _preloader.Poll();
+
+            Assert.AreEqual(AreaPreloadPhase.Idle, _preloader.Phase);
+            Assert.AreEqual(0, _ledger.ResidentCount, "撤去したら台帳からも消える。");
+            Assert.AreEqual(0, _host.LoadCount - 1, "読み直しはしない。");
+        }
+
+        // ---------------------------------------------------------------- 最大 2 Area
+
+        [Test]
+        public void AtCapacity_ThePreloadIsRefusedInsteadOfPilingUp()
+        {
+            // 活動中 1 ＋ 遷移で読んだ 1 ＝ 上限。
+            AreaInstanceHandle active = _ledger.NextHandle(new StableId("area_a"));
+            Assert.IsTrue(_ledger.TryAdmitStaged(active));
+            Assert.IsTrue(_ledger.TrySetPhase(active, AreaActivationPhase.Active));
+            AreaInstanceHandle second = _ledger.NextHandle(new StableId("area_d"));
+            Assert.IsTrue(_ledger.TryAdmitStaged(second));
+            Assert.AreEqual(AreaResidencyLedger.MaxResidentAreas, _ledger.ResidentCount);
+
+            _preloader.Request(AreaB, PathB);
+
+            Assert.AreEqual(AreaPreloadPhase.Failed, _preloader.Phase);
+            Assert.AreEqual(AreaPreloadRejection.AtCapacity, _preloader.LastRejection);
+            Assert.AreEqual(0, _host.LoadCount, "3 枚目は読まない。");
+            Assert.AreEqual(AreaResidencyLedger.MaxResidentAreas, _ledger.ResidentCount,
+                "断ったぶんは台帳に残さない。");
+            Assert.IsFalse(_ledger.IsSceneOperationInFlight, "断っても Scene 操作を掴んだままにしない。");
+            Assert.IsFalse(AreaStagingRequest.IsRequested, "先読み要求も残さない。");
+
+            // 空きができれば通る（詰まったままにしない）。
+            Assert.IsTrue(_ledger.Remove(second));
+            _preloader.Poll();
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase, "空いたら読み直せる。");
+        }
+
+        // ---------------------------------------------------------------- 直列化
+
+        [Test]
+        public void WhileAnotherSceneOperationRuns_ThePreloadWaitsInsteadOfFailing()
+        {
+            Assert.IsTrue(_ledger.TryBeginSceneOperation(), "前提：遷移が Scene 操作を掴んでいる。");
+
+            _preloader.Request(AreaB, PathB);
+
+            // <b>失敗にしない。</b> 遷移中の読込と先読みがかち合うのは正常で、
+            // 失敗扱いにすると「遷移のたびに先読みが諦める」ことになる。
+            Assert.AreEqual(AreaPreloadPhase.Idle, _preloader.Phase);
+            Assert.AreEqual(0, _host.LoadCount, "重ねて読まない（§5 の直列化）。");
+            Assert.AreEqual(1, _ledger.BlockedSceneOperationCount);
+            Assert.AreEqual(0, _preloader.RefusedCount, "断りとして数えない。");
+
+            _ledger.EndSceneOperation();
+            _preloader.Poll();
+
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase, "空いたら読み始める。");
+            Assert.AreEqual(1, _host.LoadCount);
+        }
+
+        // ---------------------------------------------------------------- 失敗
+
+        [Test]
+        public void AFailedLoad_LeavesNoStagingRequestAndNoLedgerEntry()
+        {
+            _preloader.Request(AreaB, PathB);
+            Assert.IsTrue(AreaStagingRequest.IsRequested, "前提：活動ゲートへ申し入れている。");
+
+            _host.FailLoad();
+            _preloader.Poll();
+
+            Assert.AreEqual(AreaPreloadPhase.Failed, _preloader.Phase);
+            Assert.IsNotEmpty(_preloader.FailureReason);
+
+            // 残すと、次に直開きした Scene が閉じたまま起動する（＝何も動かないゲーム）。
+            Assert.IsFalse(AreaStagingRequest.IsRequested, "要求を残さない。");
+            Assert.AreEqual(0, _ledger.ResidentCount, "台帳にも残さない。");
+            Assert.IsFalse(_ledger.IsSceneOperationInFlight);
+
+            // 望みは残るので、次の Poll で読み直せる。
+            Assert.AreEqual(AreaB, _preloader.DesiredArea);
+            _preloader.Poll();
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase);
+        }
+
+        [Test]
+        public void AFailedUnload_StillFreesTheLedgerSlot()
+        {
+            _preloader.Request(AreaB, PathB);
+            _host.CompleteLoad(1111);
+            _preloader.Poll();
+
+            _preloader.ClearRequest();
+            _host.FailUnload();
+            _preloader.Poll();
+
+            Assert.AreEqual(AreaPreloadPhase.Failed, _preloader.Phase);
+
+            // 撤去に失敗しても枠は返す。返さないと在留上限を食い続けて、
+            // 以降の先読みが一切通らなくなる（§9.1）。
+            Assert.AreEqual(0, _ledger.ResidentCount, "枠は返す。");
+            Assert.IsFalse(_ledger.IsSceneOperationInFlight);
+        }
+
+        [Test]
+        public void AnInvalidRequest_IsRefusedWithoutTouchingAnything()
+        {
+            Assert.IsFalse(_preloader.Request(default, PathB));
+            Assert.IsFalse(_preloader.Request(AreaB, null));
+            Assert.IsFalse(_preloader.Request(AreaB, string.Empty));
+
+            Assert.AreEqual(AreaPreloadPhase.Idle, _preloader.Phase);
+            Assert.AreEqual(0, _host.LoadCount);
+            Assert.AreEqual(3, _preloader.RefusedCount);
+            Assert.AreEqual(AreaPreloadRejection.InvalidRequest, _preloader.LastRejection);
+            Assert.IsFalse(AreaStagingRequest.IsRequested);
+        }
+
+        // ---------------------------------------------------------------- 差し替え
+
+        /// <summary>
+        /// Scene API の代わり。<b>本番と同じ口を通す</b>（テスト専用の別経路を作らない。
+        /// P5 の <c>IAreaSceneLoader</c> と同じ考え方）。
+        /// </summary>
+        private sealed class FakeHost : IAreaSceneHost
+        {
+            private readonly List<ManualOperation> _pending = new List<ManualOperation>();
+
+            public int LoadCount { get; private set; }
+            public int UnloadCount { get; private set; }
+            public int LastUnloadHandle { get; private set; }
+
+            public IAreaSceneOperation LoadAdditive(string scenePath)
+            {
+                LoadCount++;
+                var op = new ManualOperation();
+                _pending.Add(op);
+                return op;
+            }
+
+            public IAreaSceneOperation Unload(int sceneHandle)
+            {
+                UnloadCount++;
+                LastUnloadHandle = sceneHandle;
+                var op = new ManualOperation();
+                _pending.Add(op);
+                return op;
+            }
+
+            public void CompleteLoad(int sceneHandle) => Finish(sceneHandle, error: false);
+
+            public void FailLoad() => Finish(0, error: true);
+
+            public void CompleteUnload() => Finish(0, error: false);
+
+            public void FailUnload() => Finish(0, error: true);
+
+            private void Finish(int sceneHandle, bool error)
+            {
+                Assert.Greater(_pending.Count, 0, "終わらせる操作がありません。");
+                ManualOperation op = _pending[_pending.Count - 1];
+                _pending.RemoveAt(_pending.Count - 1);
+                op.Finish(sceneHandle, error);
+            }
+
+            private sealed class ManualOperation : IAreaSceneOperation
+            {
+                public bool IsDone { get; private set; }
+                public bool HasError { get; private set; }
+                public int SceneHandle { get; private set; }
+
+                public void Finish(int sceneHandle, bool error)
+                {
+                    SceneHandle = sceneHandle;
+                    HasError = error;
+                    IsDone = true;
+                }
+            }
+        }
+    }
+}
