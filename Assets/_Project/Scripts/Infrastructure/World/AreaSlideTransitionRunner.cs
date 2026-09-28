@@ -65,6 +65,19 @@ namespace Momotaro.Infrastructure.World
         private int _retireSceneHandle;
         private bool _retrying;
 
+        /// <summary>
+        /// 旧 Area を<b>通常どおり撤去している最中</b>か（工程 P55-07a。GPT 受入②）。
+        ///
+        /// <see cref="HasPendingRetire"/> は<b>撤去に失敗して抱えたまま</b>の状態で、次の要求を
+        /// 断る。こちらは<b>成功する見込みのある撤去が走っている</b>状態で、次の要求は
+        /// <b>断らずに待たせる</b>——§8 末尾の「旧 Area の解放終了を待ってから次のロードへ進む」。
+        ///
+        /// この 2 つを同じ 1 つの状態で表すと、待てばよいものを断ることになる。
+        /// 実際そうなっていた：到着通知（<c>ArrivalCompleted</c>）は撤去より<b>先に</b>出るので、
+        /// 通知の中から次のスライドを頼むと、まだ 2 枚在留していて先読みが上限で失敗した。
+        /// </summary>
+        private bool _retiring;
+
         /// <summary>作る。<paramref name="owner"/> が常駐の遷移サービス（Provider の所有者でもある）。</summary>
         public AreaSlideTransitionRunner(AreaTransitionService owner)
         {
@@ -105,6 +118,24 @@ namespace Momotaro.Infrastructure.World
         /// 受理してから「読めません」で戻すより、受理しないほうが害が小さい。
         /// </summary>
         public bool HasPendingRetire => _retireHandle.IsValid && _retireSceneHandle != 0;
+
+        /// <summary>旧 Area を通常どおり撤去している最中か（診断・テスト用）。</summary>
+        public bool IsRetiring => _retiring;
+
+        /// <summary>撤去の終わりを待ってから先へ進んだ回数（診断・テスト用）。</summary>
+        public int RetireWaitCount { get; private set; }
+
+        /// <summary>
+        /// 先読みを終端できず、Single 読込へ進ませなかった回数（診断・テスト用）。
+        /// </summary>
+        public int StagedDiscardBlockedCount { get; private set; }
+
+        /// <summary>
+        /// 直前の <see cref="DiscardStagedForSingleLoad"/> が<b>終端まで見届けられた</b>か。
+        ///
+        /// false のあいだ、呼び出し元は<b>次のロードを発行してはならない</b>。
+        /// </summary>
+        public bool StagedDiscardCompleted { get; private set; } = true;
 
         /// <summary>実 Scene に合わせて台帳から落とした実体の数（診断・テスト用）。</summary>
         public int ForgottenResidentCount { get; private set; }
@@ -213,6 +244,32 @@ namespace Momotaro.Infrastructure.World
             if (!_slide.NotifyPreparing(transitionId))
             {
                 yield break;
+            }
+
+            // <b>前の撤去が終わるのを待つ</b>（§8 末尾。GPT 受入②）。
+            //
+            // 到着通知は撤去より先に出るので、通知の中から次のスライドを頼むと、
+            // この時点ではまだ旧 Area と到着 Area の 2 枚が在留している。
+            // ここで待たずに進むと、先読みが在留上限で失敗する——
+            // <b>受理できたのに進めない</b>という、いちばん分かりにくい失敗になる。
+            // 撤去に失敗して抱えている場合（<see cref="HasPendingRetire"/>）は
+            // そもそも受理していないので、ここへは来ない。
+            if (_retiring)
+            {
+                RetireWaitCount++;
+                float retireWaited = 0f;
+                while (_retiring && retireWaited < _owner.TimeoutSeconds)
+                {
+                    retireWaited += Time.unscaledDeltaTime;
+                    yield return null;
+                }
+
+                if (_retiring)
+                {
+                    yield return Rollback(transitionId, departure, AreaInstanceHandle.None,
+                        "旧 Area の撤去が終わらないため、次のスライドを始められませんでした。");
+                    yield break;
+                }
             }
 
             AreaInstanceHandle departureHandle = EnsureResidency(departure);
@@ -488,6 +545,10 @@ namespace Momotaro.Infrastructure.World
             _owner.Clock.Thaw();
             CommittedCount++;
             LastFailure = string.Empty;
+
+            // <b>通知より先に「撤去中」を立てる。</b> 通知の中から次の要求が来ても、
+            // そこで待てるようにするため（GPT 受入②）。
+            _retiring = true;
             // ---- 同期区間ここまで ----
 
             // 手順 10：排他と共有情報を片付けてから、一度だけ通知する。
@@ -498,6 +559,10 @@ namespace Momotaro.Infrastructure.World
 
             // 手順 11：旧 Area を撤去する。<b>成功は取り消さない</b>（§8 の 4 行目）。
             yield return UnloadDeparture(departureHandle, departureSceneHandle);
+
+            // 撤去が終わった（成功でも失敗でも）。失敗なら HasPendingRetire が立っていて、
+            // 次の要求は受理そのものを断る。
+            _retiring = false;
         }
 
         /// <summary>
@@ -793,6 +858,12 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         public IEnumerator DiscardStagedForSingleLoad()
         {
+            // <b>毎回ここから言い直す。</b> この値は「<b>この呼び出し</b>が終端を見届けたか」であって、
+            // 前回の結果ではない。前回 false のまま早期 return すると、
+            // 先読みがとっくに空になっていても<b>呼び出し元が永久に進めない</b>——
+            // 実際に踏んだ（再試行が一度も通らなかった）。
+            StagedDiscardCompleted = true;
+
             if (_preloader == null)
             {
                 yield break;
@@ -805,6 +876,7 @@ namespace Momotaro.Infrastructure.World
             }
 
             DiscardedForSingleLoadCount++;
+            StagedDiscardCompleted = false;
             _preloader.ClearRequest();
 
             float waited = 0f;
@@ -821,13 +893,27 @@ namespace Momotaro.Infrastructure.World
                 yield return null;
             }
 
-            if (_preloader.Phase != AreaPreloadPhase.Idle)
+            if (_preloader.Phase == AreaPreloadPhase.Idle
+                || _preloader.Phase == AreaPreloadPhase.ReleaseFailed)
             {
-                // <b>それでも残っているなら記録して進む。</b> 死亡再開や暗転扉を
-                // 先読みの後始末のために止めてしまうと、プレイヤーに手が無くなる。
-                LastFailure = "先読みを終端できないまま Single 読込へ進みます（" + _preloader.Phase + "）。";
-                GameLog.Warning(LogCategory.Scene, LastFailure);
+                StagedDiscardCompleted = true;
+                yield break;
             }
+
+            // <b>時間切れは「次のロードを始めてよい」ではない</b>（GPT 受入①）。
+            //
+            // 以前はここで警告だけ残して抜けていた。呼び出し元はそのまま Single 読込を発行し、
+            // <b>Additive の先読みが走ったまま</b>次の読込が重なる。Single 側の監視は
+            // 先読みの操作を持っていないので、そこでは止まらない——
+            // §5・§8 の「操作は 1 つずつ」という約束が破れる経路だった。
+            //
+            // <b>所有権を手放さない。</b> 監視は <c>Pump</c> が続け、終端したら枠が戻る。
+            // 呼び出し元はこの回のロードを<b>終端失敗</b>にして、プレイヤーに再操作させる
+            // （死亡再開なら再開画面へ戻り、もう一度 Submit できる。§9.1）。
+            StagedDiscardBlockedCount++;
+            LastFailure = "先読みが終端していないため、Single 読込を発行しませんでした（"
+                + _preloader.Phase + "）。";
+            GameLog.Warning(LogCategory.Scene, LastFailure);
         }
 
         /// <summary>Single 読込の前に先読みを捨てた回数（診断・テスト用）。</summary>

@@ -520,6 +520,20 @@ namespace Momotaro.Infrastructure.World
             if (_slideRunner != null)
             {
                 yield return _slideRunner.DiscardStagedForSingleLoad();
+
+                // <b>終端を見届けられなければロードを発行しない</b>（GPT 受入①）。
+                //
+                // 以前は時間切れでも先へ進んでいた。Single 側の監視（<c>_liveOperation</c>）は
+                // Additive の先読み操作を持っていないので、そこでは重なりを止められない。
+                // 進めないときは<b>終端失敗</b>にして、プレイヤーに再操作させる——
+                // 死亡再開なら再開画面へ戻り、もう一度 Submit できる（§9.1）。
+                if (!_slideRunner.StagedDiscardCompleted)
+                {
+                    FailTerminal(transitionId,
+                        "先読みが終端していないため、目的地のロードを開始できませんでした。"
+                        + "しばらく待ってからもう一度操作してください。");
+                    yield break;
+                }
             }
 
             AreaPendingArrival.Set(transitionId, request.AreaId, request.EntryId);

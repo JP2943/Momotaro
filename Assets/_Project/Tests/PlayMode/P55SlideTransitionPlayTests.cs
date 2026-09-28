@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
 using Momotaro.Data.World;
@@ -2232,5 +2233,236 @@ namespace Momotaro.Tests.PlayMode
                 }
             }
         }
+
+        // ---------------------------------------------------------------- GPT 受入①（P55-07a）
+
+        /// <summary>
+        /// <b>先読みが終端しないまま時間切れになっても、Single 読込を発行しない</b>
+        /// （§5・§8 の「Scene 操作は 1 つずつ」。GPT 受入①）。
+        ///
+        /// 以前は時間切れで警告だけ残して先へ進んでいた。Single 側の監視
+        /// （<c>AreaTransitionService._liveOperation</c>）は Additive の先読み操作を
+        /// <b>持っていない</b>ので、そこでは重なりを止められない。
+        /// 死亡再開・暗転扉と未完了の先読みが重なる経路だった。
+        ///
+        /// <b>既存のテストは約 2 秒で先読みを完了させていたので、この区間を通っていなかった。</b>
+        /// ここでは監視時間を短くして、時間切れそのものを踏む。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TimingOutTheStagedDiscard_DoesNotIssueTheSingleLoad()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new ControllableSceneHost();
+            transitions.SlideSceneHost = host;
+            transitions.TimeoutSeconds = 0.3f;
+
+            // 終端しない先読みを 1 つ抱えさせる。
+            transitions.Slide.Preloader.Request(AreaB, P55AreaBScene);
+            yield return null;
+            transitions.Slide.Preloader.Poll();
+            Assert.AreEqual(1, host.LoadCount, "前提：先読みのロードが 1 本走っている。");
+            Assert.AreEqual(AreaPreloadPhase.Loading, transitions.Slide.Preloader.Phase,
+                "前提：先読みは読込中のまま。");
+
+            // ---- 死亡再開を要求する（Single 読込の経路）----
+            //
+            // 進めないことは<b>終端失敗として記録される</b>ので Error が出る。
+            // これは期待どおりの出力である（黙って進むほうが不合格）。
+            // 再開は<b>何度でも試せる</b>ので、押すたびに 1 本出る——本数は固定しない。
+            LogAssert.ignoreFailingMessages = true;
+
+            yield return KillPlayerWithRealHits();
+            yield return WaitForRespawnPrompt();
+            yield return PressKeyUntil(Key.Enter,
+                () => transitions.CompletedCount > 0
+                      || transitions.Slide.StagedDiscardBlockedCount > 0, 15f);
+
+            Assert.AreEqual(0, transitions.CompletedCount,
+                "終端していない先読みの上へ Single 読込を発行しない（§5 末尾）。");
+            Assert.IsTrue(transitions.HasTerminalFailure,
+                "進めないことを終端失敗として伝える（黙って進まない）。理由="
+                + transitions.TerminalFailureReason);
+            Assert.GreaterOrEqual(transitions.Slide.StagedDiscardBlockedCount, 1,
+                "「終端できないので発行しなかった」を数えている。");
+            Assert.IsFalse(transitions.Slide.StagedDiscardCompleted,
+                "先読みの終端を見届けられていない。");
+            Assert.AreEqual(0, host.UnloadCount,
+                "終端していない操作を撤去しに行かない（所有権は手放さない）。");
+            Assert.AreEqual(1, host.LoadCount, "重ねてロードもしていない。");
+
+            // ---- 遅れて終端する → 撤去 → Single 読込が一度だけ ----
+            host.CompleteLoad(770001);
+            yield return null;
+
+            yield return PressKeyUntil(Key.Enter,
+                () => transitions.CompletedCount > 0, 25f);
+
+            var respawnView = Object.FindFirstObjectByType<CampaignRespawnView>();
+            Assert.AreEqual(1, transitions.CompletedCount,
+                "終端したあとに Single 読込で着く。"
+                + " 先読み=" + transitions.Slide.Preloader.Phase
+                + " 見届けた=" + transitions.Slide.StagedDiscardCompleted
+                + " 阻止=" + transitions.Slide.StagedDiscardBlockedCount
+                + " 捨てた=" + transitions.Slide.DiscardedForSingleLoadCount
+                + " 撤去=" + host.UnloadCount + " 読込=" + host.LoadCount
+                + " 終端失敗=" + transitions.HasTerminalFailure
+                + "（" + transitions.TerminalFailureReason + "）"
+                + " 再開段階=" + (GameSessionProvider.Current != null
+                    ? GameSessionProvider.Current.Respawn.Phase.ToString() : "null")
+                + " 再開表示=" + (respawnView != null && respawnView.IsShowing)
+                + " mode=" + (GameModeProvider.Current != null
+                    ? GameModeProvider.Current.Current.ToString() : "null"));
+            Assert.AreEqual(1, host.UnloadCount, "先読みの撤去は一度だけ。");
+            Assert.AreEqual(1, host.LoadCount, "先読みのロードは増えていない。");
+            Assert.IsTrue(transitions.Slide.StagedDiscardCompleted, "今度は終端を見届けた。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "隔離 Area は残っていない。");
+            Assert.AreEqual(AreaPreloadPhase.Idle, transitions.Slide.Preloader.Phase, "先読みは手ぶら。");
+
+            LogAssert.ignoreFailingMessages = false;
+        }
+
+        // ---------------------------------------------------------------- GPT 受入②（P55-07a）
+
+        /// <summary>
+        /// <b>到着通知の中から次のスライドを頼んでも、撤去の終わりを待って成立する</b>
+        /// （§8 末尾「旧 Area の解放終了を待ってから次のロードへ進む」。GPT 受入②）。
+        ///
+        /// 到着通知は<b>撤去より先に</b>出る（§6.2 手順 10→11）。通知の時点ではまだ
+        /// 旧 Area と到着 Area の 2 枚が在留しているので、そのまま先読みを頼むと
+        /// 在留上限で失敗する——<b>受理できたのに進めない</b>という形で落ちていた。
+        ///
+        /// <b>撤去失敗（<c>HasPendingRetire</c>）とは別物である。</b> あちらは断る。
+        /// こちらは<b>待たせる</b>。同じ 1 つの状態で表すと、待てばよいものを断ることになる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RequestingTheReverseSlideInsideTheArrival_WaitsForTheRetire()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            int notified = 0;
+            bool requested = false;
+            AreaTransitionDecision inside = default;
+
+            void OnArrived(StableId areaId)
+            {
+                notified++;
+                if (requested || !areaId.Equals(AreaB))
+                {
+                    return;
+                }
+
+                requested = true;
+
+                // <b>通知の中で</b>逆方向を頼む（ここが要点）。
+                Assert.IsTrue(
+                    transitions.Connections.TryGetReverse(
+                        transitions.LastAcceptedConnection.ConnectionId,
+                        out AreaConnectionSnapshot reverse),
+                    "逆方向の接続が引ける。");
+                inside = transitions.TryTravel(reverse);
+            }
+
+            transitions.ArrivalCompleted += OnArrived;
+            try
+            {
+                yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+                yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+
+                float deadline = Time.realtimeSinceStartup + 30f;
+                while ((transitions.SlideCommittedCount < 2 || SceneManager.sceneCount > 1)
+                       && !transitions.HasTerminalFailure
+                       && Time.realtimeSinceStartup < deadline)
+                {
+                    yield return null;
+                }
+            }
+            finally
+            {
+                transitions.ArrivalCompleted -= OnArrived;
+            }
+
+            Assert.IsTrue(requested, "前提：通知の中から要求を出した。");
+            Assert.IsTrue(inside.Accepted,
+                "通知の中からの要求が受理される（理由=" + inside.Rejection + "）。");
+
+            Assert.AreEqual(2, transitions.SlideCommittedCount,
+                "二度目の到着も成立する（撤去の終わりを待ってから進んだ。失敗="
+                + transitions.Slide.LastFailure + "）。");
+            Assert.GreaterOrEqual(transitions.Slide.RetireWaitCount, 1,
+                "撤去の終わりを実際に待った（待たずに通ったなら、この経路を見ていない）。");
+            Assert.AreEqual(0, transitions.Slide.RolledBackCount, "戻していない。");
+            Assert.AreEqual(0, transitions.Slide.UnloadFailureCount, "撤去は失敗していない。");
+            Assert.IsFalse(transitions.Slide.HasPendingRetire, "抱えたままの旧 Area も無い。");
+
+            Assert.AreEqual(2, notified, "成功通知は到着ごとに 1 回ずつ（重複していない）。");
+            Assert.AreEqual(0, transitions.CompletedCount, "Single 経路は通っていない。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "Scene は 1 枚に戻る（重ねて載っていない）。");
+            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "在留は 1 つだけ。");
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に戻っている。");
+        }
+
+        /// <summary>
+        /// <b>到着通知の中から Fade（Single 読込）を頼んでも、旧側の撤去と重ならない</b>
+        /// （GPT 受入②の 4 行目）。
+        ///
+        /// Single は全部を置き換えるので待たせる必要は無いが、<b>撤去と重ねてはいけない</b>。
+        /// 重なると、撤去し損ねた Scene が新しい世界の上に残る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RequestingAFadeInsideTheArrival_DoesNotOverlapTheRetire()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            bool requested = false;
+            bool accepted = false;
+
+            void OnArrived(StableId areaId)
+            {
+                if (requested || !areaId.Equals(AreaB))
+                {
+                    return;
+                }
+
+                requested = true;
+                accepted = transitions.TryTravel(AreaA, Phase5AreaIdsAreaAFromB).Accepted;
+            }
+
+            transitions.ArrivalCompleted += OnArrived;
+            try
+            {
+                yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+                yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+
+                float deadline = Time.realtimeSinceStartup + 30f;
+                while ((transitions.ArrivalCount < 2 || SceneManager.sceneCount > 1)
+                       && !transitions.HasTerminalFailure
+                       && Time.realtimeSinceStartup < deadline)
+                {
+                    yield return null;
+                }
+            }
+            finally
+            {
+                transitions.ArrivalCompleted -= OnArrived;
+            }
+
+            Assert.IsTrue(requested, "前提：通知の中から Fade を要求した。");
+            Assert.IsTrue(accepted, "Single は全部を置き換えるので受理してよい。");
+            Assert.IsFalse(transitions.HasTerminalFailure,
+                "終端失敗にならない。理由=" + transitions.TerminalFailureReason);
+            Assert.AreEqual(1, transitions.CompletedCount, "Single 経路で一度だけ着く。");
+            Assert.AreEqual(1, SceneManager.sceneCount,
+                "撤去し損ねた Scene が新しい世界へ残っていない。");
+            Assert.AreEqual(0, transitions.Slide.UnloadFailureCount, "撤去も失敗していない。");
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居る。");
+        }
+
+        /// <summary>P5 の入口 ID（この配置でも再利用している）。</summary>
+        private static readonly StableId Phase5AreaIdsAreaAFromB = new StableId("area_p5_a_from_b");
+
     }
 }

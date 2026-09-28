@@ -286,7 +286,10 @@
       "implemented": true,
       "supportingTests": [
         "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.AnnouncementBeforeCommit_IsRefused",
-        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.AfterFailure_TheNextRequestIsStillAccepted"
+        "Momotaro.Tests.EditMode.P55SlideCoordinatorTests.AfterFailure_TheNextRequestIsStillAccepted",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TimingOutTheStagedDiscard_DoesNotIssueTheSingleLoad",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.RequestingTheReverseSlideInsideTheArrival_WaitsForTheRetire",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.RequestingAFadeInsideTheArrival_DoesNotOverlapTheRetire"
       ]
     },
     {
