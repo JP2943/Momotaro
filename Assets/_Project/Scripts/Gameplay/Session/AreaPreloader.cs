@@ -419,6 +419,19 @@ namespace Momotaro.Gameplay.Session
             Phase = AreaPreloadPhase.Staged;
             FailureReason = string.Empty;
 
+            // <b>読み終わった実体に、いま配った世代を結び付ける</b>（工程 P55-08b）。
+            //
+            // これまで結び付けていたのは遷移（<c>BindInstance</c>）だけだった。
+            // 先読みが<b>遷移の外で</b>Area を預かるのは距離による先読み（§5）が初めてで、
+            // 結び付けないと「索引に居ない実体」に見える——常駐の合わせ直し
+            // （<c>SyncResidencyToLoadedAreas</c>）が<b>載っている Scene を台帳から落とす</b>。
+            // 落ちると在留枠が空いていると誤認し、上限 2 を超えて読める。
+            if (AreaBundleDirectory.TryGetByScene(sceneHandle, out AreaRuntimeBundle staged)
+                && staged != null)
+            {
+                staged.BindInstance(StagedArea);
+            }
+
             // 望む先が読込中に変わっていたら、ここで切り替えが始まる。
             Poll();
         }

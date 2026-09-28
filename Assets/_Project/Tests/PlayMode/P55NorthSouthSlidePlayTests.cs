@@ -158,6 +158,14 @@ namespace Momotaro.Tests.PlayMode
             yield return StandJustBefore(FindExitGate(ExitSNorth), Vector3.back);
             yield return SettleCamera();
 
+            // 撤去できたかどうかは<b>実 Scene</b>で言う（工程 P55-08b）。枚数では言えない——
+            // 到着した主人公は逆向きの出入口のすぐ内側に居るので、§5 の距離による先読みが
+            // 同じ Area をもう一度載せる。
+            var departureBundle = Object.FindFirstObjectByType<AreaRuntimeBundle>();
+            Assert.IsNotNull(departureBundle, "出発 Area の束がある。");
+            int departureSceneHandle = departureBundle.SceneHandle;
+            Assert.AreNotEqual(0, departureSceneHandle, "前提：出発 Scene を特定できる。");
+
             Vector3 cameraBefore = RigPosition();
             var track = new SlideTrack(NsSeamAxisX, alongIsZ: true);
             yield return HoldWhileTracking(Key.W, track, () => transitions.SlideCommittedCount > 0, 25f);
@@ -189,7 +197,18 @@ namespace Momotaro.Tests.PlayMode
                 because: "北の行き先はスライド中の画面で上に見える（§11 の P03）。");
 
             Assert.AreEqual("area_p55_n", FindAreaRoot().AreaId.Value, "N に居る。");
-            Assert.AreEqual(1, SceneManager.sceneCount, "旧 Area の撤去まで終わっている。");
+
+            // <b>枚数では「撤去できた」を言えなくなった</b>（工程 P55-08b）。
+            // 到着した主人公は逆向きの出入口のすぐ内側に居るので、§5 の距離による先読みが
+            // 来た方の Area をもう一度 Staged で持つ。撤去は<b>実体</b>で言う。
+            yield return SettleWorld(transitions);
+            Assert.IsFalse(transitions.SlideSceneHost.IsLoaded(departureSceneHandle),
+                "出発時の Scene は撤去されている。");
+            Assert.AreEqual(0, transitions.Slide.UnloadFailureCount, "撤去は失敗していない。");
+            Assert.AreEqual(2, SceneManager.sceneCount,
+                "載っているのは活動中の N と、距離で読み直した S の 2 枚。");
+            Assert.AreEqual("area_p55_s", transitions.Slide.Preloader.StagedArea.AreaId.Value,
+                "持っているのは来た方の S。");
         }
 
         // ---------------------------------------------------------------- 南へ（P03）
@@ -412,6 +431,26 @@ namespace Momotaro.Tests.PlayMode
         }
 
         /// <summary>置き直した直後の補間を終わらせる（配置の検査に補間の残りを混ぜない）。</summary>
+        /// <summary>
+        /// 撤去と、距離による先読みの取り直しが落ち着くまで待つ（工程 P55-08b。§5）。
+        /// 境界の近くで立ち止まっている状態は「Scene 2 枚」が正常になった。
+        /// </summary>
+        private static IEnumerator SettleWorld(AreaTransitionService transitions, float seconds = 15f)
+        {
+            float deadline = Time.realtimeSinceStartup + seconds;
+            int quiet = 0;
+            while (quiet < 3 && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+
+                bool busy = transitions.Slide.IsTransitioning
+                    || transitions.Slide.IsRetireInFlight
+                    || transitions.Slide.Preloader.HasLiveSceneOperation
+                    || transitions.IsSingleLoadInFlight;
+                quiet = busy ? 0 : quiet + 1;
+            }
+        }
+
         private static IEnumerator SettleCamera()
         {
             AreaCameraRigHost host = AreaCameraRigHost.Instance;

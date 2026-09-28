@@ -43,6 +43,9 @@ namespace Momotaro.Tests.PlayMode
     {
         private const string P55AreaAScene = "Assets/_Project/Scenes/Tests/Phase55/SCN_Phase55_AreaA.unity";
         private const string P55AreaBScene = "Assets/_Project/Scenes/Tests/Phase55/SCN_Phase55_AreaB.unity";
+        /// <summary>Area でも起動 Scene でもない Scene（差し替え注入の受け皿）。</summary>
+        private const string EmptySystemScene = "Assets/_Project/Scenes/SCN_System_Loading.unity";
+
         private const string P55TrialScene =
             "Assets/_Project/Scenes/Tests/Phase55/SCN_Phase55_ConnectionTrial.unity";
 
@@ -125,6 +128,16 @@ namespace Momotaro.Tests.PlayMode
             yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
             yield return SettleCamera();
 
+            // 撤去できたかどうかは<b>実 Scene</b>で言う（工程 P55-08b）。
+            //
+            // 枚数では言えなくなった——到着した主人公は逆向きの出入口のすぐ内側に居るので、
+            // §5 の距離による先読みが<b>同じ Area をもう一度</b>載せる。
+            // 実体ハンドルでも言えない（出発前の Area はまだ世代を配られていない）。
+            // Scene handle なら、読み直した A は<b>別の Scene</b>として区別できる。
+            Assert.IsTrue(TryFindBundle(AreaA, out AreaRuntimeBundle departureBundle), "出発 Area の束がある。");
+            int departureSceneHandle = departureBundle.SceneHandle;
+            Assert.AreNotEqual(0, departureSceneHandle, "前提：出発 Scene を特定できる。");
+
             // <b>置き直したあとに記録する。</b> 出入口の手前へ置くと通常追従がそこへ寄るので、
             // 置く前の位置を「出発位置」にすると、追従の分までスライドの移動に数えてしまう。
             Vector3 cameraBefore = RigPosition();
@@ -196,17 +209,34 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(0, Display().HiddenRendererCount, "隠した実 Renderer を戻した。");
             AssertPlayerVisible();
 
-            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount,
-                "旧 Area を撤去して在留は 1 つ（§6.2 手順 11）。");
-
             // <b>先読みは到着 Area を手放している</b>（§6.2 手順 4）。
             // 手放し忘れると、次に別の候補を望んだ瞬間に「いま遊んでいる Area」を撤去しにかかる。
             AreaPreloader preloader = transitions.Slide.Preloader;
             Assert.AreEqual(1, preloader.HandedOffCount, "遷移が到着 Area を引き取った。");
-            Assert.AreEqual(AreaPreloadPhase.Idle, preloader.Phase, "先読みは手ぶらへ戻っている。");
-            Assert.IsFalse(preloader.DesiredArea.IsValid, "望みも残っていない。");
-            Assert.AreEqual(1, SceneManager.sceneCount, "実 Scene も 1 枚に戻った。");
+
+            // <b>旧 Area の実体は撤去された</b>（§6.2 手順 11）。
+            //
+            // 枚数では言えなくなった（工程 P55-08b）。到着した主人公は逆向きの出入口の
+            // すぐ内側に居るので、§5 の距離による先読みが<b>同じ Area をもう一度 Staged で持つ</b>。
+            // 撤去できたかどうかは<b>実体（世代つきハンドル）</b>で言う——読み直した A は別の世代である。
             Assert.AreEqual(0, transitions.Slide.UnloadFailureCount, "撤去は失敗していない。");
+            Assert.IsFalse(transitions.SlideSceneHost.IsLoaded(departureSceneHandle),
+                "出発時の Scene は撤去されている。");
+
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(AreaPreloadPhase.Staged, preloader.Phase,
+                "落ち着いた先は「隣を持っている」（§5 の距離による先読み）。");
+            Assert.AreEqual(AreaA.Value, preloader.StagedArea.AreaId.Value,
+                "持っているのは来た方の A（B の西の出入口が 6 units 以内）。");
+            Assert.AreNotEqual(departureSceneHandle, preloader.StagedSceneHandle,
+                "読み直した A は別の Scene である（撤去は本当に起きた）。");
+            Assert.AreEqual(2, transitions.Slide.Residency.ResidentCount,
+                "在留は活動中 B と Staged の A（上限 2 のまま）。台帳=" + DumpResidency(transitions)
+                + " Scene 枚数=" + SceneManager.sceneCount
+                + " 先読み=" + transitions.Slide.Preloader.Phase
+                + " Staged=" + transitions.Slide.Preloader.StagedArea);
+            Assert.AreEqual(2, SceneManager.sceneCount, "実 Scene も 2 枚。");
             Assert.AreEqual(1, Camera.allCamerasCount, "活動中の Camera は 1 台だけ（§11 の P12）。");
             Assert.AreEqual(AreaSlideTransactionPhase.Idle, transitions.Slide.Coordinator.Phase,
                 "排他が解けている（次の遷移を受けられる）。");
@@ -555,6 +585,13 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsFalse(AreaPendingArrival.HasPending, "到着要求は残っていない。");
             Assert.AreEqual(0, AreaCameraRigHost.Instance.SlideCount, "演出は始まっていない。");
 
+            // ---- 境界から離れる ----
+            //
+            // <b>ここで離れないと、距離による先読み（§5）が同じ先を望み続ける。</b>
+            // 望まれている Scene は撤去されない——それは正しい振る舞いだが、
+            // ここで見たいのは「誰も望まなくなった遅延到着を、終端後に撤去するか」である。
+            yield return DropTheNeighbour(transitions);
+
             // ---- 遅れて終端する ----
             host.CompleteLoad(987654);
 
@@ -565,7 +602,8 @@ namespace Momotaro.Tests.PlayMode
                 yield return null;
             }
 
-            Assert.AreEqual(1, host.UnloadCount, "終端したので撤去した（常駐が後始末を進める）。");
+            Assert.AreEqual(1, host.UnloadCount,
+                "終端したので撤去した（常駐が後始末を進める）。" + DumpWorld(transitions));
             Assert.AreEqual(987654, host.LastUnloadHandle, "撤去したのは遅れて着いた Scene。");
             Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "在留も 1 つへ戻った。");
             Assert.AreEqual(0, transitions.SlideCommittedCount, "遅延完了で成功が起きない（§8 末尾）。");
@@ -664,13 +702,21 @@ namespace Momotaro.Tests.PlayMode
             yield return SettleCamera();
             yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
             Assert.AreEqual(1, transitions.SlideCommittedCount, "前提：スライドで B へ着いた。");
-            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "前提：在留は 1 つ。");
+            yield return SettleWorld(transitions);
+            Assert.AreEqual(2, transitions.Slide.Residency.ResidentCount,
+                "前提：在留は活動中の B と、距離で読み直した A（§5。工程 P55-08b）。");
 
             // Fade（Single 読込）で A へ戻る。出入口ではなくサービスへ直接要求する——
             // ここで見たいのは「Single 読込を挟んだあと」であって入力経路ではない。
             Assert.IsTrue(
                 transitions.Connections.TryGetFromExit(AreaB, ExitBWest, out AreaConnectionSnapshot west),
                 "西向きの接続を引ける。");
+            // Single 読込が<b>置き換えた</b>ことを、いま載っている Scene で言えるようにしておく。
+            int bSceneBefore = CurrentAreaProvider.Current.SceneHandle;
+            int stagedSceneBefore = transitions.Slide.Preloader.StagedSceneHandle;
+            Assert.AreNotEqual(0, bSceneBefore, "前提：B の Scene を特定できる。");
+            Assert.AreNotEqual(0, stagedSceneBefore, "前提：隣も載っている。");
+
             Assert.IsTrue(transitions.TryTravel(west.ToAreaId, west.EntryId).Accepted,
                 "Single／Fade 経路が受理される。");
 
@@ -681,8 +727,15 @@ namespace Momotaro.Tests.PlayMode
             }
 
             Assert.AreEqual(1, transitions.CompletedCount, "Fade で A へ着いた。");
-            Assert.AreEqual(1, SceneManager.sceneCount, "実 Scene は 1 枚（Single 読込が置き換えた）。");
             Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居る。");
+
+            // <b>置き換えたことは「前の Scene が消えた」で言う</b>（工程 P55-08b）。
+            // 枚数では言えない——着いた先も出入口の近くなので、距離による先読みが隣を載せる。
+            yield return SettleWorld(transitions);
+            Assert.IsFalse(transitions.SlideSceneHost.IsLoaded(bSceneBefore),
+                "Single 読込が前の B を置き換えた。" + DumpWorld(transitions));
+            Assert.IsFalse(transitions.SlideSceneHost.IsLoaded(stagedSceneBefore),
+                "隔離していた隣も置き換えられた。");
 
             // 2 回目：また実キーでスライドできる。
             yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
@@ -694,9 +747,13 @@ namespace Momotaro.Tests.PlayMode
                 + transitions.Slide.LastFailure);
             Assert.GreaterOrEqual(transitions.Slide.ForgottenResidentCount, 1,
                 "消えていた実体を台帳から落とした。");
-            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "在留は 1 つ。");
-            Assert.AreEqual(1, SceneManager.sceneCount, "実 Scene も 1 枚。");
             Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+
+            yield return SettleWorld(transitions);
+            Assert.AreEqual(2, transitions.Slide.Residency.ResidentCount,
+                "在留は活動中の B と、距離で読み直した A（§5。工程 P55-08b）。"
+                + DumpWorld(transitions));
+            Assert.AreEqual(2, SceneManager.sceneCount, "実 Scene も 2 枚。");
         }
 
         // ---------------------------------------------------------------- 持ち越す値（§6.3／§11 の P05）
@@ -1156,6 +1213,10 @@ namespace Momotaro.Tests.PlayMode
             AreaTransitionService transitions = Transitions();
 
             yield return StageTheNeighbour(transitions);
+
+            // 捨てたことを<b>実体</b>で言えるように控えておく（工程 P55-08b）。
+            AreaInstanceHandle stagedBefore = transitions.Slide.Preloader.StagedArea;
+            Assert.IsTrue(stagedBefore.IsValid, "前提：隣 Area の実体を掴んでいる。");
             Assert.AreEqual(2, SceneManager.sceneCount, "前提：隣 Area が載っている。");
 
             var door = Object.FindFirstObjectByType<AreaTransitionDoor>();
@@ -1183,9 +1244,16 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(0, transitions.SlideCommittedCount, "扉はスライドしない（§3.1 の見せ方）。");
             Assert.AreEqual(1, transitions.Slide.DiscardedForSingleLoadCount,
                 "Single 読込の前に先読みを捨てた。");
-            Assert.AreEqual(1, SceneManager.sceneCount, "隔離 Area は残っていない。");
-            Assert.AreEqual(0, transitions.Slide.Residency.ResidentCount, "在留台帳も合っている。");
             Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に着いた。");
+
+            // <b>捨てたのは「あの実体」である。</b> 着いた先も出入口の近くなので、
+            // 距離による先読み（§5）が隣をもう一度持つ——枚数では捨てたことを言えない。
+            yield return SettleWorld(transitions);
+            Assert.AreEqual(AreaActivationPhase.Unloaded,
+                transitions.Slide.Residency.PhaseOf(stagedBefore),
+                "扉の前に隔離していた実体は残っていない。台帳=" + DumpResidency(transitions));
+            Assert.AreNotEqual(stagedBefore, transitions.Slide.Preloader.StagedArea,
+                "いま持っているのは読み直した別の実体である。");
         }
 
         /// <summary>
@@ -1559,7 +1627,14 @@ namespace Momotaro.Tests.PlayMode
             yield return EnterArea(P55AreaAScene);
 
             AreaTransitionService transitions = Transitions();
-            var host = new WrongSceneHost(P55TrialScene);
+            // <b>差し替え先は「Area でも起動 Scene でもない Scene」にする</b>（工程 P55-08b）。
+            //
+            // 以前は起動 Scene（試遊のランチャ）へ差し替えていた。§5 の距離による先読みが
+            // 入ってから、この差し替えは<b>出入口の手前に立った時点で</b>起きる——
+            // 載っている時間が長くなり、ランチャの <c>Start</c> が自分で Single 読込を始めて
+            // 世界ごと入れ替わる（この検査の主題と関係のない壊れ方）。
+            // 読込は成功するのに参照集合が無い、という形だけが要る。
+            var host = new WrongSceneHost(EmptySystemScene);
             transitions.SlideSceneHost = host;
 
             GameSessionState session = GameSessionProvider.Current;
@@ -1568,6 +1643,7 @@ namespace Momotaro.Tests.PlayMode
 
             yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
             yield return SettleCamera();
+
             yield return HoldUntil(Key.D, () => transitions.SlideRolledBackCount > 0, 25f);
 
             Assert.AreEqual(1, transitions.ConnectionTravelCount, "受理はされた。");
@@ -1580,8 +1656,14 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居る。");
             Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "A で遊べる。");
             Assert.IsFalse(GameplayClockProvider.IsFrozen, "Gameplay 時計も戻った。");
-            Assert.AreEqual(1, SceneManager.sceneCount, "隔離した Scene は解放されている。");
-            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "在留も 1 つ。");
+
+            // 境界から離れてから数える。立ったままだと、距離による先読み（§5）が
+            // 隣をもう一度持つ——それは正しい振る舞いで、ここで見たいものではない。
+            yield return DropTheNeighbour(transitions);
+            Assert.AreEqual(1, SceneManager.sceneCount,
+                "隔離した Scene は解放されている。" + DumpWorld(transitions));
+            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount,
+                "在留も 1 つ。" + DumpWorld(transitions));
 
             // ---- 持ち越す値も要求の勘定も変わらない ----
             ActorValues after = ReadActorValues();
@@ -2239,6 +2321,80 @@ namespace Momotaro.Tests.PlayMode
             yield return null;
         }
 
+        /// <summary>
+        /// <b>撤去と、距離による先読みの取り直しが落ち着くまで待つ</b>（工程 P55-08b）。
+        ///
+        /// §5 の距離による先読みが入ってから、<b>境界の近くで立ち止まっている状態は
+        /// 「Scene 2 枚」が正常</b>になった——活動中 Area と、6 units 以内の出入口の先である。
+        /// 到着した直後の主人公は逆向きの出入口のすぐ内側に居るので、
+        /// 旧 Area を撤去したあと<b>同じ Area をもう一度 Staged で持つ</b>。
+        ///
+        /// 途中の枚数を数えると<b>フレームの巡り合わせで割れる</b>ので、
+        /// 撤去も先読みも走っていない状態まで進めてから数える。
+        /// </summary>
+        private static IEnumerator SettleWorld(AreaTransitionService transitions, float seconds = 15f)
+        {
+            float deadline = Time.realtimeSinceStartup + seconds;
+            int quiet = 0;
+            while (quiet < 3 && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+
+                AreaPreloader preloader = transitions.Slide.Preloader;
+                bool busy = transitions.Slide.IsTransitioning
+                    || transitions.Slide.IsRetireInFlight
+                    || preloader.HasLiveSceneOperation
+                    || transitions.IsSingleLoadInFlight;
+                quiet = busy ? 0 : quiet + 1;
+            }
+        }
+
+        /// <summary>
+        /// 主人公を<b>出入口から遠ざける</b>（工程 P55-08b）。
+        ///
+        /// §5 の距離による先読みは、出入口の 6 units 以内に居る限り隣を持ち続ける。
+        /// 「隣を持っていない状態」を見たい検査は、まず<b>範囲の外へ出る</b>必要がある——
+        /// 実際の遊びでも、境界から離れて初めて隣が要らなくなる。
+        /// </summary>
+        private static IEnumerator StepAwayFromTheSeam(AreaTransitionService transitions)
+        {
+            var root = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(root, "主人公の根がある。");
+
+            AreaRuntimeBundle active = CurrentAreaProvider.Current;
+            Assert.IsNotNull(active, "活動 Area が指定されている。");
+
+            // いちばん遠い出入口からさらに離れる方向へ——床の中央へ置けば、
+            // どの配置でも 6 units より遠くなる（Area は 24×18 以上ある）。
+            Vector3 centre = active.Root.transform.position;
+            root.transform.position = new Vector3(centre.x, root.transform.position.y, centre.z);
+            if (root.Body != null)
+            {
+                root.Body.position = root.transform.position;
+                root.Body.linearVelocity = Vector3.zero;
+            }
+
+            Physics.SyncTransforms();
+            yield return new WaitForFixedUpdate();
+            yield return null;
+            yield return SettleWorld(transitions);
+        }
+
+        /// <summary>
+        /// 隣の先読みを<b>手放させる</b>（工程 P55-08b）。
+        ///
+        /// §5 の距離による先読みは「一度読み始めた先は、同じ Area で活動している間は
+        /// 境界から離れても保持する」ので、<b>離れるだけでは手放さない</b>。
+        /// 「誰も隣を望んでいない」状態を作るには、範囲の外へ出たうえで望みを取り下げる——
+        /// 保持は望みに従うので（望みが無効なら選び直し）、範囲外では候補が無くなる。
+        /// </summary>
+        private static IEnumerator DropTheNeighbour(AreaTransitionService transitions)
+        {
+            yield return StepAwayFromTheSeam(transitions);
+            transitions.Slide.Preloader.ClearRequest();
+            yield return SettleWorld(transitions);
+        }
+
         /// <summary>置き直した直後の補間を終わらせる（演出の検査に追従の残りを混ぜない）。</summary>
         private static IEnumerator SettleCamera()
         {
@@ -2618,14 +2774,20 @@ namespace Momotaro.Tests.PlayMode
                 accepted = transitions.TryTravel(AreaA, Phase5AreaIdsAreaAFromB).Accepted;
             }
 
+            int departureSceneBefore = 0;
             transitions.ArrivalCompleted += OnArrived;
             try
             {
                 yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+
+                Assert.IsTrue(TryFindBundle(AreaA, out AreaRuntimeBundle before), "出発 Area がある。");
+                departureSceneBefore = before.SceneHandle;
+
                 yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
 
                 float deadline = Time.realtimeSinceStartup + 30f;
-                while ((transitions.ArrivalCount < 2 || SceneManager.sceneCount > 1)
+                while ((transitions.ArrivalCount < 2
+                        || transitions.SlideSceneHost.IsLoaded(departureSceneBefore))
                        && !transitions.HasTerminalFailure
                        && Time.realtimeSinceStartup < deadline)
                 {
@@ -2642,8 +2804,12 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsFalse(transitions.HasTerminalFailure,
                 "終端失敗にならない。理由=" + transitions.TerminalFailureReason);
             Assert.AreEqual(1, transitions.CompletedCount, "Single 経路で一度だけ着く。");
-            Assert.AreEqual(1, SceneManager.sceneCount,
-                "撤去し損ねた Scene が新しい世界へ残っていない。");
+
+            // <b>残っていないことは「あの Scene が消えた」で言う</b>（工程 P55-08b）。
+            // 枚数では言えない——着いた先も出入口の近くなので、距離による先読みが隣を載せる。
+            yield return SettleWorld(transitions);
+            Assert.IsFalse(transitions.SlideSceneHost.IsLoaded(departureSceneBefore),
+                "撤去し損ねた Scene が新しい世界へ残っていない。" + DumpWorld(transitions));
             Assert.AreEqual(0, transitions.Slide.UnloadFailureCount, "撤去も失敗していない。");
             Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居る。");
         }
@@ -3275,7 +3441,10 @@ namespace Momotaro.Tests.PlayMode
             // 戻ったので出発側は遊べる状態に復帰している。
             Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居たまま。");
             Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "A で遊べる。");
-            Assert.AreEqual(1, SceneManager.sceneCount, "到着側は撤去されている。");
+
+            yield return DropTheNeighbour(transitions);
+            Assert.AreEqual(1, SceneManager.sceneCount,
+                "到着側は撤去されている。" + DumpWorld(transitions));
         }
 
         /// <summary>
@@ -3453,6 +3622,47 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsFalse(opened.enabled, "検査の前後で当たりの状態が変わらない。");
         }
 
+        /// <summary>世界の様子を 1 行にする（失敗の理由を読めるように）。</summary>
+        private static string DumpWorld(AreaTransitionService transitions)
+        {
+            var sb = new System.Text.StringBuilder("Scene[");
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                sb.Append(SceneManager.GetSceneAt(i).name).Append(' ');
+            }
+
+            AreaPreloader preloader = transitions.Slide.Preloader;
+            sb.Append("] 束[");
+            foreach (AreaRuntimeBundle b in AreaBundleDirectory.All)
+            {
+                sb.Append(b == null ? "null" : b.AreaId.Value + "→" + b.Instance).Append(' ');
+            }
+
+            return sb.Append("] 台帳=").Append(DumpResidency(transitions))
+                .Append(" 先読み=").Append(preloader.Phase)
+                .Append(" 望み=").Append(preloader.DesiredArea)
+                .Append(" Staged=").Append(preloader.StagedArea)
+                .Append(" 保持=").Append(transitions.Slide.ProximityPreload.HeldAreaId)
+                .Append(" 忘れ=").Append(transitions.Slide.ForgottenResidentCount)
+                .Append(" 戻した回数=").Append(transitions.SlideRolledBackCount)
+                .Append(" 完了=").Append(transitions.CompletedCount)
+                .Append(" 理由=").Append(transitions.Slide.LastFailure)
+                .ToString();
+        }
+
+        /// <summary>在留台帳の中身を 1 行にする（失敗の理由を読めるように）。</summary>
+        private static string DumpResidency(AreaTransitionService transitions)
+        {
+            var sb = new System.Text.StringBuilder("[");
+            foreach (KeyValuePair<AreaInstanceHandle, AreaActivationPhase> kv
+                     in transitions.Slide.Residency.Residents)
+            {
+                sb.Append(kv.Key).Append('=').Append(kv.Value).Append(' ');
+            }
+
+            return sb.Append(']').ToString();
+        }
+
         /// <summary>いま描かれている犬丸の数（実体・代理を問わない）。</summary>
         private static int DrawnCompanionCount()
         {
@@ -3475,6 +3685,134 @@ namespace Momotaro.Tests.PlayMode
             }
 
             return drawn;
+        }
+
+        // ---------------------------------------------------------------- 距離による先読み（§5。P55-08b）
+
+        /// <summary>
+        /// <b>出入口へ近づいただけで隣が載る</b>（§5 の 1〜2 行目。工程 P55-08b）。
+        ///
+        /// これまで先読みは<b>受理してからしか始まらなかった</b>ので、境界に着いてから
+        /// 隣を読み始めていた。その間、境界の向こうには何も無い——§7.3 の「接続部の穴」が
+        /// 境界手前で見えるのはこれが原因である。
+        ///
+        /// 見るのは 3 つ。<b>範囲の外では読まない</b>、<b>範囲に入ると要求より先に載る</b>、
+        /// <b>そのまま歩いた遷移は読み直さずに引き取る</b>。
+        /// 3 つ目が抜けると、先読みは<b>ただの二重ロード</b>になる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ApproachingTheSeam_StagesTheNeighbourBeforeAnyRequest()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new CountingSceneHost();
+            transitions.SlideSceneHost = host;
+
+            AreaExitGate gate = FindExitGate(ExitAEast);
+
+            // ---- 範囲の外では読まない ----
+            yield return PlacePlayerAt(gate.transform.position + (Vector3.left * 9f));
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(1, SceneManager.sceneCount,
+                "9 units 離れていれば隣は載らない。" + DumpWorld(transitions));
+            Assert.AreEqual(AreaPreloadPhase.Idle, transitions.Slide.Preloader.Phase,
+                "先読みは手ぶら。");
+            Assert.AreEqual(0, host.Loaded.Count, "読込も発行していない。");
+
+            // ---- 近づくと、要求より先に載る ----
+            yield return PlacePlayerAt(gate.transform.position + (Vector3.left * 4f));
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(0, transitions.Slide.Coordinator.AcceptedCount,
+                "遷移はまだ受理していない（要求より先に読んでいる）。");
+            Assert.AreEqual(0, transitions.SlideCommittedCount, "着いてもいない。");
+            var probe = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.GreaterOrEqual(transitions.Slide.ProximityPreloadRequestCount, 1,
+                "距離で先読みを頼んだ。主人公=" + probe.transform.position
+                + " 出入口=" + gate.transform.position
+                + " 距離=" + Vector3.Distance(
+                    new Vector3(probe.transform.position.x, 0f, probe.transform.position.z),
+                    new Vector3(gate.transform.position.x, 0f, gate.transform.position.z))
+                + " 接続=" + (transitions.Connections != null)
+                + " 活動 Area=" + (CurrentAreaProvider.Current == null
+                    ? "(未指定)" : CurrentAreaProvider.Current.AreaId.Value)
+                + " " + DumpWorld(transitions));
+            Assert.AreEqual(AreaPreloadPhase.Staged, transitions.Slide.Preloader.Phase,
+                "隣が閉じたまま載っている。" + DumpWorld(transitions));
+            Assert.AreEqual(AreaB.Value, transitions.Slide.Preloader.StagedArea.AreaId.Value,
+                "載っているのは東の隣。");
+            Assert.AreEqual(2, SceneManager.sceneCount, "実 Scene も 2 枚。");
+            Assert.AreEqual(1, host.CountOf(P55AreaBScene), "B の読込は 1 回だけ。");
+
+            // <b>止めない</b>（§5 の 1 行目「先読み自体は操作・時計・探索を止めない」）。
+            Assert.IsFalse(GameplayClockProvider.IsFrozen, "Gameplay 時計は止まっていない。");
+            Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "遊べるまま。");
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "居るのは A のまま。");
+
+            // ---- そのまま歩けば、読み直さずに着く ----
+            yield return StandJustBefore(gate, Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "スライドで着いた。理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(1, host.CountOf(P55AreaBScene),
+                "遷移は距離で読んだものを引き取った（B を読み直していない。§5）。"
+                + " 読んだ順=" + string.Join(",", host.Loaded));
+            Assert.AreEqual(1, transitions.Slide.Preloader.HandedOffCount, "引き取りは 1 回。");
+        }
+
+        /// <summary>読み込んだ Scene を記録するだけの host（本物へ転送する）。</summary>
+        private sealed class CountingSceneHost : IAreaSceneHost
+        {
+            private readonly UnityAreaSceneHost _real = new UnityAreaSceneHost();
+
+            /// <summary>読み込みを頼まれた Scene（順番つき）。</summary>
+            internal readonly List<string> Loaded = new List<string>();
+
+            /// <summary>その Scene を何回読んだか。</summary>
+            internal int CountOf(string scenePath)
+            {
+                int n = 0;
+                for (int i = 0; i < Loaded.Count; i++)
+                {
+                    if (Loaded[i] == scenePath)
+                    {
+                        n++;
+                    }
+                }
+
+                return n;
+            }
+
+            public IAreaSceneOperation LoadAdditive(string scenePath)
+            {
+                Loaded.Add(scenePath);
+                return _real.LoadAdditive(scenePath);
+            }
+
+            public IAreaSceneOperation Unload(int sceneHandle) => _real.Unload(sceneHandle);
+
+            public bool IsLoaded(int sceneHandle) => _real.IsLoaded(sceneHandle);
+        }
+
+        /// <summary>主人公をその場所へ置く（XZ だけ動かす）。</summary>
+        private static IEnumerator PlacePlayerAt(Vector3 spot)
+        {
+            var root = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(root, "主人公の根がある。");
+            root.transform.position = new Vector3(spot.x, root.transform.position.y, spot.z);
+            if (root.Body != null)
+            {
+                root.Body.position = root.transform.position;
+                root.Body.linearVelocity = Vector3.zero;
+            }
+
+            Physics.SyncTransforms();
+            yield return new WaitForFixedUpdate();
+            yield return null;
         }
 
         /// <summary>活動ゲートが閉じる Collider のうち、接続軸を最も広く横切る壁を選ぶ。</summary>

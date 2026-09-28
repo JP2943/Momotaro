@@ -74,6 +74,11 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         private bool _retrying;
 
+        private readonly AreaProximityPreloadPlanner _proximity = new AreaProximityPreloadPlanner();
+
+        private readonly System.Collections.Generic.List<AreaPreloadCandidate> _candidates =
+            new System.Collections.Generic.List<AreaPreloadCandidate>();
+
         /// <summary>Single 読込の発行権を、この遷移系が押さえている最中か（工程 P55-07c）。</summary>
         private bool _singleLoadClaimed;
 
@@ -1265,7 +1270,122 @@ namespace Momotaro.Infrastructure.World
             }
 
             SyncResidencyToLoadedAreas();
+            PumpProximityPreload();
             _preloader?.Poll();
+        }
+
+        /// <summary>距離による先読みの選定役（診断・テスト用。§5。工程 P55-08b）。</summary>
+        public AreaProximityPreloadPlanner ProximityPreload => _proximity;
+
+        /// <summary>距離による先読みが読込を頼んだ回数（診断・テスト用）。</summary>
+        public int ProximityPreloadRequestCount { get; private set; }
+
+        /// <summary>
+        /// <b>距離で先読みを始める</b>（§5 の 1〜3 行目。工程 P55-08b）。
+        ///
+        /// これまで先読みは<b>受理してからしか始まらなかった</b>ので、境界へ着いてから
+        /// 隣の Area を読み始めていた。その間、境界の向こうは何も載っていない——
+        /// §7.3 の「接続部の穴」が境界手前で見えるのはこれが原因である。
+        ///
+        /// <b>止めない・断らない。</b> 先読みは操作・時計・探索を止めず、遷移の受理条件も変えない
+        /// （§5 の 1 行目）。ここがしているのは <c>AreaPreloader</c> への<b>望みの宣言</b>だけで、
+        /// 読込の進行も失敗の抱え方も従来どおり <c>Poll</c> が持つ。
+        ///
+        /// <b>Scene 操作を持っている間は触らない。</b> 撤去中・Single 発行の準備中に望みを変えると、
+        /// 終端していない操作の上へ次の操作が重なる（付録 C.22.1 と同じ理由）。
+        /// </summary>
+        private void PumpProximityPreload()
+        {
+            AreaConnectionCatalog connections = _owner.Connections;
+            AreaCatalog catalog = _owner.Catalog;
+
+            // <b>活動中 Area は遷移と同じ手順で引く</b>（工程 P55-08b）。
+            //
+            // 直開き（試遊の起動・テストの Single 読込）で載った Area は、まだ現行として
+            // 指定されていない——指定するのは遷移の入口（<c>TryResolveDeparture</c>）だった。
+            // <c>CurrentAreaProvider.Current</c> だけを見ると、<b>最初の Area では
+            // 距離による先読みが一度も動かない</b>（起動直後がいちばん虚空の見える場面なのに）。
+            if (connections == null || catalog == null
+                || !TryResolveDeparture(out AreaRuntimeBundle active) || active.Root == null)
+            {
+                return;
+            }
+
+            // 撤去・再試行・Single の準備中は何も言わない（付録 C.22.1）。
+            if (IsRetireInFlight || HasPendingRetire || _singleLoadClaimed || _owner.IsSingleLoadInFlight)
+            {
+                return;
+            }
+
+            _candidates.Clear();
+            CollectCandidates(connections, catalog, active, _candidates);
+
+            AreaPreloader preloader = EnsurePreloader();
+
+            // <b>誰かが望みを取り下げたら、保持も捨てる</b>（工程 P55-08b）。
+            //
+            // 「一度読み始めた先は保持する」（§5）のは<b>先読みが続いている間</b>の話である。
+            // 遷移の Rollback・引き渡し・Single 読込前の受け渡しは <c>ClearRequest</c> を通るので、
+            // そこを見ずに保持し続けると、<b>捨てたはずの先を次のフレームに言い直す</b>——
+            // 「遅れて着いた Scene を撤去する」（§8 の 5 行目）が永久に起きなくなる。
+            if (_proximity.HeldAreaId.IsValid && !preloader.DesiredArea.IsValid)
+            {
+                _proximity.Forget();
+            }
+
+            bool canSwitch = !preloader.HasLiveSceneOperation;
+            if (!_proximity.Tick(active.AreaId, _candidates, Time.unscaledDeltaTime, canSwitch,
+                    out StableId wanted, out string scenePath))
+            {
+                return;
+            }
+
+            // <b>すでに預かっているものを捨てさせない。</b> 望みは毎フレーム言い直すが、
+            // 同じ先なら <c>Request</c> は何もしない（§5「読込済みの同一 Scene へ重複ロードを発行しない」）。
+            if (preloader.DesiredArea.Equals(wanted))
+            {
+                return;
+            }
+
+            if (preloader.Request(wanted, scenePath))
+            {
+                ProximityPreloadRequestCount++;
+            }
+        }
+
+        /// <summary>
+        /// 活動中 Area の<b>有効な Slide 接続</b>を、出入口までの距離つきで集める（§5 の 1 行目）。
+        ///
+        /// <b>Slide でない接続は候補にしない。</b> Fade は Single 読込で全部を置き換えるので、
+        /// 先に読んでおいても捨てるだけになる。
+        /// </summary>
+        private static void CollectCandidates(
+            AreaConnectionCatalog connections, AreaCatalog catalog, AreaRuntimeBundle active,
+            System.Collections.Generic.List<AreaPreloadCandidate> into)
+        {
+            Vector3 playerAt = ResolvePlayerPosition(active);
+            System.Collections.Generic.IReadOnlyList<AreaExitGate> gates = active.Root.ExitGates;
+            for (int i = 0; i < gates.Count; i++)
+            {
+                AreaExitGate gate = gates[i];
+                if (gate == null || !gate.ExitId.IsValid
+                    || !connections.TryGetFromExit(active.AreaId, gate.ExitId,
+                        out AreaConnectionSnapshot connection)
+                    || !connection.IsSlide
+                    || !catalog.TryGetEntry(connection.ToAreaId, connection.EntryId,
+                        out AreaEntryInfo entry))
+                {
+                    continue;
+                }
+
+                // 高さは見ない。XZ 平面の距離で測る（接続も移動も XZ）。
+                Vector3 to = gate.transform.position;
+                float dx = to.x - playerAt.x;
+                float dz = to.z - playerAt.z;
+                into.Add(new AreaPreloadCandidate(
+                    connection.ConnectionId, connection.ToAreaId, entry.ScenePath,
+                    Mathf.Sqrt((dx * dx) + (dz * dz)), connection.PreloadDistance));
+            }
         }
 
         private AreaPreloader EnsurePreloader()

@@ -371,11 +371,21 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(expectedCommits, transitions.SlideCommittedCount,
                 label + "：スライドで渡れていない（失敗=" + transitions.Slide.LastFailure + "）。");
 
-            // Commit のあとに旧 Area の撤去が続く（§6.2 手順 11）。
+            // Commit のあとに旧 Area の撤去が続き、そのあと §5 の距離による先読みが
+            // <b>来た方の Area をもう一度 Staged で持つ</b>（工程 P55-08b）。
+            // 枚数が 1 へ落ちるのを待つ形だと<b>永遠に待つ</b>ので、
+            // 「撤去も先読みも走っていない」まで進めて数える。
             float deadline = Time.realtimeSinceStartup + 20f;
-            while (SceneManager.sceneCount > 1 && Time.realtimeSinceStartup < deadline)
+            int quiet = 0;
+            while (quiet < 3 && Time.realtimeSinceStartup < deadline)
             {
                 yield return null;
+
+                bool busy = transitions.Slide.IsTransitioning
+                    || transitions.Slide.IsRetireInFlight
+                    || transitions.Slide.Preloader.HasLiveSceneOperation
+                    || transitions.IsSingleLoadInFlight;
+                quiet = busy ? 0 : quiet + 1;
             }
 
             yield return null;
@@ -390,16 +400,22 @@ namespace Momotaro.Tests.PlayMode
         private static void AssertSettled(
             AreaTransitionService transitions, StableId expectedArea, string label)
         {
-            Assert.AreEqual(1, SceneManager.sceneCount, label + "：Scene は 1 枚に戻る。");
-
-            // <b>「0」ではなく「1」である。</b> スライドで着いた Area は在留したままで、
-            // 撤去されるのは<b>出発側</b>だけ（§6.2 手順 11）。ここを 0 と書いて落ちた——
-            // 台帳が空になるのは Single 読込（暗転）を通ったときで、往復では通らない。
-            // 数えたいのは「旧 Area が残っていないこと」なので、実 Scene と同じ 1 を見る。
-            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount,
-                label + "：在留台帳は居る Area 1 つだけ（旧 Area は撤去済み）。");
-            Assert.AreEqual(AreaPreloadPhase.Idle, transitions.Slide.Preloader.Phase,
-                label + "：先読みは手ぶら。");
+            // <b>「2 枚」が落ち着いた状態である</b>（工程 P55-08b）。
+            //
+            // 以前はここを 1 枚で見ていた。§5 の距離による先読みが入ってから、
+            // 到着した主人公は<b>逆向きの出入口のすぐ内側</b>に居るので、
+            // 旧 Area を撤去したあと同じ Area をもう一度 Staged で持つ。
+            //
+            // <b>溜まる壊れ方はここで見える。</b> 数えたいのは「往復のたびに増えない」ことで、
+            // 1 でも 2 でも<b>固定値であること</b>が効いている——3 枚目が載れば落ちる。
+            Assert.AreEqual(2, SceneManager.sceneCount, label + "：Scene は 2 枚で落ち着く。");
+            Assert.AreEqual(2, transitions.Slide.Residency.ResidentCount,
+                label + "：在留台帳は居る Area と隣の 2 つ（旧 Area は撤去済み）。");
+            Assert.AreEqual(AreaPreloadPhase.Staged, transitions.Slide.Preloader.Phase,
+                label + "：先読みは隣を持っている（§5 の距離による先読み）。");
+            Assert.AreNotEqual(expectedArea.Value,
+                transitions.Slide.Preloader.StagedArea.AreaId.Value,
+                label + "：持っているのは<b>いま居ない方</b>の Area。");
             Assert.IsFalse(AreaStagingRequest.IsRequested,
                 label + "：先読みの申し入れが残っていない。");
             Assert.IsFalse(transitions.Slide.IsTransitioning, label + "：遷移は終わっている。");
