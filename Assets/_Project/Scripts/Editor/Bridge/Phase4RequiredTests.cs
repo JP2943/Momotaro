@@ -66,6 +66,50 @@ namespace Momotaro.EditorBridge
             /// <summary>実行結果に現れる完全名。</summary>
             public string fullName;
 
+            /// <summary>
+            /// 同じ要求を支える他のテストの完全名（P55-05a で<b>照合対象に含めた</b>）。
+            ///
+            /// <b>以前は読んでいなかった。</b> 受入記録に「この検査も受入条件」と書いた名前が
+            /// 118 件あったのに、照合は <see cref="fullName"/> だけを見ていたので、
+            /// <b>実行結果から消えても合格していた</b>（§11 末尾「要求したテスト名の存在と Passed を検査する」に反する）。
+            /// 書いた名前は全部要求する。要求しないなら書かない。
+            /// </summary>
+            public string[] supportingTests = Array.Empty<string>();
+
+            /// <summary>
+            /// このエントリが実装済みか。<b>false は要求もしないし、覆っているとも数えない</b>
+            /// （§11 末尾「未実装／Skip／0 件成功を失敗扱い」）。
+            /// 未指定は true——既存の P4／P5 一覧の意味を変えないため。
+            /// </summary>
+            public bool implemented = true;
+
+            /// <summary>照合に使える形のエントリか（実装済みで完全名がある）。</summary>
+            public bool IsRequirable => implemented && !string.IsNullOrEmpty(fullName);
+
+            /// <summary>このエントリが要求する完全名のすべて（主＋支え。空は除く）。</summary>
+            public IEnumerable<string> FullNames()
+            {
+                if (!IsRequirable)
+                {
+                    yield break;
+                }
+
+                yield return fullName;
+
+                if (supportingTests == null)
+                {
+                    yield break;
+                }
+
+                foreach (string name in supportingTests)
+                {
+                    if (!string.IsNullOrEmpty(name))
+                    {
+                        yield return name;
+                    }
+                }
+            }
+
             /// <summary>このテストが満たす要求 ID のすべて（主＋追加。空は除く）。</summary>
             public IEnumerable<string> RequirementIds()
             {
@@ -150,7 +194,9 @@ namespace Momotaro.EditorBridge
                 var covered = new HashSet<string>(StringComparer.Ordinal);
                 foreach (RequiredEntry entry in tests)
                 {
-                    if (entry == null || string.IsNullOrEmpty(entry.fullName))
+                    // <b>未実装のエントリは覆っていない</b>（§11 末尾「未実装を失敗扱い」）。
+                    // 名前だけ置いて「対応済み」にできると、0 件成功が合格になる。
+                    if (entry == null || !entry.IsRequirable)
                     {
                         continue;
                     }
@@ -198,7 +244,7 @@ namespace Momotaro.EditorBridge
 
                 foreach (RequiredEntry entry in tests)
                 {
-                    if (entry == null || string.IsNullOrEmpty(entry.fullName))
+                    if (entry == null || !entry.IsRequirable)
                     {
                         continue;
                     }
@@ -208,7 +254,12 @@ namespace Momotaro.EditorBridge
                         continue; // まだ着手していない後続工程のぶんは、この時点では要求しない。
                     }
 
-                    names.Add(entry.fullName);
+                    // <b>支えのテストも要求する</b>（P55-05a）。受入条件として名前を書いたなら、
+                    // 実行結果から消えたときに気付けなければ書いた意味が無い。
+                    foreach (string name in entry.FullNames())
+                    {
+                        names.Add(name);
+                    }
                 }
 
                 return names;

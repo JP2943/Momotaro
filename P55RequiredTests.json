@@ -156,6 +156,11 @@
       "id": "P55-P14",
       "summary": "全 Area 破棄後の残留参照（§11 の P14）。掃除を呼ぶ前に、参照集合の索引・活動 Area の指定・カメラ領域集合・索敵／Interact／調査の登録簿・表示代理・実 Scene・在留台帳のどれにも旧 Scene 由来の参照が残らない。常駐の提供点（Camera・Gameplay 時計）は生きたまま",
       "stage": "P55-04"
+    },
+    {
+      "id": "P55-V03",
+      "summary": "Bridge から検査・必須 manifest 検証が同じ経路へ接続し、未実装／Skip／0 件成功を失敗扱いにする（§11 の V03）。受入条件として書いた支えのテスト名も照合対象であること、要求 1 件につき実装済みのテストがあること、書式が揃っていることを一覧そのものに対して見る",
+      "stage": "P55-05"
     }
   ],
   "tests": [
@@ -582,6 +587,29 @@
       "requirementIds": [],
       "implemented": true,
       "supportingTests": []
+    },
+    {
+      "requirementId": "P55-V03",
+      "stage": "P55-05",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55RequiredTestsManifestTests.SupportingTests_AreRequiredToo",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55RequiredTestsManifestTests.TheManifest_IsSelectableByItsKeysAndLivesOutsideAssets",
+        "Momotaro.Tests.EditMode.P55RequiredTestsManifestTests.EveryRequirement_IsCoveredByAnImplementedTest",
+        "Momotaro.Tests.EditMode.P55RequiredTestsManifestTests.EveryTest_IsWellFormed",
+        "Momotaro.Tests.EditMode.P55RequiredTestsManifestTests.AnUnimplementedEntry_IsNeitherRequiredNorCounted",
+        "Momotaro.Tests.EditMode.P55RequiredTestsManifestTests.AnEmptyRun_FailsTheGate",
+        "Momotaro.Tests.EditMode.P55RequiredTestsManifestTests.ASkippedOrMissingSupportingTest_FailsTheGate",
+        "Momotaro.Tests.EditMode.P55RequiredTestsManifestTests.AllowedSkips_CarryAReason",
+        "Momotaro.Tests.EditMode.P5RequiredTestsManifestTests.Manifest_UnknownKeyIsRefusedWithoutReadingAPath",
+        "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.MissingRequiredTest_FailsGate",
+        "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.RequiredSkip_FailsGateDespiteOtherPasses",
+        "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.UnlistedSkip_FailsGate",
+        "Momotaro.Tests.EditMode.Phase4RequiredTestGateTests.InconclusiveRequired_FailsGate",
+        "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.ValidateExplorationTrial_TargetsExist"
+      ]
     }
   ],
   "allowedSkips": []

@@ -53,9 +53,9 @@ namespace Momotaro.Tests.EditMode
 
             // <b>要求 1 件につき 1 本。</b> そのうえで、レビューで見つかった欠陥の再発防止テストも
             // 受入ゲートへ載せる（GPT レビュー R8 の指摘 2）。
-            // <c>supportingTests</c> は <c>RequiredFullNames()</c> が読まないので照合対象外——
-            // 「この PlayMode 検査が受入条件」と書いても、実行結果から欠落したまま合格してしまう。
-            // 独立エントリにして初めてゲートに載る。したがって tests は requirements 以上になる。
+            // <c>supportingTests</c> も <b>P55-05a で照合対象に入れた</b>——それまでは
+            // 「この PlayMode 検査が受入条件」と書いても実行結果から欠落したまま合格していた。
+            // したがって tests は requirements 以上になる。
             var covered = new HashSet<string>();
             for (int i = 0; i < manifest.tests.Length; i++)
             {
