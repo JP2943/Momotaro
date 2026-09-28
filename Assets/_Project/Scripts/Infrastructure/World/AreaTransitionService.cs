@@ -880,6 +880,22 @@ namespace Momotaro.Infrastructure.World
             && !(_slideRunner != null && _slideRunner.HasLiveSceneOperation);
 
         /// <summary>
+        /// <b>Single 読込がもう始まっているか</b>（工程 P55-07c。GPT 再修正①）。
+        ///
+        /// 見るのは 2 つ。<b>発行済みで終端していない操作</b>（<c>_liveOperation</c>）と、
+        /// <b>発行までの準備に入っている</b>こと（<c>AreaSlideTransitionRunner.SingleLoadClaimed</c>）。
+        /// 準備のほうを見落とすと、所有を解いている数フレームのあいだに
+        /// 撤去の再試行が割り込み、その Unload の上へ Single が重なる。
+        ///
+        /// 撤去側（<see cref="AreaSlideTransitionRunner.TryRetryRetiringDeparture"/>）は
+        /// これを見て「始めない」と決める。逆向きの排他は
+        /// <see cref="AreaSlideTransitionRunner.DiscardStagedForSingleLoad"/> が待って取る。
+        /// </summary>
+        public bool IsSingleLoadInFlight =>
+            (_liveOperation != null && !_liveOperation.IsDone)
+            || (_slideRunner != null && _slideRunner.SingleLoadClaimed);
+
+        /// <summary>
         /// 既存 Launcher へ戻る操作を<b>始める</b>（§6.3 の最終行）。<b>自動では呼ばない。</b>
         ///
         /// 返り値は「戻り終えた」ではなく<b>「戻りを始めた」</b>。
@@ -978,11 +994,16 @@ namespace Momotaro.Infrastructure.World
             {
                 DuplicateLoadBlockedCount++;
                 operation = null;
+                // 発行できなかった。押さえていた発行権はここで手放す（工程 P55-07c）。
+                _slideRunner?.ReleaseSingleLoadClaim();
                 return false;
             }
 
             operation = (Loader ?? new UnitySceneLoader()).Load(scenePath);
             _liveOperation = operation;
+
+            // 発行した。以後の排他は <c>_liveOperation</c> が引き継ぐので、発行権は手放す。
+            _slideRunner?.ReleaseSingleLoadClaim();
             return true;
         }
 

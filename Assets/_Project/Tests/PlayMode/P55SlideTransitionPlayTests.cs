@@ -134,7 +134,9 @@ namespace Momotaro.Tests.PlayMode
 
             // ---- 受理と成功 ----
             Assert.AreEqual(1, transitions.ConnectionTravelCount, "接続で 1 回だけ受理された。");
-            Assert.AreEqual(1, transitions.SlideCommittedCount, "スライドで 1 回だけ到着が確定した。");
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "スライドで 1 回だけ到着が確定した。戻した回数=" + transitions.SlideRolledBackCount
+                + " 失敗=" + transitions.Slide.LastFailure);
             Assert.AreEqual(0, transitions.SlideRolledBackCount, "戻していない。");
             Assert.AreEqual(0, transitions.CompletedCount,
                 "従来の Single 経路は通っていない（スライド経路で着いた）。");
@@ -1821,21 +1823,104 @@ namespace Momotaro.Tests.PlayMode
         private sealed class UnloadRefusingSceneHost : IAreaSceneHost
         {
             private readonly UnityAreaSceneHost _real = new UnityAreaSceneHost();
+            private HeldUnload _held;
 
             internal bool RefuseUnload { get; set; } = true;
 
+            /// <summary>
+            /// true のあいだ、撤去は<b>本物を始めずに待つ</b>（工程 P55-07c）。
+            /// 「再試行の Unload が走っている最中」を作るための保留。
+            /// </summary>
+            internal bool HoldUnload { get; set; }
+
+            /// <summary>撤去を頼まれた回数。</summary>
+            internal int UnloadCount { get; private set; }
+
             public IAreaSceneOperation LoadAdditive(string scenePath) => _real.LoadAdditive(scenePath);
 
-            public IAreaSceneOperation Unload(int sceneHandle) =>
-                RefuseUnload ? new Failed() : _real.Unload(sceneHandle);
+            public IAreaSceneOperation Unload(int sceneHandle)
+            {
+                UnloadCount++;
+                if (RefuseUnload)
+                {
+                    return new Failed();
+                }
+
+                if (!HoldUnload)
+                {
+                    return _real.Unload(sceneHandle);
+                }
+
+                _held = new HeldUnload(_real, sceneHandle);
+                return _held;
+            }
+
+            /// <summary>保留していた撤去を本物として始めさせる。</summary>
+            internal void ReleaseUnload()
+            {
+                HoldUnload = false;
+                _held?.Release();
+            }
 
             public bool IsLoaded(int sceneHandle) => _real.IsLoaded(sceneHandle);
+
+            private sealed class HeldUnload : IAreaSceneOperation
+            {
+                private readonly UnityAreaSceneHost _real;
+                private readonly int _sceneHandle;
+                private IAreaSceneOperation _inner;
+
+                internal HeldUnload(UnityAreaSceneHost real, int sceneHandle)
+                {
+                    _real = real;
+                    _sceneHandle = sceneHandle;
+                }
+
+                public bool IsDone => _inner != null && _inner.IsDone;
+                public bool HasError => _inner != null && _inner.HasError;
+                public int SceneHandle => _inner != null ? _inner.SceneHandle : 0;
+
+                internal void Release()
+                {
+                    _inner ??= _real.Unload(_sceneHandle);
+                }
+            }
 
             private sealed class Failed : IAreaSceneOperation
             {
                 public bool IsDone => true;
                 public bool HasError => true;
                 public int SceneHandle => 0;
+            }
+        }
+
+        /// <summary>
+        /// <b>Single 読込の発行そのものを数える</b>（工程 P55-07c。GPT 再修正③）。
+        ///
+        /// 「発行していない」を <c>CompletedCount</c> で見ると、実際には
+        /// <b>「まだ終わっていない」しか言えない</b>——読込に要する時間しだいで、
+        /// 発行済みでも 0 のままになる。数えるのは
+        /// <see cref="IAreaSceneLoader.Load"/> の呼出そのものにする。
+        ///
+        /// 実装は<b>本物への転送</b>にする。偽の操作を返すと読込が完走しなくなり、
+        /// 「終端後に一度だけ着く」まで同じテストで見られない（注入 52C と同じ考え方）。
+        /// </summary>
+        private sealed class CountingSceneLoader : IAreaSceneLoader
+        {
+            private readonly IAreaSceneLoader _inner;
+
+            internal CountingSceneLoader(IAreaSceneLoader inner)
+            {
+                _inner = inner ?? new UnitySceneLoader();
+            }
+
+            /// <summary>読込を頼まれた回数（＝ Single 読込の発行数）。</summary>
+            internal int LoadCount { get; private set; }
+
+            public IAreaLoadOperation Load(string scenePath)
+            {
+                LoadCount++;
+                return _inner.Load(scenePath);
             }
         }
 
@@ -2657,6 +2742,12 @@ namespace Momotaro.Tests.PlayMode
             var host = new DelayedRealSceneHost();
             transitions.SlideSceneHost = host;
 
+            // <b>発行そのものを数える</b>（工程 P55-07c。GPT 再修正③）。
+            // 以前はここを <c>CompletedCount</c> で見ていたが、それは「まだ終わっていない」
+            // としか言えず、読込の速さに寄りかかった観測だった。
+            var loader = new CountingSceneLoader(transitions.Loader);
+            transitions.Loader = loader;
+
             bool requested = false;
             bool accepted = false;
             void OnArrived(StableId areaId)
@@ -2704,8 +2795,8 @@ namespace Momotaro.Tests.PlayMode
                 for (int i = 0; i < 30; i++)
                 {
                     yield return null;
-                    Assert.AreEqual(0, transitions.CompletedCount,
-                        "撤去が走っている間は Single 読込を発行しない（GPT 追加②）。"
+                    Assert.AreEqual(0, loader.LoadCount,
+                        "撤去が走っている間は Single 読込を<b>発行</b>しない（GPT 追加②・再修正③）。"
                         + " 撤去中=" + transitions.Slide.IsRetiring);
                 }
 
@@ -2730,7 +2821,8 @@ namespace Momotaro.Tests.PlayMode
 
             Assert.IsFalse(transitions.HasTerminalFailure,
                 "終端失敗にならない。理由=" + transitions.TerminalFailureReason);
-            Assert.AreEqual(1, transitions.CompletedCount, "撤去のあとに一度だけ発行される。");
+            Assert.AreEqual(1, loader.LoadCount, "撤去のあとに一度だけ<b>発行</b>される。");
+            Assert.AreEqual(1, transitions.CompletedCount, "その発行が着いた。");
             Assert.IsFalse(transitions.Slide.IsRetiring, "撤去は終わっている。");
             Assert.AreEqual(1, SceneManager.sceneCount, "Scene は 1 枚に戻る。");
         }
@@ -3011,6 +3103,360 @@ namespace Momotaro.Tests.PlayMode
             Assert.Less(Vector3.Distance(
                     transitions.Slide.LastCompanionRouteTo, arrived.transform.position), 0.35f,
                 "代理へ渡した終点そのものが、準備済みの到着位置である。");
+        }
+
+        // ---------------------------------------------------------------- GPT 再修正①（P55-07c）
+
+        /// <summary>
+        /// <b>撤去の「再試行」も Scene 操作の所有である</b>（工程 P55-07c。GPT 再修正①）。
+        ///
+        /// 通常の撤去（<c>_retiring</c>）だけを所有判定に入れ、再試行（<c>_retrying</c>）を
+        /// 落としていた。撤去に失敗したあと再試行を始め、その Unload が走っている最中に
+        /// Fade を頼むと、<b>Single 読込がそのまま発行された</b>——終端していない Unload の上に
+        /// 新しい Scene 操作が重なる。
+        ///
+        /// <b>発行そのものを数える</b>（GPT 再修正③）。「着いていない」ではなく
+        /// 「<see cref="IAreaSceneLoader.Load"/> を呼んでいない」を見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RetryingTheRetireWhileAFadeWaits_IssuesNoSingleLoad()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new UnloadRefusingSceneHost();
+            transitions.SlideSceneHost = host;
+
+            var loader = new CountingSceneLoader(transitions.Loader);
+            transitions.Loader = loader;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.Slide.UnloadFailureCount > 0, 25f);
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount, "前提：スライドで B に着いた。");
+            Assert.IsTrue(transitions.Slide.HasPendingRetire, "前提：撤去に失敗して旧 Area を抱えている。");
+            Assert.AreEqual(0, loader.LoadCount, "前提：ここまで Single 読込は発行されていない。");
+
+            // ---- 再試行を始め、その Unload を終端させない ----
+            host.RefuseUnload = false;
+            host.HoldUnload = true;
+            Assert.IsTrue(transitions.Slide.TryRetryRetiringDeparture(), "撤去を再試行できる。");
+            yield return null;
+
+            Assert.IsTrue(transitions.Slide.IsRetryingRetire, "前提：再試行の撤去が走っている。");
+            Assert.IsFalse(transitions.Slide.IsRetiring, "前提：通常の撤去ではない（再試行だけが走っている）。");
+            Assert.IsTrue(transitions.Slide.HasLiveSceneOperation,
+                "再試行も「終端していない Scene 操作」として数える（GPT 再修正①）。");
+
+            // ---- その最中に Fade を頼む ----
+            Assert.IsTrue(transitions.TryTravel(AreaA, AreaAFromBEntry).Accepted,
+                "前提：Fade の要求は受理される（抱えたままの Scene は Single を止めない）。");
+
+            for (int i = 0; i < 30; i++)
+            {
+                yield return null;
+                Assert.AreEqual(0, loader.LoadCount,
+                    "再試行の撤去が終端するまで Single 読込を発行しない（GPT 再修正①）。"
+                    + " 再試行中=" + transitions.Slide.IsRetryingRetire
+                    + " 所有=" + transitions.Slide.HasLiveSceneOperation);
+            }
+
+            Assert.IsTrue(transitions.Slide.IsRetryingRetire, "まだ再試行中のまま（前提が崩れていない）。");
+            Assert.AreEqual(2, host.UnloadCount, "撤去は 2 回（失敗した 1 回と再試行の 1 回）だけ頼まれている。");
+
+            // ---- 終端すれば、一度だけ発行される ----
+            host.ReleaseUnload();
+
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (loader.LoadCount == 0 && !transitions.HasTerminalFailure
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.IsFalse(transitions.HasTerminalFailure,
+                "終端失敗にならない。理由=" + transitions.TerminalFailureReason);
+            Assert.AreEqual(1, loader.LoadCount, "再試行の終端後に一度だけ発行される。");
+            Assert.IsFalse(transitions.Slide.IsRetryingRetire, "再試行は終わっている。");
+            Assert.IsFalse(transitions.Slide.HasPendingRetire, "抱えたままの旧 Area も無くなった。");
+        }
+
+        /// <summary>
+        /// <b>排他は両方向で取る</b>（工程 P55-07c。GPT 再修正①）。
+        ///
+        /// 撤去側が「Single を待つ」だけでは足りない。Single が所有を解いているあいだに
+        /// 撤去を<b>始めて</b>しまえば、同じ重なりが逆順で起きる。
+        /// 表示側の「撤去をやり直す」は、Single 遷移が始まっていたら<b>断る</b>。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RetryingTheRetireAfterTheSingleLoadHasBegun_IsRefused()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new UnloadRefusingSceneHost();
+            transitions.SlideSceneHost = host;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.Slide.UnloadFailureCount > 0, 25f);
+
+            Assert.IsTrue(transitions.Slide.HasPendingRetire, "前提：抱えたままの旧 Area がある。");
+
+            // <b>終わらない Single 読込を差し込む</b>。完走させると「走っている最中」が
+            // 一瞬で過ぎてしまい、見たい窓が作れない。
+            transitions.Loader = new NeverFinishingLoader();
+            Assert.IsTrue(transitions.TryTravel(AreaA, AreaAFromBEntry).Accepted,
+                "前提：Fade の要求は受理される。");
+
+            // 発行まで進める（先読みは持っていないので 1 フレームで足りる）。
+            yield return null;
+            Assert.IsTrue(transitions.IsSingleLoadInFlight, "前提：Single 読込が走っている。");
+
+            host.RefuseUnload = false;
+            Assert.IsFalse(transitions.Slide.TryRetryRetiringDeparture(),
+                "Single 遷移が始まっていたら撤去の再試行を始めない（GPT 再修正①）。");
+            Assert.AreEqual(1, transitions.Slide.RetryBlockedCount, "断った回数が数えられている。");
+            Assert.AreEqual(0, transitions.Slide.RetryStartedCount, "再試行は一度も始まっていない。");
+            Assert.AreEqual(1, host.UnloadCount, "撤去は失敗した 1 回のきり（割り込んでいない）。");
+        }
+
+        // ---------------------------------------------------------------- GPT 再修正②（P55-07c）
+
+        /// <summary>
+        /// <b>出発側の壁も表示経路の検査に映る</b>（工程 P55-07c。GPT 再修正②）。
+        ///
+        /// 表示経路の検査（§7.2 末尾）は、出発側を<b>閉じたあと</b>に走る。活動ゲートは
+        /// 地形の Collider を無効にするので、<c>Physics.SphereCast</c> から見ると
+        /// <b>出発側の壁は 1 枚も存在しない</b>——犬丸が出発側の壁の向こうに居ても
+        /// 「経路は安全」と判定され、代理が壁を突き抜ける絵を許してしまう。
+        ///
+        /// 注入は<b>実物の壁</b>で行う。出発 Area の外周壁（活動ゲートが本当に閉じる Collider）を
+        /// 境界の向こうへ動かし、表示経路を塞ぐ。偽の Collider を足すと
+        /// 「ゲートが閉じている」という肝心の条件が再現できない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhenTheDepartureSideHasAWallOnTheRoute_ThePreparationFails()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            Assert.IsTrue(TryFindBundle(AreaA, out AreaRuntimeBundle departure), "出発 Area の束がある。");
+            Assert.IsNotNull(departure.ActivityGate, "出発 Area に活動ゲートがある。");
+
+            AreaExitGate gate = FindExitGate(ExitAEast);
+            Collider wall = WidestGatedWall(departure.ActivityGate);
+            Assert.IsNotNull(wall, "活動ゲートが閉じる外周壁がある。");
+
+            // 境界の<b>向こう側</b>へ動かす。主人公が出入口へ歩く経路には掛からない。
+            wall.transform.position = new Vector3(
+                gate.transform.position.x + 1.3f, wall.transform.position.y, gate.transform.position.z);
+            Physics.SyncTransforms();
+            yield return null;
+
+            yield return StandJustBefore(gate, Vector3.left);
+            yield return SettleCamera();
+
+            yield return HoldUntil(Key.D,
+                () => transitions.Slide.RolledBackCount > 0 || transitions.SlideCommittedCount > 0, 25f);
+
+            Assert.AreEqual(0, transitions.SlideCommittedCount,
+                "塞がれた表示経路でスライドを成立させない（GPT 再修正②）。"
+                + " 失敗=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(1, transitions.Slide.RolledBackCount, "準備失敗として出発側へ戻る。");
+            StringAssert.Contains("表示経路", transitions.Slide.LastFailure,
+                "戻った理由は表示経路である。");
+
+            // <b>検査のために Gameplay を再開していない。</b>
+            Assert.IsTrue(departure.ActivityGate.ObstacleProbeCount > 0, "検査のために当たりを戻した。");
+            Assert.IsFalse(departure.ActivityGate.IsProbingObstacles, "検査のあとは戻し切っている。");
+
+            // 戻ったので出発側は遊べる状態に復帰している。
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居たまま。");
+            Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "A で遊べる。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "到着側は撤去されている。");
+        }
+
+        /// <summary>
+        /// <b>到着側の壁も表示経路の検査に映る</b>（工程 P55-07c。GPT 再修正②）。
+        ///
+        /// 到着側は検査の時点で既に開いている（活動ゲートは <c>Open</c> 済み）ので、
+        /// その地形は最初から当たりを持つ。出発側の当たりを戻す仕掛けが、
+        /// <b>こちらを壊していない</b>ことを同じ形で見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhenTheDestinationSideHasAWallOnTheRoute_ThePreparationFails()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            AreaExitGate gate = FindExitGate(ExitAEast);
+
+            // 境界の向こう（到着 Area の敷地）に、活動ゲートに属さない壁を置く。
+            // 到着側の地形と同じく<b>検査の時点で当たりを持っている</b>側の条件になる。
+            var blocker = new GameObject("P55TestWall_Destination");
+            blocker.layer = LayerMask.NameToLayer("Default");
+            BoxCollider box = blocker.AddComponent<BoxCollider>();
+            box.size = new Vector3(0.6f, 2f, 18f);
+            blocker.transform.position = new Vector3(
+                gate.transform.position.x + 1.3f, 1f, gate.transform.position.z);
+            Physics.SyncTransforms();
+            yield return null;
+
+            try
+            {
+                yield return StandJustBefore(gate, Vector3.left);
+                yield return SettleCamera();
+
+                yield return HoldUntil(Key.D,
+                    () => transitions.Slide.RolledBackCount > 0 || transitions.SlideCommittedCount > 0, 25f);
+
+                Assert.AreEqual(0, transitions.SlideCommittedCount,
+                    "塞がれた表示経路でスライドを成立させない。失敗=" + transitions.Slide.LastFailure);
+                Assert.AreEqual(1, transitions.Slide.RolledBackCount, "準備失敗として出発側へ戻る。");
+                StringAssert.Contains("表示経路", transitions.Slide.LastFailure,
+                    "戻った理由は表示経路である。");
+                Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居たまま。");
+                Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "A で遊べる。");
+            }
+            finally
+            {
+                if (blocker != null)
+                {
+                    Object.DestroyImmediate(blocker);
+                }
+            }
+        }
+
+        /// <summary>
+        /// <b>犬丸が出発側の壁の向こうに居るときは、運ばずに到着地点で現す</b>
+        /// （工程 P55-07c。GPT 再修正②）。
+        ///
+        /// §7.2 は犬丸について「障害物を横切らない表示経路を<b>選び</b>」と言い、
+        /// 「準備失敗とする」と言っているのは<b>接続</b>（主人公の経路）である。
+        /// 犬丸の位置は遊びの結果なので、ここで遷移ごと断ると
+        /// <b>犬丸を置き去りにしただけで出入口が使えなくなる</b>。
+        ///
+        /// <b>この判定は出発側の当たりが見えて初めて成立する。</b> 以前は活動停止で
+        /// 出発側の Collider が消えていたため、この配置でも「経路は安全」と判定し、
+        /// 代理が仕切りを突き抜けていた。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhenTheCompanionIsBehindADepartureWall_ItIsNotCarriedButTheSlideSucceeds()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            // 仕切りの向こう（A の西側）へ置く。主人公は東の出入口に居る。
+            var companion = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.IsNotNull(companion, "犬丸が居る。");
+            companion.transform.position = new Vector3(-8f, companion.transform.position.y, -7f);
+            Physics.SyncTransforms();
+            yield return null;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+
+            bool sawCompanionProxy = false;
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.SlideCommittedCount == 0 && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                yield return null;
+
+                AreaTransitionDisplayHost display = AreaTransitionDisplayHost.Instance;
+                if (transitions.Slide.Coordinator.Phase == AreaSlideTransactionPhase.Sliding
+                    && display != null && display.Set != null && display.Set.Companion != null)
+                {
+                    sawCompanionProxy = true;
+                }
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "犬丸を置き去りにしただけで出入口は塞がらない。理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(0, transitions.SlideRolledBackCount, "準備失敗にはしない。");
+            Assert.AreEqual(1, transitions.Slide.CompanionRouteDroppedCount,
+                "犬丸の表示経路が塞がっていることを見抜いた（出発側の当たりが見えている）。"
+                + " 理由=" + transitions.Slide.LastCompanionRouteBlocked);
+            Assert.IsFalse(sawCompanionProxy, "塞がっている経路へ代理を運ばない（壁を突き抜けない）。");
+
+            var arrived = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.IsNotNull(arrived, "犬丸は到着地点で現れる。");
+            Assert.IsTrue(HasVisibleSprite(arrived.transform, out _), "絵も戻っている。");
+        }
+
+        /// <summary>
+        /// <b>検査のあいだ戻すのは「止める直前の当たり」だけ</b>（工程 P55-07c。GPT 再修正②）。
+        ///
+        /// 一律に有効化すると、<b>開通済みの門が壁として映る</b>——門は開通したときに
+        /// 自分の Collider を無効にしているので、検査だけが「通れない」と言い出す。
+        /// <see cref="AreaActivityGate.Open"/> が同じ理由で「覚えた状態を戻す」形になっている。
+        ///
+        /// <b>Gameplay は再開しない。</b> 根も仕掛けの部品も止めたままであることを併せて見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheObstacleProbe_RestoresOnlyTheRememberedColliders()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            Assert.IsTrue(TryFindBundle(AreaA, out AreaRuntimeBundle area), "A の束がある。");
+            AreaActivityGate activityGate = area.ActivityGate;
+            Assert.IsNotNull(activityGate, "活動ゲートがある。");
+            Assert.IsTrue(activityGate.IsOpen, "前提：遊べる状態で開いている。");
+
+            // 「開通した門」を模す：活動中に自分で当たりを外した Collider。
+            Collider opened = WidestGatedWall(activityGate);
+            Assert.IsNotNull(opened, "ゲートが閉じる Collider がある。");
+            opened.enabled = false;
+
+            Assert.Greater(activityGate.GatedRoots.Count, 0, "前提：止める根がある。");
+            activityGate.Close();
+
+            Assert.IsFalse(activityGate.IsOpen, "閉じた。");
+            Assert.IsFalse(activityGate.GatedRoots[0].activeSelf, "前提：Gameplay は止まっている。");
+
+            activityGate.BeginObstacleProbe();
+            try
+            {
+                Assert.IsTrue(activityGate.IsProbingObstacles, "検査のあいだは戻している。");
+                Assert.IsFalse(opened.enabled,
+                    "活動中に自分で外していた当たりは戻さない（開通済みの門を壁にしない）。");
+                Assert.IsFalse(activityGate.GatedRoots[0].activeSelf,
+                    "検査のために Gameplay を再開しない（根は止めたまま）。");
+                Assert.IsFalse(activityGate.IsOpen, "検査中も「閉じている」ままである。");
+            }
+            finally
+            {
+                activityGate.EndObstacleProbe();
+            }
+
+            Assert.IsFalse(activityGate.IsProbingObstacles, "検査が終われば戻し切っている。");
+            Assert.IsFalse(opened.enabled, "検査の前後で当たりの状態が変わらない。");
+        }
+
+        /// <summary>活動ゲートが閉じる Collider のうち、接続軸を最も広く横切る壁を選ぶ。</summary>
+        private static Collider WidestGatedWall(AreaActivityGate activityGate)
+        {
+            Collider widest = null;
+            foreach (Collider candidate in activityGate.GatedColliders)
+            {
+                if (candidate == null || !candidate.name.StartsWith("Wall"))
+                {
+                    continue;
+                }
+
+                if (widest == null || candidate.bounds.size.z > widest.bounds.size.z)
+                {
+                    widest = candidate;
+                }
+            }
+
+            return widest;
         }
 
     }

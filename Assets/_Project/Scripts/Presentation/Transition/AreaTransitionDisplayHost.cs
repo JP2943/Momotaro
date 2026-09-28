@@ -42,6 +42,12 @@ namespace Momotaro.Presentation.Transition
         /// <inheritdoc />
         public bool CompanionSkippedBecauseAway => _set != null && _set.CompanionSkippedBecauseAway;
 
+        /// <inheritdoc />
+        public bool CompanionRouteDropped => _set != null && _set.CompanionRouteDropped;
+
+        /// <inheritdoc />
+        public void DropCompanionProxy() => _set?.DropCompanion();
+
         /// <summary>いま抱えている代理の集合（テスト用。無ければ null）。</summary>
         public AreaTransitionDisplayProxySet Set => _set;
 

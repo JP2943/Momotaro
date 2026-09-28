@@ -240,6 +240,74 @@ namespace Momotaro.Gameplay.Session
         /// <summary>閉める前の有効状態を覚えているか（診断・テスト用）。</summary>
         public bool HasRestoreState => _hasRestoreState;
 
+        private readonly List<bool> _probeState = new List<bool>();
+        private bool _probing;
+
+        /// <summary>障害物検査のために当たりを戻した回数（診断・テスト用。工程 P55-07c）。</summary>
+        public int ObstacleProbeCount { get; private set; }
+
+        /// <summary>
+        /// <b>閉じたまま、地形の当たりだけを検査のあいだ戻す</b>（工程 P55-07c。GPT 再修正②）。
+        ///
+        /// スライドの表示経路検査（§7.2）は <c>Physics.SphereCast</c> で壁を見るが、
+        /// その時点で出発側は既に閉じており、<b>地形の Collider は無効</b>である。
+        /// そのままでは<b>出発側の壁が 1 枚も見えない</b>——犬丸が壁の向こうに居ても
+        /// 経路が通っていることになり、代理が壁を突き抜ける絵を許してしまう。
+        ///
+        /// <b>Gameplay は再開しない。</b> 戻すのは Collider だけで、根（AreaSystems・主人公・犬丸）も
+        /// 仕掛けの部品（登録・Trigger・NavMesh）も止めたままにする。検査のために
+        /// 1 フレームでも活動を再開させたら、それは「閉じている」という約束の破棄になる。
+        ///
+        /// <b>一律に有効化はしない。</b> 戻すのは<see cref="Close"/> が覚えた
+        /// 「止める直前の有効状態」である。一律に有効化すると、<b>開通済みの門が壁として映る</b>
+        /// ——門は開通したときに自分の Collider を無効にしているので、
+        /// 検査だけが「通れない」と言い出す（<see cref="Open"/> と同じ理由）。
+        /// </summary>
+        public void BeginObstacleProbe()
+        {
+            if (_probing || IsOpen || !_hasRestoreState)
+            {
+                return;
+            }
+
+            _probeState.Clear();
+            for (int i = 0; i < _gatedColliders.Count; i++)
+            {
+                Collider c = _gatedColliders[i];
+                _probeState.Add(c != null && c.enabled);
+                if (c != null && i < _colliderState.Count)
+                {
+                    c.enabled = _colliderState[i];
+                }
+            }
+
+            _probing = true;
+            ObstacleProbeCount++;
+        }
+
+        /// <summary>検査のあいだ戻していた当たりを、元の（閉じた）状態へ戻す。</summary>
+        public void EndObstacleProbe()
+        {
+            if (!_probing)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _gatedColliders.Count && i < _probeState.Count; i++)
+            {
+                Collider c = _gatedColliders[i];
+                if (c != null)
+                {
+                    c.enabled = _probeState[i];
+                }
+            }
+
+            _probing = false;
+        }
+
+        /// <summary>いま検査のために当たりを戻している最中か（診断・テスト用）。</summary>
+        public bool IsProbingObstacles => _probing;
+
         private void CaptureRestoreState()
         {
             _rootState.Clear();

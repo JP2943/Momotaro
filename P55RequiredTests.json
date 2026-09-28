@@ -292,7 +292,9 @@
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.RequestingAFadeInsideTheArrival_DoesNotOverlapTheRetire",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.LauncherRetreatDuringAStagedLoad_IssuesNoSingleLoad",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.FadeWhileTheRetireIsStillRunning_WaitsForItToFinish",
-        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TravellingAfterAFailedPreload_IsNotBlocked"
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TravellingAfterAFailedPreload_IsNotBlocked",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.RetryingTheRetireWhileAFadeWaits_IssuesNoSingleLoad",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.RetryingTheRetireAfterTheSingleLoadHasBegun_IsRefused"
       ]
     },
     {
@@ -473,7 +475,10 @@
         "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_CopiesTheLookIncludingFootprintAndSorting",
         "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_MovesOnlyByTheProgressItIsGiven",
         "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_PlaysTheSixFrameCycleOnItsOwnUnscaledClock",
-        "Momotaro.Tests.EditMode.P55DisplayProxyTests.AFrozenProxy_KeepsItsPostureButStillTravels"
+        "Momotaro.Tests.EditMode.P55DisplayProxyTests.AFrozenProxy_KeepsItsPostureButStillTravels",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheDepartureSideHasAWallOnTheRoute_ThePreparationFails",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheDestinationSideHasAWallOnTheRoute_ThePreparationFails",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheObstacleProbe_RestoresOnlyTheRememberedColliders"
       ]
     },
     {
@@ -631,7 +636,8 @@
         "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_CarriesNothingButItsRenderer",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheCompanionProxy_EndsWhereTheRealOneAppears(Follow)",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheCompanionProxy_EndsWhereTheRealOneAppears(Down)",
-        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheCompanionProxy_EndsWhereTheRealOneAppears(Stagger)"
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheCompanionProxy_EndsWhereTheRealOneAppears(Stagger)",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheCompanionIsBehindADepartureWall_ItIsNotCarriedButTheSlideSucceeds"
       ]
     },
     {

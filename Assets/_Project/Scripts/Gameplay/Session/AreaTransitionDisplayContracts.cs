@@ -36,6 +36,22 @@ namespace Momotaro.Gameplay.Session
         bool CompanionSkippedBecauseAway { get; }
 
         /// <summary>
+        /// 安全な表示経路を選べず、犬丸を運ばなかったか（診断・テスト用。工程 P55-07c）。
+        /// </summary>
+        bool CompanionRouteDropped { get; }
+
+        /// <summary>
+        /// 犬丸の表示代理を<b>取り下げる</b>（工程 P55-07c）。
+        ///
+        /// §7.2 は犬丸について「障害物を横切らない表示経路を<b>選び</b>」と定め、
+        /// 準備失敗を求めているのは<b>接続</b>（主人公の経路）のほうである。
+        /// 汎用経路探索は導入しないので、直線が塞がっていれば選べる経路は無い——
+        /// そのときは運ばない。犬丸は到着地点で現れる（実 Renderer は
+        /// <see cref="Release"/> が戻す）。
+        /// </summary>
+        void DropCompanionProxy();
+
+        /// <summary>
         /// 出発側の Actor から代理を立て、<b>同じフレームで</b>実 Renderer を隠す（§7.2）。
         /// すでに立っているときは false（二重に立てない）。
         /// </summary>

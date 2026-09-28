@@ -63,7 +63,19 @@ namespace Momotaro.Infrastructure.World
         private AreaPreloader _preloader;
         private AreaInstanceHandle _retireHandle;
         private int _retireSceneHandle;
+
+        /// <summary>
+        /// 撤去の<b>再試行</b>が走っている最中か（工程 P55-07c。GPT 再修正①）。
+        ///
+        /// <b><see cref="_retiring"/> と同じ重みで扱う。</b> どちらも「終端していない Unload を
+        /// この遷移系が掴んでいる」状態で、区別しているのは<b>誰が始めたか</b>だけである。
+        /// 以前はここを所有判定から落としていたので、撤去に失敗したあと再試行を始め、
+        /// その Unload が走っている最中に Fade を頼むと <b>Single 読込がそのまま発行された</b>。
+        /// </summary>
         private bool _retrying;
+
+        /// <summary>Single 読込の発行権を、この遷移系が押さえている最中か（工程 P55-07c）。</summary>
+        private bool _singleLoadClaimed;
 
         /// <summary>
         /// 旧 Area を<b>通常どおり撤去している最中</b>か（工程 P55-07a。GPT 受入②）。
@@ -122,6 +134,36 @@ namespace Momotaro.Infrastructure.World
         /// <summary>旧 Area を通常どおり撤去している最中か（診断・テスト用）。</summary>
         public bool IsRetiring => _retiring;
 
+        /// <summary>撤去の再試行が走っている最中か（診断・テスト用。工程 P55-07c）。</summary>
+        public bool IsRetryingRetire => _retrying;
+
+        /// <summary>
+        /// <b>終端していない Unload を掴んでいるか</b>（工程 P55-07c。GPT 再修正①）。
+        ///
+        /// 通常の撤去（<see cref="_retiring"/>）と再試行（<see cref="_retrying"/>）を
+        /// <b>1 つの言い方へまとめる</b>。入口ごとにどちらか片方だけを見ると、必ず片方が抜ける。
+        /// </summary>
+        public bool IsRetireInFlight => _retiring || _retrying;
+
+        /// <summary>
+        /// Single 読込の発行権を押さえている最中か（工程 P55-07c。GPT 再修正①）。
+        ///
+        /// <see cref="DiscardStagedForSingleLoad"/> の開始から、実際の読込発行
+        /// （<c>AreaTransitionService.TryStartLoad</c>）までの<b>すき間</b>を埋める。
+        /// ここを空けておくと、所有を解いている数フレームのあいだに撤去の再試行が割り込み、
+        /// <b>その Unload の上へ Single が重なる</b>。
+        /// </summary>
+        public bool SingleLoadClaimed => _singleLoadClaimed;
+
+        /// <summary>Single 読込の発行権を手放す（発行したか、発行を諦めたとき）。</summary>
+        public void ReleaseSingleLoadClaim()
+        {
+            _singleLoadClaimed = false;
+        }
+
+        /// <summary>Single 遷移と重なるため撤去の再試行を断った回数（診断・テスト用）。</summary>
+        public int RetryBlockedCount { get; private set; }
+
         /// <summary>撤去の終わりを待ってから先へ進んだ回数（診断・テスト用）。</summary>
         public int RetireWaitCount { get; private set; }
 
@@ -150,7 +192,7 @@ namespace Momotaro.Infrastructure.World
         /// Single 読込はすべての Scene を置き換えるので、操作の衝突にはならない。
         /// </summary>
         public bool HasLiveSceneOperation =>
-            (_preloader != null && _preloader.HasLiveSceneOperation) || _retiring;
+            (_preloader != null && _preloader.HasLiveSceneOperation) || IsRetireInFlight;
 
         /// <summary>
         /// <b>操作は終端したが、実 Scene を預かったまま</b>か。
@@ -166,6 +208,12 @@ namespace Momotaro.Infrastructure.World
 
         /// <summary>載ったままの Scene を抱えたまま Single 読込へ進んだ回数（診断・テスト用）。</summary>
         public int SingleLoadOverRemainingSceneCount { get; private set; }
+
+        /// <summary>犬丸の表示経路を選べず、運ばなかった回数（診断・テスト用。工程 P55-07c）。</summary>
+        public int CompanionRouteDroppedCount { get; private set; }
+
+        /// <summary>直近で犬丸を運ばなかった理由（診断・テスト用）。</summary>
+        public string LastCompanionRouteBlocked { get; private set; } = string.Empty;
 
         /// <summary>実 Scene に合わせて台帳から落とした実体の数（診断・テスト用）。</summary>
         public int ForgottenResidentCount { get; private set; }
@@ -284,17 +332,17 @@ namespace Momotaro.Infrastructure.World
             // <b>受理できたのに進めない</b>という、いちばん分かりにくい失敗になる。
             // 撤去に失敗して抱えている場合（<see cref="HasPendingRetire"/>）は
             // そもそも受理していないので、ここへは来ない。
-            if (_retiring)
+            if (IsRetireInFlight)
             {
                 RetireWaitCount++;
                 float retireWaited = 0f;
-                while (_retiring && retireWaited < _owner.TimeoutSeconds)
+                while (IsRetireInFlight && retireWaited < _owner.TimeoutSeconds)
                 {
                     retireWaited += Time.unscaledDeltaTime;
                     yield return null;
                 }
 
-                if (_retiring)
+                if (IsRetireInFlight)
                 {
                     yield return Rollback(transitionId, departure, AreaInstanceHandle.None,
                         "旧 Area の撤去が終わらないため、次のスライドを始められませんでした。");
@@ -501,20 +549,67 @@ namespace Momotaro.Infrastructure.World
             bool hasCompanionRoute = TryResolveCompanionPositions(
                 departure, destination, out Vector3 companionFrom, out Vector3 companionTo);
 
+            // <b>出発側の当たりを検査のあいだだけ戻す</b>（工程 P55-07c。GPT 再修正②）。
+            //
+            // 手順 5 で出発側を閉じているので、この時点で<b>出発側の地形 Collider は無効</b>である。
+            // <c>Physics.SphereCast</c> はそれを見ないので、以前の検査は
+            // <b>到着側の壁しか見えていなかった</b>——犬丸が出発側の壁の向こうに居る配置で、
+            // 代理が壁を突き抜ける経路を「安全」と判定できてしまう。
+            //
+            // 戻すのは Collider だけで、Gameplay（根・仕掛け・NavMesh）は止めたまま。
+            // 到着側は既に開いているので、こちらは何もしなくても見える。
+            bool playerRouteClear;
+            bool companionRouteClear;
+            departure.ActivityGate?.BeginObstacleProbe();
+            try
+            {
+                playerRouteClear = IsDisplayRouteClear(playerFrom, playerTo);
+                companionRouteClear =
+                    !hasCompanionRoute || IsDisplayRouteClear(companionFrom, companionTo);
+            }
+            finally
+            {
+                departure.ActivityGate?.EndObstacleProbe();
+            }
+
             // <b>安全に作れない表示経路は準備失敗</b>（§7.2 末尾）。
             // 無断で暗転へ切り替えて成功扱いにしない。
-            if (!IsDisplayRouteClear(playerFrom, playerTo)
-                || (hasCompanionRoute && !IsDisplayRouteClear(companionFrom, companionTo)))
+            //
+            // <b>準備失敗にするのは主人公の経路だけ</b>である。§7.2 末尾が「準備失敗とする」と
+            // 言っているのは<b>接続</b>——主人公が通路を渡る経路そのもので、
+            // 塞がっていれば接続の作りが悪い（配置の誤り）。
+            // 犬丸については同じ §7.2 が「障害物を横切らない表示経路を<b>選び</b>」と言う。
+            // 犬丸の位置は遊びの結果であって接続の性質ではないので、
+            // ここで遷移ごと断ると<b>犬丸を置き去りにしただけで出入口が使えなくなる</b>。
+            if (!playerRouteClear)
             {
                 yield return Rollback(transitionId, departure, departureHandle,
-                    "表示経路を安全に作れません（主人公 " + playerFrom + "→" + playerTo
-                    + " 犬丸 " + companionFrom + "→" + companionTo + "）。", destination);
+                    "表示経路を安全に作れません（主人公 " + playerFrom + "→" + playerTo + "）。",
+                    destination);
                 yield break;
             }
 
             // 到着側の実 Actor を隠す（§6.2 手順 6「両方の実 Actor の Renderer は隠し」）。
             // 隠さないと、通路を渡る代理と入口で待つ到着 Actor が二重に映る。
             display?.HideArrivals(destination);
+
+            // <b>選べる経路が無いなら運ばない</b>（工程 P55-07c）。
+            //
+            // 汎用経路探索は導入しない（調査移動と同じ方針）ので、直線が塞がっていれば
+            // 「横切らない経路」は選べない。運ばずに到着地点で現れてもらう——
+            // 実 Renderer は <c>HideArrivals</c> が預かっているので、
+            // <c>Release</c> が到着側で戻すまで二重表示にはならない。
+            if (!companionRouteClear)
+            {
+                CompanionRouteDroppedCount++;
+                LastCompanionRouteBlocked = "犬丸の表示経路が塞がっています（" + companionFrom
+                    + "→" + companionTo + "）。運ばずに到着地点で現します。";
+                GameLog.Info(LogCategory.Scene, LastCompanionRouteBlocked);
+                display?.DropCompanionProxy();
+                hasCompanionRoute = false;
+                companionFrom = companionTo;
+            }
+
             display?.SetRoute(playerFrom, playerTo, companionFrom, companionTo);
             LastPlayerRouteTo = playerTo;
             LastCompanionRouteTo = companionTo;
@@ -933,25 +1028,34 @@ namespace Momotaro.Infrastructure.World
             // 実際に踏んだ（再試行が一度も通らなかった）。
             StagedDiscardCompleted = true;
 
-            // ---- 1. 通常の撤去が走っていれば、その終端を待つ（GPT 追加②）----
+            // <b>ここから発行権を押さえる</b>（工程 P55-07c。GPT 再修正①）。
+            //
+            // 所有を解くのに数フレームかかることがある。そのあいだ表示側の「撤去をやり直す」を
+            // 押せてしまうと、<b>解き終えた直後に新しい Unload が走っている</b>状態で
+            // Single を撃つことになる。手放すのは、読込を発行したときと、諦めたときだけ。
+            _singleLoadClaimed = true;
+
+            // ---- 1. 撤去（通常・再試行）が走っていれば、その終端を待つ（GPT 追加②・再修正①）----
             //
             // <b>Fade も待つ。</b> 「Single は全部を置き換えるから待たせない」と書いていたが、
             // それは<b>操作の非重複という別の契約</b>を無視していた。撤去の操作が走っている
             // 最中に Single を撃てば、終端していない操作の上へ新しい操作を重ねることになる。
-            if (_retiring)
+            if (IsRetireInFlight)
             {
                 float retireWaited = 0f;
-                while (_retiring && retireWaited < _owner.TimeoutSeconds)
+                while (IsRetireInFlight && retireWaited < _owner.TimeoutSeconds)
                 {
                     retireWaited += Time.unscaledDeltaTime;
                     yield return null;
                 }
 
-                if (_retiring)
+                if (IsRetireInFlight)
                 {
                     StagedDiscardBlockedCount++;
                     StagedDiscardCompleted = false;
-                    LastFailure = "旧 Area の撤去が終わらないため、Single 読込を発行しませんでした。";
+                    _singleLoadClaimed = false;
+                    LastFailure = "旧 Area の撤去が終わらないため、Single 読込を発行しませんでした（再試行中="
+                        + _retrying + "）。";
                     GameLog.Warning(LogCategory.Scene, LastFailure);
                     yield break;
                 }
@@ -1011,6 +1115,7 @@ namespace Momotaro.Infrastructure.World
                 // 呼び出し元はこの回のロードを<b>終端失敗</b>にして、プレイヤーに再操作させる。
                 StagedDiscardBlockedCount++;
                 StagedDiscardCompleted = false;
+                _singleLoadClaimed = false;
                 LastFailure = "先読みが終端していないため、Single 読込を発行しませんでした（"
                     + _preloader.Phase + "）。";
                 GameLog.Warning(LogCategory.Scene, LastFailure);
@@ -1110,6 +1215,16 @@ namespace Momotaro.Infrastructure.World
         {
             if (!HasPendingRetire || _slide.IsTransitioning || _retrying)
             {
+                return false;
+            }
+
+            // <b>Single 遷移が始まっていたら割り込まない</b>（工程 P55-07c。GPT 再修正①）。
+            //
+            // 排他は両方向で取る。撤去側だけが「Single を待つ」形にしても、
+            // Single が所有を解いているあいだに撤去を<b>始めて</b>しまえば同じ重なりになる。
+            if (_owner.IsSingleLoadInFlight)
+            {
+                RetryBlockedCount++;
                 return false;
             }
 

@@ -56,6 +56,32 @@ namespace Momotaro.Presentation.Transition
         /// <summary>退場中だったので絵を戻さなかった回数（診断・テスト用）。</summary>
         public int SkippedAwayRestoreCount { get; private set; }
 
+        /// <summary>
+        /// <b>安全な表示経路を選べず、犬丸を運ばなかった</b>か（診断・テスト用。工程 P55-07c）。
+        ///
+        /// §7.2 は犬丸について「障害物を横切らない表示経路を<b>選び</b>」と定める。
+        /// 汎用経路探索は導入しないので、直線が塞がっているときに<b>選べる経路が無い</b>。
+        /// そのときは運ばない——壁を突き抜けさせるよりも、到着地点で現れるほうがまだ正しい。
+        /// </summary>
+        public bool CompanionRouteDropped { get; private set; }
+
+        /// <summary>
+        /// 犬丸の代理を取り下げる（工程 P55-07c）。実 Renderer の預かりはそのまま——
+        /// <see cref="Release"/> が到着側で戻す。
+        /// </summary>
+        public void DropCompanion()
+        {
+            if (Companion == null)
+            {
+                return;
+            }
+
+            _proxies.Remove(Companion);
+            Companion.Release();
+            Companion = null;
+            CompanionRouteDropped = true;
+        }
+
         /// <summary>畳んだか。</summary>
         public bool IsReleased { get; private set; }
 
