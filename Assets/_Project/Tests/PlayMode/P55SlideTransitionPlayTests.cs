@@ -278,7 +278,8 @@ namespace Momotaro.Tests.PlayMode
             yield return EnterArea(P55AreaAScene);
 
             AreaTransitionService transitions = Transitions();
-            transitions.SlideSceneHost = new AlwaysFailingSceneHost();
+            var sceneHost = new AlwaysFailingSceneHost();
+            transitions.SlideSceneHost = sceneHost;
 
             GameSessionState session = GameSessionProvider.Current;
 
@@ -317,6 +318,19 @@ namespace Momotaro.Tests.PlayMode
 
             Assert.AreEqual(AreaSlideTransactionPhase.Idle, transitions.Slide.Coordinator.Phase,
                 "排他が解けている（次の操作を受けられる）。");
+
+            // ---- 直して再操作すると、こんどは着く（§11 の P08「旧 Area で再操作でき」）----
+            //
+            // §5 は「先読み失敗は自動で毎フレーム再試行しない。<b>次の新しい遷移操作で
+            // 一度だけ再試行できる</b>」と定めている。ここがそれである。
+            sceneHost.Failing = false;
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "戻ったあとにもう一度操作できる。理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(2, transitions.Slide.Coordinator.AcceptedCount, "受理は 2 回目。");
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
         }
 
         // ---------------------------------------------------------------- Fade との排他（§8）
@@ -1433,6 +1447,163 @@ namespace Momotaro.Tests.PlayMode
             public Vector3 Forward => transform.forward;
         }
 
+        // ---------------------------------------------------------------- 先読み未完での要求（§5／§11 の P07）
+
+        /// <summary>
+        /// <b>P07</b>：先読みが未完のまま要求しても、<b>A を表示したまま待って</b>から
+        /// スライドする（§5「受理時に準備不足なら、A を描画したまま操作を止めて待つ。
+        /// 全画面を黒くしない」）。<b>重複ロードは起こさない。</b>
+        ///
+        /// 注入するのは「<b>本物のロードを、離されてから始める</b>」Scene 操作である。
+        /// 偽の Scene では「A が見えたまま待つ」を見られない——到着側が本当に立ち上がって
+        /// 初めてスライドへ進むので、実 Scene でなければ待ちの先が無い。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator RequestingBeforeTheNeighbourIsReady_WaitsWithTheDepartureAreaVisible()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new DelayedRealSceneHost();
+            transitions.SlideSceneHost = host;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            Vector3 cameraBefore = RigPosition();
+
+            // 受理されるまで押す（先読みは頼んでいないので、受理後に読み始める）。
+            yield return HoldUntil(Key.D, () => transitions.ConnectionTravelCount > 0, 25f);
+            Assert.AreEqual(1, transitions.ConnectionTravelCount, "受理された。");
+
+            // ---- 準備できるまでの待ち：A が見えている・カメラは動かない・代理はまだ立たない ----
+            int frames = 0;
+            float deadline = Time.realtimeSinceStartup + 2f;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+                frames++;
+
+                Assert.AreEqual(AreaSlideTransactionPhase.Preparing,
+                    transitions.Slide.Coordinator.Phase, "準備の段階で待っている。");
+                Assert.AreEqual(0, transitions.SlideCommittedCount, "まだ着いていない。");
+                Assert.AreEqual(0, AreaCameraRigHost.Instance.SlideCount, "演出は始まっていない。");
+                Assert.AreEqual(cameraBefore.x, RigPosition().x, 0.01f,
+                    "待っている間カメラは動かない（境界へ先に飛ばない。§7.1）。");
+
+                // <b>全画面を黒くしない</b>（§5）。出発側の地形が見えていることで見る。
+                Assert.IsTrue(DepartureTerrainIsVisible(AreaA),
+                    "出発 Area の地形が見えたまま待っている（暗転していない）。");
+
+                IAreaTransitionDisplay display = AreaTransitionDisplayProvider.Current;
+                Assert.IsFalse(display.IsActive, "代理は準備できてから立てる（§6.2 手順 5）。");
+                AssertPlayerVisible();
+            }
+
+            Assert.Greater(frames, 10, "待ちを複数フレーム観測できた。");
+            Assert.AreEqual(1, host.LoadCount, "待っている間に読み直さない（重複ロードなし。§5）。");
+
+            // ---- 準備できたらスライドして着く ----
+            host.ReleaseLoad();
+
+            deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.SlideCommittedCount == 0 && !transitions.HasTerminalFailure
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "準備できてからスライドして着いた。理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(0, transitions.SlideRolledBackCount, "戻していない。");
+            Assert.AreEqual(1, host.LoadCount, "読込は 1 回だけ。");
+            Assert.AreEqual(1, AreaCameraRigHost.Instance.SlideCount, "演出も 1 回だけ。");
+            Assert.Greater(RigPosition().x, cameraBefore.x + 5f, "東へスライドした。");
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+        }
+
+        /// <summary>その Area の地形（床・壁）が描かれているか。暗転していないことの証拠に使う。</summary>
+        private static bool DepartureTerrainIsVisible(StableId areaId)
+        {
+            if (!TryFindBundle(areaId, out AreaRuntimeBundle bundle) || bundle.Root == null)
+            {
+                return false;
+            }
+
+            foreach (MeshRenderer renderer in
+                bundle.Root.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                if (renderer != null && renderer.enabled && renderer.gameObject.activeInHierarchy)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // ---------------------------------------------------------------- 注入した失敗（§11 の P08）
+
+        /// <summary>
+        /// <b>P08</b>：到着側が立ち上がらない（参照集合を引けない）ときも、旧 Area で遊べる状態へ戻り、
+        /// <b>持ち越す値も要求の勘定も変わらない</b>。そのうえで<b>もう一度操作できる</b>。
+        ///
+        /// 注入するのは「要求された Scene ではなく、<b>Area を持たない Scene</b> を読む」Scene 操作。
+        /// 読込そのものは成功するのに到着側が立ち上がらない、という形の失敗を実サービスで作る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhenTheArrivalDoesNotComeUp_TheDepartureStaysOperableAndValuesAreKept()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new WrongSceneHost(P55TrialScene);
+            transitions.SlideSceneHost = host;
+
+            GameSessionState session = GameSessionProvider.Current;
+            ActorValues before = ReadActorValues();
+            Assert.IsTrue(before.Found, "前提：Actor の値を読める。");
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideRolledBackCount > 0, 25f);
+
+            Assert.AreEqual(1, transitions.ConnectionTravelCount, "受理はされた。");
+            Assert.AreEqual(0, transitions.SlideCommittedCount, "成功扱いにしない。");
+            Assert.AreEqual(1, transitions.SlideRolledBackCount, "出発側へ戻した。");
+            Assert.IsNotEmpty(transitions.Slide.LastFailure, "理由が残っている。");
+            Assert.IsFalse(session.HasVisited(AreaB), "訪問済みを増やさない（§8 末尾）。");
+
+            // ---- 旧 Area で遊べる ----
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居る。");
+            Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "A で遊べる。");
+            Assert.IsFalse(GameplayClockProvider.IsFrozen, "Gameplay 時計も戻った。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "隔離した Scene は解放されている。");
+            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "在留も 1 つ。");
+
+            // ---- 持ち越す値も要求の勘定も変わらない ----
+            ActorValues after = ReadActorValues();
+            Assert.AreEqual(before.Hp, after.Hp, "HP を変えない。");
+            Assert.AreEqual(before.CompanionState, after.CompanionState, "犬丸の状態も変えない。");
+            Assert.AreEqual(1, transitions.Slide.Coordinator.AcceptedCount,
+                "受理は 1 回として数えられている（勘定を失わない）。");
+            Assert.AreEqual(AreaSlideTransactionPhase.Idle, transitions.Slide.Coordinator.Phase,
+                "排他が解けている。");
+
+            // ---- 直して再操作すると、こんどは着く ----
+            //
+            // <b>差し替えではなく、注入をやめる。</b> 先読みは最初の要求で Scene 操作を掴むので、
+            // あとから <c>SlideSceneHost</c> を差し替えても効かない（実際に踏んだ）。
+            host.Misdirect = false;
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "戻ったあとにもう一度操作できる（§8「失敗した出入口は一度入力を離してから再操作」）。"
+                + " 理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(2, transitions.Slide.Coordinator.AcceptedCount, "受理は 2 回目。");
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+        }
+
         // ---------------------------------------------------------------- 失敗注入用の Scene 操作
 
         /// <summary>
@@ -1492,6 +1663,87 @@ namespace Momotaro.Tests.PlayMode
                 public bool HasError => false;
                 public int SceneHandle => 0;
             }
+        }
+
+        /// <summary>
+        /// <b>本物のロードを、離されてから始める</b>（先読み未完の待ちの注入用。§11 の P07）。
+        ///
+        /// 偽の Scene を返す実装では「待ったあとに本当に着く」ところまで見られない。
+        /// 読込の発行そのものを遅らせるので、待っている間の状態（A が見えている・
+        /// カメラが動かない・代理が立たない）をそのまま観測できる。
+        /// </summary>
+        private sealed class DelayedRealSceneHost : IAreaSceneHost
+        {
+            private readonly UnityAreaSceneHost _real = new UnityAreaSceneHost();
+            private DelayedLoad _pending;
+
+            /// <summary>読込を頼まれた回数（重複ロードを数える）。</summary>
+            internal int LoadCount { get; private set; }
+
+            public IAreaSceneOperation LoadAdditive(string scenePath)
+            {
+                LoadCount++;
+                _pending = new DelayedLoad(_real, scenePath);
+                return _pending;
+            }
+
+            public IAreaSceneOperation Unload(int sceneHandle) => _real.Unload(sceneHandle);
+
+            public bool IsLoaded(int sceneHandle) => _real.IsLoaded(sceneHandle);
+
+            /// <summary>本物の読込を始めさせる。</summary>
+            internal void ReleaseLoad() => _pending?.Release();
+
+            private sealed class DelayedLoad : IAreaSceneOperation
+            {
+                private readonly UnityAreaSceneHost _real;
+                private readonly string _scenePath;
+                private IAreaSceneOperation _inner;
+
+                internal DelayedLoad(UnityAreaSceneHost real, string scenePath)
+                {
+                    _real = real;
+                    _scenePath = scenePath;
+                }
+
+                public bool IsDone => _inner != null && _inner.IsDone;
+                public bool HasError => _inner != null && _inner.HasError;
+                public int SceneHandle => _inner != null ? _inner.SceneHandle : 0;
+
+                internal void Release()
+                {
+                    _inner ??= _real.LoadAdditive(_scenePath);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 頼まれた Scene ではなく<b>別の Scene</b>を読む（到着側が立ち上がらない失敗の注入用）。
+        /// 読込は成功するのに参照集合が無い、という形を実サービスで作る。
+        /// </summary>
+        private sealed class WrongSceneHost : IAreaSceneHost
+        {
+            private readonly UnityAreaSceneHost _real = new UnityAreaSceneHost();
+            private readonly string _insteadOf;
+
+            internal WrongSceneHost(string insteadOf)
+            {
+                _insteadOf = insteadOf;
+            }
+
+            /// <summary>
+            /// 別の Scene へ差し替えるか。<b>途中で止められるようにしておく</b>——
+            /// 先読みは最初の要求で Scene 操作を掴むので、あとから
+            /// <c>SlideSceneHost</c> を差し替えても効かない（実際に踏んだ）。
+            /// </summary>
+            internal bool Misdirect { get; set; } = true;
+
+            public IAreaSceneOperation LoadAdditive(string scenePath) =>
+                _real.LoadAdditive(Misdirect ? _insteadOf : scenePath);
+
+            public IAreaSceneOperation Unload(int sceneHandle) => _real.Unload(sceneHandle);
+
+            public bool IsLoaded(int sceneHandle) => _real.IsLoaded(sceneHandle);
         }
 
         /// <summary>
@@ -1714,14 +1966,25 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsTrue(visible, "主人公の Renderer が有効へ戻っている（§7.2）。");
         }
 
-        /// <summary>必ず失敗する追加読込（準備失敗の注入用）。</summary>
+        /// <summary>
+        /// 読込の開始そのものが失敗する追加読込（準備失敗の注入用。§11 の P08）。
+        /// <b>途中で止められる</b>——先読みは最初の要求で Scene 操作を掴むので、
+        /// あとから <c>SlideSceneHost</c> を差し替えても効かない。
+        /// </summary>
         private sealed class AlwaysFailingSceneHost : IAreaSceneHost
         {
-            public IAreaSceneOperation LoadAdditive(string scenePath) => new Failed();
+            private readonly UnityAreaSceneHost _real = new UnityAreaSceneHost();
 
-            public IAreaSceneOperation Unload(int sceneHandle) => new Failed();
+            /// <summary>失敗させるか。</summary>
+            internal bool Failing { get; set; } = true;
 
-            public bool IsLoaded(int sceneHandle) => false;
+            public IAreaSceneOperation LoadAdditive(string scenePath) =>
+                Failing ? new Failed() : _real.LoadAdditive(scenePath);
+
+            public IAreaSceneOperation Unload(int sceneHandle) =>
+                Failing ? new Failed() : _real.Unload(sceneHandle);
+
+            public bool IsLoaded(int sceneHandle) => !Failing && _real.IsLoaded(sceneHandle);
 
             private sealed class Failed : IAreaSceneOperation
             {

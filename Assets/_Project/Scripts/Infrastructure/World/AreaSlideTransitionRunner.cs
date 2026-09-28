@@ -244,6 +244,12 @@ namespace Momotaro.Infrastructure.World
             while (preloader.Phase == AreaPreloadPhase.Loading
                    || preloader.Phase == AreaPreloadPhase.Releasing)
             {
+                // <b>望みを毎フレーム言い直す。</b> 先読みは「望む先を宣言する」形で、
+                // 同じ先なら読み直さない（§5）。言い直しておけば、距離による先読みが
+                // 同じフレームに別の候補を望んでも、走っている遷移の行き先が
+                // 下から差し替わらない。<b>同じ先で読み直さないこと</b>が効いている前提なので、
+                // 受入（§11 の P07「重複ロードなし」）でも読込の回数を数える。
+                preloader.Request(connection.ToAreaId, entry.ScenePath);
                 preloader.Poll();
                 if (waited >= _owner.TimeoutSeconds)
                 {
