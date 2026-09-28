@@ -3360,18 +3360,29 @@ namespace Momotaro.Tests.PlayMode
             yield return SettleCamera();
 
             bool sawCompanionProxy = false;
+            int drawnCompanions = 0;
+            int slidingFrames = 0;
             float deadline = Time.realtimeSinceStartup + 25f;
             while (transitions.SlideCommittedCount == 0 && Time.realtimeSinceStartup < deadline)
             {
                 InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
                 yield return null;
 
+                if (transitions.Slide.Coordinator.Phase != AreaSlideTransactionPhase.Sliding)
+                {
+                    continue;
+                }
+
+                slidingFrames++;
                 AreaTransitionDisplayHost display = AreaTransitionDisplayHost.Instance;
-                if (transitions.Slide.Coordinator.Phase == AreaSlideTransactionPhase.Sliding
-                    && display != null && display.Set != null && display.Set.Companion != null)
+                if (display != null && display.Set != null && display.Set.Companion != null)
                 {
                     sawCompanionProxy = true;
                 }
+
+                // <b>二重表示を防ぐ</b>（§7.2 の例外）。運ばないと決めても、
+                // 出発側の実 Renderer は預かったままで、到着側も隠れたままである。
+                drawnCompanions = Mathf.Max(drawnCompanions, DrawnCompanionCount());
             }
 
             InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
@@ -3384,6 +3395,9 @@ namespace Momotaro.Tests.PlayMode
                 "犬丸の表示経路が塞がっていることを見抜いた（出発側の当たりが見えている）。"
                 + " 理由=" + transitions.Slide.LastCompanionRouteBlocked);
             Assert.IsFalse(sawCompanionProxy, "塞がっている経路へ代理を運ばない（壁を突き抜けない）。");
+            Assert.Greater(slidingFrames, 0, "前提：スライド区間を観測できた。");
+            Assert.AreEqual(0, drawnCompanions,
+                "省略した区間は意図的に非表示。<b>二重表示にはしない</b>（§7.2 の例外）。");
 
             var arrived = Object.FindFirstObjectByType<CompanionActor>();
             Assert.IsNotNull(arrived, "犬丸は到着地点で現れる。");
@@ -3437,6 +3451,30 @@ namespace Momotaro.Tests.PlayMode
 
             Assert.IsFalse(activityGate.IsProbingObstacles, "検査が終われば戻し切っている。");
             Assert.IsFalse(opened.enabled, "検査の前後で当たりの状態が変わらない。");
+        }
+
+        /// <summary>いま描かれている犬丸の数（実体・代理を問わない）。</summary>
+        private static int DrawnCompanionCount()
+        {
+            int drawn = 0;
+            foreach (CompanionActor actor
+                     in Object.FindObjectsByType<CompanionActor>(FindObjectsSortMode.None))
+            {
+                if (actor != null && HasVisibleSprite(actor.transform, out _))
+                {
+                    drawn++;
+                }
+            }
+
+            AreaTransitionDisplayHost display = AreaTransitionDisplayHost.Instance;
+            AreaTransitionDisplayProxy proxy = display != null && display.Set != null
+                ? display.Set.Companion : null;
+            if (proxy != null && HasVisibleSprite(proxy.transform, out _))
+            {
+                drawn++;
+            }
+
+            return drawn;
         }
 
         /// <summary>活動ゲートが閉じる Collider のうち、接続軸を最も広く横切る壁を選ぶ。</summary>
