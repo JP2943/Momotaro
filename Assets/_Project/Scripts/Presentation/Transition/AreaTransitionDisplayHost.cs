@@ -80,11 +80,12 @@ namespace Momotaro.Presentation.Transition
         }
 
         /// <inheritdoc />
-        public void SetRoute(Vector3 playerFrom, Vector3 playerTo)
+        public void SetRoute(
+            Vector3 playerFrom, Vector3 playerTo, Vector3 companionFrom, Vector3 companionTo)
         {
             if (IsActive)
             {
-                _set.SetRoute(playerFrom, playerTo);
+                _set.SetRoute(playerFrom, playerTo, companionFrom, companionTo);
             }
         }
 

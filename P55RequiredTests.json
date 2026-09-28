@@ -628,7 +628,10 @@
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingKeepsTheCompanionState(Down)",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingKeepsTheCompanionState(Stagger)",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingKeepsTheCompanionState(Away)",
-        "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_CarriesNothingButItsRenderer"
+        "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_CarriesNothingButItsRenderer",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheCompanionProxy_EndsWhereTheRealOneAppears(Follow)",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheCompanionProxy_EndsWhereTheRealOneAppears(Down)",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheCompanionProxy_EndsWhereTheRealOneAppears(Stagger)"
       ]
     },
     {
@@ -729,7 +732,8 @@
       "requirementIds": [],
       "implemented": true,
       "supportingTests": [
-        "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheSlide_DrawsConnectedGroundWithOneHeroAndNoBlackout(\"NorthSouth\")"
+        "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheSlide_DrawsConnectedGroundWithOneHeroAndNoBlackout(\"NorthSouth\")",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.FromAcceptanceToCommit_ExactlyOneHeroIsDrawnEveryFrame"
       ]
     }
   ],

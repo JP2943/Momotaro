@@ -416,12 +416,26 @@ namespace Momotaro.Infrastructure.World
             destination.ActivityGate.Open();
             _residency.TrySetPhase(destinationHandle, AreaActivationPhase.Prepared);
 
+            // <b>開けた瞬間から隠す</b>（工程 P55-07b。GPT 受入③）。
+            //
+            // 以前は終点を測り終えてから隠していた。ゲートを開けてから隠すまでのあいだ、
+            // <b>出発側の代理と到着側の実 Actor が同時に映りうる</b>——
+            // 東西配置では到着入口も出発カメラの画角に入る。
+            // 実描画の検査（§11 の P15）は <c>IsSliding</c> になってから撮るので、
+            // この準備区間は対象外だった。
+            display?.HideArrivals(destination);
+
             float bindWaited = 0f;
             while (!AreaPendingArrival.IsPreparedFor(transitionId)
                    && bindWaited < _owner.BindTimeoutSeconds)
             {
                 bindWaited += Time.unscaledDeltaTime;
                 yield return null;
+
+                // <b>毎フレーム隠し直す。</b> 初期化担当が Actor を置き、Animator や
+                // Presenter が Renderer を有効化し直すので、一度隠すだけでは戻ってくる。
+                // 既に無効な Renderer は預からないので、呼び直しても畳むときに増えない。
+                display?.HideArrivals(destination);
             }
 
             if (!AreaPendingArrival.IsPreparedFor(transitionId))
@@ -435,6 +449,7 @@ namespace Momotaro.Infrastructure.World
             // <b>描画準備完了後のフレームを一度通す</b>（§5「固定秒数の待機では準備確認を代用しない」）。
             // 準備完了の報告はロジックの完了で、Renderer が実際に 1 枚描かれたかは別。
             yield return null;
+            display?.HideArrivals(destination);
 
             if (!_slide.NotifyPrepared(transitionId))
             {
@@ -475,10 +490,34 @@ namespace Momotaro.Infrastructure.World
             LastSlideFrom = slideFrom;
             LastSlideTo = slideTo;
 
+            // ---- 表示経路（§7.2。GPT 受入④）----
+            //
+            // <b>終点は「準備済みの到着位置」を実体から測る。</b> 入口の名目位置ではなく、
+            // <c>AreaInitializer.PlaceArrivals</c> が実際に置いた場所を読む——
+            // 到着位置が塞がっていれば代替配置へ回るので、名目位置とはずれる。
+            // 犬丸は「入口から進行方向と逆へ 1.2m」に置かれるので、
+            // <b>主人公の移動差分で運ぶと畳んだ瞬間に跳ぶ</b>。
+            Vector3 playerTo = ResolvePlayerPosition(destination);
+            bool hasCompanionRoute = TryResolveCompanionPositions(
+                departure, destination, out Vector3 companionFrom, out Vector3 companionTo);
+
+            // <b>安全に作れない表示経路は準備失敗</b>（§7.2 末尾）。
+            // 無断で暗転へ切り替えて成功扱いにしない。
+            if (!IsDisplayRouteClear(playerFrom, playerTo)
+                || (hasCompanionRoute && !IsDisplayRouteClear(companionFrom, companionTo)))
+            {
+                yield return Rollback(transitionId, departure, departureHandle,
+                    "表示経路を安全に作れません（主人公 " + playerFrom + "→" + playerTo
+                    + " 犬丸 " + companionFrom + "→" + companionTo + "）。", destination);
+                yield break;
+            }
+
             // 到着側の実 Actor を隠す（§6.2 手順 6「両方の実 Actor の Renderer は隠し」）。
             // 隠さないと、通路を渡る代理と入口で待つ到着 Actor が二重に映る。
             display?.HideArrivals(destination);
-            display?.SetRoute(playerFrom, arrival.ArrivalPosition);
+            display?.SetRoute(playerFrom, playerTo, companionFrom, companionTo);
+            LastPlayerRouteTo = playerTo;
+            LastCompanionRouteTo = companionTo;
 
             // ---- 手順 6：スライド ----
             if (!camera.BeginSlide(slideTo, ResolveSeconds(connection)))
@@ -1118,6 +1157,51 @@ namespace Momotaro.Infrastructure.World
         {
             return _preloader ??= new AreaPreloader(_residency, _owner.SlideSceneHost, _owner);
         }
+
+        /// <summary>直前に代理へ渡した主人公の終点（診断・テスト用）。</summary>
+        public Vector3 LastPlayerRouteTo { get; private set; }
+
+        /// <summary>直前に代理へ渡した犬丸の終点（診断・テスト用）。</summary>
+        public Vector3 LastCompanionRouteTo { get; private set; }
+
+        /// <summary>
+        /// 犬丸の出発位置と<b>準備済みの到着位置</b>を測る（GPT 受入④）。
+        ///
+        /// <b>Away は運ばない。</b> 退場中は描かれていないので代理も立っておらず、
+        /// 経路を作る相手が居ない。
+        /// </summary>
+        private static bool TryResolveCompanionPositions(
+            AreaRuntimeBundle departure, AreaRuntimeBundle destination,
+            out Vector3 from, out Vector3 to)
+        {
+            from = Vector3.zero;
+            to = Vector3.zero;
+
+            if (departure == null || destination == null
+                || !departure.TryResolve(out Momotaro.Gameplay.Companion.CompanionActor leaving)
+                || leaving == null || leaving.IsAway
+                || !destination.TryResolve(out Momotaro.Gameplay.Companion.CompanionActor arriving)
+                || arriving == null)
+            {
+                return false;
+            }
+
+            from = leaving.transform.position;
+            to = arriving.transform.position;
+            return true;
+        }
+
+        /// <summary>
+        /// 表示経路が壁を横切らないか（§7.2 末尾「表示経路を安全に作れない接続は準備失敗」）。
+        ///
+        /// 索敵・Interact と<b>同じ判定</b>を使う（半径 0.25m の球）。別の物差しを作ると、
+        /// 「通れるのに表示は通さない」「表示は通すのに通れない」がずれて出る。
+        /// </summary>
+        private static bool IsDisplayRouteClear(Vector3 from, Vector3 to) =>
+            DisplayRouteProbe.IsClear(from, to);
+
+        private static readonly Momotaro.Gameplay.Companion.Investigation.PhysicsObstacleProbe
+            DisplayRouteProbe = new Momotaro.Gameplay.Companion.Investigation.PhysicsObstacleProbe();
 
         /// <summary>出発側の主人公の足元位置（居なければ原点）。代理の出発位置になる。</summary>
         private static Vector3 ResolvePlayerPosition(AreaRuntimeBundle bundle)

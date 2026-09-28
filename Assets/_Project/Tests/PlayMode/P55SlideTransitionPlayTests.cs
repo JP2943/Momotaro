@@ -2799,5 +2799,219 @@ namespace Momotaro.Tests.PlayMode
         /// <summary>A の「B から戻る」入口（この配置でも P5 の ID を再利用している）。</summary>
         private static readonly StableId AreaAFromBEntry = new StableId("area_p5_a_from_b");
 
+
+        // ---------------------------------------------------------------- GPT 受入③（P55-07b）
+
+        /// <summary>
+        /// <b>受理からCommit後まで、主人公の絵はどのフレームでもちょうど 1 つ</b>（GPT 受入③）。
+        ///
+        /// 以前は、到着側の活動ゲートを開けてから <c>HideArrivals</c> を呼ぶまでに
+        /// 何フレームもあった（準備完了待ち＋1 フレーム＋終点計算）。その間、
+        /// <b>出発側の代理と到着側の実 Actor が同時に映りうる</b>——
+        /// 東西配置では到着入口も出発カメラの画角に入る。
+        ///
+        /// 実描画の検査（§11 の P15）は <c>IsSliding</c> になってから撮るので、
+        /// <b>この準備区間は対象外だった</b>。ここは受理の瞬間から数える。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FromAcceptanceToCommit_ExactlyOneHeroIsDrawnEveryFrame()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+
+            int worstPlayers = 0;
+            int fewestPlayers = int.MaxValue;
+            int worstCompanions = 0;
+            int frames = 0;
+            string worstDetail = string.Empty;
+
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.SlideCommittedCount == 0 && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                yield return null;
+
+                if (transitions.Slide.Coordinator.Phase == AreaSlideTransactionPhase.Idle)
+                {
+                    continue; // まだ受理されていない。
+                }
+
+                frames++;
+                int players = CountDrawnPlayers(out string detail);
+                int companions = CountDrawnCompanions();
+                if (players > worstPlayers)
+                {
+                    worstDetail = detail;
+                }
+
+                worstPlayers = Mathf.Max(worstPlayers, players);
+                fewestPlayers = Mathf.Min(fewestPlayers, players);
+                worstCompanions = Mathf.Max(worstCompanions, companions);
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+
+            // Commit の<b>あと</b>も数える（代理を畳んだ瞬間に消える／重なるのを見る）。
+            for (int i = 0; i < 5; i++)
+            {
+                yield return null;
+                frames++;
+                int players = CountDrawnPlayers(out string detail);
+                if (players > worstPlayers)
+                {
+                    worstDetail = detail;
+                }
+
+                worstPlayers = Mathf.Max(worstPlayers, players);
+                fewestPlayers = Mathf.Min(fewestPlayers, players);
+                worstCompanions = Mathf.Max(worstCompanions, CountDrawnCompanions());
+            }
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "スライドで着いた（失敗=" + transitions.Slide.LastFailure + "）。");
+            Assert.Greater(frames, 5, "受理からCommit後まで複数フレームを数えている（" + frames + "）。");
+
+            Assert.AreEqual(1, worstPlayers,
+                "主人公の絵が 2 つ映ったフレームがある（最大 " + worstPlayers
+                + "／" + worstDetail + "）。準備中から隠し続けること（§7.2）。");
+            Assert.AreEqual(1, fewestPlayers,
+                "主人公の絵が 0 になったフレームがある（最小 " + fewestPlayers
+                + "）。受け渡しで一瞬の欠落を作らない（§7.2）。");
+            Assert.AreEqual(1, worstCompanions,
+                "犬丸の絵が 2 つ映ったフレームがある（最大 " + worstCompanions + "）。");
+        }
+
+        /// <summary>いま<b>描かれている</b>主人公の数（実 Actor すべて ＋ 表示代理）。</summary>
+        private static int CountDrawnPlayers(out string detail)
+        {
+            int count = 0;
+            var sb = new System.Text.StringBuilder();
+            foreach (PlayerRoot root in Object.FindObjectsByType<PlayerRoot>(FindObjectsSortMode.None))
+            {
+                if (root != null && root.VisualRoot != null
+                    && HasVisibleSprite(root.VisualRoot, out string which))
+                {
+                    count++;
+                    sb.Append("[実 ").Append(root.gameObject.scene.name).Append(' ').Append(which).Append(']');
+                }
+            }
+
+            AreaTransitionDisplayHost display = AreaTransitionDisplayHost.Instance;
+            AreaTransitionDisplayProxy proxy = display != null && display.Set != null
+                ? display.Set.Player : null;
+            if (proxy != null && proxy.Renderer != null && proxy.Renderer.enabled
+                && proxy.Renderer.sprite != null && proxy.gameObject.activeInHierarchy)
+            {
+                count++;
+                sb.Append("[代理]");
+            }
+
+            detail = sb.ToString();
+            return count;
+        }
+
+        /// <summary>いま描かれている犬丸の数（退場中は 0 でよい）。</summary>
+        private static int CountDrawnCompanions()
+        {
+            int count = 0;
+            foreach (CompanionActor actor in
+                Object.FindObjectsByType<CompanionActor>(FindObjectsSortMode.None))
+            {
+                if (actor != null && HasVisibleSprite(actor.transform, out _))
+                {
+                    count++;
+                }
+            }
+
+            AreaTransitionDisplayHost display = AreaTransitionDisplayHost.Instance;
+            AreaTransitionDisplayProxy proxy = display != null && display.Set != null
+                ? display.Set.Companion : null;
+            if (proxy != null && proxy.Renderer != null && proxy.Renderer.enabled
+                && proxy.Renderer.sprite != null && proxy.gameObject.activeInHierarchy)
+            {
+                count++;
+            }
+
+            return count;
+        }
+
+        // ---------------------------------------------------------------- GPT 受入④（P55-07b）
+
+        /// <summary>
+        /// <b>犬丸の代理は、到着実体が現れる場所で止まる</b>（GPT 受入④）。
+        ///
+        /// 以前は「出発時の犬丸位置 ＋ 主人公の移動差分」へ運んでいた。
+        /// 到着実体は <c>AreaInitializer.PlaceArrivals</c> が
+        /// <b>入口から進行方向と逆へ 1.2m</b> に置くので、出発時の相対位置が
+        /// 偶然一致していなければ<b>代理を畳んだ瞬間に犬丸が跳ぶ</b>。
+        /// Down のように離れているときほど差が大きい。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheCompanionProxy_EndsWhereTheRealOneAppears(
+            [Values(CompanionState.Follow, CompanionState.Down, CompanionState.Stagger)]
+            CompanionState state)
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            yield return SetUpCompanion(state);
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+
+            // <b>主人公の真後ろから外す。</b> 差分で運ぶ実装と、到着位置で運ぶ実装の差を出す。
+            var companion = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.IsNotNull(companion, "犬丸が居る。");
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            companion.transform.position = player.transform.position + new Vector3(-1.5f, 0f, 1.5f);
+            Physics.SyncTransforms();
+            yield return null;
+            yield return SettleCamera();
+
+            Vector3 lastProxySpot = Vector3.zero;
+            bool sawProxy = false;
+
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.SlideCommittedCount == 0 && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                yield return null;
+
+                AreaTransitionDisplayHost display = AreaTransitionDisplayHost.Instance;
+                AreaTransitionDisplayProxy proxy = display != null && display.Set != null
+                    ? display.Set.Companion : null;
+                if (proxy != null && proxy.gameObject.activeInHierarchy)
+                {
+                    lastProxySpot = proxy.transform.position;
+                    sawProxy = true;
+                }
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "スライドで着いた（失敗=" + transitions.Slide.LastFailure + "）。");
+            Assert.IsTrue(sawProxy, "犬丸の表示代理が立っていた。");
+
+            var arrived = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.IsNotNull(arrived, "到着側に犬丸が居る。");
+
+            // <b>代理が止まった場所と、実体が現れる場所が一致する。</b>
+            float gap = Vector3.Distance(
+                new Vector3(lastProxySpot.x, 0f, lastProxySpot.z),
+                new Vector3(arrived.transform.position.x, 0f, arrived.transform.position.z));
+            Assert.Less(gap, 0.35f,
+                "代理の終点と到着実体の位置がずれている（" + gap + "m。状態=" + state
+                + " 代理=" + lastProxySpot + " 実体=" + arrived.transform.position
+                + " 渡した終点=" + transitions.Slide.LastCompanionRouteTo
+                + "）。畳んだ瞬間に犬丸が跳ぶ（§7.2）。");
+
+            Assert.Less(Vector3.Distance(
+                    transitions.Slide.LastCompanionRouteTo, arrived.transform.position), 0.35f,
+                "代理へ渡した終点そのものが、準備済みの到着位置である。");
+        }
+
     }
 }

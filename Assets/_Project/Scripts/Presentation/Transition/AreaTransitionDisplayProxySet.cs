@@ -27,6 +27,18 @@ namespace Momotaro.Presentation.Transition
     {
         private readonly List<AreaTransitionDisplayProxy> _proxies = new List<AreaTransitionDisplayProxy>();
         private readonly List<SpriteRenderer> _hidden = new List<SpriteRenderer>();
+
+        /// <summary>
+        /// 到着側の犬丸から隠した Renderer（工程 P55-07b）。
+        ///
+        /// <b>戻すかどうかは畳むときの状態で決める。</b> 隠した時点では初期化が終わっておらず、
+        /// 退場中（Away）かどうかがまだ決まっていない——そこで判断すると、
+        /// 退場中の犬丸の絵を<b>畳んだ瞬間に有効化してしまう</b>。
+        /// </summary>
+        private readonly List<SpriteRenderer> _hiddenCompanion = new List<SpriteRenderer>();
+
+        /// <summary>隠した相手の犬丸（畳むときに退場中かを見る）。</summary>
+        private CompanionActor _hiddenCompanionActor;
         private GameObject _root;
 
         /// <summary>立っている代理の数（診断・テスト用）。</summary>
@@ -39,7 +51,10 @@ namespace Momotaro.Presentation.Transition
         public AreaTransitionDisplayProxy Companion { get; private set; }
 
         /// <summary>隠した実 Renderer の数（診断・テスト用）。</summary>
-        public int HiddenRendererCount => _hidden.Count;
+        public int HiddenRendererCount => _hidden.Count + _hiddenCompanion.Count;
+
+        /// <summary>退場中だったので絵を戻さなかった回数（診断・テスト用）。</summary>
+        public int SkippedAwayRestoreCount { get; private set; }
 
         /// <summary>畳んだか。</summary>
         public bool IsReleased { get; private set; }
@@ -94,19 +109,19 @@ namespace Momotaro.Presentation.Transition
         /// </summary>
         public void HideArrivals(PlayerRoot player, CompanionActor companion)
         {
-            HideRendererOf(player != null ? player.VisualRoot : null);
+            HideAllUnder(player != null ? player.VisualRoot : null, _hidden);
 
-            // <b>Away は隠さない。</b> 退場中は描かれていないので隠す相手が居らず、
-            // 一覧へ入れると畳んだときに「退場中の犬丸の Renderer を有効化する」ことになる。
-            if (companion != null && !companion.IsAway)
+            // <b>Away でも隠す</b>（工程 P55-07b）。
+            //
+            // 以前はここで Away を除いていたが、<b>隠す時点ではまだ初期化が終わっていない</b>——
+            // 準備中から隠し始めるようになったので、退場中かどうかがまだ決まっていない。
+            // 除いてしまうと、初期化の途中で一瞬だけ犬丸が映る。
+            // 「退場中の絵を戻さない」は<b>畳むとき</b>に決める（<see cref="Release"/>）。
+            if (companion != null)
             {
-                HideRendererOf(companion.transform);
+                _hiddenCompanionActor = companion;
+                HideAllUnder(companion.transform, _hiddenCompanion);
             }
-        }
-
-        private void HideRendererOf(Transform actorVisualRoot)
-        {
-            HideAllUnder(actorVisualRoot);
         }
 
         /// <summary>
@@ -115,7 +130,7 @@ namespace Momotaro.Presentation.Transition
         /// 本体 1 枚だけを隠すのでは足りない（上記）。逆に、もともと無効だった Renderer は
         /// 預からない——預かると畳むときに<b>本来出ないはずの絵を有効化する</b>。
         /// </summary>
-        private void HideAllUnder(Transform actorVisualRoot)
+        private static void HideAllUnder(Transform actorVisualRoot, List<SpriteRenderer> into)
         {
             if (actorVisualRoot == null)
             {
@@ -130,18 +145,22 @@ namespace Momotaro.Presentation.Transition
                 }
 
                 candidate.enabled = false;
-                _hidden.Add(candidate);
+                into.Add(candidate);
             }
         }
 
         /// <summary>
-        /// 運ぶ区間を渡す（§7.2）。犬丸は<b>自分の居場所から</b>運ぶので、
-        /// 主人公と同じ差分だけ動かす——主人公の足元へ寄せ集めない。
+        /// 運ぶ区間を渡す（§7.2）。
+        ///
+        /// <b>終点は呼び出し側が「準備済みの到着位置」を測って渡す</b>（GPT 受入④）。
+        /// 以前はここで「主人公の移動差分」を犬丸へ適用していたが、
+        /// 到着実体は入口から進行方向と逆へ 1.2m に置かれるので、
+        /// 出発時の相対位置が偶然一致していなければ<b>畳んだ瞬間に跳ぶ</b>。
+        /// 出発位置は<b>いまの居場所</b>のまま（主人公の足元へ寄せ集めない）。
         /// </summary>
-        public void SetRoute(Vector3 playerFrom, Vector3 playerTo)
+        public void SetRoute(
+            Vector3 playerFrom, Vector3 playerTo, Vector3 companionFrom, Vector3 companionTo)
         {
-            Vector3 delta = playerTo - playerFrom;
-
             if (Player != null)
             {
                 Player.SetRoute(playerFrom, playerTo);
@@ -149,8 +168,7 @@ namespace Momotaro.Presentation.Transition
 
             if (Companion != null)
             {
-                Vector3 companionFrom = Companion.transform.position;
-                Companion.SetRoute(companionFrom, companionFrom + delta);
+                Companion.SetRoute(companionFrom, companionTo);
             }
         }
 
@@ -189,6 +207,28 @@ namespace Momotaro.Presentation.Transition
             }
 
             _hidden.Clear();
+
+            // <b>退場中の犬丸の絵は戻さない</b>（§6.3）。判断は<b>いまの状態</b>で行う——
+            // 隠した時点ではまだ初期化が終わっておらず、退場中かどうかが決まっていない。
+            bool companionAway = _hiddenCompanionActor != null && _hiddenCompanionActor.IsAway;
+            for (int i = 0; i < _hiddenCompanion.Count; i++)
+            {
+                if (_hiddenCompanion[i] == null)
+                {
+                    continue;
+                }
+
+                if (companionAway)
+                {
+                    SkippedAwayRestoreCount++;
+                    continue;
+                }
+
+                _hiddenCompanion[i].enabled = true;
+            }
+
+            _hiddenCompanion.Clear();
+            _hiddenCompanionActor = null;
 
             for (int i = 0; i < _proxies.Count; i++)
             {
@@ -246,7 +286,7 @@ namespace Momotaro.Presentation.Transition
             // （犬丸の向き矢印、影、下敷き）が付いていて、本体だけ隠すと<b>飾りだけが残る</b>
             // ——代理が通路を渡る間、出発地点に矢印が浮いたままになる。
             // 実際に PlayMode で踏んだ（Inumaru/DirectionArrow が見えていた）。
-            HideAllUnder(actorVisualRoot);
+            HideAllUnder(actorVisualRoot, _hidden);
             return proxy;
         }
 

@@ -236,7 +236,7 @@ namespace Momotaro.Tests.PlayMode
 
             Vector3 playerFrom = player.transform.position;
             Vector3 playerTo = playerFrom + new Vector3(12f, 0f, 0f);
-            _proxies.SetRoute(playerFrom, playerTo);
+            _proxies.SetRoute(playerFrom, playerTo, playerFrom, playerTo);
 
             Vector3 cameraTo = rig.transform.position + new Vector3(12f, 0f, 0f);
             host.BeginSlide(cameraTo, AreaCameraSlide.DefaultSeconds);

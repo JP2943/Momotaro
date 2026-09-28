@@ -157,8 +157,9 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(collidersBefore, CountAll<Collider>(), "当たりが 1 つも増えない。");
 
             // ---- 運んでも増えない（動かした先で登録が起きたりしない）----
-            _proxies.SetRoute(player.transform.position,
-                player.transform.position + new Vector3(10f, 0f, 0f));
+            Vector3 carryFrom = player.transform.position;
+            Vector3 carryTo = carryFrom + new Vector3(10f, 0f, 0f);
+            _proxies.SetRoute(carryFrom, carryTo, carryFrom, carryTo);
             for (int i = 0; i <= 10; i++)
             {
                 _proxies.SetProgress(i / 10f);
@@ -263,14 +264,22 @@ namespace Momotaro.Tests.PlayMode
                 0.5f,
                 "犬丸の代理を主人公の足元へ寄せ集めていない（主人公の代理と別の場所に居る）。");
 
-            // 主人公と同じ差分だけ運ぶ（隊列を崩さない）。
+            // <b>終点は呼び出し側が渡す</b>（工程 P55-07b。GPT 受入④）。
+            //
+            // 以前はここで「主人公と同じ差分だけ運ぶ」を固定していた。それは
+            // 到着実体の置き場所（入口から進行方向と逆へ 1.2m）と一致する保証が無く、
+            // <b>畳んだ瞬間に犬丸が跳ぶ</b>原因だった。いまは実体の到着位置を渡す。
             Vector3 playerFrom = player.transform.position;
-            _proxies.SetRoute(playerFrom, playerFrom + new Vector3(8f, 0f, 0f));
+            Vector3 playerTo = playerFrom + new Vector3(8f, 0f, 0f);
+
+            // 主人公とは<b>違う</b>終点を渡して、そのとおりに運ばれることを見る。
+            Vector3 companionTo = companionSpot + new Vector3(8f, 0f, 2f);
+            _proxies.SetRoute(playerFrom, playerTo, companionSpot, companionTo);
             _proxies.SetProgress(1f);
 
             Assert.Less(Vector3.Distance(
-                    companionSpot + new Vector3(8f, 0f, 0f), _proxies.Companion.transform.position), 0.01f,
-                "犬丸も同じ差分だけ運ばれる。");
+                    companionTo, _proxies.Companion.transform.position), 0.01f,
+                "犬丸は渡された終点へ運ばれる（主人公の差分ではない）。");
             Assert.AreEqual(0, _proxies.Companion.FrameIndex, "姿勢は変わっていない。");
         }
 

@@ -48,7 +48,18 @@ namespace Momotaro.Gameplay.Session
         void HideArrivals(AreaRuntimeBundle destination);
 
         /// <summary>運ぶ区間を渡す（主人公の出発位置→到着位置。犬丸は同じ差分で運ぶ）。</summary>
-        void SetRoute(UnityEngine.Vector3 playerFrom, UnityEngine.Vector3 playerTo);
+        /// <summary>
+        /// 運ぶ区間を渡す（§7.2）。
+        ///
+        /// <b>主人公と犬丸の終点は別々に渡す</b>（工程 P55-07b。GPT 受入④）。
+        /// 以前は犬丸を「主人公の移動差分」で運んでいたが、到着実体は
+        /// <c>AreaInitializer.PlaceArrivals</c> が<b>入口から進行方向と逆へ 1.2m</b>に置く。
+        /// 出発時の相対位置が偶然一致していなければ、代理を畳んだ瞬間に犬丸が跳ぶ。
+        /// Down など離れているときほど差が大きい。
+        /// </summary>
+        void SetRoute(
+            UnityEngine.Vector3 playerFrom, UnityEngine.Vector3 playerTo,
+            UnityEngine.Vector3 companionFrom, UnityEngine.Vector3 companionTo);
 
         /// <summary>カメラと同じ補間進行度を配る（§7.2）。</summary>
         void SetProgress(float eased);
