@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
 using Momotaro.Data.World;
+using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Transfer;
@@ -14,6 +15,7 @@ using Momotaro.Infrastructure.Bootstrap;
 using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.World;
 using Momotaro.Presentation.Cameras;
+using Momotaro.Presentation.Hud;
 using Momotaro.Presentation.Transition;
 using NUnit.Framework;
 using UnityEngine;
@@ -1057,6 +1059,378 @@ namespace Momotaro.Tests.PlayMode
             }
 
             return proxies.Length > 0;
+        }
+
+        // ---------------------------------------------------------------- 先読み中の Single 読込（§5／§11 の P11）
+
+        /// <summary>
+        /// <b>P11（死亡）</b>：隣 Area を先読みした状態で主人公が死んでも、暗転再開が成立し、
+        /// <b>先読みは安全に破棄される</b>（§5 末尾「先読み中の死亡・暗転扉は先読みを不要扱いにし、
+        /// 終端して隔離 Area を unload してからロードを発行する」）。
+        ///
+        /// 併せて <b>Submit の到着 Interact 化</b>が起きないことを見る（§9.1 末尾）。
+        /// 再開に使った押下が離されたと認識されないと、到着後の最初の Interact が飲み込まれる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator DyingWhileTheNeighbourIsStaged_DiscardsThePreloadAndRespawns()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            GameSessionState session = GameSessionProvider.Current;
+
+            yield return StageTheNeighbour(transitions);
+
+            Assert.AreEqual(2, SceneManager.sceneCount, "前提：隣 Area が載っている。");
+            Assert.AreEqual(0, transitions.Slide.DiscardedForSingleLoadCount, "前提：まだ捨てていない。");
+
+            // ---- 実際の被弾経路で死なせる ----
+            yield return KillPlayerWithRealHits();
+            yield return WaitForRespawnPrompt();
+
+            var interactBefore = Object.FindFirstObjectByType<AreaInteractInput>();
+            Assert.IsNotNull(interactBefore, "Interact の仲介が居る。");
+
+            // ---- 実キー（Enter）で再開する ----
+            yield return PressKeyUntil(Key.Enter,
+                () => transitions.ArrivalCount > 0 || transitions.HasTerminalFailure, 25f);
+
+            Assert.IsFalse(transitions.HasTerminalFailure,
+                "終端失敗にならない。理由=" + transitions.TerminalFailureReason);
+            Assert.AreEqual(1, transitions.CompletedCount, "暗転（Single）経路で再開が着いた。");
+
+            Assert.AreEqual(1, transitions.Slide.DiscardedForSingleLoadCount,
+                "Single 読込の前に先読みを捨てた（§5 末尾）。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "隔離 Area は残っていない。");
+            Assert.AreEqual(0, transitions.Slide.Residency.ResidentCount,
+                "在留台帳も実 Scene に合っている。");
+            Assert.AreEqual(AreaPreloadPhase.Idle, transitions.Slide.Preloader.Phase, "先読みは手ぶら。");
+            Assert.IsFalse(AreaStagingRequest.IsRequested,
+                "先読みの申し入れが残っていない（次に開く Scene が閉じたまま起動しない）。");
+
+            // ---- 再開そのもの（§9.1 手順 6〜7）----
+            var vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            Assert.IsNotNull(vitals, "到着側に主人公が居る。");
+            Assert.IsFalse(vitals.IsDefeated, "主人公が復帰している。");
+            Assert.AreEqual(vitals.Vitals.Health.Max, vitals.ExportTransferSnapshot().Health.Current,
+                "全回復している（§9.1 手順 6）。");
+            Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current, "探索へ戻った。");
+            Assert.AreEqual(CampaignRespawnPhase.Idle, session.Respawn.Phase, "再開が完了した。");
+
+            // ---- Submit の到着 Interact 化なし（§9.1 末尾）----
+            var interactAfter = Object.FindFirstObjectByType<AreaInteractInput>();
+            Assert.IsNotNull(interactAfter, "到着側にも Interact の仲介が居る。");
+            Assert.AreEqual(0, interactAfter.InteractCount,
+                "再開の押下が到着側の Interact になっていない。");
+            Assert.IsNotNull(InputReleaseGateProvider.Current, "入力の解放待ちの提供点がある。");
+            Assert.IsFalse(InputReleaseGateProvider.Current.RequiresRelease,
+                "解放待ちが解けている（到着後の最初の Interact を飲み込まない）。");
+        }
+
+        /// <summary>
+        /// <b>P11（暗転扉）</b>：隣 Area を先読みした状態で Interact の扉を使っても、
+        /// 先読みを捨ててから Single 読込を発行する（§5 末尾）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator UsingTheInteractDoorWhileTheNeighbourIsStaged_DiscardsThePreloadFirst()
+        {
+            yield return EnterArea(P55AreaBScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            yield return StageTheNeighbour(transitions);
+            Assert.AreEqual(2, SceneManager.sceneCount, "前提：隣 Area が載っている。");
+
+            var door = Object.FindFirstObjectByType<AreaTransitionDoor>();
+            Assert.IsNotNull(door, "B に Interact の扉がある。");
+
+            var root = Object.FindFirstObjectByType<PlayerRoot>();
+            root.transform.position = new Vector3(
+                door.transform.position.x, root.transform.position.y, door.transform.position.z);
+            if (root.Body != null)
+            {
+                root.Body.position = root.transform.position;
+                root.Body.linearVelocity = Vector3.zero;
+            }
+
+            Physics.SyncTransforms();
+            yield return new WaitForFixedUpdate();
+            yield return null;
+
+            yield return PressKeyUntil(Key.E,
+                () => transitions.ArrivalCount > 0 || transitions.HasTerminalFailure, 25f);
+
+            Assert.IsFalse(transitions.HasTerminalFailure,
+                "終端失敗にならない。理由=" + transitions.TerminalFailureReason);
+            Assert.AreEqual(1, transitions.CompletedCount, "扉は従来の Single／Fade 経路で着く。");
+            Assert.AreEqual(0, transitions.SlideCommittedCount, "扉はスライドしない（§3.1 の見せ方）。");
+            Assert.AreEqual(1, transitions.Slide.DiscardedForSingleLoadCount,
+                "Single 読込の前に先読みを捨てた。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "隔離 Area は残っていない。");
+            Assert.AreEqual(0, transitions.Slide.Residency.ResidentCount, "在留台帳も合っている。");
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に着いた。");
+        }
+
+        /// <summary>
+        /// <b>P11（終端待ち）</b>：先読みが<b>まだ読み終わっていない</b>うちに死んでも、
+        /// Single 読込は<b>その操作が終端するまで発行しない</b>（§5 末尾「終端して隔離 Area を
+        /// unload してからロードを発行する」）。
+        ///
+        /// ここが要点である。Unity の非同期ロードは止められないので、終端を待たずに
+        /// <c>Single</c> を撃つと、遅れて読み終わった Area が<b>新しい世界の上へ足される</b>。
+        /// 終端の時期を外から決められる Scene 操作を注入して、順序をそのまま観測する。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator DyingWhileTheNeighbourIsStillLoading_WaitsForItToTerminateBeforeTheFade()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new ControllableSceneHost();
+            transitions.SlideSceneHost = host;
+
+            // 読み終わらない先読みを頼む（Staged まで待たない）。
+            Assert.IsTrue(
+                transitions.Connections.TryGetFromExit(AreaA, ExitAEast,
+                    out AreaConnectionSnapshot east),
+                "東向きの接続を引ける。");
+            Assert.IsTrue(
+                transitions.Catalog.TryGetEntry(east.ToAreaId, east.EntryId, out AreaEntryInfo entry),
+                "行き先の Scene を引ける。");
+            Assert.IsTrue(transitions.Slide.Preloader.Request(east.ToAreaId, entry.ScenePath),
+                "先読みを頼めた。");
+            yield return null;
+            Assert.AreEqual(AreaPreloadPhase.Loading, transitions.Slide.Preloader.Phase,
+                "前提：まだ読込中である。");
+
+            yield return KillPlayerWithRealHits();
+            yield return WaitForRespawnPrompt();
+
+            // 実キーで再開を要求する。<b>先読みが終端していないので進めない。</b>
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.Enter));
+            yield return null;
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+
+            float deadline = Time.realtimeSinceStartup + 2f;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+                Assert.AreEqual(0, transitions.CompletedCount,
+                    "終端していない先読みの上へ Single 読込を発行しない（§5 末尾）。");
+                Assert.AreEqual(0, host.UnloadCount, "まだ撤去もできない（操作が生きている）。");
+            }
+
+            Assert.AreEqual(1, transitions.Slide.DiscardedForSingleLoadCount,
+                "先読みの取り下げは済んでいる（待っているのは終端だけ）。");
+
+            // ---- 遅れて終端する ----
+            host.CompleteLoad(555001);
+
+            deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.CompletedCount == 0 && !transitions.HasTerminalFailure
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.IsFalse(transitions.HasTerminalFailure,
+                "終端失敗にならない。理由=" + transitions.TerminalFailureReason);
+            Assert.AreEqual(1, transitions.CompletedCount, "終端したので再開が進んだ。");
+            Assert.AreEqual(1, host.UnloadCount, "遅れて着いた Area は撤去された。");
+            Assert.AreEqual(555001, host.LastUnloadHandle, "撤去したのは遅れて着いたもの。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "新しい世界に余分な Scene が足されていない。");
+            Assert.AreEqual(0, transitions.Slide.Residency.ResidentCount, "在留台帳も空。");
+
+            var vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            Assert.IsFalse(vitals.IsDefeated, "主人公が復帰している。");
+        }
+
+        // ---------------------------------------------------------------- 後始末（§11 の P14）
+
+        /// <summary>
+        /// <b>P14</b>：往復したあと全 Area を破棄すると、<b>掃除を呼ぶ前に</b>
+        /// 旧 Scene 由来の参照が 1 つも残らない。
+        ///
+        /// <b>テストの掃除より前に見る</b>のが要点である。<c>ClearForTests</c> を先に呼ぶと、
+        /// 出荷物が自分で外しているのか、テストが後から拭いているのか区別できない。
+        /// 常駐の提供点（Camera・時計）は<b>生きたまま</b>であること——
+        /// 「全部空」ではなく「旧 Scene 由来だけが 0」を見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AfterAllAreasAreDestroyed_NoReferenceFromTheOldScenesRemains()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            Assert.AreEqual(1, transitions.SlideCommittedCount, "前提：スライドで B へ着いた。");
+
+            // 全 Area を破棄する（Area を持たない Scene へ Single 読込）。
+            yield return SceneManager.LoadSceneAsync(P55TrialScene, LoadSceneMode.Single);
+            DestroyLaunchers();
+            yield return null;
+            yield return null;
+
+            // ---- 旧 Scene 由来の参照（掃除を呼ぶ前に見る）----
+            Assert.AreEqual(0, AreaBundleDirectory.Count, "参照集合の索引が空（OnDisable で外れている）。");
+            Assert.IsFalse(CurrentAreaProvider.HasScope, "活動 Area の指定が落ちている。");
+            Assert.AreEqual(0, AreaCameraRegionSetRegistry.Count,
+                "カメラ領域集合の索引が空。" + AreaCameraRegionSetRegistry.Describe());
+            Assert.AreEqual(0, PerceptionTargetRegistry.Count, "索敵の登録簿が空。");
+            Assert.AreEqual(0, AreaInteractableRegistry.Count, "Interact の登録簿が空。");
+            Assert.AreEqual(0, InvestigationPointRegistry.Count, "調査地点の登録簿が空。");
+            Assert.IsFalse(AreaStagingRequest.IsRequested, "先読みの申し入れが残っていない。");
+
+            Assert.AreEqual(0, Object.FindObjectsByType<AreaRoot>(FindObjectsSortMode.None).Length,
+                "AreaRoot が残っていない。");
+            Assert.AreEqual(0, Object.FindObjectsByType<AreaContext>(FindObjectsSortMode.None).Length,
+                "AreaContext が残っていない。");
+            Assert.AreEqual(0,
+                Object.FindObjectsByType<AreaTransitionDisplayProxy>(FindObjectsSortMode.None).Length,
+                "表示代理が残っていない（DontDestroyOnLoad なので Scene 読み替えでは消えない）。");
+
+            IAreaTransitionDisplay display = AreaTransitionDisplayProvider.Current;
+            Assert.IsNotNull(display, "表示担当は常駐なので生きている。");
+            Assert.IsFalse(display.IsActive, "代理は畳まれている。");
+            Assert.AreEqual(0, display.ProxyCount, "代理は 0。");
+            Assert.AreEqual(0, display.HiddenRendererCount, "隠したままの Renderer も 0。");
+
+            Assert.AreEqual(1, SceneManager.sceneCount, "実 Scene も 1 枚だけ。");
+            Assert.AreEqual(0, transitions.Slide.Residency.ResidentCount, "在留台帳も空。");
+
+            // ---- 常駐の提供点は生きている（「全部空」ではない）----
+            Assert.IsNotNull(AreaCameraOwnerProvider.Current, "常駐 Camera の提供点は残る。");
+            Assert.AreSame(AreaCameraRigHost.Instance, AreaCameraOwnerProvider.Current,
+                "差さっているのは生きている常駐 Rig。");
+            Assert.IsNotNull(GameplayClockProvider.Current, "Gameplay 時計の提供点も残る。");
+            Assert.AreSame(transitions.Clock, GameplayClockProvider.Current,
+                "差さっているのは常駐サービスの時計。");
+            Assert.IsFalse(GameplayClockProvider.IsFrozen, "時計は止まっていない。");
+        }
+
+        // ---------------------------------------------------------------- 先読み・死亡の補助
+
+        /// <summary>
+        /// 隣 Area を先読みして Staged まで進める（距離による先読みは §5 の後続工程なので、
+        /// ここは先読みの口を直接使う）。
+        /// </summary>
+        private IEnumerator StageTheNeighbour(AreaTransitionService transitions)
+        {
+            AreaRoot here = Object.FindFirstObjectByType<AreaRoot>();
+            Assert.IsNotNull(here, "いまの Area がある。");
+
+            AreaExitGate gate = null;
+            foreach (AreaExitGate candidate in
+                Object.FindObjectsByType<AreaExitGate>(FindObjectsSortMode.None))
+            {
+                if (candidate != null && candidate.ExitId.IsValid)
+                {
+                    gate = candidate;
+                }
+            }
+
+            Assert.IsNotNull(gate, "接続を持つ出入口がある。");
+            Assert.IsTrue(
+                transitions.Connections.TryGetFromExit(here.AreaId, gate.ExitId,
+                    out AreaConnectionSnapshot connection),
+                "その出入口の接続を引ける。");
+            Assert.IsTrue(
+                transitions.Catalog.TryGetEntry(connection.ToAreaId, connection.EntryId,
+                    out AreaEntryInfo entry),
+                "行き先の Scene を引ける。");
+
+            AreaPreloader preloader = transitions.Slide.Preloader;
+            Assert.IsTrue(preloader.Request(connection.ToAreaId, entry.ScenePath), "先読みを頼めた。");
+
+            float deadline = Time.realtimeSinceStartup + 20f;
+            while (preloader.Phase != AreaPreloadPhase.Staged && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(AreaPreloadPhase.Staged, preloader.Phase,
+                "隣 Area が閉じたまま載った。理由=" + preloader.FailureReason);
+            yield return null;
+        }
+
+        /// <summary>主人公を<b>実際の被弾経路</b>で死なせる（処理結果を直接セットしない）。</summary>
+        private IEnumerator KillPlayerWithRealHits()
+        {
+            var vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            Assert.IsNotNull(vitals, "主人公の生存がある。");
+
+            var attackerGo = new GameObject("P55LethalAttacker");
+            var attacker = attackerGo.AddComponent<LethalAttacker>();
+            attackerGo.transform.position = vitals.transform.position + Vector3.forward;
+
+            // 1 発で死ぬとは限らない（犬丸の「かばう」と被弾後無敵が挟まる）。
+            // どちらも本番の防御経路なので、飛ばさずに届くまで殴り続ける。
+            int hits = 0;
+            float deadline = Time.realtimeSinceStartup + 10f;
+            while (!vitals.IsDefeated && Time.realtimeSinceStartup < deadline)
+            {
+                hits++;
+                vitals.ReceiveHit(new HitInfo(
+                    attacker, vitals, Vector3.back, vitals.transform.position,
+                    new HitDamage(9999, 0f, 0f), guardable: false, justGuardable: false,
+                    hitId: HitId.Single(8800 + hits)));
+                yield return null;
+            }
+
+            Object.Destroy(attackerGo);
+            yield return null;
+
+            Assert.IsTrue(vitals.IsDefeated, "前提：主人公が死んでいる。打った数=" + hits);
+        }
+
+        /// <summary>再開操作が出るまで待つ（§9.1 の 1 行目）。</summary>
+        private static IEnumerator WaitForRespawnPrompt()
+        {
+            var view = Object.FindFirstObjectByType<CampaignRespawnView>();
+            Assert.IsNotNull(view, "再開操作の表示がある。");
+
+            float deadline = Time.realtimeSinceStartup + 8f;
+            while (!view.IsShowing && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.IsTrue(view.IsShowing, "死亡したら再開操作が出る。");
+            Assert.AreEqual(GameMode.GameOver, GameModeProvider.Current.Current, "GameOver になる。");
+        }
+
+        /// <summary>押して離すを繰り返す（押下エッジを見る入力）。</summary>
+        private IEnumerator PressKeyUntil(Key key, System.Func<bool> condition, float seconds)
+        {
+            float deadline = Time.realtimeSinceStartup + seconds;
+            while (!condition() && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(key));
+                yield return null;
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                yield return null;
+
+                for (int i = 0; i < 10 && !condition(); i++)
+                {
+                    yield return null;
+                }
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+        }
+
+        /// <summary>致死の攻撃元（実被弾経路を通すための最小の実装）。</summary>
+        private sealed class LethalAttacker : MonoBehaviour, ICombatActor
+        {
+            public CombatFaction Faction => CombatFaction.Enemy;
+            public int FloorId => 0;
+            public int ActorId => GetInstanceID();
+            public Vector3 WorldPosition => transform.position;
+            public Vector3 Forward => transform.forward;
         }
 
         // ---------------------------------------------------------------- 失敗注入用の Scene 操作

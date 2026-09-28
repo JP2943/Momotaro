@@ -146,6 +146,16 @@
       "id": "P55-P06B",
       "summary": "犬丸の状態別の実往復（§4.6／§11 の P06 の実遷移分）。健常／Down／Stagger／Away を実キーで運び、意図せぬ復帰・出撃なし、不正遷移 0。スライド中の代理が Collider・Rigidbody・索敵登録・Actor の中身を持たないことを実遷移の最中に確かめる",
       "stage": "P55-04"
+    },
+    {
+      "id": "P55-P11",
+      "summary": "先読み中の死亡→暗転再開、および Interact 扉の Fade（§5 末尾／§11 の P11）。先読みを不要扱いにし、終端して隔離 Area を unload してから Single 読込を発行する。Submit の到着 Interact 化なし",
+      "stage": "P55-04"
+    },
+    {
+      "id": "P55-P14",
+      "summary": "全 Area 破棄後の残留参照（§11 の P14）。掃除を呼ぶ前に、参照集合の索引・活動 Area の指定・カメラ領域集合・索敵／Interact／調査の登録簿・表示代理・実 Scene・在留台帳のどれにも旧 Scene 由来の参照が残らない。常駐の提供点（Camera・Gameplay 時計）は生きたまま",
+      "stage": "P55-04"
     }
   ],
   "tests": [
@@ -551,6 +561,27 @@
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingKeepsTheCompanionState(Away)",
         "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_CarriesNothingButItsRenderer"
       ]
+    },
+    {
+      "requirementId": "P55-P11",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.DyingWhileTheNeighbourIsStaged_DiscardsThePreloadAndRespawns",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.UsingTheInteractDoorWhileTheNeighbourIsStaged_DiscardsThePreloadFirst",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.DyingWhileTheNeighbourIsStillLoading_WaitsForItToTerminateBeforeTheFade"
+      ]
+    },
+    {
+      "requirementId": "P55-P14",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AfterAllAreasAreDestroyed_NoReferenceFromTheOldScenesRemains",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
     }
   ],
   "allowedSkips": []

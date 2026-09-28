@@ -158,8 +158,10 @@ namespace Momotaro.Infrastructure.World
                 return AreaTransitionDecision.Reject(AreaTransitionRejection.AlreadyTransitioning);
             }
 
-            // <b>台帳を実 Scene に合わせ直す</b>（§8 末尾の Fade 共存）。Single 読込は台帳を
-            // 通らないので、Fade を挟むと在留数が実際より多いまま残る。
+            // <b>台帳を実 Scene に合わせ直す</b>（§8 末尾の Fade 共存）。
+            // 毎フレームの後始末（<see cref="Pump"/>）でも同じことをしているが、
+            // <b>ここでもう一度やる</b>——出入口の <c>Update</c> と常駐の <c>Update</c> の
+            // 実行順は宣言できないので、受理の瞬間に台帳が古い可能性が残る。
             SyncResidencyToLoadedAreas();
 
             // 撤去し切れなかった旧 Area を抱えている間は、新しい Area ロードを出さない
@@ -772,6 +774,72 @@ namespace Momotaro.Infrastructure.World
         }
 
         /// <summary>
+        /// <b>Single 読込を出す前に先読みを捨てる</b>（§5 末尾／§8 末尾。工程 P55-04e）。
+        ///
+        /// §5 は「先読み中の死亡・暗転扉は先読みを不要扱いにし、<b>終端して隔離 Area を
+        /// unload してから</b>ロードを発行する」と定めている。<c>LoadSceneMode.Single</c> は
+        /// 載っている Scene を全部置き換えるので、先読みした Area は黙って消える——
+        /// 実害は「台帳と実 Scene がずれる」ことと、止められないロードが
+        /// <b>新しい世界の上へ遅れて Scene を足す</b>ことである。
+        ///
+        /// <b>何も載っていなければ 1 フレームも使わない。</b> P5 の構成は先読みを持たないので、
+        /// ここが従来経路に待ちを足してはいけない（正常系に固定の待ちを足さない。§6.3 末尾）。
+        /// </summary>
+        public IEnumerator DiscardStagedForSingleLoad()
+        {
+            if (_preloader == null)
+            {
+                yield break;
+            }
+
+            bool busy = _preloader.Phase != AreaPreloadPhase.Idle || _preloader.DesiredArea.IsValid;
+            if (!busy)
+            {
+                yield break;
+            }
+
+            DiscardedForSingleLoadCount++;
+            _preloader.ClearRequest();
+
+            float waited = 0f;
+            while (waited < _owner.TimeoutSeconds)
+            {
+                _preloader.Poll();
+                if (_preloader.Phase == AreaPreloadPhase.Idle
+                    || _preloader.Phase == AreaPreloadPhase.ReleaseFailed)
+                {
+                    break;
+                }
+
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            if (_preloader.Phase != AreaPreloadPhase.Idle)
+            {
+                // <b>それでも残っているなら記録して進む。</b> 死亡再開や暗転扉を
+                // 先読みの後始末のために止めてしまうと、プレイヤーに手が無くなる。
+                LastFailure = "先読みを終端できないまま Single 読込へ進みます（" + _preloader.Phase + "）。";
+                GameLog.Warning(LogCategory.Scene, LastFailure);
+            }
+        }
+
+        /// <summary>Single 読込の前に先読みを捨てた回数（診断・テスト用）。</summary>
+        public int DiscardedForSingleLoadCount { get; private set; }
+
+        /// <summary>
+        /// Single 読込が終わったことを知らせる（工程 P55-04e）。
+        ///
+        /// 載っていた Scene は全部置き換わったので、台帳と先読みの預かりをその場で合わせ直す。
+        /// 受理のたびの合わせ直し（<see cref="SyncResidencyToLoadedAreas"/>）でも回復するが、
+        /// <b>ずれている時間を残さない</b>ほうが、途中で数を見る検査が素直になる。
+        /// </summary>
+        public void NotifySingleLoadCompleted()
+        {
+            SyncResidencyToLoadedAreas();
+        }
+
+        /// <summary>
         /// 在留台帳を<b>実際に載っている Area</b>へ合わせ直す（§8 末尾「Fade と Slide は同じ
         /// Scene 操作管理を共有する」）。
         ///
@@ -854,23 +922,31 @@ namespace Momotaro.Infrastructure.World
         }
 
         /// <summary>
-        /// 遷移が走っていない間に先読みを 1 フレーム進める（常駐の <c>Update</c> から呼ばれる）。
+        /// 遷移が走っていない間の後始末を 1 フレーム進める（常駐の <c>Update</c> から呼ばれる）。
         ///
-        /// <b>止められないロードの後始末はここが受ける</b>（§8 の 5 行目）。監視を諦めた遷移は
-        /// 望みを取り下げて戻るだけで、実際の撤去は「操作が終端してから」しかできない。
-        /// 誰も進めないと、遅れて着いた Scene が<b>閉じたまま載り続ける</b>（在留枠も埋まったまま）。
+        /// やることは 2 つ。
+        /// <list type="number">
+        /// <item><description><b>台帳を実 Scene へ合わせ直す。</b> Scene は常駐の外からも
+        /// 置き換わる（New Game・Launcher 退避・試遊の切り替え）。毎フレーム合わせておけば、
+        /// 「誰が壊したか」を数え上げずに済む（§8 末尾）。</description></item>
+        /// <item><description><b>先読みを進める。</b> 止められないロードの終端はここでしか
+        /// 観測できない（§8 の 5 行目）。監視を諦めた遷移は望みを取り下げて戻るだけで、
+        /// 実際の撤去は「操作が終端してから」しかできない。誰も進めないと、
+        /// 遅れて着いた Scene が<b>閉じたまま載り続ける</b>（在留枠も埋まったまま）。</description></item>
+        /// </list>
         ///
         /// <b>遷移中は触らない。</b> 走っている遷移が自分の段で Poll しているので、
         /// 二重に進めると「読み終わった直後に撤去が始まる」順序が作れてしまう。
         /// </summary>
         public void Pump()
         {
-            if (_preloader == null || _slide.IsTransitioning)
+            if (_slide.IsTransitioning)
             {
                 return;
             }
 
-            _preloader.Poll();
+            SyncResidencyToLoadedAreas();
+            _preloader?.Poll();
         }
 
         private AreaPreloader EnsurePreloader()

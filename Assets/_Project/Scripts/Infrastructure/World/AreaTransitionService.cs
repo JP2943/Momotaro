@@ -515,6 +515,13 @@ namespace Momotaro.Infrastructure.World
                 yield break;
             }
 
+            // <b>先読みを捨ててからロードを発行する</b>（§5 末尾／§8 末尾。工程 P55-04e）。
+            // 先読みを持たない構成では 1 フレームも使わない（正常系に待ちを足さない）。
+            if (_slideRunner != null)
+            {
+                yield return _slideRunner.DiscardStagedForSingleLoad();
+            }
+
             AreaPendingArrival.Set(transitionId, request.AreaId, request.EntryId);
 
             if (!TryStartLoad(entry.ScenePath, out IAreaLoadOperation watched))
@@ -641,6 +648,9 @@ namespace Momotaro.Infrastructure.World
                 yield break;
             }
 
+            // Single 読込で載っている Scene は置き換わった。台帳をその場で合わせ直す。
+            _slideRunner?.NotifySingleLoadCompleted();
+
             NoteArrival(request.AreaId);
             arrived.Activate();
             GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
@@ -751,6 +761,8 @@ namespace Momotaro.Infrastructure.World
                 FailTerminal(transitionId, "復旧先に AreaContext がありません。");
                 yield break;
             }
+
+            _slideRunner?.NotifySingleLoadCompleted();
 
             NoteArrival(_pendingTransfer.OriginAreaId);
             recovered.Activate();
@@ -901,6 +913,7 @@ namespace Momotaro.Infrastructure.World
             }
 
             // 戻れた。ここで初めて片付ける。世界状態（Session）はそのまま残す。
+            _slideRunner?.NotifySingleLoadCompleted();
             ClearPendingTransfer();
             AreaPendingArrival.Clear();
             HasTerminalFailure = false;
