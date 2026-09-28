@@ -158,6 +158,11 @@
       "stage": "P55-04"
     },
     {
+      "id": "P55-P12",
+      "summary": "Camera／AudioListener／入力／HUD の唯一性（§11 の P12）。Camera の唯一性・同一インスタンス・移動中と翌フレームの飛び・通常 Follow との二重書込なしは P55-04b で見た。ここは残りの HUD と入力——遷移の要求から旧 Area の撤去まで毎フレーム、HUD と AudioListener を最大 1・最小 1（2 枚重なりも 0 枚の隙間も不可）、Interact の窓口を最大 1 で数え、入力の供給元は同一性（ReferenceEquals）が崩れないことを見る。東西・南北の両配置",
+      "stage": "P55-06"
+    },
+    {
       "id": "P55-P13",
       "summary": "同じ実プレイ導線で A↔B を 5 往復 → 遭遇戦 → 再訪 → 死亡再開 → 再戦（§11 の P13）。毎往復、Scene は 1 枚・在留台帳は 1 つ・先読みは手ぶら・進行の記録は増減しない。初回の徳は 22、往復と同一周期の再訪では増えない。死亡再開で周期が進むと遭遇戦は未クリアへ戻る（§9.1 の設計どおり）。東西・南北の両配置で通す（R13 指摘①）",
       "stage": "P55-06"
@@ -630,6 +635,17 @@
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.UsingTheInteractDoorWhileTheNeighbourIsStaged_DiscardsThePreloadFirst",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.DyingWhileTheNeighbourIsStillLoading_WaitsForItToTerminateBeforeTheFade"
+      ]
+    },
+    {
+      "requirementId": "P55-P12",
+      "stage": "P55-06",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55UniquenessPlayTests.TheSlide_KeepsOneHudOneListenerAndTheSameInput(\"EastWest\")",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55UniquenessPlayTests.TheSlide_KeepsOneHudOneListenerAndTheSameInput(\"NorthSouth\")"
       ]
     },
     {
