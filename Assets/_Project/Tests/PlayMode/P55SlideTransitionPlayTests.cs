@@ -1628,12 +1628,32 @@ namespace Momotaro.Tests.PlayMode
                 return _pending;
             }
 
+            /// <summary>true のあいだ、撤去は<b>終端しない</b>（保留する）。</summary>
+            internal bool HoldUnload { get; set; }
+
+            private PendingLoad _pendingUnload;
+
             public IAreaSceneOperation Unload(int sceneHandle)
             {
                 UnloadCount++;
                 LastUnloadHandle = sceneHandle;
+                if (HoldUnload)
+                {
+                    _pendingUnload = new PendingLoad();
+                    return _pendingUnload;
+                }
+
                 _loaded.Remove(sceneHandle);
                 return new Done();
+            }
+
+            /// <summary>保留していた撤去を終端させる。</summary>
+            internal void ReleaseUnload()
+            {
+                HoldUnload = false;
+                _loaded.Remove(LastUnloadHandle);
+                _pendingUnload?.Complete(LastUnloadHandle);
+                _pendingUnload = null;
             }
 
             public bool IsLoaded(int sceneHandle) => _loaded.Contains(sceneHandle);
@@ -1688,12 +1708,59 @@ namespace Momotaro.Tests.PlayMode
                 return _pending;
             }
 
-            public IAreaSceneOperation Unload(int sceneHandle) => _real.Unload(sceneHandle);
+            /// <summary>true のあいだ、撤去は<b>本物を始めずに</b>待つ。</summary>
+            internal bool HoldUnload { get; set; }
+
+            private DelayedUnload _pendingUnload;
+
+            /// <summary>撤去を頼まれた回数。</summary>
+            internal int UnloadCount { get; private set; }
+
+            public IAreaSceneOperation Unload(int sceneHandle)
+            {
+                UnloadCount++;
+                if (!HoldUnload)
+                {
+                    return _real.Unload(sceneHandle);
+                }
+
+                _pendingUnload = new DelayedUnload(_real, sceneHandle);
+                return _pendingUnload;
+            }
 
             public bool IsLoaded(int sceneHandle) => _real.IsLoaded(sceneHandle);
 
             /// <summary>本物の読込を始めさせる。</summary>
             internal void ReleaseLoad() => _pending?.Release();
+
+            /// <summary>保留していた撤去を本物として始めさせる。</summary>
+            internal void ReleaseUnload()
+            {
+                HoldUnload = false;
+                _pendingUnload?.Release();
+            }
+
+            private sealed class DelayedUnload : IAreaSceneOperation
+            {
+                private readonly UnityAreaSceneHost _real;
+                private readonly int _sceneHandle;
+                private IAreaSceneOperation _inner;
+
+                internal DelayedUnload(UnityAreaSceneHost real, int sceneHandle)
+                {
+                    _real = real;
+                    _sceneHandle = sceneHandle;
+                }
+
+                public bool IsDone => _inner != null && _inner.IsDone;
+                public bool HasError => _inner != null && _inner.HasError;
+                public int SceneHandle => _inner != null ? _inner.SceneHandle : 0;
+
+                internal void Release()
+                {
+                    _inner ??= _real.Unload(_sceneHandle);
+                }
+            }
 
             private sealed class DelayedLoad : IAreaSceneOperation
             {
@@ -2271,8 +2338,38 @@ namespace Momotaro.Tests.PlayMode
             // 進めないことは<b>終端失敗として記録される</b>ので Error が出る。
             // これは期待どおりの出力である（黙って進むほうが不合格）。
             // 再開は<b>何度でも試せる</b>ので、押すたびに 1 本出る——本数は固定しない。
-            LogAssert.ignoreFailingMessages = true;
+            //
+            // <b>必ず戻す。</b> 途中で Assert が落ちて戻らないと、
+            // <b>後続のテストの Error を黙って飲む</b>（GPT 追加の指摘）。
+            yield return IgnoringExpectedErrors(RunTimeoutBody(transitions, host));
+        }
 
+        /// <summary>
+        /// 期待どおり Error が出る区間を包む。<b>落ちても必ず元へ戻す</b>。
+        ///
+        /// 本数が変わる（再開を押すたびに 1 本出る）ので <c>LogAssert.Expect</c> では書けない。
+        /// 広く無視するぶん、<b>戻し忘れないこと</b>が条件になる。
+        /// </summary>
+        private static IEnumerator IgnoringExpectedErrors(IEnumerator body)
+        {
+            bool previous = LogAssert.ignoreFailingMessages;
+            LogAssert.ignoreFailingMessages = true;
+            try
+            {
+                while (body.MoveNext())
+                {
+                    yield return body.Current;
+                }
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = previous;
+            }
+        }
+
+        /// <summary>時間切れテストの本体（Error が出る区間）。</summary>
+        private IEnumerator RunTimeoutBody(AreaTransitionService transitions, ControllableSceneHost host)
+        {
             yield return KillPlayerWithRealHits();
             yield return WaitForRespawnPrompt();
             yield return PressKeyUntil(Key.Enter,
@@ -2320,7 +2417,12 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(1, SceneManager.sceneCount, "隔離 Area は残っていない。");
             Assert.AreEqual(AreaPreloadPhase.Idle, transitions.Slide.Preloader.Phase, "先読みは手ぶら。");
 
-            LogAssert.ignoreFailingMessages = false;
+            // ---- Launcher 退避も同じ所有状態を見る（GPT 追加①）----
+            //
+            // ここでは所有が解けているので退避できる。<b>解けていない間に断ること</b>は
+            // <c>LauncherRetreatDuringAStagedLoad_IssuesNoSingleLoad</c> が見る。
+            transitions.LauncherScenePath = P55TrialScene;
+            Assert.IsFalse(transitions.HasTerminalFailure, "終端失敗は解消している。");
         }
 
         // ---------------------------------------------------------------- GPT 受入②（P55-07a）
@@ -2463,6 +2565,239 @@ namespace Momotaro.Tests.PlayMode
 
         /// <summary>P5 の入口 ID（この配置でも再利用している）。</summary>
         private static readonly StableId Phase5AreaIdsAreaAFromB = new StableId("area_p5_a_from_b");
+
+
+        // ---------------------------------------------------------------- GPT 追加①（P55-07a2）
+
+        /// <summary>
+        /// <b>Launcher 退避も、先読みを迂回しない</b>（GPT 追加①）。
+        ///
+        /// 通常の遷移は先読みの終端を見るようになったが、そこで出るエラーからの
+        /// <c>TryBeginReturnToLauncher</c> は <c>_liveOperation</c> だけを見ていた。
+        /// <b>この変数は Additive の先読みを管理していない。</b>
+        /// 先読みタイムアウト →「Launcher へ戻る」で、未完了の先読みと Single が重なる経路が残っていた。
+        ///
+        /// <b>入口ごとに条件を足すのではなく、同じ所有状態を見る形に揃えた。</b>
+        /// </summary>
+        [UnityTest]
+        public IEnumerator LauncherRetreatDuringAStagedLoad_IssuesNoSingleLoad()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new ControllableSceneHost();
+            transitions.SlideSceneHost = host;
+            transitions.LauncherScenePath = P55TrialScene;
+
+            // 終端しない先読みを抱えさせる。
+            transitions.Slide.Preloader.Request(AreaB, P55AreaBScene);
+            yield return null;
+            transitions.Slide.Preloader.Poll();
+            Assert.AreEqual(1, host.LoadCount, "前提：先読みのロードが走っている。");
+            Assert.IsTrue(transitions.Slide.HasLiveSceneOperation,
+                "前提：終端していない Scene 操作を掴んでいる。");
+
+            // <b>GPT が指摘した経路そのものを踏む</b>：先読みタイムアウト →
+            // そこで出るエラーからの「Launcher へ戻る」。
+            transitions.TimeoutSeconds = 0.3f;
+            yield return IgnoringExpectedErrors(FailByRespawnWhileStaged(transitions));
+            Assert.IsTrue(transitions.HasTerminalFailure, "前提：終端失敗になっている。");
+            Assert.AreEqual(0, transitions.CompletedCount, "前提：Single はまだ発行されていない。");
+
+            int scenesBefore = SceneManager.sceneCount;
+            int returnedBefore = transitions.ReturnedToLauncherCount;
+
+            Assert.IsFalse(transitions.CanReturnToLauncher,
+                "先読みが終端していない間は退避できない（§5「終端してから発行する」）。");
+            Assert.IsFalse(transitions.TryBeginReturnToLauncher(),
+                "退避の要求そのものを断る。");
+
+            for (int i = 0; i < 10; i++)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(returnedBefore, transitions.ReturnedToLauncherCount,
+                "Single ロードは 1 件も発行していない。");
+            Assert.AreEqual(scenesBefore, SceneManager.sceneCount, "Scene も置き換わっていない。");
+            Assert.AreEqual(1, host.LoadCount, "先読みのロードも重なっていない。");
+
+            // ---- 終端すれば退避できる ----
+            host.CompleteLoad(781001);
+            yield return null;
+            transitions.Slide.Preloader.Poll();
+            yield return null;
+
+            Assert.IsFalse(transitions.Slide.HasLiveSceneOperation, "操作は終端した。");
+            Assert.IsTrue(transitions.CanReturnToLauncher, "終端したので退避できる。");
+        }
+
+        // ---------------------------------------------------------------- GPT 追加②（P55-07a2）
+
+        /// <summary>
+        /// <b>Fade も、旧 Area の撤去が終わるまでロードを発行しない</b>（GPT 追加②）。
+        ///
+        /// 「Single は全部を置き換えるから待たせない」と書いていたが、それは
+        /// <b>操作の非重複という別の契約</b>を無視していた。撤去の操作が走っている最中に
+        /// Single を撃てば、終端していない操作の上へ新しい操作を重ねることになる。
+        ///
+        /// <b>撤去を意図的に終端させずに</b>、その間の Single 発行数が 0 であることを見る。
+        /// 前のテスト（到着・Scene 数・失敗数だけを見る）では、
+        /// <b>同時に走らなかったこと自体</b>を観測できていなかった。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FadeWhileTheRetireIsStillRunning_WaitsForItToFinish()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            // <b>本物の Scene を使う。</b> 偽 Scene では到着そのものが起きないので、
+            // 「到着通知の中から頼む」という条件が作れない。
+            var host = new DelayedRealSceneHost();
+            transitions.SlideSceneHost = host;
+
+            bool requested = false;
+            bool accepted = false;
+            void OnArrived(StableId areaId)
+            {
+                if (requested || !areaId.Equals(AreaB))
+                {
+                    return;
+                }
+
+                requested = true;
+                accepted = transitions.TryTravel(AreaA, AreaAFromBEntry).Accepted;
+            }
+
+            transitions.ArrivalCompleted += OnArrived;
+            try
+            {
+                yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+
+                // <b>撤去だけを止める。</b> ここからの Single は、走っている撤去と重なってはいけない。
+                host.HoldUnload = true;
+
+                // <b>読込は毎フレーム解放する</b>（この host は既定で読込を保留する）。
+                // ここで止めたいのは<b>撤去だけ</b>である。
+                float slideDeadline = Time.realtimeSinceStartup + 25f;
+                while (transitions.SlideCommittedCount == 0
+                       && !transitions.HasTerminalFailure
+                       && Time.realtimeSinceStartup < slideDeadline)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                    yield return null;
+                    host.ReleaseLoad();
+                }
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                yield return null;
+
+                Assert.IsFalse(transitions.HasTerminalFailure,
+                    "前提：スライドは成功する。理由=" + transitions.TerminalFailureReason);
+                Assert.AreEqual(1, transitions.SlideCommittedCount, "前提：スライドで着いた。");
+                Assert.IsTrue(requested, "前提：到着通知の中から Fade を要求した。");
+                Assert.IsTrue(accepted, "前提：Fade の要求は受理された。");
+                Assert.IsTrue(transitions.Slide.IsRetiring, "前提：撤去がまだ走っている。");
+
+                // ---- 撤去が終わるまで Single は発行されない ----
+                for (int i = 0; i < 30; i++)
+                {
+                    yield return null;
+                    Assert.AreEqual(0, transitions.CompletedCount,
+                        "撤去が走っている間は Single 読込を発行しない（GPT 追加②）。"
+                        + " 撤去中=" + transitions.Slide.IsRetiring);
+                }
+
+                Assert.IsTrue(transitions.Slide.IsRetiring, "まだ撤去中のまま（前提が崩れていない）。");
+                Assert.AreEqual(1, host.UnloadCount, "撤去は一度だけ頼まれている。");
+
+                // ---- 撤去が終端すれば、一度だけ発行される ----
+                host.ReleaseUnload();
+
+                float deadline = Time.realtimeSinceStartup + 25f;
+                while (transitions.CompletedCount == 0
+                       && !transitions.HasTerminalFailure
+                       && Time.realtimeSinceStartup < deadline)
+                {
+                    yield return null;
+                }
+            }
+            finally
+            {
+                transitions.ArrivalCompleted -= OnArrived;
+            }
+
+            Assert.IsFalse(transitions.HasTerminalFailure,
+                "終端失敗にならない。理由=" + transitions.TerminalFailureReason);
+            Assert.AreEqual(1, transitions.CompletedCount, "撤去のあとに一度だけ発行される。");
+            Assert.IsFalse(transitions.Slide.IsRetiring, "撤去は終わっている。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "Scene は 1 枚に戻る。");
+        }
+
+        // ---------------------------------------------------------------- GPT 追加③（P55-07a2）
+
+        /// <summary>
+        /// <b>先読みが失敗したあとでも、扉移動と死亡再開は止まらない</b>（GPT 追加③）。
+        ///
+        /// <c>Failed</c> は<b>操作も Scene も手放したあとの履歴</b>である。
+        /// <c>ClearRequest</c>／<c>Poll</c> では Idle へ戻らないので、
+        /// これを「まだ掴んでいる」と同じに扱うと、<b>一度先読みに失敗しただけで
+        /// 死亡再開も扉移動も毎回タイムアウトする</b>。
+        ///
+        /// 未完了の <c>Loading</c> や、Scene が残る撤去失敗と<b>同じ扱いにしない</b>。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TravellingAfterAFailedPreload_IsNotBlocked()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var sceneHost = new AlwaysFailingSceneHost();
+            transitions.SlideSceneHost = sceneHost;
+
+            // 先読みを失敗させる。
+            transitions.Slide.Preloader.Request(AreaB, P55AreaBScene);
+            for (int i = 0; i < 10 && transitions.Slide.Preloader.Phase != AreaPreloadPhase.Failed; i++)
+            {
+                yield return null;
+                transitions.Slide.Preloader.Poll();
+            }
+
+            Assert.AreEqual(AreaPreloadPhase.Failed, transitions.Slide.Preloader.Phase,
+                "前提：先読みが失敗している。");
+            Assert.IsFalse(transitions.Slide.HasLiveSceneOperation,
+                "失敗は終端している（操作を掴んでいない）。");
+            Assert.IsFalse(transitions.Slide.HoldsRemainingScene,
+                "残留物も無い（Scene を預かっていない）。");
+
+            // ---- 死亡再開が通る ----
+            sceneHost.Failing = false;
+            yield return KillPlayerWithRealHits();
+            yield return WaitForRespawnPrompt();
+            yield return PressKeyUntil(Key.Enter,
+                () => transitions.CompletedCount > 0 || transitions.HasTerminalFailure, 25f);
+
+            Assert.IsFalse(transitions.HasTerminalFailure,
+                "先読みの失敗が死亡再開を止めない。理由=" + transitions.TerminalFailureReason);
+            Assert.AreEqual(1, transitions.CompletedCount, "暗転経路で再開できる。");
+            Assert.AreEqual(0, transitions.Slide.StagedDiscardBlockedCount,
+                "「終端していない」と誤って数えていない（Failed は履歴であって所有ではない）。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "Scene は 1 枚。");
+        }
+
+        /// <summary>先読みを抱えたまま死亡再開を試して、終端失敗を作る（Error が出る区間）。</summary>
+        private IEnumerator FailByRespawnWhileStaged(AreaTransitionService transitions)
+        {
+            yield return KillPlayerWithRealHits();
+            yield return WaitForRespawnPrompt();
+            yield return PressKeyUntil(Key.Enter,
+                () => transitions.CompletedCount > 0
+                      || transitions.Slide.StagedDiscardBlockedCount > 0, 15f);
+        }
+
+        /// <summary>A の「B から戻る」入口（この配置でも P5 の ID を再利用している）。</summary>
+        private static readonly StableId AreaAFromBEntry = new StableId("area_p5_a_from_b");
 
     }
 }

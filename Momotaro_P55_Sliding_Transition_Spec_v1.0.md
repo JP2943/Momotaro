@@ -1466,4 +1466,63 @@ HUD は Area ごとに置かれている。スライド中は Area が 2 つ載�
 > 目的地の先読みが完了しませんでした（Failed / 在留上限に達しているため先読みできません（上限 2））
 
 いまは `SlideRoutine` が在留登録の**前に**撤去の終わりを待つ。待った回数は `RetireWaitCount`。
-Fade（Single）は全部を置き換えるので待たせないが、撤去と重ならないことは別に見る。
+
+> **訂正（GPT 追加②）。** ここには「Fade（Single）は全部を置き換えるので待たせない」と書いていた。
+> **それは操作の非重複という別の契約を無視していた。** 置き換えるかどうかは
+> **結果**の話で、撤去の操作が走っている最中に Single を撃てば、
+> 終端していない操作の上へ新しい操作を重ねることになる（§5・§8）。
+> **Fade も撤去の終端を待つ。**
+
+## 付録 C.20 Scene 操作の所有を 1 か所で言う（工程 P55-07a2。GPT 追加①②③）
+
+### C.20.1 入口ごとに条件を足すと、どれか 1 つが必ず抜ける
+
+P55-07a では `TravelRoutine` に「先読みの終端を見届けたか」を足した。
+**そこだけに足したので、Launcher 退避が素通りになった。**
+`TryBeginReturnToLauncher` は `_liveOperation`（**Single のロードだけ**を管理する変数）を見ており、
+Additive の先読みを迂回していた。先読みタイムアウト →「Launcher へ戻る」で重なる。
+
+いまは**通常 Fade・死亡再開・Launcher 退避が同じ手順を通る**。
+
+| 呼ぶ人 | 通る手順 |
+|---|---|
+| 通常 Fade・死亡再開・Interact 扉（`TravelRoutine`） | `DiscardStagedForSingleLoad()` → 解けたら発行 |
+| Launcher 退避（`ReturnToLauncherRoutine`） | **同じ**手順 → 解けたら発行 |
+
+判定も 1 か所にまとめた。
+
+| 名前 | 意味 | ロードを止めるか |
+|---|---|---|
+| `HasLiveSceneOperation` | **終端していない操作**を掴んでいる（先読みの読込・撤去、旧 Area の通常撤去） | **止める** |
+| `HoldsRemainingScene` | 操作は終端したが、実 Scene を預かったまま | 止めない（Single が置き換える。数だけ残す） |
+
+### C.20.2 「失敗した」と「まだ掴んでいる」は別（③）
+
+`AreaPreloadPhase.Failed` は**操作も Scene も手放したあとの履歴**である
+（`PollLoading` の失敗枝が `_operation` を捨て、`EndSceneOperation` を呼び、在留枠も返している）。
+`ClearRequest()`／`Poll()` では **Idle へ戻らない**。
+
+以前の完了条件は `Idle` か `ReleaseFailed` だった。つまり
+
+- **`Failed`（何も持っていない）を未終端として扱い**、毎回タイムアウトさせていた——
+  一度先読みに失敗しただけで、扉移動も死亡再開も止まる。
+- **`ReleaseFailed`（Scene が残っている）を完了として扱っていた**——逆である。
+
+いまは**持ち物で判定する**。`Failed` は即座に完了、`ReleaseFailed` は撤去のやり直しを促し、
+それでも残るなら「載ったまま Single へ進んだ」と数える（`SingleLoadOverRemainingSceneCount`）。
+
+**Scene が残ることで Single を止めない**のは、止めるとプレイヤーに出口が無くなるからである
+（死亡再開も Launcher 退避もできない）。止めるのは**終端していない操作**だけ。
+
+### C.20.3 「同時に走らなかったこと」を観測する
+
+追加前のテストは、最終的な到着・Scene 数・失敗数だけを見ていた。
+それでは**同時に走らなかったこと自体**は言えない。
+
+いまは**撤去を意図的に終端させない**（`DelayedRealSceneHost.HoldUnload`）。
+その間 30 フレーム、`CompletedCount` が 0 のままであることを毎フレーム確かめ、
+終端させたあとに 1 になることを見る。注入（待ちを外す）では
+
+> 撤去が走っている間は Single 読込を発行しない（GPT 追加②）。撤去中=True / Expected: 0 But was: 1
+
+で落ちる。

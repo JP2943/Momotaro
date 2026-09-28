@@ -108,6 +108,23 @@ namespace Momotaro.Gameplay.Session
         /// <summary>失敗の理由（成功なら空）。</summary>
         public string FailureReason { get; private set; } = string.Empty;
 
+        /// <summary>
+        /// <b>終端していない Scene 操作を掴んでいる</b>か（工程 P55-07a2。GPT 追加③）。
+        ///
+        /// これが true の間は、ほかの Scene 操作を始めてはならない（§5「終端してから発行する」）。
+        /// <b>「失敗した」という履歴とは別物である</b>——<see cref="AreaPreloadPhase.Failed"/> は
+        /// 操作も Scene も手放したあとの印なので、ここは false になる。
+        /// </summary>
+        public bool HasLiveSceneOperation => _operation != null && !_operation.IsDone;
+
+        /// <summary>
+        /// <b>実 Scene を預かったまま</b>か（Staged／撤去失敗／読込中）。
+        ///
+        /// 操作は終端していても Scene が載っていることはある。
+        /// <see cref="AreaPreloadPhase.Failed"/> は<b>残留物が無い</b>ので false。
+        /// </summary>
+        public bool HoldsStagedScene => StagedArea.IsValid || _loading.IsValid;
+
         /// <summary>失敗を抱えているか（<see cref="ArmRetry"/> を待っている状態）。</summary>
         public bool HasFailure =>
             Phase == AreaPreloadPhase.Failed || Phase == AreaPreloadPhase.ReleaseFailed;

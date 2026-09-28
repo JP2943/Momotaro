@@ -131,11 +131,41 @@ namespace Momotaro.Infrastructure.World
         public int StagedDiscardBlockedCount { get; private set; }
 
         /// <summary>
-        /// 直前の <see cref="DiscardStagedForSingleLoad"/> が<b>終端まで見届けられた</b>か。
+        /// 直前の <see cref="DiscardStagedForSingleLoad"/> が<b>所有を解けた</b>か。
         ///
         /// false のあいだ、呼び出し元は<b>次のロードを発行してはならない</b>。
         /// </summary>
         public bool StagedDiscardCompleted { get; private set; } = true;
+
+        /// <summary>
+        /// <b>終端していない Scene 操作を、この遷移系が掴んでいるか</b>（工程 P55-07a2）。
+        ///
+        /// <b>通常 Fade・死亡再開・Launcher 退避は、すべてここを見る。</b>
+        /// 入口ごとに別々の条件を足すと、どれか 1 つが必ず抜ける——実際に
+        /// Launcher 退避だけが <c>_liveOperation</c>（Single 側の監視）しか見ておらず、
+        /// Additive の先読みを迂回していた（GPT 追加①）。
+        ///
+        /// ここが見るのは<b>終端していない操作</b>だけである。
+        /// 「載ったままの Scene」は <see cref="HoldsRemainingScene"/> が別に言う——
+        /// Single 読込はすべての Scene を置き換えるので、操作の衝突にはならない。
+        /// </summary>
+        public bool HasLiveSceneOperation =>
+            (_preloader != null && _preloader.HasLiveSceneOperation) || _retiring;
+
+        /// <summary>
+        /// <b>操作は終端したが、実 Scene を預かったまま</b>か。
+        ///
+        /// 先読みの Staged／撤去失敗と、撤去し切れなかった旧 Area がこれに当たる。
+        /// <b>Single 読込は止めない</b>——止めると、撤去できない Scene を抱えたプレイヤーに
+        /// 出口が無くなる（死亡再開も Launcher 退避もできない）。
+        /// 代わりに <see cref="SingleLoadOverRemainingSceneCount"/> で数え、
+        /// Single のあと <see cref="NotifySingleLoadCompleted"/> が台帳を実 Scene へ合わせ直す。
+        /// </summary>
+        public bool HoldsRemainingScene =>
+            (_preloader != null && _preloader.HoldsStagedScene) || HasPendingRetire;
+
+        /// <summary>載ったままの Scene を抱えたまま Single 読込へ進んだ回数（診断・テスト用）。</summary>
+        public int SingleLoadOverRemainingSceneCount { get; private set; }
 
         /// <summary>実 Scene に合わせて台帳から落とした実体の数（診断・テスト用）。</summary>
         public int ForgottenResidentCount { get; private set; }
@@ -858,33 +888,70 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         public IEnumerator DiscardStagedForSingleLoad()
         {
-            // <b>毎回ここから言い直す。</b> この値は「<b>この呼び出し</b>が終端を見届けたか」であって、
+            // <b>毎回ここから言い直す。</b> この値は「<b>この呼び出し</b>が所有を解けたか」であって、
             // 前回の結果ではない。前回 false のまま早期 return すると、
             // 先読みがとっくに空になっていても<b>呼び出し元が永久に進めない</b>——
             // 実際に踏んだ（再試行が一度も通らなかった）。
             StagedDiscardCompleted = true;
+
+            // ---- 1. 通常の撤去が走っていれば、その終端を待つ（GPT 追加②）----
+            //
+            // <b>Fade も待つ。</b> 「Single は全部を置き換えるから待たせない」と書いていたが、
+            // それは<b>操作の非重複という別の契約</b>を無視していた。撤去の操作が走っている
+            // 最中に Single を撃てば、終端していない操作の上へ新しい操作を重ねることになる。
+            if (_retiring)
+            {
+                float retireWaited = 0f;
+                while (_retiring && retireWaited < _owner.TimeoutSeconds)
+                {
+                    retireWaited += Time.unscaledDeltaTime;
+                    yield return null;
+                }
+
+                if (_retiring)
+                {
+                    StagedDiscardBlockedCount++;
+                    StagedDiscardCompleted = false;
+                    LastFailure = "旧 Area の撤去が終わらないため、Single 読込を発行しませんでした。";
+                    GameLog.Warning(LogCategory.Scene, LastFailure);
+                    yield break;
+                }
+            }
 
             if (_preloader == null)
             {
                 yield break;
             }
 
-            bool busy = _preloader.Phase != AreaPreloadPhase.Idle || _preloader.DesiredArea.IsValid;
-            if (!busy)
+            // ---- 2. 先読みの所有を解く ----
+            //
+            // <b>「失敗した」と「まだ掴んでいる」は別物である</b>（GPT 追加③）。
+            // <c>Failed</c> は操作も Scene も手放したあとの<b>履歴</b>で、
+            // <c>ClearRequest</c>／<c>Poll</c> では Idle へ戻らない。
+            // これを未終端と同じに扱うと、<b>一度先読みに失敗しただけで
+            // 死亡再開も扉移動も毎回タイムアウトする</b>。
+            bool owns = _preloader.HasLiveSceneOperation
+                        || _preloader.HoldsStagedScene
+                        || _preloader.DesiredArea.IsValid;
+            if (!owns)
             {
                 yield break;
             }
 
             DiscardedForSingleLoadCount++;
-            StagedDiscardCompleted = false;
             _preloader.ClearRequest();
 
             float waited = 0f;
             while (waited < _owner.TimeoutSeconds)
             {
+                // 撤去失敗を抱えているなら、やり直しの許可を出しておく（§5 の 1 回だけ再試行）。
+                if (_preloader.Phase == AreaPreloadPhase.ReleaseFailed)
+                {
+                    _preloader.ArmRetry();
+                }
+
                 _preloader.Poll();
-                if (_preloader.Phase == AreaPreloadPhase.Idle
-                    || _preloader.Phase == AreaPreloadPhase.ReleaseFailed)
+                if (!_preloader.HasLiveSceneOperation)
                 {
                     break;
                 }
@@ -893,27 +960,33 @@ namespace Momotaro.Infrastructure.World
                 yield return null;
             }
 
-            if (_preloader.Phase == AreaPreloadPhase.Idle
-                || _preloader.Phase == AreaPreloadPhase.ReleaseFailed)
+            if (_preloader.HasLiveSceneOperation)
             {
-                StagedDiscardCompleted = true;
+                // <b>時間切れは「次のロードを始めてよい」ではない</b>（GPT 受入①）。
+                //
+                // 以前はここで警告だけ残して抜けていた。呼び出し元はそのまま Single 読込を発行し、
+                // <b>Additive の先読みが走ったまま</b>次の読込が重なる。Single 側の監視は
+                // 先読みの操作を持っていないので、そこでは止まらない。
+                //
+                // <b>所有権を手放さない。</b> 監視は <c>Pump</c> が続け、終端したら枠が戻る。
+                // 呼び出し元はこの回のロードを<b>終端失敗</b>にして、プレイヤーに再操作させる。
+                StagedDiscardBlockedCount++;
+                StagedDiscardCompleted = false;
+                LastFailure = "先読みが終端していないため、Single 読込を発行しませんでした（"
+                    + _preloader.Phase + "）。";
+                GameLog.Warning(LogCategory.Scene, LastFailure);
                 yield break;
             }
 
-            // <b>時間切れは「次のロードを始めてよい」ではない</b>（GPT 受入①）。
-            //
-            // 以前はここで警告だけ残して抜けていた。呼び出し元はそのまま Single 読込を発行し、
-            // <b>Additive の先読みが走ったまま</b>次の読込が重なる。Single 側の監視は
-            // 先読みの操作を持っていないので、そこでは止まらない——
-            // §5・§8 の「操作は 1 つずつ」という約束が破れる経路だった。
-            //
-            // <b>所有権を手放さない。</b> 監視は <c>Pump</c> が続け、終端したら枠が戻る。
-            // 呼び出し元はこの回のロードを<b>終端失敗</b>にして、プレイヤーに再操作させる
-            // （死亡再開なら再開画面へ戻り、もう一度 Submit できる。§9.1）。
-            StagedDiscardBlockedCount++;
-            LastFailure = "先読みが終端していないため、Single 読込を発行しませんでした（"
-                + _preloader.Phase + "）。";
-            GameLog.Warning(LogCategory.Scene, LastFailure);
+            // 操作は終端した。Scene が載ったままなら数えておく——
+            // Single 読込がそれごと置き換え、<c>NotifySingleLoadCompleted</c> が台帳を合わせ直す。
+            if (HoldsRemainingScene)
+            {
+                SingleLoadOverRemainingSceneCount++;
+                GameLog.Warning(LogCategory.Scene,
+                    "撤去し切れていない Scene を抱えたまま Single 読込へ進みます（"
+                    + _preloader.Phase + "）。");
+            }
         }
 
         /// <summary>Single 読込の前に先読みを捨てた回数（診断・テスト用）。</summary>

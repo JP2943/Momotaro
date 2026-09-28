@@ -874,7 +874,10 @@ namespace Momotaro.Infrastructure.World
             HasTerminalFailure
             && !IsReturningToLauncher
             && !string.IsNullOrEmpty(LauncherScenePath)
-            && (_liveOperation == null || _liveOperation.IsDone);
+            && (_liveOperation == null || _liveOperation.IsDone)
+            // <b>先読み・撤去も見る</b>（GPT 追加①）。<c>_liveOperation</c> は Single の
+            // ロードしか管理していないので、これだけでは Additive の先読みを迂回できてしまう。
+            && !(_slideRunner != null && _slideRunner.HasLiveSceneOperation);
 
         /// <summary>
         /// 既存 Launcher へ戻る操作を<b>始める</b>（§6.3 の最終行）。<b>自動では呼ばない。</b>
@@ -891,20 +894,47 @@ namespace Momotaro.Infrastructure.World
                 return false;
             }
 
-            if (!TryStartLoad(LauncherScenePath, out IAreaLoadOperation operation))
-            {
-                return false;
-            }
-
             _returning = true;
             GameModeProvider.Current?.ChangeMode(GameMode.Loading);
-            StartCoroutine(ReturnToLauncherRoutine(operation));
+            StartCoroutine(ReturnToLauncherRoutine());
             return true;
         }
 
-        /// <summary>戻りロードを完了まで見届ける。失敗したら停止状態を維持する。</summary>
-        private IEnumerator ReturnToLauncherRoutine(IAreaLoadOperation operation)
+        /// <summary>
+        /// 戻りロードを完了まで見届ける。失敗したら停止状態を維持する。
+        ///
+        /// <b>ロードを始める前に、通常の遷移と同じ手順で Scene 操作の所有を解く</b>
+        /// （GPT 追加①）。ここを飛ばすと、先読みが走ったまま Single を撃つ経路が
+        /// <b>退避だけに残る</b>——入口ごとに条件を足すのではなく、同じ手順を通す。
+        /// </summary>
+        private IEnumerator ReturnToLauncherRoutine()
         {
+            if (_slideRunner != null)
+            {
+                yield return _slideRunner.DiscardStagedForSingleLoad();
+                if (!_slideRunner.StagedDiscardCompleted)
+                {
+                    _returning = false;
+                    ReturnToLauncherFailedCount++;
+                    TerminalFailureReason =
+                        "先読み・撤去が終端していないため、Launcher へ戻るロードを開始できませんでした。"
+                        + "しばらく待ってからもう一度操作してください。";
+                    GameLog.Error(LogCategory.Scene, "Return to launcher blocked: " + TerminalFailureReason);
+                    TerminalFailed?.Invoke(TerminalFailureReason);
+                    yield break;
+                }
+            }
+
+            if (!TryStartLoad(LauncherScenePath, out IAreaLoadOperation operation))
+            {
+                _returning = false;
+                ReturnToLauncherFailedCount++;
+                TerminalFailureReason = "前のロードが終端していないため、Launcher へ戻れませんでした。";
+                GameLog.Error(LogCategory.Scene, "Return to launcher blocked: " + TerminalFailureReason);
+                TerminalFailed?.Invoke(TerminalFailureReason);
+                yield break;
+            }
+
             float waited = 0f;
             while (!operation.IsDone && waited < ReturnTimeoutSeconds)
             {
