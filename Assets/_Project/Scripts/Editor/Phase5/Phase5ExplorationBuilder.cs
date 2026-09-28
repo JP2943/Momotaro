@@ -629,9 +629,13 @@ namespace Momotaro.Editor.Phase5
             var markers = new GameObject("Markers");
             markers.transform.SetParent(root, false);
             Phase5Placeholder.CreateLabel("エリア A", markers.transform, new Vector3(0f, 0.2f, -1.5f), Color.white, 0.5f);
+            // <b>目印は床に伏せる。</b> 高さのある板を出入口に立てると、俯角 55 度のカメラでは
+            // 板が手前へ倒れ込むように映り、<b>主人公を隠す</b>。南北配置ではスライドの出発時に
+            // 主人公が 1 画素も描かれなかった（工程 P55-06b の録画で判明。記録 027）。
+            // 東西配置では板が画面に対して横向きだったので、たまたま隠れていなかった。
             Vector3 exitToB = t.AreaAExitPosition;
             CreateMarker(markers.transform, "ExitToB", exitToB, Phase5Placeholder.EntryColor, "B へ",
-                AcrossSeam(t.SeamAxis, 0.6f, 1.6f, Phase5Layout.CorridorWidth));
+                AcrossSeam(t.SeamAxis, 0.6f, MarkerPlateHeight, Phase5Layout.CorridorWidth));
 
             // 入口。
             var entries = new GameObject("Entries");
@@ -970,6 +974,14 @@ namespace Momotaro.Editor.Phase5
         /// 東西の接続で <c>(薄, 高, 通路幅)</c> だったものは、南北では <c>(通路幅, 高, 薄)</c> になる。
         /// 座標と違って形は軸から一意に決まるので、ここで導いて設定には持たせない。
         /// </summary>
+        /// <summary>
+        /// 床に伏せる目印の厚み。
+        ///
+        /// <b>俯角のあるカメラでは、高さのある物は手前を覆う。</b> 出入口や扉のように
+        /// 主人公が必ず重なる場所の飾りは、<b>床の模様</b>にして遮蔽を作らない（§11 の P15）。
+        /// </summary>
+        private const float MarkerPlateHeight = 0.06f;
+
         private static Vector3 AcrossSeam(Phase5SeamAxis axis, float thin, float height, float wide) =>
             axis == Phase5SeamAxis.X
                 ? new Vector3(thin, height, wide)
@@ -1129,9 +1141,12 @@ namespace Momotaro.Editor.Phase5
             go.transform.position = position;
 
             Material mat = Phase5Placeholder.EnsureMaterial("M_P5_DoorToA", Phase5Placeholder.EntryColor);
-            Phase5Placeholder.CreateBox("Body", go.transform, position + new Vector3(0f, 0.9f, 0f),
-                AcrossSeam(seamAxis, 0.6f, 1.8f, 2.4f), mat, solid: false);
-            Phase5Placeholder.CreateLabel("A へ（扉）", go.transform, position + new Vector3(0f, 2.0f, 0f),
+            // 扉も床に伏せる（同じ理由。主人公が必ず重なる場所に遮蔽を作らない）。
+            Phase5Placeholder.CreateBox("Body", go.transform,
+                position + new Vector3(0f, MarkerPlateHeight * 0.5f, 0f),
+                AcrossSeam(seamAxis, 0.6f, MarkerPlateHeight, 2.4f), mat, solid: false);
+            Phase5Placeholder.CreateLabel("A へ（扉）", go.transform,
+                position + new Vector3(0f, MarkerPlateHeight + 0.2f, 0f),
                 Phase5Placeholder.EntryColor, 0.16f);
 
             AreaTransitionDoor door = go.AddComponent<AreaTransitionDoor>();

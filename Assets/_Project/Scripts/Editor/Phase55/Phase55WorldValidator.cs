@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Momotaro.Core.Identification;
 using Momotaro.Data.World;
 using Momotaro.Editor.Phase5;
+using Momotaro.Gameplay.Interaction;
 using Momotaro.Gameplay.Session;
 using Momotaro.Presentation.Cameras;
 using UnityEditor;
@@ -33,6 +34,12 @@ namespace Momotaro.Editor.Phase55
         /// <summary>座標の一致に許す誤差（m）。</summary>
         private const float Tolerance = 0.01f;
 
+        /// <summary>遮蔽判定が飛ばす球の半径（<c>PhysicsObstacleProbe</c> の既定）。</summary>
+        private const float InteractionProbeRadius = 0.25f;
+
+        /// <summary>Interact の錨と門のあいだに要る隙間（球の直径ぶん）。</summary>
+        private const float RequiredInteractionClearance = InteractionProbeRadius * 2f;
+
         /// <summary>
         /// 片側の Area から採った事実。
         ///
@@ -50,6 +57,13 @@ namespace Momotaro.Editor.Phase55
             public readonly Dictionary<string, Vector3> Entries = new Dictionary<string, Vector3>();
             public readonly Dictionary<string, Vector3> Exits = new Dictionary<string, Vector3>();
             public readonly List<Bounds> SideWalls = new List<Bounds>();
+
+            /// <summary>レバーで開く門の見た目の箱（遮蔽を作る本体）。</summary>
+            public readonly List<Bounds> FlagDoors = new List<Bounds>();
+
+            /// <summary>Interact の錨（調査地点・レバー）。</summary>
+            public readonly Dictionary<string, Vector3> InteractionAnchors =
+                new Dictionary<string, Vector3>();
             public string CatalogPath;
             public string ConnectionPath;
         }
@@ -156,6 +170,8 @@ namespace Momotaro.Editor.Phase55
             ValidateConnections(arrangement, a, b, errors);
             ValidateBoundData(arrangement, a, errors);
             ValidateBoundData(arrangement, b, errors);
+            ValidateInteractionClearance(a, errors);
+            ValidateInteractionClearance(b, errors);
         }
 
         /// <summary>
@@ -250,6 +266,25 @@ namespace Momotaro.Editor.Phase55
                 if (IsOuterWall(renderer.name))
                 {
                     collected.SideWalls.Add(renderer.bounds);
+                }
+            }
+
+            // 門の見た目の箱と Interact の錨。<b>遮蔽判定は球を飛ばす</b>ので、
+            // 錨のすぐ向こうに門があると錨の手前からでも遮蔽になる（下の検査）。
+            foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer != null && renderer.GetComponentInParent<AreaFlagDoor>() != null)
+                {
+                    collected.FlagDoors.Add(renderer.bounds);
+                }
+            }
+
+            foreach (MonoBehaviour behaviour in root.GetComponentsInChildren<MonoBehaviour>(true))
+            {
+                if (behaviour is IAreaInteractable interactable && interactable.InteractableId.IsValid)
+                {
+                    collected.InteractionAnchors[interactable.InteractableId.Value] =
+                        interactable.InteractionAnchor;
                 }
             }
 
@@ -733,6 +768,44 @@ namespace Momotaro.Editor.Phase55
             }
 
             return delta.z > 0f ? AreaConnectionDirection.North : AreaConnectionDirection.South;
+        }
+        /// <summary>
+        /// Interact の錨が<b>門から十分離れている</b>こと。
+        ///
+        /// 遮蔽判定は <c>PhysicsObstacleProbe</c> が<b>半径 0.25m の球</b>を飛ばす。
+        /// 錨のすぐ向こうに壁があると、<b>錨の手前から調べても</b>球が壁を掠めて
+        /// 「遮蔽あり」になり、調査できない。
+        ///
+        /// <b>門だけを見る。</b> 外周壁や衝立は「壁越しでは調べられない」を作るために
+        /// わざと近くへ置いてあり（<c>point_p5_a_blocked</c>）、それは仕様である。
+        /// 門は配置ごとに位置が変わるので、配置を足したときに詰まりやすい——
+        /// 南北配置では 0.2m しか空いておらず、<b>2 回まぐれで通ったあとに落ちた</b>（記録 027）。
+        /// </summary>
+        private static void ValidateInteractionClearance(AreaFacts facts, List<string> errors)
+        {
+            if (facts.FlagDoors.Count == 0 || facts.InteractionAnchors.Count == 0)
+            {
+                return;
+            }
+
+            foreach (KeyValuePair<string, Vector3> anchor in facts.InteractionAnchors)
+            {
+                for (int i = 0; i < facts.FlagDoors.Count; i++)
+                {
+                    Bounds door = facts.FlagDoors[i];
+                    Vector3 flatAnchor = new Vector3(anchor.Value.x, door.center.y, anchor.Value.z);
+                    float gap = Vector3.Distance(door.ClosestPoint(flatAnchor), flatAnchor);
+                    if (gap < RequiredInteractionClearance)
+                    {
+                        errors.Add(facts.ScenePath + ": Interact の錨 '" + anchor.Key
+                            + "' が門に近すぎます（隙間 " + gap + "m／必要 "
+                            + RequiredInteractionClearance + "m）。遮蔽判定は半径 "
+                            + InteractionProbeRadius + "m の球なので、"
+                            + "錨の向こう側の壁でも手前からの調査が塞がれます。");
+                        break;
+                    }
+                }
+            }
         }
     }
 }

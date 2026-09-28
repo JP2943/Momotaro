@@ -181,6 +181,11 @@
       "id": "P55-P08",
       "summary": "実サービスへ失敗を注入しても旧 Area で再操作でき、要求の勘定と持ち越す値を保つ（§11 の P08）。ロード開始失敗・到着側が立ち上がらない・スライド途中の失敗の 3 つを実サービスへ注入する",
       "stage": "P55-05"
+    },
+    {
+      "id": "P55-P15",
+      "summary": "出発・中間・到着の実描画（§11 の P15）。16:9 で描き、背景を世界に無い色へ替えた 1 枚で地形の穴を数え（0 画素）、主人公の絵を消した 1 枚との差で「実際に塗っている」ことを見る（200 画素以上）。暗転は遷移前との明るさ比で見る。到着直後の虚空は来た方向にしか無いこと。16:9 の連番を Recordings/ へ残す。東西・南北の両配置",
+      "stage": "P55-06"
     }
   ],
   "tests": [
@@ -692,6 +697,17 @@
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenThePreloadFails_TheDepartureAreaBecomesPlayableAgain",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.FailingMidSlide_ReversesAlongTheSamePathAndRestoresTheDepartureArea"
+      ]
+    },
+    {
+      "requirementId": "P55-P15",
+      "stage": "P55-06",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheSlide_DrawsConnectedGroundWithOneHeroAndNoBlackout(\"EastWest\")",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheSlide_DrawsConnectedGroundWithOneHeroAndNoBlackout(\"NorthSouth\")"
       ]
     }
   ],

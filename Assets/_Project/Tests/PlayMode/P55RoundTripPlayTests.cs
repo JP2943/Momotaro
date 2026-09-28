@@ -93,6 +93,9 @@ namespace Momotaro.Tests.PlayMode
         /// <summary>B の遭遇戦（両配置で同じ Data を使う）。</summary>
         private static readonly StableId EncounterB = new StableId("encounter_p5_b_road");
 
+        /// <summary>A の<b>正常な</b>調査地点（壁越しで拒否される地点と取り違えない）。</summary>
+        private static readonly StableId OpenInvestigationPoint = new StableId("point_p5_a_01");
+
         /// <summary>§11 の P13 が数える往復。</summary>
         private const int RoundTrips = 5;
 
@@ -176,13 +179,33 @@ namespace Momotaro.Tests.PlayMode
             // ================================ 1. 調査（実キー E）================================
             var coordinator = Object.FindFirstObjectByType<InvestigationCoordinator>();
             Assert.IsNotNull(coordinator, "A に調査の調停役がある。");
-            var point = Object.FindFirstObjectByType<InvestigationInteractable>();
-            Assert.IsNotNull(point, "調査地点が Interact 候補として出ている。");
+            // <b>ID で引く。</b> A には正常な調査地点と<b>壁越しで拒否される地点</b>が置いてある。
+            // <c>FindFirstObjectByType</c> は並び順まかせなので、Scene を作り直すと
+            // 拒否される側を掴むことがある——南北配置で実際に起きて、
+            // 「実キー E で調査が受理される。理由=None」で落ちた（記録 027）。
+            InvestigationInteractable point = FindInvestigation(OpenInvestigationPoint);
+            Assert.IsNotNull(point, "正常な調査地点が Interact 候補として出ている。");
 
+            var interaction = Object.FindFirstObjectByType<AreaInteractionController>();
+            var mediator = Object.FindFirstObjectByType<AreaInteractInput>();
             yield return PlaceAt(point.InteractionAnchor + new Vector3(0f, 0f, -0.8f));
             yield return PressKeyUntil(Key.E, () => coordinator.LastRequestId > 0, 6f);
             Assert.Greater(coordinator.LastRequestId, 0,
-                "実キー E で調査が受理される。理由=" + coordinator.LastRejectReason);
+                "実キー E で調査が受理される。調停の理由=" + coordinator.LastRejectReason
+                + " 窓口の拒否=" + (interaction != null ? interaction.LastRejection.ToString() : "窓口なし")
+                + " 実行=" + (mediator != null ? mediator.InteractCount : -1)
+                + " 捨てた=" + (mediator != null ? mediator.DiscardedCount : -1)
+                + " 候補数=" + AreaInteractableRegistry.Count
+                + " 受付半径=" + point.InteractionRadius
+                + " 利用可=" + point.IsAvailable
+                + " 錨=" + point.InteractionAnchor
+                + " 主人公=" + Object.FindFirstObjectByType<PlayerRoot>().transform.position
+                + " 候補=" + DumpCandidates()
+                + " 現在Area=" + (CurrentAreaProvider.Current != null
+                    ? CurrentAreaProvider.Current.AreaId.Value : "なし")
+                + " 遮蔽=" + DumpBlockers(
+                    Object.FindFirstObjectByType<PlayerRoot>().transform.position,
+                    point.InteractionAnchor));
 
             Assert.IsTrue(session.TryGetArea(_route.AreaAId, out AreaRuntimeState areaA));
             yield return WaitUntilOrTimeout(() => areaA.InvestigatedCount >= 1, 15f);
@@ -673,6 +696,56 @@ namespace Momotaro.Tests.PlayMode
             {
                 yield return null;
             }
+        }
+
+        /// <summary>候補の中身（AreaId・距離・利用可）を 1 行にする。</summary>
+        private static string DumpCandidates()
+        {
+            var sb = new System.Text.StringBuilder();
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            foreach (InvestigationInteractable item in
+                Object.FindObjectsByType<InvestigationInteractable>(FindObjectsSortMode.None))
+            {
+                sb.Append('[').Append(item.InteractableId.Value)
+                  .Append(" area=").Append(item.AreaId.Value)
+                  .Append(" 可=").Append(item.IsAvailable)
+                  .Append(" 距離=")
+                  .Append(Vector3.Distance(player.transform.position, item.InteractionAnchor))
+                  .Append(']');
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>2 点の間にある Collider（遮蔽の犯人を名指しする）。</summary>
+        private static string DumpBlockers(Vector3 from, Vector3 to)
+        {
+            Vector3 delta = to - from;
+            var sb = new System.Text.StringBuilder();
+            RaycastHit[] hits = Physics.RaycastAll(from, delta.normalized, delta.magnitude);
+            for (int i = 0; i < hits.Length; i++)
+            {
+                sb.Append('[').Append(hits[i].collider.name)
+                  .Append('@').Append(hits[i].collider.transform.position).Append(']');
+            }
+
+            return hits.Length == 0 ? "なし" : sb.ToString();
+        }
+
+        /// <summary>その ID の調査地点（並び順に頼らない）。</summary>
+        private static InvestigationInteractable FindInvestigation(StableId pointId)
+        {
+            foreach (InvestigationInteractable item in
+                Object.FindObjectsByType<InvestigationInteractable>(FindObjectsSortMode.None))
+            {
+                if (item != null && item.InteractableId.Equals(pointId))
+                {
+                    return item;
+                }
+            }
+
+            Assert.Fail("調査地点 '" + pointId.Value + "' が Scene にありません。");
+            return null;
         }
 
         private static AreaExitGate FindExitGate(StableId exitId)

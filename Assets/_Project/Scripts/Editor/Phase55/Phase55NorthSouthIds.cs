@@ -145,8 +145,14 @@ namespace Momotaro.Editor.Phase55
         /// 北へ抜ける道は東の通路だけではないので、東西配置のように通路 1 本を塞いでも
         /// 回り込める。南北配置では<b>部屋の全幅</b>を塞ぐ板を、
         /// 開始点（z=−6）より北・水場（z 3〜8）より南へ置く。
+        ///
+        /// <b>調査地点（z=1）から 0.7m 離す。</b> Interact の遮蔽判定は
+        /// <b>半径 0.25m の球</b>を飛ばすので（<c>PhysicsObstacleProbe</c>）、
+        /// 錨のすぐ向こうに壁があると<b>錨の手前から調べても遮蔽と判定される</b>。
+        /// 最初は z=1.5（板の南面が z=1.2）に置いていて、余裕が 0.2m しか無く、
+        /// <b>2 回まぐれで通ったあとに落ちた</b>（記録 027）。
         /// </summary>
-        public static readonly Vector3 AreaSGatePosition = new Vector3(0f, 0f, 1.5f);
+        public static readonly Vector3 AreaSGatePosition = new Vector3(0f, 0f, 2f);
 
         /// <summary>同・大きさ。床の幅 24 を少し超えて塞ぐ。</summary>
         public static readonly Vector3 AreaSGateSize =
