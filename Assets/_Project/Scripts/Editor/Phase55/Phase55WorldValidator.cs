@@ -68,15 +68,36 @@ namespace Momotaro.Editor.Phase55
         }
 
         /// <summary>
+        /// <b>全配置</b>（東西・南北）を検査する。
+        ///
+        /// <b>配置を足したら検査も付いてくる形にしてある。</b> 一覧をなめるので、
+        /// <c>Phase55Arrangements</c> へ足した配置は黙って検査から漏れない——
+        /// 「作ったが見ていない」を構造で防ぐ。
+        /// </summary>
+        public static void Validate(List<string> errors, List<string> warnings)
+        {
+            foreach (Phase55Arrangement arrangement in Phase55Arrangements.All())
+            {
+                int before = errors.Count;
+                Validate(arrangement, errors, warnings);
+                for (int i = before; i < errors.Count; i++)
+                {
+                    errors[i] = "【" + arrangement.Label + "】" + errors[i];
+                }
+            }
+        }
+
+        /// <summary>
         /// A・B を<b>同時に</b>開いて配置と接続を検査する。
         ///
         /// <b>Additive で 2 枚載せる。</b> 1 枚ずつ Single で開くと、2 枚目を開いた時点で
         /// 1 枚目の部品が破棄され、比較に使えるのは値写しだけになる。実行時も 2 枚同時に
         /// 載る構成なので（§4.1）、検査も同じ載せ方にしておくほうが実態に近い。
         /// </summary>
-        public static void Validate(List<string> errors, List<string> warnings)
+        public static void Validate(
+            Phase55Arrangement arrangement, List<string> errors, List<string> warnings)
         {
-            if (!TryOpenBoth(errors, out Scene sceneA, out Scene sceneB))
+            if (!TryOpenBoth(arrangement, errors, out Scene sceneA, out Scene sceneB))
             {
                 return;
             }
@@ -89,7 +110,7 @@ namespace Momotaro.Editor.Phase55
                     return;
                 }
 
-                Compare(a, b, errors);
+                Compare(arrangement, a, b, errors);
             }
             finally
             {
@@ -101,12 +122,13 @@ namespace Momotaro.Editor.Phase55
         /// A・B を空の Scene の上へ Additive で載せる。
         /// <b>検査とテストが同じ載せ方を使う</b>ために公開してある（別の手順で開くと別の結果になる）。
         /// </summary>
-        public static bool TryOpenBoth(List<string> errors, out Scene sceneA, out Scene sceneB)
+        public static bool TryOpenBoth(
+            Phase55Arrangement arrangement, List<string> errors, out Scene sceneA, out Scene sceneB)
         {
             sceneA = default;
             sceneB = default;
 
-            foreach (string path in new[] { Phase55WorldIds.AreaAScenePath, Phase55WorldIds.AreaBScenePath })
+            foreach (string path in new[] { arrangement.AreaAScenePath, arrangement.AreaBScenePath })
             {
                 if (AssetDatabase.LoadAssetAtPath<Object>(path) == null)
                 {
@@ -116,23 +138,24 @@ namespace Momotaro.Editor.Phase55
             }
 
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-            sceneA = EditorSceneManager.OpenScene(Phase55WorldIds.AreaAScenePath, OpenSceneMode.Additive);
-            sceneB = EditorSceneManager.OpenScene(Phase55WorldIds.AreaBScenePath, OpenSceneMode.Additive);
+            sceneA = EditorSceneManager.OpenScene(arrangement.AreaAScenePath, OpenSceneMode.Additive);
+            sceneB = EditorSceneManager.OpenScene(arrangement.AreaBScenePath, OpenSceneMode.Additive);
             return true;
         }
 
         /// <summary>2 つの Area の<b>関係</b>を見る（1 枚ずつでは言えないもの）。</summary>
-        public static void Compare(AreaFacts a, AreaFacts b, List<string> errors)
+        public static void Compare(
+            Phase55Arrangement arrangement, AreaFacts a, AreaFacts b, List<string> errors)
         {
-            ValidateSeam(a, b, errors);
-            ValidatePassageIsOpen(a, Phase5SeamSide.East, errors);
-            ValidatePassageIsOpen(b, Phase5SeamSide.West, errors);
-            ValidateTravelOrder(a, b, errors);
-            ValidateCameraAxis(a, b, errors);
-            ValidateSlideIsCovered(a, b, errors);
-            ValidateConnections(a, b, errors);
-            ValidateBoundData(a, errors);
-            ValidateBoundData(b, errors);
+            ValidateSeam(arrangement, a, b, errors);
+            ValidatePassageIsOpen(arrangement, a, forward: true, errors);
+            ValidatePassageIsOpen(arrangement, b, forward: false, errors);
+            ValidateTravelOrder(arrangement, a, b, errors);
+            ValidateCameraAxis(arrangement, a, b, errors);
+            ValidateSlideIsCovered(arrangement, a, b, errors);
+            ValidateConnections(arrangement, a, b, errors);
+            ValidateBoundData(arrangement, a, errors);
+            ValidateBoundData(arrangement, b, errors);
         }
 
         /// <summary>
@@ -143,18 +166,20 @@ namespace Momotaro.Editor.Phase55
         /// 実際に踏んだ：生成器がカタログのパスを P5 に固定していたため、
         /// P5.5 の Area Scene が P5 のカタログを指していた。
         /// </summary>
-        private static void ValidateBoundData(AreaFacts facts, List<string> errors)
+        private static void ValidateBoundData(
+            Phase55Arrangement arrangement, AreaFacts facts, List<string> errors)
         {
-            if (facts.CatalogPath != Phase55WorldIds.CatalogDataPath)
+            if (facts.CatalogPath != arrangement.CatalogDataPath)
             {
-                errors.Add(facts.ScenePath + ": 初期化担当が P5.5 のカタログを指していません（実際="
-                    + (facts.CatalogPath ?? "未設定") + "）。");
+                errors.Add(facts.ScenePath + ": 初期化担当がこの配置のカタログを指していません（実際="
+                    + (facts.CatalogPath ?? "未設定") + " 期待=" + arrangement.CatalogDataPath + "）。");
             }
 
-            if (facts.ConnectionPath != Phase55WorldIds.ConnectionDataPath)
+            if (facts.ConnectionPath != arrangement.ConnectionDataPath)
             {
-                errors.Add(facts.ScenePath + ": 初期化担当が P5.5 の接続一覧を指していません（実際="
-                    + (facts.ConnectionPath ?? "未設定") + "）。出入口から接続を引けません（§3.1）。");
+                errors.Add(facts.ScenePath + ": 初期化担当がこの配置の接続一覧を指していません（実際="
+                    + (facts.ConnectionPath ?? "未設定") + " 期待=" + arrangement.ConnectionDataPath
+                    + "）。出入口から接続を引けません（§3.1）。");
             }
         }
 
@@ -210,7 +235,11 @@ namespace Momotaro.Editor.Phase55
 
             collected.FloorTop = collected.FloorBounds.max.y;
 
-            // 東西の外周壁。接続口の判定に使う（同じ理由で Renderer から採る）。
+            // 外周壁。接続口の判定に使う（同じ理由で Renderer から採る）。
+            //
+            // <b>4 面すべてを採る。</b> 以前は東西の 2 面だけ採っていたので、
+            // 南北の接続口を塞いだままでも検査が通ってしまった（配置を足して初めて分かる穴）。
+            // 仕切り（Wall_Divider）と衝立（Wall_Screen）は外周ではないので入らない。
             foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
             {
                 if (renderer == null)
@@ -218,7 +247,7 @@ namespace Momotaro.Editor.Phase55
                     continue;
                 }
 
-                if (renderer.name.StartsWith("Wall_East") || renderer.name.StartsWith("Wall_West"))
+                if (IsOuterWall(renderer.name))
                 {
                     collected.SideWalls.Add(renderer.bounds);
                 }
@@ -289,21 +318,29 @@ namespace Momotaro.Editor.Phase55
             return a;
         }
 
+        /// <summary>外周壁の名前か（仕切り・衝立は外周ではない）。</summary>
+        private static bool IsOuterWall(string name) =>
+            name.StartsWith("Wall_North") || name.StartsWith("Wall_South")
+            || name.StartsWith("Wall_East") || name.StartsWith("Wall_West");
+
         // ---------------------------------------------------------------- 境界（§3.2）
 
         /// <summary>
-        /// A の東端と B の西端が<b>同じ X で突き合わさっている</b>こと（§3.2）。
+        /// A の進行方向の端と B の反対側の端が<b>同じ座標で突き合わさっている</b>こと（§3.2）。
         ///
         /// 隙間があれば床の穴になり、重なればちらつく。床高も一致していること。
+        /// <b>軸は配置が持つ</b>——東西なら X、南北なら Z を見る。
         /// </summary>
-        private static void ValidateSeam(AreaFacts a, AreaFacts b, List<string> errors)
+        private static void ValidateSeam(
+            Phase55Arrangement r, AreaFacts a, AreaFacts b, List<string> errors)
         {
-            float aEast = a.FloorBounds.max.x;
-            float bWest = b.FloorBounds.min.x;
+            float aEdge = r.ForwardEdge(a.FloorBounds);
+            float bEdge = r.BackwardEdge(b.FloorBounds);
 
-            if (Mathf.Abs(aEast - bWest) > Tolerance)
+            if (Mathf.Abs(aEdge - bEdge) > Tolerance)
             {
-                errors.Add("A の東端（x=" + aEast + "）と B の西端（x=" + bWest
+                errors.Add("A の端（" + r.AlongName + "=" + aEdge + "）と B の端（"
+                    + r.AlongName + "=" + bEdge
                     + "）が一致しません。隙間なら床の穴、重なりならちらつきになります（§3.2）。");
             }
 
@@ -314,16 +351,17 @@ namespace Momotaro.Editor.Phase55
                     + "。期待 " + FloorTopY + "）。段差のある接続は作らない（§3.2）。");
             }
 
-            // Z の重なりが通路幅を満たすこと。片側が浅いと、通路の端が虚空へ出る。
-            float overlapMin = Mathf.Max(a.FloorBounds.min.z, b.FloorBounds.min.z);
-            float overlapMax = Mathf.Min(a.FloorBounds.max.z, b.FloorBounds.max.z);
-            float passageMin = Phase55WorldLayout.SeamZ - Phase55WorldLayout.PassageWidth * 0.5f;
-            float passageMax = Phase55WorldLayout.SeamZ + Phase55WorldLayout.PassageWidth * 0.5f;
+            // 直交軸の重なりが通路幅を満たすこと。片側が浅いと、通路の端が虚空へ出る。
+            float overlapMin = Mathf.Max(r.AcrossMin(a.FloorBounds), r.AcrossMin(b.FloorBounds));
+            float overlapMax = Mathf.Min(r.AcrossMax(a.FloorBounds), r.AcrossMax(b.FloorBounds));
+            float passageMin = r.PassageCenter - r.PassageWidth * 0.5f;
+            float passageMax = r.PassageCenter + r.PassageWidth * 0.5f;
 
             if (overlapMin > passageMin + Tolerance || overlapMax < passageMax - Tolerance)
             {
-                errors.Add("接続通路（z " + passageMin + "〜" + passageMax
-                    + "）が両 Area の床に収まっていません（重なり z " + overlapMin + "〜" + overlapMax + "）。");
+                errors.Add("接続通路（" + r.AcrossName + " " + passageMin + "〜" + passageMax
+                    + "）が両 Area の床に収まっていません（重なり " + r.AcrossName + " "
+                    + overlapMin + "〜" + overlapMax + "）。");
             }
         }
 
@@ -336,26 +374,28 @@ namespace Momotaro.Editor.Phase55
         /// <b>画面を覆う壁</b>として見える。Collider だけ通す形は使わない。
         /// </summary>
         private static void ValidatePassageIsOpen(
-            AreaFacts facts, Phase5SeamSide side, List<string> errors)
+            Phase55Arrangement r, AreaFacts facts, bool forward, List<string> errors)
         {
-            float seamX = side == Phase5SeamSide.East ? facts.FloorBounds.max.x : facts.FloorBounds.min.x;
-            float passageMin = Phase55WorldLayout.SeamZ - Phase55WorldLayout.PassageWidth * 0.5f;
-            float passageMax = Phase55WorldLayout.SeamZ + Phase55WorldLayout.PassageWidth * 0.5f;
+            float seam = forward ? r.ForwardEdge(facts.FloorBounds) : r.BackwardEdge(facts.FloorBounds);
+            float passageMin = r.PassageCenter - r.PassageWidth * 0.5f;
+            float passageMax = r.PassageCenter + r.PassageWidth * 0.5f;
 
             for (int i = 0; i < facts.SideWalls.Count; i++)
             {
                 Bounds wall = facts.SideWalls[i];
 
-                // 境界にある壁だけを見る（反対側の外周壁は関係ない）。
-                if (Mathf.Abs(wall.center.x - seamX) > 1f)
+                // 境界にある壁だけを見る（反対側・直交する外周壁は関係ない）。
+                if (Mathf.Abs(r.Along(wall.center) - seam) > 1f)
                 {
                     continue;
                 }
 
-                if (wall.max.z > passageMin + Tolerance && wall.min.z < passageMax - Tolerance)
+                if (r.AcrossMax(wall) > passageMin + Tolerance
+                    && r.AcrossMin(wall) < passageMax - Tolerance)
                 {
-                    errors.Add(facts.ScenePath + ": 接続通路（z " + passageMin + "〜" + passageMax
-                        + "）に外周壁が残っています（壁 z " + wall.min.z + "〜" + wall.max.z
+                    errors.Add(facts.ScenePath + ": 接続通路（" + r.AcrossName + " " + passageMin
+                        + "〜" + passageMax + "）に外周壁が残っています（壁 " + r.AcrossName + " "
+                        + r.AcrossMin(wall) + "〜" + r.AcrossMax(wall)
                         + "）。境界の区間は通路として開いていること（§7.3）。");
                 }
             }
@@ -367,112 +407,172 @@ namespace Momotaro.Editor.Phase55
         /// 出入口の受理位置 → 境界 → 到着位置が<b>進行方向へ並ぶ</b>こと（§3.2）。
         ///
         /// 並んでいないと、到着してから戻る動きや長距離の自動歩行が必要になる。
+        /// <b>「進行方向」は配置が持つ符号で決める</b>——東なら +X、北なら +Z。
         /// </summary>
-        private static void ValidateTravelOrder(AreaFacts a, AreaFacts b, List<string> errors)
+        private static void ValidateTravelOrder(
+            Phase55Arrangement r, AreaFacts a, AreaFacts b, List<string> errors)
         {
-            float seamX = a.FloorBounds.max.x;
+            float seam = r.ForwardEdge(a.FloorBounds);
+            float sign = r.Forward;
 
-            if (TryGet(a.Exits, Phase55WorldIds.ExitAEast, out Vector3 exitEast, a, "出入口", errors)
-                && TryGet(b.Entries, Phase5AreaIds.AreaBFromA, out Vector3 arrivalInB, b, "入口", errors))
+            if (TryGet(a.Exits, r.ExitFromA, out Vector3 exitOut, a, "出入口", errors)
+                && TryGet(b.Entries, r.EntryInB, out Vector3 arrivalInB, b, "入口", errors))
             {
-                if (!(exitEast.x < seamX - Tolerance && seamX < arrivalInB.x - Tolerance))
-                {
-                    errors.Add("東へ進む並びが崩れています（出入口 x=" + exitEast.x
-                        + " → 境界 x=" + seamX + " → 到着 x=" + arrivalInB.x + "。§3.2）。");
-                }
+                AssertOrder(r, sign, r.Along(exitOut), seam, r.Along(arrivalInB),
+                    "進む", errors);
             }
 
-            if (TryGet(b.Exits, Phase55WorldIds.ExitBWest, out Vector3 exitWest, b, "出入口", errors)
-                && TryGet(a.Entries, Phase5AreaIds.AreaAFromB, out Vector3 arrivalInA, a, "入口", errors))
+            if (TryGet(b.Exits, r.ExitFromB, out Vector3 exitBack, b, "出入口", errors)
+                && TryGet(a.Entries, r.EntryInA, out Vector3 arrivalInA, a, "入口", errors))
             {
-                if (!(exitWest.x > seamX + Tolerance && seamX > arrivalInA.x + Tolerance))
-                {
-                    errors.Add("西へ戻る並びが崩れています（出入口 x=" + exitWest.x
-                        + " → 境界 x=" + seamX + " → 到着 x=" + arrivalInA.x + "。§3.2）。");
-                }
+                AssertOrder(r, -sign, r.Along(exitBack), seam, r.Along(arrivalInA),
+                    "戻る", errors);
             }
         }
 
-        private static bool TryGet(
-            Dictionary<string, Vector3> map, StableId id, out Vector3 position,
-            AreaFacts facts, string label, List<string> errors)
+        /// <summary>出入口 → 境界 → 到着が、その向き（<paramref name="sign"/>）へ並んでいること。</summary>
+        private static void AssertOrder(
+            Phase55Arrangement r, float sign, float exit, float seam, float arrival,
+            string label, List<string> errors)
         {
-            if (map.TryGetValue(id.Value, out position))
+            bool ordered = (seam - exit) * sign > Tolerance && (arrival - seam) * sign > Tolerance;
+            if (!ordered)
             {
-                return true;
+                errors.Add(label + "並びが崩れています（出入口 " + r.AlongName + "=" + exit
+                    + " → 境界 " + r.AlongName + "=" + seam
+                    + " → 到着 " + r.AlongName + "=" + arrival
+                    + "。進行の符号 " + sign + "。§3.2）。");
             }
-
-            errors.Add(facts.ScenePath + ": " + label + " '" + id.Value + "' がありません。");
-            position = default;
-            return false;
         }
 
         // ---------------------------------------------------------------- カメラ（§7.1）
 
         /// <summary>
-        /// 東西の接続では<b>Camera の移動が X だけ</b>であること（§7.1）。
+        /// 接続では<b>Camera の移動が接続軸だけ</b>であること（§7.1）。
         ///
         /// <b>入口の中心だけを比べては足りない</b>（GPT レビュー R14 の指摘 2）。
-        /// 出入口には幅があるので、通路の端（z=±1 など）から入ることができる。
-        /// 領域が見える奥行より深いと clamp は<b>追従先の Z をそのまま残す</b>ので、
-        /// そこから入ると東西の接続なのに Camera が Z へも動く。
+        /// 出入口には幅があるので、通路の端から入ることができる。
+        /// 領域が見える広がりより広いと clamp は<b>追従先の座標をそのまま残す</b>ので、
+        /// そこから入ると接続軸以外へも Camera が動く。
         /// 中心だけ見る検査では、ちょうど一致してしまって通ってしまった。
         ///
         /// ここでは<b>通路の幅いっぱいに刻んだ進入位置</b>と、境界へ近づく数点を
-        /// 両側でなめて、すべてで Camera の Z が接続軸に乗ることを求める。
-        /// 「領域が広いから中心へ寄る」という思い込みを、検査が否定できる形にしてある。
+        /// 両側でなめて、すべてで Camera が接続軸に乗ることを求める。
         /// </summary>
-        private static void ValidateCameraAxis(AreaFacts a, AreaFacts b, List<string> errors)
+        private static void ValidateCameraAxis(
+            Phase55Arrangement r, AreaFacts a, AreaFacts b, List<string> errors)
         {
-            float seamX = a.FloorBounds.max.x;
-            float axisZ = Phase55WorldLayout.SeamZ;
-            float half = Phase55WorldLayout.PassageWidth * 0.5f;
+            float seam = r.ForwardEdge(a.FloorBounds);
+            float axis = r.PassageCenter;
+            float half = r.PassageWidth * 0.5f;
+            float sign = r.Forward;
 
             // 通路の中心と両端（少し内側）から、境界へ向かって近づく道のり。
-            float[] zs = { axisZ, axisZ + half - 0.5f, axisZ - half + 0.5f };
-            float[] aXs = { seamX - 0.5f, seamX - 1.5f, seamX - 2.5f };
-            float[] bXs = { seamX + 0.5f, seamX + 1.5f, seamX + 2.5f };
+            float[] acrosses = { axis, axis + half - 0.5f, axis - half + 0.5f };
+            float[] aAlongs = { seam - 0.5f * sign, seam - 1.5f * sign, seam - 2.5f * sign };
+            float[] bAlongs = { seam + 0.5f * sign, seam + 1.5f * sign, seam + 2.5f * sign };
 
-            AssertApproachStaysOnAxis(a, "A", zs, aXs, axisZ, errors);
-            AssertApproachStaysOnAxis(b, "B", zs, bXs, axisZ, errors);
+            AssertApproachStaysOnAxis(r, a, "A", acrosses, aAlongs, axis, errors);
+            AssertApproachStaysOnAxis(r, b, "B", acrosses, bAlongs, axis, errors);
 
-            if (!TryFocus(a, Phase5AreaIds.AreaAFromB, out Vector3 focusInA, errors)
-                || !TryFocus(b, Phase5AreaIds.AreaBFromA, out Vector3 focusInB, errors))
+            if (!TryFocus(a, r.EntryInA, out Vector3 focusInA, errors)
+                || !TryFocus(b, r.EntryInB, out Vector3 focusInB, errors))
             {
                 return;
             }
 
-            if (Mathf.Abs(focusInA.z - axisZ) > 0.05f || Mathf.Abs(focusInB.z - axisZ) > 0.05f)
+            if (Mathf.Abs(r.Across(focusInA) - axis) > 0.05f
+                || Mathf.Abs(r.Across(focusInB) - axis) > 0.05f)
             {
-                errors.Add("到着時のカメラが接続軸に乗っていません（A 側 z=" + focusInA.z
-                    + " B 側 z=" + focusInB.z + " 軸 z=" + axisZ + "。§7.1）。");
+                errors.Add("到着時のカメラが接続軸に乗っていません（A 側 " + r.AcrossName + "="
+                    + r.Across(focusInA) + " B 側 " + r.AcrossName + "=" + r.Across(focusInB)
+                    + " 軸 " + r.AcrossName + "=" + axis + "。§7.1）。");
             }
 
-            if (Mathf.Abs(focusInA.x - focusInB.x) < 0.5f)
+            if (Mathf.Abs(r.Along(focusInA) - r.Along(focusInB)) < 0.5f)
             {
-                errors.Add("カメラが X へ動きません（両側 x≈" + focusInA.x
-                    + "）。スライドする意味が無い配置です（§7.1）。");
+                errors.Add("カメラが接続軸へ動きません（両側 " + r.AlongName + "≒"
+                    + r.Along(focusInA) + "）。スライドする意味が無い配置です（§7.1）。");
             }
         }
 
-        /// <summary>境界へ近づく道のりのどこからでも、カメラの Z が接続軸に乗ること。</summary>
+        /// <summary>境界へ近づく道のりのどこからでも、カメラが接続軸に乗ること。</summary>
         private static void AssertApproachStaysOnAxis(
-            AreaFacts facts, string label, float[] zs, float[] xs, float axisZ, List<string> errors)
+            Phase55Arrangement r, AreaFacts facts, string label,
+            float[] acrosses, float[] alongs, float axis, List<string> errors)
         {
-            for (int xi = 0; xi < xs.Length; xi++)
+            for (int i = 0; i < alongs.Length; i++)
             {
-                for (int zi = 0; zi < zs.Length; zi++)
+                for (int j = 0; j < acrosses.Length; j++)
                 {
-                    var at = new Vector3(xs[xi], 0f, zs[zi]);
+                    Vector3 at = r.Point(alongs[i], acrosses[j]);
                     Vector3 focus = FocusAt(facts, at);
-                    if (Mathf.Abs(focus.z - axisZ) > 0.05f)
+                    if (Mathf.Abs(r.Across(focus) - axis) > 0.05f)
                     {
-                        errors.Add(label + " 側の進入位置 " + at + " でカメラの Z が接続軸から外れます"
-                            + "（カメラ z=" + focus.z + " 軸 z=" + axisZ
-                            + "）。東西の接続で Z へ動く配置は不合格（§7.1）。"
+                        errors.Add(label + " 側の進入位置 " + at + " でカメラの " + r.AcrossName
+                            + " が接続軸から外れます（カメラ " + r.AcrossName + "=" + r.Across(focus)
+                            + " 軸 " + axis + "）。接続軸以外へ動く配置は不合格（§7.1）。"
                             + " 境界寄せの領域が足りていません。");
                         return;
                     }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------- 覆い（§7.3）
+
+        /// <summary>
+        /// スライドの<b>全区間</b>でカメラが見る範囲が両 Area の床で覆われること（§7.3）。
+        ///
+        /// 端の 2 枚だけ見ても足りない。途中のフレームで境界の手前が切れると、
+        /// そこに黒い帯が出る。始点から終点までを刻んで、見える範囲が
+        /// A∪B の床に収まっているかを確かめる。
+        ///
+        /// <b>接続軸と直交軸で条件が違う。</b> 接続軸は 2 つの床がつながっているので
+        /// 両方の外側の端まで使えるが、<b>直交軸は重なっているぶんしか使えない</b>——
+        /// 片方しか無い座標を映すと、そこが黒い帯になる。
+        /// 南北配置で通路を部屋の端へ寄せられなかったのはこの条件のため。
+        /// </summary>
+        private static void ValidateSlideIsCovered(
+            Phase55Arrangement r, AreaFacts a, AreaFacts b, List<string> errors)
+        {
+            if (!TryFocus(a, r.EntryInA, out Vector3 from, errors)
+                || !TryFocus(b, r.EntryInB, out Vector3 to, errors))
+            {
+                return;
+            }
+
+            Vector2 half = HalfFootprint();
+            float alongHalf = r.AlongHalf(half);
+            float acrossHalf = r.AcrossHalf(half);
+
+            float alongLow = Mathf.Min(r.AlongMin(a.FloorBounds), r.AlongMin(b.FloorBounds));
+            float alongHigh = Mathf.Max(r.AlongMax(a.FloorBounds), r.AlongMax(b.FloorBounds));
+            float acrossLow = Mathf.Max(r.AcrossMin(a.FloorBounds), r.AcrossMin(b.FloorBounds));
+            float acrossHigh = Mathf.Min(r.AcrossMax(a.FloorBounds), r.AcrossMax(b.FloorBounds));
+
+            const int steps = 16;
+            for (int i = 0; i <= steps; i++)
+            {
+                Vector3 at = Vector3.Lerp(from, to, i / (float)steps);
+                float along = r.Along(at);
+                float across = r.Across(at);
+
+                if (along - alongHalf < alongLow - Tolerance || along + alongHalf > alongHigh + Tolerance)
+                {
+                    errors.Add("スライド途中（" + i + "/" + steps + "・" + r.AlongName + "=" + along
+                        + "）でカメラが床の外を映します（床 " + r.AlongName + " " + alongLow + "〜"
+                        + alongHigh + "／見える半分 " + alongHalf + "）。黒い帯になります（§7.3）。");
+                    return;
+                }
+
+                if (across - acrossHalf < acrossLow - Tolerance
+                    || across + acrossHalf > acrossHigh + Tolerance)
+                {
+                    errors.Add("スライド途中（" + i + "/" + steps + "・" + r.AcrossName + "=" + across
+                        + "）でカメラが床の外を映します（両 Area が重なる " + r.AcrossName + " "
+                        + acrossLow + "〜" + acrossHigh + "／見える半分 " + acrossHalf + "）。");
+                    return;
                 }
             }
         }
@@ -510,49 +610,18 @@ namespace Momotaro.Editor.Phase55
         private static Vector2 HalfFootprint() => CameraBoundsMath.HalfFootprint(
             Phase5Layout.CameraOrthographicSize, TrialAspect, Phase5Layout.CameraPitchDegrees);
 
-        // ---------------------------------------------------------------- 覆い（§7.3）
-
-        /// <summary>
-        /// スライドの<b>全区間</b>でカメラが見る範囲が両 Area の床で覆われること（§7.3）。
-        ///
-        /// 端の 2 枚だけ見ても足りない。途中のフレームで境界の手前が切れると、
-        /// そこに黒い帯が出る。始点から終点までを刻んで、見える X 範囲が
-        /// A∪B の床に収まっているかを確かめる。
-        /// </summary>
-        private static void ValidateSlideIsCovered(AreaFacts a, AreaFacts b, List<string> errors)
+        private static bool TryGet(
+            Dictionary<string, Vector3> map, StableId id, out Vector3 position,
+            AreaFacts facts, string label, List<string> errors)
         {
-            if (!TryFocus(a, Phase5AreaIds.AreaAFromB, out Vector3 from, errors)
-                || !TryFocus(b, Phase5AreaIds.AreaBFromA, out Vector3 to, errors))
+            if (map.TryGetValue(id.Value, out position))
             {
-                return;
+                return true;
             }
 
-            Vector2 half = HalfFootprint();
-            float westLimit = Mathf.Min(a.FloorBounds.min.x, b.FloorBounds.min.x);
-            float eastLimit = Mathf.Max(a.FloorBounds.max.x, b.FloorBounds.max.x);
-            float southLimit = Mathf.Max(a.FloorBounds.min.z, b.FloorBounds.min.z);
-            float northLimit = Mathf.Min(a.FloorBounds.max.z, b.FloorBounds.max.z);
-
-            const int steps = 16;
-            for (int i = 0; i <= steps; i++)
-            {
-                Vector3 at = Vector3.Lerp(from, to, i / (float)steps);
-                if (at.x - half.x < westLimit - Tolerance || at.x + half.x > eastLimit + Tolerance)
-                {
-                    errors.Add("スライド途中（" + i + "/" + steps + "・x=" + at.x
-                        + "）でカメラが床の外を映します（床 x " + westLimit + "〜" + eastLimit
-                        + "／見える半幅 " + half.x + "）。黒い帯になります（§7.3）。");
-                    return;
-                }
-
-                if (at.z - half.y < southLimit - Tolerance || at.z + half.y > northLimit + Tolerance)
-                {
-                    errors.Add("スライド途中（" + i + "/" + steps + "・z=" + at.z
-                        + "）でカメラが床の外を映します（両 Area が重なる z " + southLimit
-                        + "〜" + northLimit + "／見える半奥行 " + half.y + "）。");
-                    return;
-                }
-            }
+            errors.Add(facts.ScenePath + ": " + label + " '" + id.Value + "' がありません。");
+            position = default;
+            return false;
         }
 
         // ---------------------------------------------------------------- 接続 Data（§3.1）
@@ -564,19 +633,19 @@ namespace Momotaro.Editor.Phase55
         /// ここが見るのは「その ExitId が本当に Scene に居るか」——Data だけ直して
         /// Scene を直し忘れると、実行時に押しても何も起きない。
         /// </summary>
-        private static void ValidateConnections(AreaFacts a, AreaFacts b, List<string> errors)
+        private static void ValidateConnections(
+            Phase55Arrangement r, AreaFacts a, AreaFacts b, List<string> errors)
         {
-            var data = AssetDatabase.LoadAssetAtPath<AreaConnectionData>(
-                Phase55WorldIds.ConnectionDataPath);
+            var data = AssetDatabase.LoadAssetAtPath<AreaConnectionData>(r.ConnectionDataPath);
             if (data == null)
             {
-                errors.Add("接続一覧がありません: " + Phase55WorldIds.ConnectionDataPath);
+                errors.Add("接続一覧がありません: " + r.ConnectionDataPath);
                 return;
             }
 
             if (data.Connections.Count != 2)
             {
-                errors.Add("東西の往復は 2 レコードで表します（いまは " + data.Connections.Count + " 件。§3.1）。");
+                errors.Add("往復は 2 レコードで表します（いまは " + data.Connections.Count + " 件。§3.1）。");
             }
 
             foreach (AreaConnectionDefinition c in data.Connections)
@@ -591,8 +660,33 @@ namespace Momotaro.Editor.Phase55
                     errors.Add("接続 " + c.ConnectionId.Value + " が Slide ではありません（§3.1）。");
                 }
 
-                AreaFacts owner = c.FromAreaId.Equals(Phase55WorldIds.AreaA) ? a
-                    : c.FromAreaId.Equals(Phase55WorldIds.AreaB) ? b : null;
+                // <b>向きが「実際に置かれた床の並び」と合っていること。</b>
+                //
+                // 期待値を配置の設定から採ってはいけない——生成器も検査も同じ値を読むので、
+                // <b>設定を書き換えると両方まとめてずれて通ってしまう</b>（注入 46 で実際に通った）。
+                // Data だけ東西のまま残しても Scene は成立してしまい、
+                // 実行時に「軸不一致」で初めて断られる（P03 はそこで落ちた）。
+                // ここは Scene から採った床の中心どうしの向きを期待値にする。
+                bool isForward = c.ConnectionId.Equals(r.ConnectionAToB);
+                bool isBackward = c.ConnectionId.Equals(r.ConnectionBToA);
+                if (!isForward && !isBackward)
+                {
+                    errors.Add("接続 " + c.ConnectionId.Value + " はこの配置の接続ではありません。");
+                }
+                else
+                {
+                    AreaConnectionDirection expected = isForward
+                        ? DirectionFromFloors(a, b)
+                        : DirectionFromFloors(b, a);
+                    if (c.Direction != expected)
+                    {
+                        errors.Add("接続 " + c.ConnectionId.Value + " の向きが実際の並びと違います（実際="
+                            + c.Direction + " 床の並び=" + expected + "。§3.1）。");
+                    }
+                }
+
+                AreaFacts owner = c.FromAreaId.Equals(r.AreaAId) ? a
+                    : c.FromAreaId.Equals(r.AreaBId) ? b : null;
                 if (owner == null)
                 {
                     errors.Add("接続 " + c.ConnectionId.Value + " の出発エリア '"
@@ -606,14 +700,39 @@ namespace Momotaro.Editor.Phase55
                         + "' が " + owner.ScenePath + " にありません（Data だけ直して Scene を直し忘れている）。");
                 }
 
-                AreaFacts destination = c.ToAreaId.Equals(Phase55WorldIds.AreaA) ? a
-                    : c.ToAreaId.Equals(Phase55WorldIds.AreaB) ? b : null;
+                AreaFacts destination = c.ToAreaId.Equals(r.AreaAId) ? a
+                    : c.ToAreaId.Equals(r.AreaBId) ? b : null;
                 if (destination != null && !destination.Entries.ContainsKey(c.EntryId.Value))
                 {
                     errors.Add("接続 " + c.ConnectionId.Value + " の入口 '" + c.EntryId.Value
                         + "' が " + destination.ScenePath + " にありません。");
                 }
             }
+        }
+
+        /// <summary>
+        /// 床の中心どうしの向き（<b>生成物から採る期待値</b>）。
+        ///
+        /// 斜めに置かれていたら、そもそも 4 方向では表せない——大きいほうの軸で決めて、
+        /// もう一方が同じくらい大きければ <c>None</c> を返し、必ず不一致として挙がるようにする。
+        /// </summary>
+        private static AreaConnectionDirection DirectionFromFloors(AreaFacts from, AreaFacts to)
+        {
+            Vector3 delta = to.FloorBounds.center - from.FloorBounds.center;
+            float ax = Mathf.Abs(delta.x);
+            float az = Mathf.Abs(delta.z);
+
+            if (Mathf.Approximately(ax, az) || Mathf.Max(ax, az) < Tolerance)
+            {
+                return AreaConnectionDirection.None;
+            }
+
+            if (ax > az)
+            {
+                return delta.x > 0f ? AreaConnectionDirection.East : AreaConnectionDirection.West;
+            }
+
+            return delta.z > 0f ? AreaConnectionDirection.North : AreaConnectionDirection.South;
         }
     }
 }

@@ -108,6 +108,11 @@
       "stage": "P55-04"
     },
     {
+      "id": "P55-P03",
+      "summary": "実 Scene の南北配置で上下スライド（§11 の P03）。実キー（W／S）で南→北・北→南を通し、途中のカメラが接続軸（X）から外れないこと、そして<画面の方向と実ワールドの方向が一致すること>——スライド中の実カメラで出発点と到着点を画面へ射影して、北は上・東は右に来ること——を見る",
+      "stage": "P55-05"
+    },
+    {
       "id": "P55-E07A",
       "summary": "受理後・スライド開始前の準備失敗で出発 Area へ戻す（§8 の 2 行目／§11 の E07 のうち準備失敗）。暗転へ逃げず、進行値も訪問済みも変えない。スライド途中の失敗・遅延完了・unload 失敗は後続工程で足す",
       "stage": "P55-04"
@@ -411,12 +416,12 @@
       "requirementId": "P55-V02",
       "stage": "P55-03",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.P55WorldLayoutTests.MovingAnAreaOffTheSeam_FailsValidation",
+      "fullName": "Momotaro.Tests.EditMode.P55WorldLayoutTests.MovingAnAreaOffTheSeam_FailsValidation(\"EastWest\")",
       "requirementIds": [],
       "implemented": true,
       "supportingTests": [
-        "Momotaro.Tests.EditMode.P55WorldLayoutTests.WallingUpThePassage_FailsValidation",
-        "Momotaro.Tests.EditMode.P55WorldLayoutTests.MovingThePassageOffTheRegionCentre_FailsValidation"
+        "Momotaro.Tests.EditMode.P55WorldLayoutTests.WallingUpThePassage_FailsValidation(\"EastWest\")",
+        "Momotaro.Tests.EditMode.P55WorldLayoutTests.MovingThePassageOffTheRegionCentre_FailsValidation(\"EastWest\")"
       ]
     },
     {
@@ -493,6 +498,34 @@
       "implemented": true,
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.WalkingWestIntoTheSeam_ResolvesTheWestwardSlideConnection"
+      ]
+    },
+    {
+      "requirementId": "P55-P03",
+      "stage": "P55-05",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.WalkingNorthIntoTheSeam_SlidesUpToTheNorthernArea",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.WalkingSouthIntoTheSeam_SlidesDownToTheSouthernArea",
+        "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.WalkingEastIntoTheSeam_PutsTheDestinationToTheRightOfTheScreen"
+      ]
+    },
+    {
+      "requirementId": "P55-P03",
+      "stage": "P55-05",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55WorldLayoutTests.TheGeneratedWorld_PassesTheConnectionValidator",
+      "requirementIds": [
+        "P55-V01"
+      ],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55WorldLayoutTests.MovingAnAreaOffTheSeam_FailsValidation(\"NorthSouth\")",
+        "Momotaro.Tests.EditMode.P55WorldLayoutTests.WallingUpThePassage_FailsValidation(\"NorthSouth\")",
+        "Momotaro.Tests.EditMode.P55WorldLayoutTests.MovingThePassageOffTheRegionCentre_FailsValidation(\"NorthSouth\")",
+        "Momotaro.Tests.EditMode.P55WorldLayoutTests.TheP5AndP55Catalogs_StayIndependent"
       ]
     },
     {

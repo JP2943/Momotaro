@@ -104,8 +104,8 @@ namespace Momotaro.Editor.Phase5
                 t.AreaAScenePath,
                 new[]
                 {
-                    (Phase5AreaIds.AreaAStart, CardinalDirection.North),
-                    (Phase5AreaIds.AreaAFromB, CardinalDirection.West),
+                    (Phase5AreaIds.AreaAStart, t.AreaAStartFacing),
+                    (Phase5AreaIds.AreaAFromB, t.AreaAFromBFacing),
                 },
                 Phase5AreaIds.AreaAStart);
 
@@ -114,7 +114,7 @@ namespace Momotaro.Editor.Phase5
                 t.AreaBScenePath,
                 new[]
                 {
-                    (Phase5AreaIds.AreaBFromA, CardinalDirection.East),
+                    (Phase5AreaIds.AreaBFromA, t.AreaBFromAFacing),
                 },
                 Phase5AreaIds.AreaBFromA);
 
@@ -468,17 +468,14 @@ namespace Momotaro.Editor.Phase5
         /// こちらを勝たせる。奥行 0 の指定では置かない（P5 の構成）。
         /// </summary>
         private static void AddSeamCameraRegion(
-            Transform parent, Fixtures fixtures, Phase5BuildTargets t,
-            StableId regionId, Vector2 centerXAndWidth)
+            Transform parent, Fixtures fixtures, StableId regionId, Vector3 center, Vector2 size)
         {
-            if (t.SeamCameraRegionDepth <= 0f || !regionId.IsValid || centerXAndWidth.y <= 0f)
+            if (!regionId.IsValid || size.x <= 0f || size.y <= 0f)
             {
                 return;
             }
 
-            fixtures.CameraRegions.Add(CreateCameraRegion(parent, regionId, 2,
-                new Vector3(centerXAndWidth.x, 0f, t.SeamZ),
-                new Vector2(centerXAndWidth.y, t.SeamCameraRegionDepth)));
+            fixtures.CameraRegions.Add(CreateCameraRegion(parent, regionId, 2, center, size));
         }
 
         /// <summary>カメラ領域を 1 つ置く（§11。XZ の軸平行矩形。回転は持たない）。</summary>
@@ -632,9 +629,9 @@ namespace Momotaro.Editor.Phase5
             var markers = new GameObject("Markers");
             markers.transform.SetParent(root, false);
             Phase5Placeholder.CreateLabel("エリア A", markers.transform, new Vector3(0f, 0.2f, -1.5f), Color.white, 0.5f);
-            Vector3 exitToB = ShiftToSeam(Phase5Layout.AreaAExitToB, t.SeamZ);
-            CreateMarker(markers.transform, "ExitToB", exitToB,
-                Phase5Placeholder.EntryColor, "B へ", new Vector3(0.6f, 1.6f, Phase5Layout.CorridorWidth));
+            Vector3 exitToB = t.AreaAExitPosition;
+            CreateMarker(markers.transform, "ExitToB", exitToB, Phase5Placeholder.EntryColor, "B へ",
+                AcrossSeam(t.SeamAxis, 0.6f, 1.6f, Phase5Layout.CorridorWidth));
 
             // 入口。
             var entries = new GameObject("Entries");
@@ -642,11 +639,10 @@ namespace Momotaro.Editor.Phase5
             AreaEntryPoint start = CreateEntryPoint(entries.transform, Phase5AreaIds.AreaAStart,
                 Phase5Layout.AreaAStart, Phase5Layout.AreaAStartAlternates, "開始／再開");
             AreaEntryPoint fromB = CreateEntryPoint(entries.transform, Phase5AreaIds.AreaAFromB,
-                ShiftToSeam(Phase5Layout.AreaAFromB, t.SeamZ),
-                ShiftToSeam(Phase5Layout.AreaAFromBAlternates, t.SeamZ), "B から");
+                t.AreaAEntryFromB, t.AreaAEntryFromBAlternates, "B から");
 
-            AreaExitGate toB = CreateExitGate(root, "ExitGate_ToB", exitToB,
-                t.AreaBId, Phase5AreaIds.AreaBFromA, Vector3.right);
+            AreaExitGate toB = CreateExitGate(root, "ExitGate_ToB", exitToB, t.SeamAxis,
+                t.AreaBId, Phase5AreaIds.AreaBFromA, t.AreaAExitDirection);
             if (t.ExitAToB.IsValid)
             {
                 // 接続レコードを引くための鍵（P5.5 §3.1）。P5 では割り当てない。
@@ -658,12 +654,11 @@ namespace Momotaro.Editor.Phase5
             var fixtureRoot = new GameObject("Fixtures");
             fixtureRoot.transform.SetParent(root, false);
 
-            // 門は東の通路を<b>完全に塞ぐ</b>。塞がっていない門は門ではない：
+            // 門は境界への道を<b>完全に塞ぐ</b>。塞がっていない門は門ではない：
             // 迂回できてしまうと「開通しないと進めない」という §7.3 の意味が消える。
-            // 通路は仕切り（x=6）と外壁（x=12）の間の 6m なので、少し余らせて 6.2m で塞ぐ。
+            // <b>どこを塞げば回り込めないかは接続口の面で変わる</b>ので、位置も大きさも設定が持つ。
             fixtures.Door = CreateFlagDoor(fixtureRoot.transform, Phase5AreaIds.FlagAGate,
-                new Vector3(Phase5Layout.AreaAGate.x, Phase5Layout.AreaAGate.y, t.AreaAGateZ),
-                new Vector3(6.2f, Phase5Layout.WallHeight, 0.6f));
+                t.AreaAGatePosition, t.AreaAGateSize);
             fixtures.Lever = CreateFlagLever(fixtureRoot.transform, Phase5AreaIds.FlagAGate,
                 definition.Id, fixtures.Door, Phase5Layout.AreaALever);
             fixtures.Points.Add(CreateInvestigationPoint(fixtureRoot.transform, "Investigation",
@@ -685,8 +680,8 @@ namespace Momotaro.Editor.Phase5
             fixtures.CameraRegions.Add(CreateCameraRegion(cameraRegions.transform,
                 Phase5AreaIds.RegionAEast, 1,
                 Phase5Layout.AreaAEastRegionCenter, Phase5Layout.AreaAEastRegionSize));
-            AddSeamCameraRegion(cameraRegions.transform, fixtures, t,
-                t.SeamCameraRegionAId, t.SeamCameraRegionA);
+            AddSeamCameraRegion(cameraRegions.transform, fixtures,
+                t.SeamCameraRegionAId, t.SeamCameraRegionACenter, t.SeamCameraRegionASize);
 
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
             areaRoot.EditorSet(definition, new List<AreaEntryPoint> { start, fromB },
@@ -755,12 +750,11 @@ namespace Momotaro.Editor.Phase5
             var entries = new GameObject("Entries");
             entries.transform.SetParent(root, false);
             AreaEntryPoint fromA = CreateEntryPoint(entries.transform, Phase5AreaIds.AreaBFromA,
-                ShiftToSeam(Phase5Layout.AreaBFromA, t.SeamZ),
-                ShiftToSeam(Phase5Layout.AreaBFromAAlternates, t.SeamZ), "A から");
+                t.AreaBEntryFromA, t.AreaBEntryFromAAlternates, "A から");
 
-            Vector3 doorToA = ShiftToSeam(Phase5Layout.AreaBDoorToA, t.SeamZ);
-            AreaExitGate toA = CreateExitGate(root, "ExitGate_ToA", doorToA,
-                t.AreaAId, Phase5AreaIds.AreaAFromB, Vector3.left);
+            Vector3 doorToA = t.AreaBDoorToA;
+            AreaExitGate toA = CreateExitGate(root, "ExitGate_ToA", doorToA, t.SeamAxis,
+                t.AreaAId, Phase5AreaIds.AreaAFromB, t.AreaBExitDirection);
             if (t.ExitBToA.IsValid)
             {
                 toA.ConfigureExitId(t.ExitBToA);
@@ -773,7 +767,7 @@ namespace Momotaro.Editor.Phase5
             fixtureRoot.transform.SetParent(root, false);
             fixtures.TransitionDoor = CreateTransitionDoor(fixtureRoot.transform, "DoorToA",
                 Phase5AreaIds.DoorBToA, definition.Id,
-                t.AreaAId, Phase5AreaIds.AreaAFromB, doorToA);
+                t.AreaAId, Phase5AreaIds.AreaAFromB, doorToA, t.SeamAxis);
 
             // 調査地点（§7.2）。アリーナの外に置き、調査中の戦闘開始を作れるようにする（§8.3）。
             fixtures.Points.Add(CreateInvestigationPoint(fixtureRoot.transform, "Investigation",
@@ -790,8 +784,8 @@ namespace Momotaro.Editor.Phase5
             cameraRegions.transform.SetParent(root, false);
             fixtures.DefaultCameraRegion = CreateCameraRegion(cameraRegions.transform,
                 Phase5AreaIds.RegionBDefault, 0, Vector3.zero, Phase5Layout.AreaBDefaultRegionSize);
-            AddSeamCameraRegion(cameraRegions.transform, fixtures, t,
-                t.SeamCameraRegionBId, t.SeamCameraRegionB);
+            AddSeamCameraRegion(cameraRegions.transform, fixtures,
+                t.SeamCameraRegionBId, t.SeamCameraRegionBCenter, t.SeamCameraRegionBSize);
 
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
             areaRoot.EditorSet(definition, new List<AreaEntryPoint> { fromA },
@@ -875,6 +869,14 @@ namespace Momotaro.Editor.Phase5
                 new Vector3(width, Phase5Layout.FloorThickness, depth), mat);
         }
 
+        /// <summary>
+        /// 外周壁を 4 面ぶん作る。接続口がある面だけ<b>その区間を空けて 2 本に分ける</b>。
+        ///
+        /// <b>面ごとの向きを 1 か所へ寄せてある。</b> 以前は「北・南は 1 本、東・西だけ
+        /// 開口を扱う」形だったので、南北の接続を表せなかった。
+        /// 4 面を同じ関数へ通せば、どの面に開口が来ても同じ経路で通る
+        /// （付録 B.1 の「生成器は 1 つ、設定は複数」）。
+        /// </summary>
         private static void CreateOuterWalls(
             Transform parent, Vector3 center, float width, float depth, Material mat,
             Phase5SeamOpening seam)
@@ -883,50 +885,61 @@ namespace Momotaro.Editor.Phase5
             float hz = depth * 0.5f;
             float t = Phase5Layout.WallThickness;
 
-            CreateWall(parent, "Wall_North", center + new Vector3(0f, 0f, hz),
-                new Vector3(width + t, Phase5Layout.WallHeight, t), mat);
-            CreateWall(parent, "Wall_South", center + new Vector3(0f, 0f, -hz),
-                new Vector3(width + t, Phase5Layout.WallHeight, t), mat);
-
-            CreateSideWall(parent, "Wall_East", center.x + hx, center.z, depth, mat,
-                seam.Side == Phase5SeamSide.East ? seam : Phase5SeamOpening.None);
-            CreateSideWall(parent, "Wall_West", center.x - hx, center.z, depth, mat,
-                seam.Side == Phase5SeamSide.West ? seam : Phase5SeamOpening.None);
+            // 北・南の壁は X へ伸び、東・西の壁は Z へ伸びる。
+            // 角が二重になるぶん（+t）は従来どおり。
+            CreateEdgeWall(parent, "Wall_North", Phase5SeamAxis.X, center.z + hz, center.x, width + t,
+                mat, SeamOn(seam, Phase5SeamSide.North));
+            CreateEdgeWall(parent, "Wall_South", Phase5SeamAxis.X, center.z - hz, center.x, width + t,
+                mat, SeamOn(seam, Phase5SeamSide.South));
+            CreateEdgeWall(parent, "Wall_East", Phase5SeamAxis.Z, center.x + hx, center.z, depth + t,
+                mat, SeamOn(seam, Phase5SeamSide.East));
+            CreateEdgeWall(parent, "Wall_West", Phase5SeamAxis.Z, center.x - hx, center.z, depth + t,
+                mat, SeamOn(seam, Phase5SeamSide.West));
         }
 
+        /// <summary>その面に開口があるときだけ開口を返す（違う面なら無し）。</summary>
+        private static Phase5SeamOpening SeamOn(Phase5SeamOpening seam, Phase5SeamSide side) =>
+            seam.Side == side ? seam : Phase5SeamOpening.None;
+
         /// <summary>
-        /// 東西の外周壁。接続口があるときは<b>その Z 区間だけ空けて 2 本に分ける</b>
-        /// （P5.5 §7.3「その区間の見た目は通路として開いていること」）。
+        /// 外周壁の 1 面（P5.5 §7.3）。
         ///
-        /// 壁を残したまま Collider だけ通す形は使わない。スライド中は両 Area が描かれているので、
-        /// 境界に壁が立っていると<b>画面を覆う壁</b>として見えてしまう。
+        /// <paramref name="spanAxis"/> は<b>壁が伸びる軸</b>で、<paramref name="wallLine"/> は
+        /// その面が乗る直交軸の座標。開口があるときは、壁を残したまま Collider だけ通す形は
+        /// 使わない——スライド中は両 Area が描かれているので、境界に壁が立っていると
+        /// <b>画面を覆う壁</b>として見えてしまう。
         /// </summary>
-        private static void CreateSideWall(
-            Transform parent, string name, float wallX, float centerZ, float depth, Material mat,
+        private static void CreateEdgeWall(
+            Transform parent, string name, Phase5SeamAxis spanAxis,
+            float wallLine, float spanCenter, float spanLength, Material mat,
             Phase5SeamOpening seam)
         {
             float t = Phase5Layout.WallThickness;
-            float full = depth + t;
 
             if (!seam.IsSet)
             {
-                CreateWall(parent, name, new Vector3(wallX, 0f, centerZ),
-                    new Vector3(t, Phase5Layout.WallHeight, full), mat);
+                CreateWall(parent, name, PointOn(spanAxis, spanCenter, wallLine),
+                    SizeOn(spanAxis, spanLength, t), mat);
                 return;
             }
 
-            float minZ = centerZ - full * 0.5f;
-            float maxZ = centerZ + full * 0.5f;
-            float gapMin = seam.CenterZ - seam.Width * 0.5f;
-            float gapMax = seam.CenterZ + seam.Width * 0.5f;
+            float spanMin = spanCenter - spanLength * 0.5f;
+            float spanMax = spanCenter + spanLength * 0.5f;
+            float gapMin = seam.Center - seam.Width * 0.5f;
+            float gapMax = seam.Center + seam.Width * 0.5f;
 
-            CreateWallSegment(parent, name + "_South", wallX, minZ, gapMin, t, mat);
-            CreateWallSegment(parent, name + "_North", wallX, gapMax, maxZ, t, mat);
+            // 低い側・高い側の呼び名は伸びる軸で決める（X なら西／東、Z なら南／北）。
+            string low = spanAxis == Phase5SeamAxis.X ? "_West" : "_South";
+            string high = spanAxis == Phase5SeamAxis.X ? "_East" : "_North";
+
+            CreateWallSegment(parent, name + low, spanAxis, wallLine, spanMin, gapMin, t, mat);
+            CreateWallSegment(parent, name + high, spanAxis, wallLine, gapMax, spanMax, t, mat);
         }
 
-        /// <summary>Z の区間 [from, to] を埋める壁。区間が無いなら作らない。</summary>
+        /// <summary>伸びる軸の区間 [from, to] を埋める壁。区間が無いなら作らない。</summary>
         private static void CreateWallSegment(
-            Transform parent, string name, float wallX, float from, float to, float thickness, Material mat)
+            Transform parent, string name, Phase5SeamAxis spanAxis,
+            float wallLine, float from, float to, float thickness, Material mat)
         {
             float length = to - from;
             if (length <= 0.01f)
@@ -934,9 +947,33 @@ namespace Momotaro.Editor.Phase5
                 return;
             }
 
-            CreateWall(parent, name, new Vector3(wallX, 0f, from + length * 0.5f),
-                new Vector3(thickness, Phase5Layout.WallHeight, length), mat);
+            CreateWall(parent, name, PointOn(spanAxis, from + length * 0.5f, wallLine),
+                SizeOn(spanAxis, length, thickness), mat);
         }
+
+        /// <summary>伸びる軸の座標と直交軸の座標から XZ の点を作る。</summary>
+        private static Vector3 PointOn(Phase5SeamAxis spanAxis, float along, float across) =>
+            spanAxis == Phase5SeamAxis.X
+                ? new Vector3(along, 0f, across)
+                : new Vector3(across, 0f, along);
+
+        /// <summary>伸びる軸の長さと厚みから壁の大きさを作る。</summary>
+        private static Vector3 SizeOn(Phase5SeamAxis spanAxis, float length, float thickness) =>
+            spanAxis == Phase5SeamAxis.X
+                ? new Vector3(length, Phase5Layout.WallHeight, thickness)
+                : new Vector3(thickness, Phase5Layout.WallHeight, length);
+
+        /// <summary>
+        /// 接続軸に薄く、直交軸に広い箱の大きさ（出入口の Trigger・目印・扉）。
+        ///
+        /// <b>「通路を横切る板」は接続軸が変わると向きも変わる。</b>
+        /// 東西の接続で <c>(薄, 高, 通路幅)</c> だったものは、南北では <c>(通路幅, 高, 薄)</c> になる。
+        /// 座標と違って形は軸から一意に決まるので、ここで導いて設定には持たせない。
+        /// </summary>
+        private static Vector3 AcrossSeam(Phase5SeamAxis axis, float thin, float height, float wide) =>
+            axis == Phase5SeamAxis.X
+                ? new Vector3(thin, height, wide)
+                : new Vector3(wide, height, thin);
 
         /// <summary>
         /// Area の中身をまとめて世界座標へ移す（P5.5 §3.2 の local→world 変換）。
@@ -960,27 +997,6 @@ namespace Momotaro.Editor.Phase5
         {
             Phase5Placeholder.CreateBox(name, parent,
                 new Vector3(center.x, size.y * 0.5f, center.z), size, mat);
-        }
-
-        /// <summary>
-        /// 接続通路の Z へ合わせて平行移動する（P5.5 §7.1）。
-        ///
-        /// 出入口・入口・代替配置・目印を<b>同じ規則で</b>動かすための 1 か所。
-        /// 個別に座標を渡す形にすると、代替配置や目印だけ古い Z に取り残される。
-        /// </summary>
-        private static Vector3 ShiftToSeam(Vector3 position, float seamZ) =>
-            new Vector3(position.x, position.y, position.z - Phase5Layout.SeamDefaultZ + seamZ);
-
-        /// <summary>代替配置をまとめて平行移動する。</summary>
-        private static Vector3[] ShiftToSeam(Vector3[] positions, float seamZ)
-        {
-            var shifted = new Vector3[positions.Length];
-            for (int i = 0; i < positions.Length; i++)
-            {
-                shifted[i] = ShiftToSeam(positions[i], seamZ);
-            }
-
-            return shifted;
         }
 
         /// <summary>矩形の外枠を薄い板 4 本で描く（当たり判定なし。見て分かるようにするだけ）。</summary>
@@ -1105,7 +1121,8 @@ namespace Momotaro.Editor.Phase5
         /// <summary>Interact 1 回で遷移を要求する扉（§6.1 の 2 行目）。</summary>
         private static AreaTransitionDoor CreateTransitionDoor(
             Transform parent, string name, StableId doorId, StableId areaId,
-            StableId destinationArea, StableId destinationEntry, Vector3 position)
+            StableId destinationArea, StableId destinationEntry, Vector3 position,
+            Phase5SeamAxis seamAxis)
         {
             var go = new GameObject("Door_" + name);
             go.transform.SetParent(parent, false);
@@ -1113,7 +1130,7 @@ namespace Momotaro.Editor.Phase5
 
             Material mat = Phase5Placeholder.EnsureMaterial("M_P5_DoorToA", Phase5Placeholder.EntryColor);
             Phase5Placeholder.CreateBox("Body", go.transform, position + new Vector3(0f, 0.9f, 0f),
-                new Vector3(0.6f, 1.8f, 2.4f), mat, solid: false);
+                AcrossSeam(seamAxis, 0.6f, 1.8f, 2.4f), mat, solid: false);
             Phase5Placeholder.CreateLabel("A へ（扉）", go.transform, position + new Vector3(0f, 2.0f, 0f),
                 Phase5Placeholder.EntryColor, 0.16f);
 
@@ -1714,7 +1731,7 @@ namespace Momotaro.Editor.Phase5
         /// 0.15 秒連続入力されたら遷移を要求する。立っているだけでは遷移しない。
         /// </summary>
         private static AreaExitGate CreateExitGate(
-            Transform root, string name, Vector3 position,
+            Transform root, string name, Vector3 position, Phase5SeamAxis seamAxis,
             StableId destinationArea, StableId destinationEntry, Vector3 exitDirection)
         {
             var go = new GameObject(name);
@@ -1723,7 +1740,7 @@ namespace Momotaro.Editor.Phase5
 
             BoxCollider trigger = go.AddComponent<BoxCollider>();
             trigger.isTrigger = true;
-            trigger.size = new Vector3(1.6f, Phase5Layout.WallHeight, Phase5Layout.CorridorWidth);
+            trigger.size = AcrossSeam(seamAxis, 1.6f, Phase5Layout.WallHeight, Phase5Layout.CorridorWidth);
 
             // 床の上へ載せる（遭遇 Trigger と同じ約束）。y=0 中心のままだと半分が床下へ潜り、
             // 主人公の Capsule（y 0〜2）との重なりが薄くなる。

@@ -2,6 +2,21 @@ using UnityEngine;
 
 namespace Momotaro.Editor.Phase5
 {
+    /// <summary>
+    /// 接続が走る軸（P5.5 §7.1）。
+    ///
+    /// <b>「接続軸」とはカメラが動く軸である。</b> 東西の接続なら X、南北の接続なら Z。
+    /// もう一方（直交軸）は境界寄せ領域で接続軸へ固定し、スライドを純粋な 1 軸の移動にする。
+    /// </summary>
+    public enum Phase5SeamAxis
+    {
+        /// <summary>X（東西）。</summary>
+        X = 0,
+
+        /// <summary>Z（南北）。</summary>
+        Z = 1,
+    }
+
     /// <summary>外周壁のどの面に接続口を開けるか。</summary>
     public enum Phase5SeamSide
     {
@@ -13,6 +28,41 @@ namespace Momotaro.Editor.Phase5
 
         /// <summary>西（−X）側。</summary>
         West = 2,
+
+        /// <summary>北（+Z）側。</summary>
+        North = 3,
+
+        /// <summary>南（−Z）側。</summary>
+        South = 4,
+    }
+
+    /// <summary>接続口の面についての小さな問い合わせ。</summary>
+    public static class Phase5SeamSides
+    {
+        /// <summary>
+        /// その面の接続が走る軸。
+        ///
+        /// <b>面の法線の軸が接続軸である。</b> 東西の壁を抜けると X へ進み、
+        /// 南北の壁を抜けると Z へ進む。壁が伸びる向きは<b>直交軸</b>で、
+        /// 接続口の中心・幅はそちらで測る（<see cref="Phase5SeamOpening.Center"/>）。
+        /// </summary>
+        public static Phase5SeamAxis AxisOf(Phase5SeamSide side) =>
+            side == Phase5SeamSide.North || side == Phase5SeamSide.South
+                ? Phase5SeamAxis.Z
+                : Phase5SeamAxis.X;
+
+        /// <summary>接続軸の正方向へ 1（東 +X／西 −X／北 +Z／南 −Z）。</summary>
+        public static Vector3 OutwardOf(Phase5SeamSide side)
+        {
+            switch (side)
+            {
+                case Phase5SeamSide.East: return Vector3.right;
+                case Phase5SeamSide.West: return Vector3.left;
+                case Phase5SeamSide.North: return Vector3.forward;
+                case Phase5SeamSide.South: return Vector3.back;
+                default: return Vector3.zero;
+            }
+        }
     }
 
     /// <summary>
@@ -29,21 +79,30 @@ namespace Momotaro.Editor.Phase5
         public static readonly Phase5SeamOpening None = default;
 
         /// <summary>作る。</summary>
-        public Phase5SeamOpening(Phase5SeamSide side, float centerZ, float width)
+        public Phase5SeamOpening(Phase5SeamSide side, float center, float width)
         {
             Side = side;
-            CenterZ = centerZ;
+            Center = center;
             Width = width;
         }
 
         /// <summary>どの面か。</summary>
         public Phase5SeamSide Side { get; }
 
-        /// <summary>接続口の中心 Z（Area のローカル座標）。</summary>
-        public float CenterZ { get; }
+        /// <summary>
+        /// 接続口の中心（Area のローカル座標。<b>壁が伸びる軸で測る</b>）。
+        ///
+        /// 東西の壁は Z へ伸びるので Z、南北の壁は X へ伸びるので X。
+        /// <b>接続軸ではなく直交軸の座標である</b>——ここを取り違えると、
+        /// 開口が壁の外へ出て「壁が 1 本もない面」になる。
+        /// </summary>
+        public float Center { get; }
 
-        /// <summary>接続口の幅（Z 方向）。</summary>
+        /// <summary>接続口の幅（<see cref="Center"/> と同じ軸）。</summary>
         public float Width { get; }
+
+        /// <summary>この接続が走る軸。</summary>
+        public Phase5SeamAxis Axis => Phase5SeamSides.AxisOf(Side);
 
         /// <summary>開ける指定になっているか。</summary>
         public bool IsSet => Side != Phase5SeamSide.None && Width > 0f;
@@ -161,52 +220,112 @@ namespace Momotaro.Editor.Phase5
         public Core.Identification.StableId ExitBToA { get; set; }
 
         /// <summary>
-        /// 接続通路の中心 Z（P5.5 §7.1）。既定は <see cref="Phase5Layout.SeamDefaultZ"/>。
+        /// 接続が走る軸（<see cref="AreaASeam"/> の面から決まる）。接続口が無い構成では X。
         ///
-        /// <b>両 Area の Camera 領域が同じ Z へ clamp する位置を選ぶ。</b>
-        /// §7.1 は「東西なら Camera の移動は X だけ」と定める。A の東通路（奥行 18）と
-        /// B の全体（奥行 22）は見える範囲より深いので、clamp の結果は<b>領域の中心へ寄る</b>——
-        /// z=6 のような偏った位置に通路を置くと、A 側は 2.9、B 側は 4.9 へ寄って
-        /// <b>接続軸以外（Z）にもずれる</b>。どちらの領域も中心 z=0 なので、通路も z=0 に置く。
-        ///
-        /// 出入口・入口・その代替配置はこの値に合わせて Z ごと平行移動する。
-        /// 個別に座標を渡す形にすると、代替配置や目印だけ古い Z に取り残される。
+        /// <b>軸は面から導き、別の設定項目にしない。</b> 面と軸を二重に書くと、
+        /// 片方だけ直した設定が「東の壁に開けて南北へスライドする」形で成立してしまう。
         /// </summary>
-        public float SeamZ { get; set; } = Phase5Layout.SeamDefaultZ;
+        public Phase5SeamAxis SeamAxis => AreaASeam.IsSet ? AreaASeam.Axis : Phase5SeamAxis.X;
 
         /// <summary>
-        /// 接続境界の手前に置く<b>カメラ領域の奥行</b>（0 なら置かない。P5.5 §7.1）。
+        /// 接続境界の手前に置く<b>カメラ領域</b>の中心（Area ローカル）と大きさ（XZ）。
         ///
-        /// <b>Z を接続軸へ固定するために置く。</b> 領域の奥行が見える奥行より<b>狭い</b>と、
-        /// <c>ClampFocus</c> はその軸を領域の中央へ固定する（無理に clamp しない）。
-        /// これを使って、境界へ近づく間の Camera の Z を <see cref="SeamZ"/> へ寄せる。
+        /// <b>領域は接続軸・直交軸の<em>両方</em>で見える範囲より狭くする</b>（P5.5 §7.1）。
+        /// <c>ClampFocus</c> は領域の広がりが見える広がりより狭い軸を<b>領域の中央へ固定する</b>
+        /// （無理に clamp しない）。両軸を狭くすると、境界へ近づく間のカメラは
+        /// <b>1 点に止まる</b>——通路のどの端から入っても同じ位置から出発するので、
+        /// スライドは接続軸だけの移動になる。
         ///
         /// <b>「領域が画面より広いから中心へ寄る」は誤りである。</b> 広い領域では clamp の
-        /// 範囲内に収まるだけで、追従先の Z がそのまま残る——通路の端（z=±1 など）から
-        /// 入ると、東西の接続なのに Camera が Z へも動く（GPT レビュー R14 の指摘 2）。
-        /// 見える奥行は <c>orthographicSize / sin(俯角)</c> で、画面比に依らない。
+        /// 範囲内に収まるだけで、追従先の座標がそのまま残る——通路の端から入ると
+        /// 接続軸以外へも動く（GPT レビュー R14 の指摘 2）。
+        /// 見える半奥行は <c>orthographicSize / sin(俯角)</c>、半幅は <c>orthographicSize × 画面比</c>。
+        /// <b>この関係は定数で信じず検査で見る</b>——俯角や投影サイズを変えたら壊れる。
+        ///
+        /// 大きさが 0 の指定では置かない（P5 の構成）。
         /// </summary>
-        public float SeamCameraRegionDepth { get; set; }
+        public Vector3 SeamCameraRegionACenter { get; set; }
 
-        /// <summary>境界寄せ領域の ID と X の範囲（Area ローカル）。奥行は共通。</summary>
+        /// <summary>同・A 側の大きさ（幅 X, 奥行 Z）。どちらかが 0 なら置かない。</summary>
+        public Vector2 SeamCameraRegionASize { get; set; }
+
+        /// <summary>同・B 側の中心。</summary>
+        public Vector3 SeamCameraRegionBCenter { get; set; }
+
+        /// <summary>同・B 側の大きさ。</summary>
+        public Vector2 SeamCameraRegionBSize { get; set; }
+
+        /// <summary>境界寄せ領域の ID（A 側）。無効なら置かない。</summary>
         public Core.Identification.StableId SeamCameraRegionAId { get; set; }
 
         /// <summary>同・B 側。</summary>
         public Core.Identification.StableId SeamCameraRegionBId { get; set; }
 
-        /// <summary>A 側の境界寄せ領域の中心 X と幅（Area ローカル）。</summary>
-        public Vector2 SeamCameraRegionA { get; set; }
+        // ---- 境界まわりの座標（Area ローカル。§3.2）----
+        //
+        // <b>Builder は境界まわりの座標を計算しない。</b> 以前は P5 のレイアウト定数を
+        // 「接続通路の Z へ平行移動する」形で Builder が作っていたが、これは東西の接続しか
+        // 表せない（平行移動する軸が Z に固定されている）。配置ごとの設定が座標を持つ形にすれば、
+        // 東西でも南北でも同じ Builder が通る——付録 B.1 の「生成器は 1 つ、設定は複数」。
+        //
+        // 既定値は P5 の受入用 Scene の値そのままで、<c>Phase5()</c> が入れる。
 
-        /// <summary>B 側の境界寄せ領域の中心 X と幅（Area ローカル）。</summary>
-        public Vector2 SeamCameraRegionB { get; set; }
+        /// <summary>A → B の開放出入口の位置。</summary>
+        public Vector3 AreaAExitPosition { get; set; } = Phase5Layout.AreaAExitToB;
+
+        /// <summary>A → B の出口方向（この向きへ入力し続けると出る。XZ の単位ベクトル）。</summary>
+        public Vector3 AreaAExitDirection { get; set; } = Vector3.right;
+
+        /// <summary>A の「B から戻る」入口の位置。</summary>
+        public Vector3 AreaAEntryFromB { get; set; } = Phase5Layout.AreaAFromB;
+
+        /// <summary>同・代替配置候補（到着位置が塞がっているとき。§6.3）。</summary>
+        public Vector3[] AreaAEntryFromBAlternates { get; set; } = Phase5Layout.AreaAFromBAlternates;
+
+        /// <summary>B の「A から来る」入口の位置。</summary>
+        public Vector3 AreaBEntryFromA { get; set; } = Phase5Layout.AreaBFromA;
+
+        /// <summary>同・代替配置候補。</summary>
+        public Vector3[] AreaBEntryFromAAlternates { get; set; } = Phase5Layout.AreaBFromAAlternates;
+
+        /// <summary>B → A の出入口と Interact 扉の位置（同じ場所に併存させる）。</summary>
+        public Vector3 AreaBDoorToA { get; set; } = Phase5Layout.AreaBDoorToA;
+
+        /// <summary>B → A の出口方向。</summary>
+        public Vector3 AreaBExitDirection { get; set; } = Vector3.left;
+
+        // ---- 入口の向き（Data 側。§3.1）----
+        //
+        // <b>向きは Data に焼く値で、Scene の座標からは導かない。</b> 到着時に主人公が
+        // どちらを向くかは配置の意図であって、入口の座標では決まらない。
+
+        /// <summary>A の開始／再開入口の向き。</summary>
+        public Core.World.CardinalDirection AreaAStartFacing { get; set; }
+            = Core.World.CardinalDirection.North;
+
+        /// <summary>A の「B から戻る」入口の向き（B から来たのだから B の反対を向く）。</summary>
+        public Core.World.CardinalDirection AreaAFromBFacing { get; set; }
+            = Core.World.CardinalDirection.West;
+
+        /// <summary>B の「A から来る」入口の向き（A から来たのだから A の反対を向く）。</summary>
+        public Core.World.CardinalDirection AreaBFromAFacing { get; set; }
+            = Core.World.CardinalDirection.East;
 
         /// <summary>
-        /// A の門（レバーで開通する）の Z。既定は P5 の配置。
+        /// A の門（レバーで開通する）の位置。既定は P5 の配置。
         ///
-        /// <b>通路の入口と仕切りの開口の「間」に置く。</b> 門より手前で境界へ抜けられると
-        /// 「開通しないと進めない」という §7.3 の意味が消える。
+        /// <b>「開通しないと境界へ届かない」ようにする。</b> 門を回り込めると
+        /// 「開通しないと進めない」という §7.3 の意味が消える。どこを塞げば回り込めないかは
+        /// 地形と接続口の面で変わるので、位置も大きさも配置が持つ。
         /// </summary>
-        public float AreaAGateZ { get; set; }
+        public Vector3 AreaAGatePosition { get; set; } = Phase5Layout.AreaAGate;
+
+        /// <summary>
+        /// A の門の大きさ。既定は東の通路（仕切り x=6 と外壁 x=12 の間の 6m）を
+        /// 少し余らせて塞ぐ 6.2m。
+        /// </summary>
+        public Vector3 AreaAGateSize { get; set; }
+            = new Vector3(6.2f, Phase5Layout.WallHeight, 0.6f);
 
         /// <summary>統合起動 Scene に置く見出し。</summary>
         public string TrialHeadline { get; set; } = "P5 探索試遊（起動）";

@@ -69,6 +69,15 @@ namespace Momotaro.Tests.EditMode
             AssertScenePaths(p5, "Assets/_Project/Scenes/Tests/Phase5/");
             AssertScenePaths(p55, "Assets/_Project/Scenes/Tests/Phase55/");
 
+            // <b>南北配置も独立した生成物である</b>（工程 P55-05c）。配置を足したときに
+            // カタログを共有すると、実行時にどちらの配置で動いているのか分からなくなる。
+            var ns = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(
+                Phase55NorthSouthIds.CatalogDataPath);
+            Assert.IsNotNull(ns, "南北配置のカタログがある。");
+            Assert.AreNotSame(p55, ns, "東西と南北で同じ Asset を使い回していない。");
+            Assert.AreNotEqual(p55.Id.Value, ns.Id.Value, "安定 ID も別（付録 B.5）。");
+            AssertScenePaths(ns, "Assets/_Project/Scenes/Tests/Phase55NS/");
+
             // Area Data も別 Asset。共有すると、後から片方の Scene パスを書き換えたときに
             // もう片方が黙って別の配置を指す。
             var areaAP5 = AssetDatabase.LoadAssetAtPath<AreaDefinition>(Phase5AreaIds.AreaADataPath);
@@ -126,12 +135,14 @@ namespace Momotaro.Tests.EditMode
         /// B を東へ 2m ずらすと床の間に隙間ができる。実行時には「境界の先が虚空」になるが、
         /// Scene を 1 枚ずつ見る検査では<b>どちらも正しく見える</b>。
         /// </summary>
-        [Test]
-        public void MovingAnAreaOffTheSeam_FailsValidation()
+        [TestCase("EastWest")]
+        [TestCase("NorthSouth")]
+        public void MovingAnAreaOffTheSeam_FailsValidation(string arrangement)
         {
-            AssertBreakingIsDetected("B の西端", (a, b) =>
+            Phase55Arrangement r = Arrangement(arrangement);
+            AssertBreakingIsDetected(r, "が一致しません", (a, b) =>
             {
-                b.transform.position += new Vector3(2f, 0f, 0f);
+                b.transform.position += r.Point(2f, 0f);
             });
         }
 
@@ -142,19 +153,28 @@ namespace Momotaro.Tests.EditMode
         /// 画面を覆う壁として見える。Collider を無効にしても見た目は残るので、
         /// 「通れるから良い」では合格にしない。
         /// </summary>
-        [Test]
-        public void WallingUpThePassage_FailsValidation()
+        [TestCase("EastWest")]
+        [TestCase("NorthSouth")]
+        public void WallingUpThePassage_FailsValidation(string arrangement)
         {
-            AssertBreakingIsDetected("接続通路", (a, b) =>
+            Phase55Arrangement r = Arrangement(arrangement);
+            AssertBreakingIsDetected(r, "接続通路", (a, b) =>
             {
                 Material mat = Phase5Placeholder.EnsureMaterial("M_P5_Wall", Phase5Placeholder.WallColor);
-                var wall = new GameObject("Wall_East_Intruder");
+
+                // 名前は外周壁として採られるものにする（検査は "Wall_東西南北" だけを見る）。
+                var wall = new GameObject(r.Axis == Phase5SeamAxis.X
+                    ? "Wall_East_Intruder" : "Wall_North_Intruder");
                 SceneManager.MoveGameObjectToScene(wall, a.gameObject.scene);
                 wall.transform.SetParent(a.transform, false);
-                wall.transform.position = new Vector3(
-                    Phase55WorldLayout.SeamX, Phase5Layout.WallHeight * 0.5f, Phase55WorldLayout.SeamZ);
+
+                // 境界は生成物から採る（定数を読み合わせない）。
+                Bounds floor = FloorBoundsOf(a);
+                Vector3 at = r.Point(r.ForwardEdge(floor), r.PassageCenter);
+                wall.transform.position = new Vector3(at.x, Phase5Layout.WallHeight * 0.5f, at.z);
+                Vector3 size = r.Point(Phase5Layout.WallThickness, r.PassageWidth);
                 wall.transform.localScale = new Vector3(
-                    Phase5Layout.WallThickness, Phase5Layout.WallHeight, Phase55WorldLayout.PassageWidth);
+                    Mathf.Max(size.x, 0.01f), Phase5Layout.WallHeight, Mathf.Max(size.z, 0.01f));
 
                 var renderer = wall.AddComponent<MeshRenderer>();
                 renderer.sharedMaterial = mat;
@@ -170,16 +190,49 @@ namespace Momotaro.Tests.EditMode
         /// <b>通路の端から入る場合</b>も同じ壊れ方で、そちらは Validator が
         /// 進入位置を刻んで見る（付録 B.3.1／B.3.2）。
         /// </summary>
-        [Test]
-        public void MovingThePassageOffTheRegionCentre_FailsValidation()
+        [TestCase("EastWest")]
+        [TestCase("NorthSouth")]
+        public void MovingThePassageOffTheRegionCentre_FailsValidation(string arrangement)
         {
-            AssertBreakingIsDetected("接続軸", (a, b) =>
+            Phase55Arrangement r = Arrangement(arrangement);
+            AssertBreakingIsDetected(r, "接続軸", (a, b) =>
             {
                 foreach (AreaEntryPointMover mover in AreaEntryPointMover.For(b))
                 {
-                    mover.Shift(new Vector3(0f, 0f, 6f));
+                    // <b>直交軸へずらす</b>（接続軸へずらしても「遠いだけ」で軸は外れない）。
+                    mover.Shift(r.Point(0f, 6f));
                 }
             });
+        }
+
+        /// <summary>この名前の配置（テスト名を ASCII に保つための引き当て）。</summary>
+        private static Phase55Arrangement Arrangement(string key) =>
+            key == "NorthSouth" ? Phase55Arrangements.NorthSouth() : Phase55Arrangements.EastWest();
+
+        /// <summary>その Area の床の Bounds（見えている Renderer から採る）。</summary>
+        private static Bounds FloorBoundsOf(AreaRootHandle handle)
+        {
+            bool found = false;
+            var bounds = new Bounds();
+            foreach (Renderer renderer in handle.transform.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null || renderer.name != "Floor")
+                {
+                    continue;
+                }
+
+                if (!found)
+                {
+                    bounds = renderer.bounds;
+                    found = true;
+                    continue;
+                }
+
+                bounds.Encapsulate(renderer.bounds);
+            }
+
+            Assert.IsTrue(found, "床（Floor）がある。");
+            return bounds;
         }
 
         // ---------------------------------------------------------------- 補助
@@ -189,16 +242,18 @@ namespace Momotaro.Tests.EditMode
         /// もともと落ちていたなら、その注入は何も検出していない。
         /// </summary>
         private static void AssertBreakingIsDetected(
-            string expectedFragment, System.Action<AreaRootHandle, AreaRootHandle> breakIt)
+            Phase55Arrangement arrangement, string expectedFragment,
+            System.Action<AreaRootHandle, AreaRootHandle> breakIt)
         {
             var errors = new List<string>();
             var warnings = new List<string>();
-            Assert.IsTrue(Phase55WorldValidator.TryOpenBoth(errors, out Scene sceneA, out Scene sceneB),
+            Assert.IsTrue(
+                Phase55WorldValidator.TryOpenBoth(arrangement, errors, out Scene sceneA, out Scene sceneB),
                 "前提：両 Scene を開ける。");
 
             Assert.IsTrue(Phase55WorldValidator.TryCollect(sceneA, errors, warnings, out var before0));
             Assert.IsTrue(Phase55WorldValidator.TryCollect(sceneB, errors, warnings, out var before1));
-            Phase55WorldValidator.Compare(before0, before1, errors);
+            Phase55WorldValidator.Compare(arrangement, before0, before1, errors);
             Assert.IsEmpty(errors, "前提：壊す前は通る：\n- " + string.Join("\n- ", errors));
 
             breakIt(AreaRootHandle.In(sceneA), AreaRootHandle.In(sceneB));
@@ -207,7 +262,7 @@ namespace Momotaro.Tests.EditMode
             var afterWarnings = new List<string>();
             Assert.IsTrue(Phase55WorldValidator.TryCollect(sceneA, after, afterWarnings, out var broken0));
             Assert.IsTrue(Phase55WorldValidator.TryCollect(sceneB, after, afterWarnings, out var broken1));
-            Phase55WorldValidator.Compare(broken0, broken1, after);
+            Phase55WorldValidator.Compare(arrangement, broken0, broken1, after);
 
             bool found = false;
             for (int i = 0; i < after.Count; i++)

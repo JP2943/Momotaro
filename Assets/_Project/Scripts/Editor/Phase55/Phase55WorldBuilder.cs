@@ -56,19 +56,44 @@ namespace Momotaro.Editor.Phase55
             EditorUtility.DisplayDialog("P5.5 実ワールド配置（失敗）", result.Message, "OK");
         }
 
-        /// <summary>Scene・Data・接続一覧を生成する。</summary>
+        /// <summary>
+        /// <b>全配置</b>の Scene・Data・接続一覧を生成する（東西・南北）。
+        ///
+        /// 配置を足したときに生成だけ足して検査を足し忘れないよう、
+        /// 生成も検査も <c>Phase55Arrangements.All()</c> をなめる形にしてある。
+        /// </summary>
         public static BuildResult BuildAll()
+        {
+            var outputs = new List<string>();
+            var lines = new List<string>();
+
+            foreach (Phase55Arrangement arrangement in Phase55Arrangements.All())
+            {
+                BuildResult one = BuildOne(arrangement);
+                outputs.AddRange(one.Outputs);
+                lines.Add("【" + arrangement.Label + "】" + one.Message);
+                if (!one.Success)
+                {
+                    return new BuildResult(false, string.Join("\n", lines), outputs);
+                }
+            }
+
+            return new BuildResult(true, string.Join("\n", lines), outputs);
+        }
+
+        /// <summary>1 つの配置を生成する。</summary>
+        public static BuildResult BuildOne(Phase55Arrangement arrangement)
         {
             // <b>接続を Scene より先に作る。</b> Area Scene の初期化担当がこの Asset を
             // 参照するので、あとから作ると参照が空のまま保存される。
-            AreaConnectionData connections = EnsureConnections();
+            AreaConnectionData connections = EnsureConnections(arrangement);
             AssetDatabase.SaveAssets();
 
-            Phase5BuildTargets targets = Phase55WorldLayout.Targets();
+            Phase5BuildTargets targets = arrangement.Targets();
 
             Phase5ExplorationBuilder.BuildResult scenes = Phase5ExplorationBuilder.Build(targets);
             var outputs = new List<string>(scenes.Outputs);
-            outputs.Add(Phase55WorldIds.ConnectionDataPath);
+            outputs.Add(arrangement.ConnectionDataPath);
             if (!scenes.Success)
             {
                 return new BuildResult(false, scenes.Message, outputs);
@@ -79,53 +104,54 @@ namespace Momotaro.Editor.Phase55
 
             return new BuildResult(true,
                 scenes.Message
-                + "\n接続 " + connections.Connections.Count + " 件（東西の往復）。"
-                + "境界 x=" + Phase55WorldLayout.SeamX
-                + "／通路 z=" + Phase55WorldLayout.SeamZ
-                + " 幅 " + Phase55WorldLayout.PassageWidth
-                + "／B 原点 x=" + Phase55WorldLayout.AreaBOrigin.x + "。",
+                + "\n接続 " + connections.Connections.Count + " 件（往復）。"
+                + "境界 " + arrangement.AlongName + "=" + arrangement.Along(targets.AreaBOrigin - targets.AreaAOrigin)
+                + " の手前／通路 " + arrangement.AcrossName + "=" + arrangement.PassageCenter
+                + " 幅 " + arrangement.PassageWidth
+                + "／B 原点 " + targets.AreaBOrigin + "。",
                 outputs);
         }
 
         /// <summary>
-        /// 東西の接続を 2 レコードで作る（§3.1）。
+        /// 往復の接続を 2 レコードで作る（§3.1）。
         ///
         /// <b>往復は 1 レコードを使い回さない。</b> 方向・演出時間・到着入口を片側だけ
         /// 変えたいときに必ず破綻する。逆方向は <c>ReverseConnectionId</c> で結び、
         /// 向きが反転していることを Data 検証が見る（§10.1）。
         /// </summary>
-        private static AreaConnectionData EnsureConnections()
+        private static AreaConnectionData EnsureConnections(Phase55Arrangement arrangement)
         {
-            Phase5Placeholder.EnsureFolder(Phase55WorldIds.DataFolder);
+            Phase5Placeholder.EnsureFolder(
+                System.IO.Path.GetDirectoryName(arrangement.ConnectionDataPath).Replace('\\', '/'));
 
             var asset = AssetDatabase.LoadAssetAtPath<AreaConnectionData>(
-                Phase55WorldIds.ConnectionDataPath);
+                arrangement.ConnectionDataPath);
             if (asset == null)
             {
                 asset = ScriptableObject.CreateInstance<AreaConnectionData>();
-                AssetDatabase.CreateAsset(asset, Phase55WorldIds.ConnectionDataPath);
+                AssetDatabase.CreateAsset(asset, arrangement.ConnectionDataPath);
             }
 
             Phase5ExplorationBuilder.SetIdentity(
-                asset, Phase55WorldIds.Connections, "P5.5 エリア接続（東西）");
+                asset, arrangement.ConnectionsId, arrangement.ConnectionsDisplayName);
 
-            var east = new AreaConnectionDefinition();
-            east.Configure(
-                Phase55WorldIds.ConnectionAToB,
-                Phase55WorldIds.AreaA, Phase55WorldIds.ExitAEast,
-                Phase55WorldIds.AreaB, Phase5AreaIds.AreaBFromA,
-                AreaTransitionStyle.Slide, AreaConnectionDirection.East,
-                Phase55WorldIds.ConnectionBToA);
+            var forward = new AreaConnectionDefinition();
+            forward.Configure(
+                arrangement.ConnectionAToB,
+                arrangement.AreaAId, arrangement.ExitFromA,
+                arrangement.AreaBId, arrangement.EntryInB,
+                AreaTransitionStyle.Slide, arrangement.ForwardDirection,
+                arrangement.ConnectionBToA);
 
-            var west = new AreaConnectionDefinition();
-            west.Configure(
-                Phase55WorldIds.ConnectionBToA,
-                Phase55WorldIds.AreaB, Phase55WorldIds.ExitBWest,
-                Phase55WorldIds.AreaA, Phase5AreaIds.AreaAFromB,
-                AreaTransitionStyle.Slide, AreaConnectionDirection.West,
-                Phase55WorldIds.ConnectionAToB);
+            var backward = new AreaConnectionDefinition();
+            backward.Configure(
+                arrangement.ConnectionBToA,
+                arrangement.AreaBId, arrangement.ExitFromB,
+                arrangement.AreaAId, arrangement.EntryInA,
+                AreaTransitionStyle.Slide, arrangement.BackwardDirection,
+                arrangement.ConnectionAToB);
 
-            asset.SetConnections(new List<AreaConnectionDefinition> { east, west });
+            asset.SetConnections(new List<AreaConnectionDefinition> { forward, backward });
             EditorUtility.SetDirty(asset);
             return asset;
         }

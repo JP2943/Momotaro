@@ -152,23 +152,55 @@ namespace Momotaro.Editor.Phase55
         public const float SeamCameraRegionDepth = 8f;
 
         /// <summary>
-        /// A 側の境界寄せ領域（中心 X, 幅。Area ローカル）。東の通路をそのまま覆う。
-        /// 幅 6 は見える横幅（≒17.8）より狭いので、X も通路の中央へ固定される——
-        /// 境界での画面が止まるので、スライドは純粋な X の移動になる。
+        /// A 側の境界寄せ領域の中心（Area ローカル）。東の通路の、境界寄りの区間を覆う。
         /// </summary>
-        public static readonly Vector2 SeamCameraRegionA =
-            new Vector2(Phase5Layout.AreaAEastRegionCenter.x, Phase5Layout.AreaAEastRegionSize.x);
+        public static readonly Vector3 SeamCameraRegionACenter =
+            new Vector3(Phase5Layout.AreaAEastRegionCenter.x, 0f, SeamZ);
 
         /// <summary>
-        /// B 側の境界寄せ領域（中心 X, 幅。Area ローカル）。西端から 10m を覆う。
+        /// 同・大きさ（X, Z）。<b>両軸とも見える広がりより狭い</b>。
+        /// 幅 6 は見える横幅（≒17.8）より狭いので X も通路の中央へ固定され、
+        /// 奥行 8 は見える奥行（≒12.2）より狭いので Z も接続軸へ固定される——
+        /// 境界での画面が 1 点に止まるので、スライドは純粋な X の移動になる。
+        /// </summary>
+        public static readonly Vector2 SeamCameraRegionASize =
+            new Vector2(Phase5Layout.AreaAEastRegionSize.x, SeamCameraRegionDepth);
+
+        /// <summary>
+        /// B 側の境界寄せ領域の中心（Area ローカル）。西端から 10m を覆う。
         /// <b>B の全体を覆わない</b>——覆うと戦闘区画（z −8〜8）でも Z が固定され、
         /// 追従の見え方が変わってしまう。
         /// </summary>
-        public static readonly Vector2 SeamCameraRegionB =
-            new Vector2(-Phase5Layout.AreaBWidth * 0.5f + 5f, 10f);
+        public static readonly Vector3 SeamCameraRegionBCenter =
+            new Vector3(-Phase5Layout.AreaBWidth * 0.5f + 5f, 0f, SeamZ);
+
+        /// <summary>同・大きさ（X, Z）。</summary>
+        public static readonly Vector2 SeamCameraRegionBSize =
+            new Vector2(10f, SeamCameraRegionDepth);
 
         /// <summary>接続境界へ向かう向き（A から見て東）。</summary>
         public static readonly Vector3 EastwardStep = Vector3.right;
+
+        /// <summary>
+        /// P5 のレイアウト定数を、この配置の接続通路（<see cref="SeamZ"/>）へ平行移動する。
+        ///
+        /// <b>Builder ではなく設定側で動かす。</b> 以前は Builder が同じ計算をしていたが、
+        /// 平行移動する軸が Z に固定されていて<b>東西の接続しか表せなかった</b>。
+        /// 座標は配置の持ち物である（付録 B.1）。
+        /// </summary>
+        private static Vector3 Shift(Vector3 p) =>
+            new Vector3(p.x, p.y, p.z - Phase5Layout.SeamDefaultZ + SeamZ);
+
+        private static Vector3[] Shift(Vector3[] ps)
+        {
+            var shifted = new Vector3[ps.Length];
+            for (int i = 0; i < ps.Length; i++)
+            {
+                shifted[i] = Shift(ps[i]);
+            }
+
+            return shifted;
+        }
 
         /// <summary>この配置の設定（Builder へ渡す正本）。</summary>
         public static Phase5BuildTargets Targets() => new Phase5BuildTargets
@@ -194,13 +226,25 @@ namespace Momotaro.Editor.Phase55
             AreaBSeam = new Phase5SeamOpening(Phase5SeamSide.West, SeamZ, PassageWidth),
             ExitAToB = Phase55WorldIds.ExitAEast,
             ExitBToA = Phase55WorldIds.ExitBWest,
-            SeamZ = SeamZ,
-            AreaAGateZ = AreaAGateZ,
-            SeamCameraRegionDepth = SeamCameraRegionDepth,
+            AreaAGatePosition = new Vector3(
+                Phase5Layout.AreaAGate.x, Phase5Layout.AreaAGate.y, AreaAGateZ),
             SeamCameraRegionAId = Phase55WorldIds.RegionASeam,
             SeamCameraRegionBId = Phase55WorldIds.RegionBSeam,
-            SeamCameraRegionA = SeamCameraRegionA,
-            SeamCameraRegionB = SeamCameraRegionB,
+            SeamCameraRegionACenter = SeamCameraRegionACenter,
+            SeamCameraRegionASize = SeamCameraRegionASize,
+            SeamCameraRegionBCenter = SeamCameraRegionBCenter,
+            SeamCameraRegionBSize = SeamCameraRegionBSize,
+            AreaAExitPosition = Shift(Phase5Layout.AreaAExitToB),
+            AreaAExitDirection = Vector3.right,
+            AreaAEntryFromB = Shift(Phase5Layout.AreaAFromB),
+            AreaAEntryFromBAlternates = Shift(Phase5Layout.AreaAFromBAlternates),
+            AreaBEntryFromA = Shift(Phase5Layout.AreaBFromA),
+            AreaBEntryFromAAlternates = Shift(Phase5Layout.AreaBFromAAlternates),
+            AreaBDoorToA = Shift(Phase5Layout.AreaBDoorToA),
+            AreaBExitDirection = Vector3.left,
+            AreaAStartFacing = Core.World.CardinalDirection.North,
+            AreaAFromBFacing = Core.World.CardinalDirection.West,
+            AreaBFromAFacing = Core.World.CardinalDirection.East,
         };
     }
 }
