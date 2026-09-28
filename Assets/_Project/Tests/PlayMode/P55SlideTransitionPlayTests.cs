@@ -2,7 +2,9 @@ using System.Collections;
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
 using Momotaro.Data.World;
+using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Companion.Investigation;
+using Momotaro.Gameplay.Transfer;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Interaction;
 using Momotaro.Gameplay.Modes;
@@ -12,6 +14,7 @@ using Momotaro.Infrastructure.Bootstrap;
 using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.World;
 using Momotaro.Presentation.Cameras;
+using Momotaro.Presentation.Transition;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -675,6 +678,385 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "在留は 1 つ。");
             Assert.AreEqual(1, SceneManager.sceneCount, "実 Scene も 1 枚。");
             Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+        }
+
+        // ---------------------------------------------------------------- 持ち越す値（§6.3／§11 の P05）
+
+        /// <summary>
+        /// <b>P05</b>：非ゼロの HP 差分・スタミナ消費・全 CD・無敵・犬丸の復帰待ちを作ってから
+        /// スライドし、<b>待機＋演出の間に値が進まず</b>そのまま持ち越されることを実測する（§6.3）。
+        ///
+        /// 値は<b>ゲーム自身が使う復元経路</b>（<c>TryImportTransferSnapshot</c>）で作る。
+        /// テスト用の裏口を足すと、その裏口が本番と違う道を通っていても気付けない。
+        ///
+        /// <b>到着時の値は <c>ArrivalCompleted</c> で採る。</b> そこは Commit の同期区間の直後で、
+        /// そのフレームの Actor の <c>Update</c> はもう終わっている——あとから読むと
+        /// 「解凍後に進んだ分」が混ざり、進まなかったことを言えなくなる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator SlidingCarriesTheActorValues_WithoutAdvancingThem()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            // ---- 非ゼロの値を作る ----
+            ActorValues start = ReadActorValues();
+            Assert.IsTrue(start.Found, "出発側の Actor 部品がそろっている。");
+            Assert.Greater(start.MaxHp, 2, "HP を減らせる構成である。");
+
+            var vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            var hurt = Object.FindFirstObjectByType<PlayerHitReaction>();
+            var companionVitals = Object.FindFirstObjectByType<CompanionHitReceiver>();
+            var combat = Object.FindFirstObjectByType<CompanionCombatController>();
+            var defense = Object.FindFirstObjectByType<CompanionDefenseController>();
+            var guardian = Object.FindFirstObjectByType<CompanionGuardianController>();
+
+            Assert.IsTrue(vitals.TryImportTransferSnapshot(new PlayerVitalsTransferSnapshot(
+                    new VitalTransferSnapshot(start.MaxHp - 2),
+                    new StaminaTransferSnapshot(Mathf.Max(1f, start.Stamina - 5f), 1.5f, 0f))),
+                "HP とスタミナを減らせた。");
+
+            // <b>Hurt は 0 にする。</b> ひるみ中は「行動中」なので §6.1 が遷移を受理しない——
+            // 持ち越しを見たいのに受理されない、という別の話になってしまう。
+            // 無敵の残りは<b>設定値を超えられない</b>（復元が値域を検査している）。
+            // 固定秒を書くと、Data の設定が変わった日に「持ち越しの検査」が値域の話で落ちる。
+            Assert.Greater(hurt.PostHitInvincibleSeconds, 0f, "被弾後無敵が設定されている。");
+            Assert.IsTrue(hurt.TryImportTransferSnapshot(
+                    new HitReactionTransferSnapshot(0f, hurt.PostHitInvincibleSeconds * 0.8f)),
+                "被弾後無敵を立てられた。");
+
+            // 犬丸は Down ＋ 復帰待ち（§6.3「犬丸 Down 復帰待ち」）。HP と Down は矛盾させない。
+            Assert.IsTrue(companionVitals.Vitals.TryImportTransferSnapshot(
+                    new CompanionVitalsTransferSnapshot(0, true, 3f, 0f,
+                        new FlinchTransferSnapshot(0f, 0f, 0f, 0f))),
+                "犬丸を Down ＋ 復帰待ちにできた。");
+            Assert.IsTrue(combat.TryImportTransferSnapshot(new CompanionCombatTransferSnapshot(2f)),
+                "攻撃 CD を立てられた。");
+            Assert.IsTrue(defense.TryImportTransferSnapshot(new CompanionDefenseTransferSnapshot(
+                    new GuardAbilityTransferSnapshot(1.5f), new EvadeAbilityTransferSnapshot(1.2f))),
+                "防御 CD を立てられた。");
+            Assert.IsTrue(guardian.TryImportTransferSnapshot(new CompanionGuardianTransferSnapshot(2.5f)),
+                "守護 CD を立てられた。");
+
+            yield return null;
+
+            // ---- 到着の瞬間の値を採る ----
+            ActorValues arrived = default;
+            float arrivedAt = 0f;
+            void OnArrived(StableId areaId)
+            {
+                arrived = ReadActorValues();
+                arrivedAt = Time.realtimeSinceStartup;
+            }
+
+            transitions.ArrivalCompleted += OnArrived;
+
+            try
+            {
+                yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+                yield return SettleCamera();
+
+                // 受理の直前の値を毎フレーム覚えておく（受理後は止まっているはずの値）。
+                ActorValues atAccept = default;
+                float acceptedAt = 0f;
+                float deadline = Time.realtimeSinceStartup + 25f;
+                while (transitions.SlideCommittedCount == 0 && Time.realtimeSinceStartup < deadline)
+                {
+                    if (transitions.ConnectionTravelCount == 0)
+                    {
+                        atAccept = ReadActorValues();
+                        acceptedAt = Time.realtimeSinceStartup;
+                    }
+
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                    yield return null;
+                }
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+
+                Assert.AreEqual(1, transitions.SlideCommittedCount, "スライドで着いた。");
+                Assert.IsTrue(atAccept.Found, "受理直前の値を採れた。");
+                Assert.IsTrue(arrived.Found, "到着時の値を採れた。");
+
+                // <b>時間は確かに経っている。</b> これが無いと「進まなかった」ではなく
+                // 「進む暇が無かった」で通ってしまう。
+                Assert.Greater(arrivedAt - acceptedAt, 0.4f,
+                    "受理から到着まで実時間で 0.4 秒以上かかっている（待機＋0.45 秒の演出）。経過="
+                    + (arrivedAt - acceptedAt));
+
+                // ---- 値そのまま（§6.3「受理後の待機・スライド中に減らさない」）----
+                Assert.AreEqual(start.MaxHp - 2, arrived.Hp, "主人公の HP が持ち越された（全回復していない）。");
+                Assert.AreEqual(atAccept.Hp, arrived.Hp, "HP は受理時の値のまま。");
+                Assert.AreEqual(atAccept.Stamina, arrived.Stamina, 0.001f,
+                    "スタミナが回復していない（止まっていた）。");
+                Assert.AreEqual(atAccept.StaminaRegenDelay, arrived.StaminaRegenDelay, 0.001f,
+                    "スタミナの回復待ちも進んでいない。");
+                Assert.AreEqual(atAccept.PlayerInvincible, arrived.PlayerInvincible, 0.001f,
+                    "被弾後無敵の残りが減っていない。");
+                Assert.Greater(arrived.PlayerInvincible, 0f, "無敵はまだ残っている（消えていない）。");
+
+                Assert.IsTrue(arrived.CompanionDown, "犬丸は Down のまま（勝手に復帰していない）。");
+                Assert.AreEqual(CompanionState.Down, arrived.CompanionState, "配置状態も Down。");
+                Assert.AreEqual(atAccept.CompanionRecovery, arrived.CompanionRecovery, 0.001f,
+                    "Down の復帰待ちが減っていない。");
+                Assert.Greater(arrived.CompanionRecovery, 0f, "復帰待ちはまだ残っている。");
+
+                Assert.AreEqual(atAccept.AttackCooldown, arrived.AttackCooldown, 0.001f,
+                    "攻撃 CD が減っていない。");
+                Assert.AreEqual(atAccept.GuardCooldown, arrived.GuardCooldown, 0.001f,
+                    "構えの CD が減っていない。");
+                Assert.AreEqual(atAccept.EvadeCooldown, arrived.EvadeCooldown, 0.001f,
+                    "回避の CD が減っていない。");
+                Assert.AreEqual(atAccept.GuardianCooldown, arrived.GuardianCooldown, 0.001f,
+                    "守護の CD が減っていない。");
+                Assert.Greater(arrived.AttackCooldown, 0f, "CD はまだ残っている（解除されていない）。");
+            }
+            finally
+            {
+                transitions.ArrivalCompleted -= OnArrived;
+            }
+        }
+
+        /// <summary>持ち越しを見るための値の束（同じ読み方で出発側と到着側を比べる）。</summary>
+        private readonly struct ActorValues
+        {
+            internal bool Found { get; }
+            internal int Hp { get; }
+            internal int MaxHp { get; }
+            internal float Stamina { get; }
+            internal float StaminaRegenDelay { get; }
+            internal float PlayerInvincible { get; }
+            internal bool CompanionDown { get; }
+            internal float CompanionRecovery { get; }
+            internal CompanionState CompanionState { get; }
+            internal float AttackCooldown { get; }
+            internal float GuardCooldown { get; }
+            internal float EvadeCooldown { get; }
+            internal float GuardianCooldown { get; }
+
+            internal ActorValues(
+                PlayerVitalsHolder vitals, PlayerHitReaction hurt, CompanionHitReceiver companionVitals,
+                CompanionActor actor, CompanionCombatController combat,
+                CompanionDefenseController defense, CompanionGuardianController guardian)
+            {
+                PlayerVitalsTransferSnapshot player = vitals.ExportTransferSnapshot();
+                CompanionVitalsTransferSnapshot cv = companionVitals.Vitals.ExportTransferSnapshot();
+                CompanionDefenseTransferSnapshot cd = defense.ExportTransferSnapshot();
+
+                Found = true;
+                Hp = player.Health.Current;
+                MaxHp = vitals.Vitals.Health.Max;
+                Stamina = player.Stamina.Current;
+                StaminaRegenDelay = player.Stamina.RegenDelayRemaining;
+                PlayerInvincible = hurt.ExportTransferSnapshot().InvincibleRemaining;
+                CompanionDown = cv.IsDown;
+                CompanionRecovery = cv.RecoveryRemaining;
+                CompanionState = actor.State;
+                AttackCooldown = combat.ExportTransferSnapshot().CooldownRemaining;
+                GuardCooldown = cd.Guard.CooldownRemaining;
+                EvadeCooldown = cd.Evade.CooldownRemaining;
+                GuardianCooldown = guardian.ExportTransferSnapshot().CooldownRemaining;
+            }
+        }
+
+        /// <summary>いま活動している Area の Actor の値を読む（非 Active な旧 Area は拾わない）。</summary>
+        private static ActorValues ReadActorValues()
+        {
+            var vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            var hurt = Object.FindFirstObjectByType<PlayerHitReaction>();
+            var companionVitals = Object.FindFirstObjectByType<CompanionHitReceiver>();
+            var actor = Object.FindFirstObjectByType<CompanionActor>();
+            var combat = Object.FindFirstObjectByType<CompanionCombatController>();
+            var defense = Object.FindFirstObjectByType<CompanionDefenseController>();
+            var guardian = Object.FindFirstObjectByType<CompanionGuardianController>();
+
+            if (vitals == null || hurt == null || companionVitals == null || actor == null
+                || combat == null || defense == null || guardian == null)
+            {
+                return default;
+            }
+
+            return new ActorValues(vitals, hurt, companionVitals, actor, combat, defense, guardian);
+        }
+
+        // ---------------------------------------------------------------- 犬丸の状態（§4.6／§11 の P06）
+
+        /// <summary>
+        /// <b>P06</b>：健常／Down／Stagger／Away の犬丸で実キーで往復し、
+        /// <b>意図せぬ復帰・出撃が起きない</b>ことと、<b>表示代理から命中も登録も発生しない</b>ことを見る。
+        ///
+        /// 状態は §4.6 の復元表のとおりに持ち越される。Away は<b>代理も作らない</b>（§7.2）。
+        /// 代理が命中・登録を起こさないことは EditMode（<c>P55DisplayProxyTests</c>）が部品の有無で見ているが、
+        /// ここでは<b>実遷移の最中に</b>同じことを確かめる——組み立て方が変わっても崩れないように。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator SlidingKeepsTheCompanionState(
+            [Values(CompanionState.Follow, CompanionState.Down, CompanionState.Stagger,
+                CompanionState.Away)] CompanionState wanted)
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            GameSessionState session = GameSessionProvider.Current;
+
+            yield return SetUpCompanion(wanted);
+
+            var playerVitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            int hpBefore = playerVitals.ExportTransferSnapshot().Health.Current;
+            int registeredBefore = PerceptionTargetRegistry.Count;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+
+            bool sawAwaySkip = false;
+            bool sawProxy = false;
+            int worstRegistered = registeredBefore;
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.SlideCommittedCount == 0 && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                yield return null;
+
+                if (transitions.Slide.Coordinator.Phase != AreaSlideTransactionPhase.Sliding)
+                {
+                    continue;
+                }
+
+                IAreaTransitionDisplay display = AreaTransitionDisplayProvider.Current;
+                if (display != null && display.CompanionSkippedBecauseAway)
+                {
+                    sawAwaySkip = true;
+                }
+
+                worstRegistered = Mathf.Max(worstRegistered, PerceptionTargetRegistry.Count);
+                sawProxy |= AssertProxiesCarryNothingButDrawing();
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "どの状態でも往路は成立する。理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(0, transitions.SlideRolledBackCount, "不正な遷移で戻っていない。");
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+            Assert.IsTrue(sawProxy, "スライド中に代理を観測できた。");
+            Assert.LessOrEqual(worstRegistered, registeredBefore,
+                "代理は索敵の登録簿に載らない（スライド中に登録が増えない）。");
+
+            var arrived = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.IsNotNull(arrived, "到着側に犬丸が居る。");
+
+            switch (wanted)
+            {
+                case CompanionState.Away:
+                    Assert.IsTrue(sawAwaySkip, "Away は代理も作らない（§7.2）。");
+                    Assert.AreEqual(CompanionState.Away, arrived.State, "Away のまま（勝手に出撃しない）。");
+                    Assert.IsFalse(arrived.gameObject.activeInHierarchy
+                        && HasVisibleSprite(arrived.transform, out _),
+                        "退場中の犬丸を描かない（§6.3）。");
+                    break;
+
+                case CompanionState.Down:
+                    Assert.IsFalse(sawAwaySkip, "退場ではないので代理は作る。");
+                    Assert.AreEqual(CompanionState.Down, arrived.State, "Down のまま（勝手に復帰しない）。");
+                    var vitals = Object.FindFirstObjectByType<CompanionHitReceiver>();
+                    CompanionVitalsTransferSnapshot cv = vitals.Vitals.ExportTransferSnapshot();
+                    Assert.IsTrue(cv.IsDown, "生存値も Down のまま。");
+                    Assert.Greater(cv.RecoveryRemaining, 0f, "復帰待ちが残っている（回復演出を再生していない）。");
+                    break;
+
+                case CompanionState.Stagger:
+                    Assert.AreEqual(CompanionState.Stagger, arrived.State, "ひるみのまま持ち越す。");
+                    break;
+
+                default:
+                    Assert.AreEqual(CompanionState.Follow, arrived.State,
+                        "健常は追従へ戻る（旧攻撃・旧防御・旧探索を再開しない。§4.6）。");
+                    break;
+            }
+
+            // 代理は当たらない・撃たない：主人公の HP は往路の間ずっと変わらない。
+            var arrivedPlayer = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            Assert.AreEqual(hpBefore, arrivedPlayer.ExportTransferSnapshot().Health.Current,
+                "代理からの命中は起きない（主人公の HP が変わらない）。");
+
+            Assert.IsTrue(session.HasVisited(AreaB), "到着は成立している（Commit が訪問を確定した）。");
+        }
+
+        /// <summary>犬丸を指定の状態にする（ゲーム自身が使う復元経路で作る）。</summary>
+        private IEnumerator SetUpCompanion(CompanionState wanted)
+        {
+            var vitals = Object.FindFirstObjectByType<CompanionHitReceiver>();
+            var arbiter = Object.FindFirstObjectByType<CompanionStateArbiter>();
+            Assert.IsNotNull(vitals, "犬丸の生存値がある。");
+            Assert.IsNotNull(arbiter, "犬丸の状態調停役がある。");
+
+            switch (wanted)
+            {
+                case CompanionState.Down:
+                    // Down は HP 0 ＋ 復帰待ち（§4.6 の整合規則）。
+                    Assert.IsTrue(vitals.Vitals.TryImportTransferSnapshot(
+                            new CompanionVitalsTransferSnapshot(0, true, 3f, 0f,
+                                new FlinchTransferSnapshot(0f, 0f, 0f, 0f))),
+                        "Down ＋ 復帰待ちにできた。");
+                    Assert.IsTrue(arbiter.TryRestoreState(CompanionState.Down), "Down へ置けた。");
+                    break;
+
+                case CompanionState.Stagger:
+                    // ひるみは<b>歩いている間に切れない長さ</b>にする（受理まで実時間が進む）。
+                    Assert.IsTrue(vitals.Vitals.TryImportTransferSnapshot(
+                            new CompanionVitalsTransferSnapshot(
+                                vitals.MaxHp, false, 0f, 0f,
+                                new FlinchTransferSnapshot(0f, 0f, 30f, 0f))),
+                        "ひるみ残りを立てられた。");
+                    Assert.IsTrue(arbiter.TryRestoreState(CompanionState.Stagger), "Stagger へ置けた。");
+                    break;
+
+                case CompanionState.Away:
+                    Assert.IsTrue(arbiter.TryRestoreState(CompanionState.Away), "Away へ置けた。");
+                    break;
+            }
+
+            yield return null;
+
+            var actor = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.IsNotNull(actor, "犬丸が居る。");
+            if (wanted != CompanionState.Follow)
+            {
+                Assert.AreEqual(wanted, actor.State, "前提：出発側が指定の状態になっている。");
+            }
+        }
+
+        /// <summary>
+        /// いま立っている代理が<b>描画部品しか持っていない</b>ことを確かめる（§7.2）。
+        /// 戻り値は「代理を 1 つ以上見たか」。
+        /// </summary>
+        private static bool AssertProxiesCarryNothingButDrawing()
+        {
+            AreaTransitionDisplayProxy[] proxies =
+                Object.FindObjectsByType<AreaTransitionDisplayProxy>(FindObjectsSortMode.None);
+            for (int i = 0; i < proxies.Length; i++)
+            {
+                AreaTransitionDisplayProxy proxy = proxies[i];
+                if (proxy == null)
+                {
+                    continue;
+                }
+
+                Assert.IsNull(proxy.GetComponentInChildren<Collider>(true),
+                    "代理は Collider を持たない（当たらない）。");
+                Assert.IsNull(proxy.GetComponentInChildren<Rigidbody>(true),
+                    "代理は Rigidbody を持たない（物理に参加しない）。");
+                Assert.IsNull(proxy.GetComponentInChildren<IPerceptionTarget>(true),
+                    "代理は索敵対象として登録されない。");
+                Assert.IsNull(proxy.GetComponentInChildren<CompanionActor>(true),
+                    "代理は Actor の中身を持たない。");
+                Assert.IsNull(proxy.GetComponentInChildren<PlayerRoot>(true),
+                    "代理は主人公の根を持たない。");
+            }
+
+            return proxies.Length > 0;
         }
 
         // ---------------------------------------------------------------- 失敗注入用の Scene 操作

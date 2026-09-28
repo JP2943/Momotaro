@@ -136,6 +136,16 @@
       "id": "P55-SEC8-2",
       "summary": "Fade（Single 読込）と在留台帳の整合（§8 末尾）。Single 読込は台帳を通らないので、Fade を挟んだあとも台帳が実 Scene に合っていること——合っていないと先読みが上限で断られ、以後スライドできない",
       "stage": "P55-04"
+    },
+    {
+      "id": "P55-P05",
+      "summary": "持ち越す値の実測（§6.3／§11 の P05）。非ゼロの HP 差分・スタミナ消費・全 CD・無敵・犬丸の Down 復帰待ちを作り、受理から到着まで実時間で 0.4 秒以上かかっても値が一切進まないことを、到着の瞬間（ArrivalCompleted）の値で確かめる",
+      "stage": "P55-04"
+    },
+    {
+      "id": "P55-P06B",
+      "summary": "犬丸の状態別の実往復（§4.6／§11 の P06 の実遷移分）。健常／Down／Stagger／Away を実キーで運び、意図せぬ復帰・出撃なし、不正遷移 0。スライド中の代理が Collider・Rigidbody・索敵登録・Actor の中身を持たないことを実遷移の最中に確かめる",
+      "stage": "P55-04"
     }
   ],
   "tests": [
@@ -517,6 +527,29 @@
       "implemented": true,
       "supportingTests": [
         "Momotaro.Tests.EditMode.P55PreloadTests.HandingTheStagedAreaToTheTransition_KeepsTheSceneAndTheResidencySlot"
+      ]
+    },
+    {
+      "requirementId": "P55-P05",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingCarriesTheActorValues_WithoutAdvancingThem",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P55-P06B",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingKeepsTheCompanionState(Follow)",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingKeepsTheCompanionState(Down)",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingKeepsTheCompanionState(Stagger)",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingKeepsTheCompanionState(Away)",
+        "Momotaro.Tests.EditMode.P55DisplayProxyTests.TheProxy_CarriesNothingButItsRenderer"
       ]
     }
   ],
