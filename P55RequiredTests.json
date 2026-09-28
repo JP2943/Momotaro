@@ -116,6 +116,26 @@
       "id": "P55-SEC8-1",
       "summary": "Fade と Slide が同じ遷移排他を共有する（仕様書 §8）。スライド中の Single／Fade 要求と、Fade 中のスライド要求を、どちらも AlreadyTransitioning で断る",
       "stage": "P55-04"
+    },
+    {
+      "id": "P55-E07B",
+      "summary": "スライド途中・成功確定前の失敗（仕様書 §8 の 3 行目／§11 の E07）。世界は停止したまま同じ描画経路を逆向きに最大 0.25 秒で戻し、気付いた場所から引き返す（終点まで進まない）。旧 Actor 表示と活動を復帰し、進行値も訪問済みも変えない",
+      "stage": "P55-04"
+    },
+    {
+      "id": "P55-P09",
+      "summary": "遅延ロード・監視タイムアウト・古い Scene の到着（§11 の P09／§8 の 5 行目）。旧 Area への復帰を優先し、古い操作は保持する。活動・訪問・CurrentArea 更新・成功通知を起こさず、終端後にだけ Staged のまま unload する",
+      "stage": "P55-04"
+    },
+    {
+      "id": "P55-P10",
+      "summary": "Commit 後の unload 失敗（§11 の P10／§8 の 4 行目）。到着の成功を取り消さず、旧 Area は非活動・非物理で隔離し、在留枠を返さない。新しいスライドを受け付けず、撤去を再試行できる",
+      "stage": "P55-04"
+    },
+    {
+      "id": "P55-SEC8-2",
+      "summary": "Fade（Single 読込）と在留台帳の整合（§8 末尾）。Single 読込は台帳を通らないので、Fade を挟んだあとも台帳が実 Scene に合っていること——合っていないと先読みが上限で断られ、以後スライドできない",
+      "stage": "P55-04"
     }
   ],
   "tests": [
@@ -460,6 +480,44 @@
       "requirementIds": [],
       "implemented": true,
       "supportingTests": []
+    },
+    {
+      "requirementId": "P55-E07B",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.FailingMidSlide_ReversesAlongTheSamePathAndRestoresTheDepartureArea",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P55-P09",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheLoadNeverFinishes_ItReturnsToTheDepartureAndReleasesTheLateArrival",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P55-P10",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheDepartureCannotBeUnloaded_TheArrivalStaysAndRetireCanBeRetried",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P55-SEC8-2",
+      "stage": "P55-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AfterAFadeTransition_TheLedgerMatchesTheLoadedScenesAndSlidingStillWorks",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55PreloadTests.HandingTheStagedAreaToTheTransition_KeepsTheSceneAndTheResidencySlot"
+      ]
     }
   ],
   "allowedSkips": []

@@ -322,8 +322,13 @@ namespace Momotaro.Presentation.Cameras
         /// <summary>
         /// スライドを終える（付録 A.4）。
         ///
-        /// 終点を<b>厳密に</b>適用し、追従の内部状態も終点へ同期する——
-        /// 同期しないと次の <c>Tick</c> で前の値へ引き戻され、<b>翌フレームに跳ね返る</b>。
+        /// 終点を<b>厳密に</b>適用する。
+        ///
+        /// <b>追従の内部状態を別に同期する必要は無い</b>（P55-04c で確かめて実装を外した）。
+        /// <see cref="CameraFocusBlend"/> は補間していない間は毎フレーム
+        /// 収めた位置をそのまま <c>Current</c> へ入れ直すので、古い値は残らない。
+        /// 補間が始まるのは領域が変わったときだけで、追従を止めている間に主人公は動かないので
+        /// 領域も変わらない。付録 C.10。
         ///
         /// <b>通常追従はここでは戻さない。</b> 終点は到着 Area の領域で収めた位置なので、
         /// まだ出発 Area に結び付いたまま追従を戻すと、出発側の領域へ引き戻される。
@@ -339,7 +344,6 @@ namespace Momotaro.Presentation.Cameras
 
             _slide.Finish();
             _rig.ApplySlidePosition(_slide.Position);
-            _rig.SyncFollowStateTo(_slide.Position);
 
             // <b>結び直しを待って終点に留まる。</b>
             //
@@ -350,6 +354,28 @@ namespace Momotaro.Presentation.Cameras
             // 留まるのは別の状態として持ち、結び直しが来たときに解く。
             _holdingAfterSlide = true;
             _rig.FollowSuspended = true;
+        }
+
+        /// <summary>
+        /// スライドを終え、<b>そのまま通常追従へ戻す</b>（§8 の 3 行目。工程 P55-04c）。
+        ///
+        /// 戻しの終わりで使う。<see cref="EndSlide"/> との違いは「留まらない」こと——
+        /// 戻したあとに結び直しは起きないので（活動 Area は出発側のまま）、留まりを解く者が居ない。
+        ///
+        /// 跳ね返りは起きない：追従は収めた位置を毎フレーム入れ直すし、
+        /// 戻し先は出発時の追従位置そのものである（付録 C.10）。
+        /// </summary>
+        public void EndSlideAndResumeFollow()
+        {
+            if (_rig == null)
+            {
+                return;
+            }
+
+            _slide.Finish();
+            _rig.ApplySlidePosition(_slide.Position);
+            _holdingAfterSlide = false;
+            _rig.FollowSuspended = false;
         }
 
         /// <summary>
@@ -365,7 +391,6 @@ namespace Momotaro.Presentation.Cameras
 
             _slide.Cancel();
             _rig.ApplySlidePosition(_slide.From);
-            _rig.SyncFollowStateTo(_slide.From);
             _holdingAfterSlide = false;
             _rig.FollowSuspended = false;
         }

@@ -49,10 +49,21 @@ namespace Momotaro.Infrastructure.World
         /// <summary>スライドを接続軸に載せる許容ずれ（m）。</summary>
         public const float AxisTolerance = 0.05f;
 
+        /// <summary>戻しにかける秒の上限（§8 の 3 行目「最大 0.25 秒で戻す」）。</summary>
+        public const float ReverseSeconds = 0.25f;
+
+        /// <summary>
+        /// 戻しの下限（秒）。0 にすると 1 フレームで飛ぶので、わずかでも動きを見せる。
+        /// </summary>
+        public const float MinReverseSeconds = 0.05f;
+
         private readonly AreaTransitionService _owner;
         private readonly AreaSlideCoordinator _slide = new AreaSlideCoordinator();
         private readonly AreaResidencyLedger _residency = new AreaResidencyLedger();
         private AreaPreloader _preloader;
+        private AreaInstanceHandle _retireHandle;
+        private int _retireSceneHandle;
+        private bool _retrying;
 
         /// <summary>作る。<paramref name="owner"/> が常駐の遷移サービス（Provider の所有者でもある）。</summary>
         public AreaSlideTransitionRunner(AreaTransitionService owner)
@@ -87,6 +98,28 @@ namespace Momotaro.Infrastructure.World
 
         /// <summary>Commit 後に旧 Area の撤去が失敗した回数（診断・テスト用。§8 の 4 行目）。</summary>
         public int UnloadFailureCount { get; private set; }
+
+        /// <summary>
+        /// 撤去し切れなかった旧 Area を抱えているか（§8 の 4 行目）。
+        /// <b>抱えている間は新しいスライドを受け付けない</b>——在留枠が埋まったままなので、
+        /// 受理してから「読めません」で戻すより、受理しないほうが害が小さい。
+        /// </summary>
+        public bool HasPendingRetire => _retireHandle.IsValid && _retireSceneHandle != 0;
+
+        /// <summary>実 Scene に合わせて台帳から落とした実体の数（診断・テスト用）。</summary>
+        public int ForgottenResidentCount { get; private set; }
+
+        /// <summary>撤去の再試行を始めた回数（診断・テスト用）。</summary>
+        public int RetryStartedCount { get; private set; }
+
+        /// <summary>ロード監視の上限を超えた回数（診断・テスト用。§8 の 5 行目）。</summary>
+        public int TimedOutCount { get; private set; }
+
+        /// <summary>撤去を「終端後」へ持ち越した回数（診断・テスト用）。</summary>
+        public int DeferredReleaseCount { get; private set; }
+
+        /// <summary>同じ描画経路を逆向きに戻した回数（診断・テスト用。§8 の 3 行目）。</summary>
+        public int ReversedCount { get; private set; }
 
         /// <summary>直近の失敗理由（成功なら空）。</summary>
         public string LastFailure { get; private set; } = string.Empty;
@@ -123,6 +156,19 @@ namespace Momotaro.Infrastructure.World
             if (_owner.Coordinator != null && _owner.Coordinator.IsTransitioning)
             {
                 return AreaTransitionDecision.Reject(AreaTransitionRejection.AlreadyTransitioning);
+            }
+
+            // <b>台帳を実 Scene に合わせ直す</b>（§8 末尾の Fade 共存）。Single 読込は台帳を
+            // 通らないので、Fade を挟むと在留数が実際より多いまま残る。
+            SyncResidencyToLoadedAreas();
+
+            // 撤去し切れなかった旧 Area を抱えている間は、新しい Area ロードを出さない
+            // （§8 の 4 行目「新たな Area ロードを止め、理由と再試行手段を表示」）。
+            // <b>Single／Fade は止めない</b>——あちらは全部を置き換えるので、
+            // 載ったままの旧 Area もろとも解決する（台帳は次の受理で実 Scene に合わせ直す）。
+            if (HasPendingRetire)
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
             }
 
             if (!TryResolveDeparture(out AreaRuntimeBundle departure))
@@ -192,12 +238,14 @@ namespace Momotaro.Infrastructure.World
             preloader.Request(connection.ToAreaId, entry.ScenePath);
 
             float waited = 0f;
+            bool timedOut = false;
             while (preloader.Phase == AreaPreloadPhase.Loading
                    || preloader.Phase == AreaPreloadPhase.Releasing)
             {
                 preloader.Poll();
                 if (waited >= _owner.TimeoutSeconds)
                 {
+                    timedOut = true;
                     break;
                 }
 
@@ -206,6 +254,27 @@ namespace Momotaro.Infrastructure.World
             }
 
             preloader.Poll();
+
+            if (timedOut)
+            {
+                // ---- ロード監視のタイムアウト（§8 の 5 行目）----
+                //
+                // <b>古い操作はキャンセルできたと扱わない。</b> Unity の非同期ロードは
+                // 止められないので、監視を諦めても操作は走り続ける。望みだけ取り下げて
+                // 出発側へ戻り、<b>終端したあとに</b>遅れて着いた Scene を
+                // Staged のまま撤去する——それを進めるのが常駐の <see cref="Pump"/>。
+                //
+                // 遅れて着いた Scene が自分で動き出す心配は無い：先読みの申し入れを
+                // その Scene の活動ゲートが <c>Awake</c> で消費して<b>閉じたまま</b>起動し、
+                // 誰も開けないので初期化担当も走らない（§4.2）。
+                TimedOutCount++;
+                DeferredReleaseCount++;
+                yield return Rollback(transitionId, departure, departureHandle,
+                    "目的地のロードが " + _owner.TimeoutSeconds.ToString("0.##")
+                    + " 秒以内に完了しませんでした（操作は保持し、終端後に撤去します）。",
+                    waitForPreloadRelease: false);
+                yield break;
+            }
 
             if (preloader.Phase != AreaPreloadPhase.Staged
                 || !preloader.StagedArea.AreaId.Equals(connection.ToAreaId))
@@ -338,6 +407,18 @@ namespace Momotaro.Infrastructure.World
                 display?.SetProgress(camera.SlideEased);
                 display?.TickDisplayClock(step);
 
+                // <b>毎フレーム到着側の健全性を確かめる</b>（§8 の 3 行目）。
+                // スライドは複数フレームにわたるので、その間に到着側が壊れうる
+                // （Scene が外から撤去された・初期化担当が失敗して Context ごと消えた）。
+                // 気付かずに Commit すると、壊れた Area を活動させてしまう。
+                if (!IsDestinationHealthy(destination, destinationSceneHandle, out string midReason))
+                {
+                    yield return RollbackDuringSlide(transitionId, departure, departureHandle,
+                        "スライド中に到着側が壊れました: " + midReason, destination,
+                        camera, display, slideFrom, camera.SlideEased);
+                    yield break;
+                }
+
                 if (!running)
                 {
                     break;
@@ -348,7 +429,20 @@ namespace Momotaro.Infrastructure.World
 
             camera.EndSlide();
 
-            // ---- 手順 7〜9：成功確定の同期区間。ここに yield を挟まない ----
+            // ---- 手順 7：終点へ配置したあと、Commit の前に<b>もう一度</b>確かめる ----
+            //
+            // §6.2 手順 7 は「到着 Actor の復元値、配線、安全位置、世代を再確認する」と定めている。
+            // 演出は 0.45 秒あるので、始める前に確かめたことは<b>着いた時点の保証にならない</b>。
+            if (!IsDestinationHealthy(destination, destinationSceneHandle, out string arrivalReason)
+                || !destination.Root.TryGetEntryPoint(connection.EntryId, out _))
+            {
+                yield return RollbackDuringSlide(transitionId, departure, departureHandle,
+                    "到着の再確認に失敗しました: " + arrivalReason, destination,
+                    camera, display, slideFrom, 1f);
+                yield break;
+            }
+
+            // ---- 手順 8〜9：成功確定の同期区間。ここに yield を挟まない ----
             if (!_slide.TryCommit(transitionId))
             {
                 // 世代が進んでいた。共有領域には触らず、代理だけ畳む。
@@ -399,6 +493,89 @@ namespace Momotaro.Infrastructure.World
         }
 
         /// <summary>
+        /// 到着側がまだ使えるか（§6.2 手順 7 の再確認／§8 の 3 行目）。
+        ///
+        /// <b>参照の生死を Unity の規則で見る。</b> 破棄された <c>MonoBehaviour</c> は
+        /// <c>== null</c> が true になるので、束・Context・根のどれが消えても検知できる。
+        /// 実 Scene が載っているかは別に問う——束が生きていても、
+        /// Scene が外から撤去されていれば到着させてはいけない。
+        /// </summary>
+        private bool IsDestinationHealthy(
+            AreaRuntimeBundle destination, int destinationSceneHandle, out string reason)
+        {
+            if (destination == null)
+            {
+                reason = "参照集合が失われました。";
+                return false;
+            }
+
+            if (destination.Context == null || destination.Root == null)
+            {
+                reason = "AreaContext／AreaRoot が失われました。";
+                return false;
+            }
+
+            IAreaSceneHost host = _owner.SlideSceneHost;
+            if (host != null && !host.IsLoaded(destinationSceneHandle))
+            {
+                reason = "到着 Scene が載っていません。";
+                return false;
+            }
+
+            reason = string.Empty;
+            return true;
+        }
+
+        /// <summary>
+        /// <b>スライドの途中・成功確定の前</b>に失敗したので、同じ描画経路を逆向きに戻す
+        /// （§8 の 3 行目「世界は停止したまま同じ描画経路を逆向きに最大 0.25 秒で戻す」）。
+        ///
+        /// <b>打ち切って瞬間移動させない。</b> 見ている側には「行きかけて戻った」に見えてほしい。
+        /// 戻す時間は進んだ分に比例させ、上限を <see cref="ReverseSeconds"/> にする——
+        /// 1 割進んだところで 0.25 秒かけて戻すと、失敗のほうが演出として長くなる。
+        ///
+        /// 表示代理は<b>同じ区間を逆にたどる</b>。進行度を減らしていくだけでよく、
+        /// 区間を作り直さない——作り直すと犬丸の出発位置が「いまの途中位置」になり、
+        /// 戻り切ったときに元の場所へ帰らない。
+        /// </summary>
+        private IEnumerator RollbackDuringSlide(
+            int transitionId, AreaRuntimeBundle departure, AreaInstanceHandle departureHandle,
+            string reason, AreaRuntimeBundle destination,
+            IAreaCameraOwner camera, IAreaTransitionDisplay display,
+            Vector3 slideFrom, float progressAtFailure)
+        {
+            float travelled = Mathf.Clamp01(progressAtFailure);
+            float seconds = Mathf.Max(MinReverseSeconds, ReverseSeconds * travelled);
+
+            if (camera != null && camera.BeginSlide(slideFrom, seconds))
+            {
+                while (true)
+                {
+                    float step = Mathf.Min(Time.unscaledDeltaTime, MaxDisplayStepSeconds);
+                    bool running = camera.TickSlide(step);
+
+                    // 逆向き：行きの進行度を 1→0 へたどり直す。
+                    display?.SetProgress(travelled * (1f - camera.SlideEased));
+                    display?.TickDisplayClock(step);
+
+                    if (!running)
+                    {
+                        break;
+                    }
+
+                    yield return null;
+                }
+
+                // <b>留まらずに追従へ戻す。</b> 戻したあとに結び直しは起きない
+                // （活動 Area は出発側のまま）ので、留まりを解く者が居ない。
+                camera.EndSlideAndResumeFollow();
+                ReversedCount++;
+            }
+
+            yield return Rollback(transitionId, departure, departureHandle, reason, destination);
+        }
+
+        /// <summary>
         /// 旧 Area を撤去する（手順 11）。
         ///
         /// <b>失敗しても到着の成功を取り消さない</b>（§8 の 4 行目）。旧 Area は
@@ -434,12 +611,20 @@ namespace Momotaro.Infrastructure.World
             // （先読みの撤去と同じ規律。GPT レビュー R10 の指摘 2）。
             if (operation == null || host.IsLoaded(sceneHandle))
             {
+                // <b>到着の成功は取り消さない</b>（§8 の 4 行目）。旧 Area は非活動・非物理・
+                // 購読解除済み（受理時に活動ゲートを閉じてある）のまま隔離しておく。
+                // <b>在留枠も返さない</b>——返すと「空きあり」と誤認して 3 枚目を読む。
                 UnloadFailureCount++;
-                LastFailure = "旧 Area の撤去が失敗し、まだ載っています（到着は成立している）。";
+                _retireHandle = handle;
+                _retireSceneHandle = sceneHandle;
+                LastFailure = "旧 Area の撤去が失敗し、まだ載っています（到着は成立している）。"
+                    + "新しいスライドは受け付けません。撤去を再試行してください。";
                 GameLog.Warning(LogCategory.Scene, "Failed to unload the departed area: " + LastFailure);
                 yield break;
             }
 
+            _retireHandle = AreaInstanceHandle.None;
+            _retireSceneHandle = 0;
             _residency.Remove(handle);
         }
 
@@ -451,7 +636,7 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         private IEnumerator Rollback(
             int transitionId, AreaRuntimeBundle departure, AreaInstanceHandle departureHandle,
-            string reason, AreaRuntimeBundle destination = null)
+            string reason, AreaRuntimeBundle destination = null, bool waitForPreloadRelease = true)
         {
             LastFailure = reason;
             GameLog.Warning(LogCategory.Scene, "Slide transition rolled back: " + reason);
@@ -473,14 +658,19 @@ namespace Momotaro.Infrastructure.World
             AreaPreloader preloader = EnsurePreloader();
             preloader.ClearRequest();
 
-            float waited = 0f;
-            while ((preloader.Phase == AreaPreloadPhase.Releasing
-                    || preloader.Phase == AreaPreloadPhase.Loading)
-                   && waited < _owner.TimeoutSeconds)
+            // <b>タイムアウトのときは待たない。</b> 待つ相手は「止められないロード」で、
+            // ここで待てば旧 Area への復帰がその分遅れる（§8「旧 Area への復帰を優先」）。
+            // 撤去は終端後に <see cref="Pump"/> が進める。
+            if (waitForPreloadRelease)
             {
-                preloader.Poll();
-                waited += Time.unscaledDeltaTime;
-                yield return null;
+                float waited = 0f;
+                while (preloader.Phase == AreaPreloadPhase.Releasing
+                       && waited < _owner.TimeoutSeconds)
+                {
+                    preloader.Poll();
+                    waited += Time.unscaledDeltaTime;
+                    yield return null;
+                }
             }
 
             preloader.Poll();
@@ -579,6 +769,108 @@ namespace Momotaro.Infrastructure.World
             _residency.TrySetPhase(handle, AreaActivationPhase.Active);
             bundle.BindInstance(handle);
             return handle;
+        }
+
+        /// <summary>
+        /// 在留台帳を<b>実際に載っている Area</b>へ合わせ直す（§8 末尾「Fade と Slide は同じ
+        /// Scene 操作管理を共有する」）。
+        ///
+        /// <b>Single 読込は台帳を通らない。</b> Fade の遷移・死亡再開・Launcher への退避は
+        /// <c>LoadSceneMode.Single</c> で、載っている Scene を全部置き換える——台帳は
+        /// それを知らないので、在留数が実際より多いまま残る。そのまま次のスライドへ入ると
+        /// 上限 2 に達していると誤認し、<b>先読みが AtCapacity で断られてスライドできない</b>。
+        ///
+        /// 判定は<b>参照集合の生死</b>で行う。Area Scene が消えれば <c>AreaRuntimeBundle</c> の
+        /// <c>OnDisable</c> が索引から外れるので、「索引に居ない実体はもう載っていない」と言える。
+        ///
+        /// <b>Scene 操作が走っている間は触らない。</b> 読込中の実体はまだ束を持っていないので、
+        /// ここで落とすと在留枠の管理が二重になる。
+        /// </summary>
+        private void SyncResidencyToLoadedAreas()
+        {
+            if (_residency.IsSceneOperationInFlight || _slide.IsTransitioning)
+            {
+                return;
+            }
+
+            System.Collections.Generic.List<AreaInstanceHandle> gone = null;
+            foreach (System.Collections.Generic.KeyValuePair<AreaInstanceHandle, AreaActivationPhase> kv
+                     in _residency.Residents)
+            {
+                if (AreaBundleDirectory.TryGetByInstance(kv.Key, out AreaRuntimeBundle bundle)
+                    && bundle != null)
+                {
+                    continue;
+                }
+
+                (gone ??= new System.Collections.Generic.List<AreaInstanceHandle>()).Add(kv.Key);
+            }
+
+            if (gone != null)
+            {
+                for (int i = 0; i < gone.Count; i++)
+                {
+                    _residency.Remove(gone[i]);
+                    ForgottenResidentCount++;
+                }
+            }
+
+            _preloader?.DropStagedIfUnloaded();
+
+            // 抱えていた「撤去し切れなかった旧 Area」も、Single 読込で消えていれば解放する。
+            IAreaSceneHost host = _owner.SlideSceneHost;
+            if (HasPendingRetire && (host == null || !host.IsLoaded(_retireSceneHandle)))
+            {
+                _residency.Remove(_retireHandle);
+                _retireHandle = AreaInstanceHandle.None;
+                _retireSceneHandle = 0;
+            }
+        }
+
+        /// <summary>
+        /// 撤去し切れなかった旧 Area の撤去を<b>もう一度だけ</b>試す（§8 の 4 行目「再試行手段」）。
+        ///
+        /// <b>自動で再試行しない。</b> 毎フレーム撤去を撃ち続けると、恒久的に失敗する Scene へ
+        /// 延々と操作を出す（先読みの再試行と同じ考え方。§5）。押すのはプレイヤー（表示側）。
+        /// </summary>
+        /// <returns>再試行を<b>始めた</b>ら true（成否は <see cref="HasPendingRetire"/> で見る）。</returns>
+        public bool TryRetryRetiringDeparture()
+        {
+            if (!HasPendingRetire || _slide.IsTransitioning || _retrying)
+            {
+                return false;
+            }
+
+            _retrying = true;
+            RetryStartedCount++;
+            _owner.StartSlideRoutine(RetryRoutine(_retireHandle, _retireSceneHandle));
+            return true;
+        }
+
+        private IEnumerator RetryRoutine(AreaInstanceHandle handle, int sceneHandle)
+        {
+            yield return UnloadDeparture(handle, sceneHandle);
+            _retrying = false;
+        }
+
+        /// <summary>
+        /// 遷移が走っていない間に先読みを 1 フレーム進める（常駐の <c>Update</c> から呼ばれる）。
+        ///
+        /// <b>止められないロードの後始末はここが受ける</b>（§8 の 5 行目）。監視を諦めた遷移は
+        /// 望みを取り下げて戻るだけで、実際の撤去は「操作が終端してから」しかできない。
+        /// 誰も進めないと、遅れて着いた Scene が<b>閉じたまま載り続ける</b>（在留枠も埋まったまま）。
+        ///
+        /// <b>遷移中は触らない。</b> 走っている遷移が自分の段で Poll しているので、
+        /// 二重に進めると「読み終わった直後に撤去が始まる」順序が作れてしまう。
+        /// </summary>
+        public void Pump()
+        {
+            if (_preloader == null || _slide.IsTransitioning)
+            {
+                return;
+            }
+
+            _preloader.Poll();
         }
 
         private AreaPreloader EnsurePreloader()

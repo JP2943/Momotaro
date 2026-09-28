@@ -220,18 +220,6 @@ namespace Momotaro.Presentation.Cameras
             SlideWriteCount++;
         }
 
-        /// <summary>
-        /// 追従の内部状態を終点へ同期する（付録 A.4「終了時は追従の内部状態も終点へ同期」）。
-        ///
-        /// <b>ここでは clamp し直さない。</b> 渡される終点は<b>到着 Area の</b>領域で
-        /// 収めた位置で、まだ結び付いていない出発 Area の領域で収め直すと終点が動く。
-        /// 収め直しは結び直しのあとの即時配置（<c>SnapToTarget</c>）が行う。
-        /// </summary>
-        public void SyncFollowStateTo(Vector3 focus)
-        {
-            _blend.AdoptSlideEnd(focus);
-        }
-
         /// <summary>診断の数え直し（テスト専用）。</summary>
         public void ResetWriteCountsForTests()
         {

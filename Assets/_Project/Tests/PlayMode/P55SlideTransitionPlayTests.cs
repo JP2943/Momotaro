@@ -401,6 +401,368 @@ namespace Momotaro.Tests.PlayMode
             }
         }
 
+        // ---------------------------------------------------------------- スライド途中の失敗（§8 の 3 行目）
+
+        /// <summary>
+        /// スライドの途中で到着側が壊れたら、<b>同じ描画経路を逆向きに戻す</b>（§8 の 3 行目）。
+        ///
+        /// 注入は<b>実サービスへ</b>行う（§11 P08）：スライド中に到着側の <c>AreaContext</c> を壊す。
+        /// 外から Scene が撤去された・到着側の初期化が後から失敗した、のいずれでも同じ形になる。
+        ///
+        /// 見るのは「戻ったこと」だけではない。<b>翌フレームに跳ね返らないこと</b>も見る——
+        /// 戻し切ったあとに追従の内部状態を終点へ同期していないと、次の <c>LateUpdate</c> が
+        /// スライド前の位置へ引き戻す。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FailingMidSlide_ReversesAlongTheSamePathAndRestoresTheDepartureArea()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            GameSessionState session = GameSessionProvider.Current;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            Vector3 cameraBefore = RigPosition();
+
+            yield return HoldUntilPhase(Key.D, AreaSlideTransactionPhase.Sliding, 25f);
+            Assert.AreEqual(AreaSlideTransactionPhase.Sliding, transitions.Slide.Coordinator.Phase,
+                "前提：スライドが走っている。");
+
+            // <b>途中</b>で壊したいので、少し進ませる。始まった瞬間に壊すと
+            // 「戻す距離が 0」になり、逆向きの動きを見たことにならない。
+            for (int i = 0; i < 4; i++)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(AreaSlideTransactionPhase.Sliding, transitions.Slide.Coordinator.Phase,
+                "前提：まだスライド中（0.45 秒かかる）。");
+            Assert.Greater(RigPosition().x, cameraBefore.x + 0.1f, "前提：少しは進んでいる。");
+
+            // ---- 注入：到着側の AreaContext を壊す ----
+            Assert.IsTrue(TryFindBundle(AreaB, out AreaRuntimeBundle destination), "到着側の束がある。");
+            Object.DestroyImmediate(destination.Context);
+
+            float peakX = RigPosition().x;
+            float deadline = Time.realtimeSinceStartup + 10f;
+            while (transitions.Slide.IsTransitioning && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+                peakX = Mathf.Max(peakX, RigPosition().x);
+            }
+
+            Assert.IsFalse(transitions.Slide.IsTransitioning, "終端した。");
+            Assert.AreEqual(1, transitions.Slide.ReversedCount, "同じ経路を逆向きに戻した（§8 の 3 行目）。");
+
+            // <b>気付いた時点で引き返す。</b> 終点まで行ってから戻ると、失敗した遷移で
+            // プレイヤーに到着側を見せてしまい、戻しも上限いっぱいの 0.25 秒かかる。
+            Assert.Less(peakX, transitions.Slide.LastSlideTo.x - 3f,
+                "壊れたと気付いた場所から引き返している（終点まで進んでいない）。到達点=" + peakX
+                + " 終点=" + transitions.Slide.LastSlideTo.x);
+            Assert.AreEqual(1, transitions.SlideRolledBackCount, "出発側へ戻した。");
+            Assert.AreEqual(0, transitions.SlideCommittedCount, "成功扱いにしない。");
+            Assert.IsNotEmpty(transitions.Slide.LastFailure, "理由が残っている。");
+
+            Assert.IsFalse(session.HasVisited(AreaB), "訪問済みを増やさない（§8 末尾／E07）。");
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居る。");
+            Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "A で遊べる。");
+            Assert.IsFalse(GameplayClockProvider.IsFrozen, "Gameplay 時計が戻った。");
+            Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current, "探索へ戻った。");
+            Assert.IsFalse(Display().IsActive, "表示代理は畳まれている。");
+            Assert.AreEqual(0, Display().HiddenRendererCount, "隠した実 Renderer を戻した。");
+            AssertPlayerVisible();
+
+            Assert.AreEqual(1, SceneManager.sceneCount, "到着 Scene は解放されている（§8「B を隔離・解放」）。");
+            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "在留も 1 つへ戻った。");
+
+            // ---- 戻し切った位置に留まる（翌フレームに跳ねない）----
+            Assert.AreEqual(cameraBefore.x, RigPosition().x, 0.2f, "カメラが出発位置へ戻っている。");
+
+            float settled = RigPosition().x;
+            for (int i = 0; i < 4; i++)
+            {
+                yield return null;
+                Assert.AreEqual(settled, RigPosition().x, 0.05f,
+                    "戻したあとカメラが跳ね返らない（追従の内部状態も終点へ同期している）。i=" + i);
+            }
+
+            AreaCameraRigHost host = AreaCameraRigHost.Instance;
+            Assert.IsFalse(host.IsSliding, "演出は走っていない。");
+            Assert.IsFalse(host.IsHoldingAfterSlide, "終点に留まったままにしない（解く者が居ないため）。");
+            Assert.IsFalse(host.Rig.FollowSuspended, "通常追従が戻っている。");
+        }
+
+        // ---------------------------------------------------------------- 監視タイムアウトと遅延完了（§8 の 5 行目）
+
+        /// <summary>
+        /// ロードが返ってこないときは<b>旧 Area への復帰を優先</b>し、古い操作は保持する。
+        /// 終端したあとに、遅れて着いた Scene を <b>Staged のまま</b>撤去する（§8 の 5 行目／§11 P09）。
+        ///
+        /// 「キャンセルできたと扱わない」ことがここの要点である。Unity の非同期ロードは
+        /// 止められないので、監視を諦めた時点で撤去はできない——できるようになるのは終端してからで、
+        /// それを進めるのは常駐側の役目になる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhenTheLoadNeverFinishes_ItReturnsToTheDepartureAndReleasesTheLateArrival()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new ControllableSceneHost();
+            transitions.SlideSceneHost = host;
+            transitions.TimeoutSeconds = 1f;
+
+            GameSessionState session = GameSessionProvider.Current;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+
+            yield return HoldUntil(Key.D, () => transitions.Slide.TimedOutCount > 0, 25f);
+
+            Assert.AreEqual(1, transitions.Slide.TimedOutCount, "監視上限を超えた。");
+            Assert.AreEqual(1, transitions.Slide.DeferredReleaseCount, "撤去を終端後へ持ち越した。");
+            Assert.AreEqual(1, transitions.SlideRolledBackCount, "出発側へ戻した。");
+            Assert.AreEqual(0, transitions.SlideCommittedCount, "成功扱いにしない。");
+            Assert.AreEqual(0, host.UnloadCount,
+                "まだ撤去していない（終端していない操作の上に別の操作を重ねない。§8）。");
+
+            Assert.IsFalse(session.HasVisited(AreaB), "訪問済みを増やさない。");
+            Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "A で遊べる状態へ戻った。");
+            Assert.IsFalse(GameplayClockProvider.IsFrozen, "Gameplay 時計も戻った。");
+            Assert.IsFalse(AreaPendingArrival.HasPending, "到着要求は残っていない。");
+            Assert.AreEqual(0, AreaCameraRigHost.Instance.SlideCount, "演出は始まっていない。");
+
+            // ---- 遅れて終端する ----
+            host.CompleteLoad(987654);
+
+            float deadline = Time.realtimeSinceStartup + 10f;
+            while ((host.UnloadCount == 0 || transitions.Slide.Residency.ResidentCount > 1)
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(1, host.UnloadCount, "終端したので撤去した（常駐が後始末を進める）。");
+            Assert.AreEqual(987654, host.LastUnloadHandle, "撤去したのは遅れて着いた Scene。");
+            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "在留も 1 つへ戻った。");
+            Assert.AreEqual(0, transitions.SlideCommittedCount, "遅延完了で成功が起きない（§8 末尾）。");
+            Assert.IsFalse(session.HasVisited(AreaB), "遅延完了で訪問登録も起きない（§8 末尾）。");
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value,
+                "遅延完了で CurrentArea も変わらない（§8 末尾）。");
+        }
+
+        // ---------------------------------------------------------------- Commit 後の撤去失敗（§8 の 4 行目）
+
+        /// <summary>
+        /// Commit のあとに旧 Area を撤去できなくても、<b>到着の成功は取り消さない</b>（§8 の 4 行目／§11 P10）。
+        ///
+        /// 旧 Area は非活動・非物理のまま隔離し、<b>在留枠も返さない</b>——返すと
+        /// 「空きあり」と誤認して 3 枚目を読む。新しいスライドは受け付けず、
+        /// 撤去の再試行手段だけを開けておく。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhenTheDepartureCannotBeUnloaded_TheArrivalStaysAndRetireCanBeRetried()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new UnloadRefusingSceneHost();
+            transitions.SlideSceneHost = host;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+
+            yield return HoldUntil(Key.D, () => transitions.Slide.UnloadFailureCount > 0, 25f);
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount, "到着の成功は取り消さない。");
+            Assert.AreEqual(1, transitions.Slide.UnloadFailureCount, "撤去は失敗した。");
+            Assert.IsTrue(transitions.Slide.HasPendingRetire, "撤去し切れなかった旧 Area を抱えている。");
+            Assert.IsNotEmpty(transitions.Slide.LastFailure, "理由が残っている。");
+
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+            Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "B で遊べる。");
+            Assert.AreEqual(2, SceneManager.sceneCount, "旧 Scene はまだ載っている。");
+            Assert.AreEqual(2, transitions.Slide.Residency.ResidentCount,
+                "在留枠は返さない（空きありと誤認して 3 枚目を読まない）。");
+
+            Assert.IsTrue(TryFindBundle(AreaA, out AreaRuntimeBundle departure), "旧 Area の束はまだある。");
+            Assert.AreEqual(AreaActivationPhase.Retiring,
+                transitions.Slide.Residency.PhaseOf(departure.Instance),
+                "旧 Area は撤去中として隔離されている。");
+            Assert.IsFalse(departure.ActivityGate.IsOpen, "旧 Area は非活動・非物理のまま。");
+            Assert.IsFalse(departure.Context.IsAreaReady, "旧 Area では遊べない。");
+
+            // ---- 抱えている間は新しいスライドを受け付けない ----
+            Assert.IsTrue(
+                transitions.Connections.TryGetFromExit(AreaB, ExitBWest, out AreaConnectionSnapshot west),
+                "西向きの接続を引ける。");
+            AreaTransitionDecision refused = transitions.TryTravel(west);
+            Assert.IsFalse(refused.Accepted, "新しい Area ロードを出さない（§8 の 4 行目）。");
+            Assert.AreEqual(AreaTransitionRejection.NotReady, refused.Rejection);
+            Assert.AreEqual(AreaSlideTransactionPhase.Idle, transitions.Slide.Coordinator.Phase,
+                "断った要求で段階を進めない。");
+            Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "断っても B で遊べたまま。");
+
+            // ---- 再試行できる ----
+            host.RefuseUnload = false;
+            Assert.IsTrue(transitions.Slide.TryRetryRetiringDeparture(), "撤去を再試行できる。");
+            Assert.AreEqual(1, transitions.Slide.RetryStartedCount);
+
+            float deadline = Time.realtimeSinceStartup + 10f;
+            while (transitions.Slide.HasPendingRetire && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.IsFalse(transitions.Slide.HasPendingRetire, "撤去できた。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "旧 Scene が消えた。");
+            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "在留枠も返った。");
+            Assert.AreEqual(1, transitions.SlideCommittedCount, "到着の成功は増減しない。");
+        }
+
+        // ---------------------------------------------------------------- Fade との共存（§8 末尾）
+
+        /// <summary>
+        /// <b>Fade（Single 読込）を挟んでもスライドが続けて動く</b>（§8 末尾「同じ Scene 操作管理を共有」）。
+        ///
+        /// Single 読込は在留台帳を通らない——載っている Scene を全部置き換えるので、
+        /// 台帳だけが「まだ 2 枚ある」と思い込む。そのまま次のスライドへ入ると上限に達していると
+        /// 誤認し、<b>先読みが断られてスライドできない</b>。受理のたびに台帳を実 Scene へ合わせ直す。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AfterAFadeTransition_TheLedgerMatchesTheLoadedScenesAndSlidingStillWorks()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            // 1 回目：スライドで B へ。
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            Assert.AreEqual(1, transitions.SlideCommittedCount, "前提：スライドで B へ着いた。");
+            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "前提：在留は 1 つ。");
+
+            // Fade（Single 読込）で A へ戻る。出入口ではなくサービスへ直接要求する——
+            // ここで見たいのは「Single 読込を挟んだあと」であって入力経路ではない。
+            Assert.IsTrue(
+                transitions.Connections.TryGetFromExit(AreaB, ExitBWest, out AreaConnectionSnapshot west),
+                "西向きの接続を引ける。");
+            Assert.IsTrue(transitions.TryTravel(west.ToAreaId, west.EntryId).Accepted,
+                "Single／Fade 経路が受理される。");
+
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.CompletedCount == 0 && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(1, transitions.CompletedCount, "Fade で A へ着いた。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "実 Scene は 1 枚（Single 読込が置き換えた）。");
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居る。");
+
+            // 2 回目：また実キーでスライドできる。
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 1, 25f);
+
+            Assert.AreEqual(2, transitions.SlideCommittedCount,
+                "Fade を挟んでもスライドできる（台帳が実 Scene に合っている）。理由="
+                + transitions.Slide.LastFailure);
+            Assert.GreaterOrEqual(transitions.Slide.ForgottenResidentCount, 1,
+                "消えていた実体を台帳から落とした。");
+            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "在留は 1 つ。");
+            Assert.AreEqual(1, SceneManager.sceneCount, "実 Scene も 1 枚。");
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+        }
+
+        // ---------------------------------------------------------------- 失敗注入用の Scene 操作
+
+        /// <summary>
+        /// 終端の時期を外から決められる追加読込（監視タイムアウトと遅延完了の注入用）。
+        /// <b>実 Scene は読まない。</b> 見たいのは「返ってこない操作をどう扱うか」だけである。
+        /// </summary>
+        private sealed class ControllableSceneHost : IAreaSceneHost
+        {
+            private PendingLoad _pending;
+            private readonly System.Collections.Generic.HashSet<int> _loaded =
+                new System.Collections.Generic.HashSet<int>();
+
+            internal int LoadCount { get; private set; }
+            internal int UnloadCount { get; private set; }
+            internal int LastUnloadHandle { get; private set; }
+
+            public IAreaSceneOperation LoadAdditive(string scenePath)
+            {
+                LoadCount++;
+                _pending = new PendingLoad();
+                return _pending;
+            }
+
+            public IAreaSceneOperation Unload(int sceneHandle)
+            {
+                UnloadCount++;
+                LastUnloadHandle = sceneHandle;
+                _loaded.Remove(sceneHandle);
+                return new Done();
+            }
+
+            public bool IsLoaded(int sceneHandle) => _loaded.Contains(sceneHandle);
+
+            /// <summary>読込を遅れて終端させる。</summary>
+            internal void CompleteLoad(int sceneHandle)
+            {
+                _loaded.Add(sceneHandle);
+                _pending?.Complete(sceneHandle);
+            }
+
+            private sealed class PendingLoad : IAreaSceneOperation
+            {
+                public bool IsDone { get; private set; }
+                public bool HasError => false;
+                public int SceneHandle { get; private set; }
+
+                internal void Complete(int sceneHandle)
+                {
+                    SceneHandle = sceneHandle;
+                    IsDone = true;
+                }
+            }
+
+            private sealed class Done : IAreaSceneOperation
+            {
+                public bool IsDone => true;
+                public bool HasError => false;
+                public int SceneHandle => 0;
+            }
+        }
+
+        /// <summary>
+        /// 読込は本物、<b>撤去だけ断る</b>（Commit 後の撤去失敗の注入用）。
+        /// 撤去が成功したことにしないために <c>IsLoaded</c> も本物へ委ねる。
+        /// </summary>
+        private sealed class UnloadRefusingSceneHost : IAreaSceneHost
+        {
+            private readonly UnityAreaSceneHost _real = new UnityAreaSceneHost();
+
+            internal bool RefuseUnload { get; set; } = true;
+
+            public IAreaSceneOperation LoadAdditive(string scenePath) => _real.LoadAdditive(scenePath);
+
+            public IAreaSceneOperation Unload(int sceneHandle) =>
+                RefuseUnload ? new Failed() : _real.Unload(sceneHandle);
+
+            public bool IsLoaded(int sceneHandle) => _real.IsLoaded(sceneHandle);
+
+            private sealed class Failed : IAreaSceneOperation
+            {
+                public bool IsDone => true;
+                public bool HasError => true;
+                public int SceneHandle => 0;
+            }
+        }
+
         // ---------------------------------------------------------------- 観測
 
         /// <summary>スライド中の不変条件を毎フレーム集める。</summary>
@@ -718,6 +1080,36 @@ namespace Momotaro.Tests.PlayMode
             }
 
             Assert.IsFalse(host.Rig.Blend.IsBlending, "前提：補間が終わっている。");
+        }
+
+        /// <summary>目的の段階になるまで押しっぱなしにする。</summary>
+        private IEnumerator HoldUntilPhase(Key key, AreaSlideTransactionPhase phase, float seconds)
+        {
+            AreaTransitionService transitions = Transitions();
+            float deadline = Time.realtimeSinceStartup + seconds;
+            while (transitions.Slide.Coordinator.Phase != phase && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(key));
+                yield return null;
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+        }
+
+        /// <summary>その AreaId の参照集合を索引から引く（全 Scene 検索をしない）。</summary>
+        private static bool TryFindBundle(StableId areaId, out AreaRuntimeBundle bundle)
+        {
+            foreach (AreaRuntimeBundle candidate in AreaBundleDirectory.All)
+            {
+                if (candidate != null && candidate.AreaId.Equals(areaId))
+                {
+                    bundle = candidate;
+                    return true;
+                }
+            }
+
+            bundle = null;
+            return false;
         }
 
         private static Vector3 RigPosition()

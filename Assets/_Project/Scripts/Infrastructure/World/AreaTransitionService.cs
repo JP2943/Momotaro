@@ -1066,6 +1066,18 @@ namespace Momotaro.Infrastructure.World
             }
         }
 
+        /// <summary>
+        /// 先読みの後始末を進める（P5.5 §5／§8 の 5 行目。工程 P55-04c）。
+        ///
+        /// <b>止められないロードの終端はここでしか観測できない。</b> 監視を諦めた遷移は
+        /// 望みを取り下げて戻るだけなので、遅れて着いた Scene を撤去する者が要る。
+        /// 距離による先読み（§5）も、いずれここへ乗る。
+        /// </summary>
+        private void Update()
+        {
+            _slideRunner?.Pump();
+        }
+
         private void OnDestroy()
         {
             if (ReferenceEquals(GameplayClockProvider.Current, _clock))

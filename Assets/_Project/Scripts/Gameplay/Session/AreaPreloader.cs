@@ -232,6 +232,43 @@ namespace Momotaro.Gameplay.Session
         public int HandedOffCount { get; private set; }
 
         /// <summary>
+        /// 預かっている Scene が<b>もう載っていない</b>なら、撤去せずに手放す（P5.5 §8。工程 P55-04c）。
+        ///
+        /// <b>Single 読込（Fade・死亡再開・Launcher への退避）は台帳を通らない。</b>
+        /// あれは載っている Scene を全部置き換えるので、こちらが預かっていた Area も
+        /// 黙って消える。気付かずにいると、次の候補へ切り替えるときに
+        /// <b>存在しない Scene へ撤去を発行</b>し、在留枠も埋まったままになる。
+        ///
+        /// <b>望みも一緒に落とす。</b> 残すと、直後の <see cref="Poll"/> が
+        /// 「まだ欲しい」と解釈して読み直す——プレイヤーは Fade で別の場所へ移ったのに、
+        /// 前の隣 Area が追いかけて載る。
+        /// </summary>
+        /// <returns>手放したら true。</returns>
+        public bool DropStagedIfUnloaded()
+        {
+            if (Phase != AreaPreloadPhase.Staged || !StagedArea.IsValid || StagedSceneHandle == 0)
+            {
+                return false;
+            }
+
+            if (_host != null && _host.IsLoaded(StagedSceneHandle))
+            {
+                return false;
+            }
+
+            FinishRelease();
+            _desiredArea = default;
+            _desiredPath = null;
+            Phase = AreaPreloadPhase.Idle;
+            FailureReason = string.Empty;
+            DroppedStaleCount++;
+            return true;
+        }
+
+        /// <summary>消えていた Scene の預かりを手放した回数（診断・テスト用）。</summary>
+        public int DroppedStaleCount { get; private set; }
+
+        /// <summary>
         /// <b>新しい遷移操作に対応した再試行入口</b>（§5「次の新しい遷移操作で一度だけ再試行できる」）。
         ///
         /// 失敗を抱えていないときは何もしない。抱えているときは<b>一度だけ</b>進める——

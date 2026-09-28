@@ -48,24 +48,6 @@ namespace Momotaro.Presentation.Cameras
             _remaining = 0f;
         }
 
-        /// <summary>
-        /// スライドの終点を<b>そのまま</b>取り込む（P5.5 付録 A.4）。
-        ///
-        /// <b>収め直さない。</b> 渡されるのは<b>到着 Area の</b>領域で収めた位置で、
-        /// まだ結び付いていない出発 Area の領域で収め直すと終点が動く——
-        /// それが「翌フレームに跳ね返る」正体になる。
-        /// 領域も覚えない（次の <see cref="Tick"/> で結び直し先の領域として拾う）。
-        ///
-        /// これは<b>常駐 Rig のスライド専用</b>の入口である。通常の経路は
-        /// <see cref="SnapTo"/>／<see cref="Tick"/> を通り、どちらも必ず収める。
-        /// </summary>
-        public void AdoptSlideEnd(Vector3 focus)
-        {
-            Current = focus;
-            _hasRegion = false;
-            _remaining = 0f;
-        }
-
         /// <summary>初期化する（Scene 離脱・テストの後始末）。</summary>
         public void Reset()
         {

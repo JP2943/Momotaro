@@ -339,6 +339,10 @@ namespace Momotaro.Tests.EditMode
             {
             }
 
+            public void EndSlideAndResumeFollow()
+            {
+            }
+
             public void CancelSlide()
             {
             }
