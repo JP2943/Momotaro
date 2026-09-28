@@ -158,6 +158,11 @@
       "stage": "P55-04"
     },
     {
+      "id": "P55-P13",
+      "summary": "同じ実プレイ導線で A↔B を 5 往復 → 遭遇戦 → 再訪 → 死亡再開 → 再戦（§11 の P13）。毎往復、Scene は 1 枚・在留台帳は 1 つ・先読みは手ぶら・進行の記録は増減しない。初回の徳は 22、往復と同一周期の再訪では増えない。死亡再開で周期が進むと遭遇戦は未クリアへ戻る（§9.1 の設計どおり）。東西・南北の両配置で通す（R13 指摘①）",
+      "stage": "P55-06"
+    },
+    {
       "id": "P55-P14",
       "summary": "全 Area 破棄後の残留参照（§11 の P14）。掃除を呼ぶ前に、参照集合の索引・活動 Area の指定・カメラ領域集合・索敵／Interact／調査の登録簿・表示代理・実 Scene・在留台帳のどれにも旧 Scene 由来の参照が残らない。常駐の提供点（Camera・Gameplay 時計）は生きたまま",
       "stage": "P55-04"
@@ -620,6 +625,17 @@
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.UsingTheInteractDoorWhileTheNeighbourIsStaged_DiscardsThePreloadFirst",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.DyingWhileTheNeighbourIsStillLoading_WaitsForItToTerminateBeforeTheFade"
+      ]
+    },
+    {
+      "requirementId": "P55-P13",
+      "stage": "P55-06",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheWholeRoute_SurvivesFiveRoundTripsAFightAndARespawn(\"EastWest\")",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheWholeRoute_SurvivesFiveRoundTripsAFightAndARespawn(\"NorthSouth\")"
       ]
     },
     {
