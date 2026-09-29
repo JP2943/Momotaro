@@ -302,7 +302,10 @@ namespace Momotaro.Tests.PlayMode
                 "終端失敗にならない。理由=" + transitions.TerminalFailureReason);
             Assert.AreEqual(1, transitions.CompletedCount, "暗転（Single）経路で再開が着いた。");
             Assert.AreEqual(1, SceneManager.sceneCount, "隔離 Area は残っていない。");
-            Assert.AreEqual(0, transitions.Slide.Residency.ResidentCount, "在留台帳も実 Scene に合っている。");
+            Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount,
+                "在留台帳も実 Scene に合っている（載っている 1 枚 ＝ 在留 1 つ。工程 P55-08c）。"
+                + " 以前は 0 だった——Single 読込は台帳を通らないので、活動中 Area が"
+                + " 台帳に載らないままだった。距離による先読みは発行の前に活動中 Area を載せる。");
             Assert.AreEqual(_route.AreaAId.Value, CurrentAreaProvider.Current.AreaId.Value,
                 "再開点（A）へ戻る。");
 

@@ -204,6 +204,14 @@ namespace Momotaro.Infrastructure.World
             }
 
             _connections = built;
+
+            // <b>ここで実行役を作る</b>（工程 P55-08c。GPT 再修正①）。
+            //
+            // <c>Update</c> は <c>_slideRunner?.Pump()</c> なので、<b>作られるまで何も回らない</b>。
+            // 初回参照で作る形だと、本番では<b>最初のスライド要求まで実行役が居ない</b>——
+            // §5 の距離による先読み（要求より先に隣を読む）が、いちばん効く初回に動かなかった。
+            // 接続が配られた時点は、スライドがありうると分かった時点である。
+            _ = Slide;
             return true;
         }
 
@@ -220,6 +228,14 @@ namespace Momotaro.Infrastructure.World
         /// 共有し、別サービスが同時ロードを発行しない」と定めているので、別の常駐にはできない。
         /// </summary>
         public AreaSlideTransitionRunner Slide => _slideRunner ??= new AreaSlideTransitionRunner(this);
+
+        /// <summary>
+        /// 実行役がもう居るか（診断・テスト用。工程 P55-08c）。
+        ///
+        /// <b><see cref="Slide"/> では確かめられない</b>——参照した時点で作ってしまうので、
+        /// 「本番経路が作ったか」を見たい側が自分で作ることになる。
+        /// </summary>
+        public bool HasSlideRunner => _slideRunner != null;
 
         /// <summary>
         /// P5.5 の追加読込・撤去の実装（<b>テストが差し替える</b>）。

@@ -29,7 +29,7 @@
     },
     {
       "id": "P55-E04",
-      "summary": "先読みの同一先再利用、候補切替、最大2Area、ロード直列化。さらに距離による選定（§5 の 1〜3 行目。工程 P55-08b）——出入口の 6 units 以内で候補にし距離→ConnectionId の Ordinal 順で選ぶ、一度読み始めた先は境界から離れても保持する、切替は距離差 2 units 以上が 0.5 秒継続したときだけ旧先読みの終端・解放後に行う",
+      "summary": "先読みの同一先再利用、候補切替、最大2Area、ロード直列化。さらに距離による選定（§5 の 1〜3 行目。工程 P55-08b）——出入口の 6 units 以内で候補にし距離→ConnectionId の Ordinal 順で選ぶ、一度読み始めた先は境界から離れても保持する、切替は距離差 2 units 以上が 0.5 秒継続したときだけ旧先読みの終端・解放後に行う。取り下げた候補は自動では選び直さず、新しい遷移操作で解く（工程 P55-08c）。開始距離は候補ごとに違うので、絞ってから順位付けする",
       "stage": "P55-01"
     },
     {
@@ -271,7 +271,12 @@
         "Momotaro.Tests.EditMode.P55ProximityPreloadTests.SwitchingNeedsTwoUnitsHeldForHalfASecond",
         "Momotaro.Tests.EditMode.P55ProximityPreloadTests.TheHoldTimeResets_WhenTheDifferenceDropsBack",
         "Momotaro.Tests.EditMode.P55ProximityPreloadTests.WhileTheOldPreloadIsStillRunning_TheSwitchWaits",
-        "Momotaro.Tests.EditMode.P55ProximityPreloadTests.MovingToAnotherArea_ForgetsWhatWasHeld"
+        "Momotaro.Tests.EditMode.P55ProximityPreloadTests.MovingToAnotherArea_ForgetsWhatWasHeld",
+        "Momotaro.Tests.EditMode.P55ProximityPreloadTests.ACloserButOutOfRangeCandidate_DoesNotBlockAnEligibleOne",
+        "Momotaro.Tests.EditMode.P55ProximityPreloadTests.ASuppressedCandidate_IsNotChosenAgainOnItsOwn",
+        "Momotaro.Tests.EditMode.P55ProximityPreloadTests.SuppressingOneCandidate_DoesNotBlockTheOthers",
+        "Momotaro.Tests.EditMode.P55ProximityPreloadTests.ANewTransitionRequest_LiftsTheSuppression",
+        "Momotaro.Tests.EditMode.P55ProximityPreloadTests.MovingToAnotherArea_LiftsTheSuppressionToo"
       ]
     },
     {

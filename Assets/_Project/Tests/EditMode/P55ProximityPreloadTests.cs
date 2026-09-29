@@ -39,6 +39,9 @@ namespace Momotaro.Tests.EditMode
         private static AreaPreloadCandidate West(float distance) =>
             new AreaPreloadCandidate(ConnWest, AreaWest, WestPath, distance, Range);
 
+        private static AreaPreloadCandidate WestWithRange(float distance, float preloadDistance) =>
+            new AreaPreloadCandidate(ConnWest, AreaWest, WestPath, distance, preloadDistance);
+
         private static List<AreaPreloadCandidate> Only(AreaPreloadCandidate c) =>
             new List<AreaPreloadCandidate> { c };
 
@@ -253,6 +256,103 @@ namespace Momotaro.Tests.EditMode
                 "移った先で候補が無ければ何も望まない。");
             Assert.AreEqual(1, planner.ResetCount, "保持を捨てたことを数えている。");
             Assert.IsFalse(planner.HeldAreaId.IsValid, "抱えたままにしない。");
+        }
+
+        /// <summary>
+        /// <b>開始距離は候補ごとに違う</b>（工程 P55-08c。GPT 再修正の指摘）。
+        ///
+        /// 先に最寄りを選んでから 1 件だけ距離を見ると、<b>まだ範囲外の近い候補</b>が
+        /// <b>範囲内の遠い候補</b>を遮る。絞ってから順位付けする。
+        /// </summary>
+        [Test]
+        public void ACloserButOutOfRangeCandidate_DoesNotBlockAnEligibleOne()
+        {
+            var planner = new AreaProximityPreloadPlanner();
+
+            // 西：距離 3・開始距離 2（近いが、まだ範囲の外）。
+            // 東：距離 4・開始距離 6（遠いが、範囲の内）。
+            Assert.IsTrue(
+                planner.Tick(AreaHere, Both(East(4f), WestWithRange(3f, 2f)), 0.016f, true,
+                    out StableId area, out _),
+                "範囲内の候補があるなら望む。");
+            Assert.AreEqual(AreaEast.Value, area.Value,
+                "近いが範囲外の候補は、範囲内の候補を遮らない。");
+        }
+
+        /// <summary>
+        /// <b>取り下げられた先は、自動では選び直さない</b>（工程 P55-08c。GPT 再修正②）。
+        ///
+        /// 遷移が先読みを取り下げた（Rollback・時間切れ・Single 読込前の受け渡し）とき、
+        /// <b>その場に立っているだけで同じ先を言い直してはいけない</b>。
+        /// 言い直すと、遅れて着いた Scene が「また必要な先読み」になって撤去されない。
+        /// </summary>
+        [Test]
+        public void ASuppressedCandidate_IsNotChosenAgainOnItsOwn()
+        {
+            var planner = new AreaProximityPreloadPlanner();
+            planner.Tick(AreaHere, Only(East(2f)), 0.016f, true, out _, out _);
+
+            planner.SuppressHeld();
+            Assert.AreEqual(ConnEast.Value, planner.SuppressedConnectionId.Value,
+                "取り下げた接続を覚えている。");
+            Assert.AreEqual(1, planner.SuppressedCount, "抑止した回数を数えている。");
+
+            for (int i = 0; i < 30; i++)
+            {
+                Assert.IsFalse(
+                    planner.Tick(AreaHere, Only(East(2f)), 0.016f, true, out _, out _),
+                    "範囲の内に居ても、抑止した先は選び直さない（" + i + " フレーム目）。");
+            }
+
+            Assert.AreEqual(1, planner.StartedCount, "始めた回数は増えない。");
+        }
+
+        /// <summary>抑止しても、<b>別の候補</b>は始められる（止めるのは取り下げた先だけ）。</summary>
+        [Test]
+        public void SuppressingOneCandidate_DoesNotBlockTheOthers()
+        {
+            var planner = new AreaProximityPreloadPlanner();
+            planner.Tick(AreaHere, Only(East(2f)), 0.016f, true, out _, out _);
+            planner.SuppressHeld();
+
+            Assert.IsTrue(
+                planner.Tick(AreaHere, Both(East(2f), West(3f)), 0.016f, true,
+                    out StableId area, out _),
+                "別の候補は望める。");
+            Assert.AreEqual(AreaWest.Value, area.Value, "選ぶのは抑止していない側。");
+        }
+
+        /// <summary>
+        /// 抑止は<b>新しい遷移操作</b>で解ける（§5 の「次の新しい遷移操作で一度だけ再試行できる」）。
+        /// </summary>
+        [Test]
+        public void ANewTransitionRequest_LiftsTheSuppression()
+        {
+            var planner = new AreaProximityPreloadPlanner();
+            planner.Tick(AreaHere, Only(East(2f)), 0.016f, true, out _, out _);
+            planner.SuppressHeld();
+            Assert.IsFalse(
+                planner.Tick(AreaHere, Only(East(2f)), 0.016f, true, out _, out _),
+                "前提：抑止が効いている。");
+
+            planner.ClearSuppression();
+
+            Assert.IsTrue(
+                planner.Tick(AreaHere, Only(East(2f)), 0.016f, true, out StableId area, out _),
+                "解けば、もう一度読んでよい。");
+            Assert.AreEqual(AreaEast.Value, area.Value, "同じ先で構わない。");
+        }
+
+        /// <summary>別の Area へ移れば抑止も解ける（前の Area の話ではなくなる）。</summary>
+        [Test]
+        public void MovingToAnotherArea_LiftsTheSuppressionToo()
+        {
+            var planner = new AreaProximityPreloadPlanner();
+            planner.Tick(AreaHere, Only(East(2f)), 0.016f, true, out _, out _);
+            planner.SuppressHeld();
+
+            planner.Tick(AreaEast, new List<AreaPreloadCandidate>(), 0.016f, true, out _, out _);
+            Assert.IsFalse(planner.SuppressedConnectionId.IsValid, "抑止は持ち越さない。");
         }
 
         /// <summary>望みを取り下げれば、選び直しから始まる（遷移が引き取った・捨てたとき）。</summary>

@@ -377,6 +377,11 @@ namespace Momotaro.Infrastructure.World
             // ここで独自にロードを発行すると、先読みと二重に読むことになる。
             AreaPreloader preloader = EnsurePreloader();
             preloader.ArmRetry(); // 新しい遷移操作は、抱えている失敗を 1 回だけ再試行できる（§5）。
+
+            // <b>抑止も新しい遷移操作で解く</b>（工程 P55-08c。§5 の再試行と同じ時機）。
+            // 距離による先読みが「取り下げられたから選び直さない」と決めた先も、
+            // プレイヤーが自分で操作したのなら、もう一度読んでよい。
+            _proximity.ClearSuppression();
             preloader.Request(connection.ToAreaId, entry.ScenePath);
 
             float waited = 0f;
@@ -1322,15 +1327,33 @@ namespace Momotaro.Infrastructure.World
 
             AreaPreloader preloader = EnsurePreloader();
 
-            // <b>誰かが望みを取り下げたら、保持も捨てる</b>（工程 P55-08b）。
+            // <b>活動中 Area を先に台帳へ載せる</b>（工程 P55-08c。GPT 再修正③）。
+            //
+            // 登録していたのは遷移（<c>SlideRoutine</c>）だけだった。距離による先読みは
+            // 遷移より先に走るので、載せないまま隣を読むと<b>実 Scene 2 枚・台帳 1 つ</b>になる。
+            // 在留枠が空いていると誤認して上限 2 を超えて読めるし、
+            // 「どの枠を返すか」も決められない（§4.3／§8）。
+            //
+            // 枠が取れないなら何もしない——ここで無理に読むのが上限の意味を壊す。
+            if (!EnsureResidency(active).IsValid)
+            {
+                return;
+            }
+
+            // <b>誰かが望みを取り下げたら、保持を捨てて「選び直さない」</b>
+            // （工程 P55-08b／P55-08c。GPT 再修正②）。
             //
             // 「一度読み始めた先は保持する」（§5）のは<b>先読みが続いている間</b>の話である。
-            // 遷移の Rollback・引き渡し・Single 読込前の受け渡しは <c>ClearRequest</c> を通るので、
-            // そこを見ずに保持し続けると、<b>捨てたはずの先を次のフレームに言い直す</b>——
-            // 「遅れて着いた Scene を撤去する」（§8 の 5 行目）が永久に起きなくなる。
+            // 遷移の Rollback・引き渡し・Single 読込前の受け渡しは <c>ClearRequest</c> を通る。
+            //
+            // <b>捨てるだけでは足りない。</b> 捨てた次のフレームに同じ候補を選び直すので、
+            // 出入口の近くに立っているだけで<b>再操作なしに同じ先を言い直す</b>——
+            // 時間切れのあと、遅れて着いた Scene が「また必要な先読み」になって
+            // 撤去されなくなる（§8 の 5 行目が永久に起きない）。
+            // 解けるのは新しい遷移操作のときだけ（§5 の「次の新しい遷移操作で一度だけ」）。
             if (_proximity.HeldAreaId.IsValid && !preloader.DesiredArea.IsValid)
             {
-                _proximity.Forget();
+                _proximity.SuppressHeld();
             }
 
             bool canSwitch = !preloader.HasLiveSceneOperation;
@@ -1390,7 +1413,10 @@ namespace Momotaro.Infrastructure.World
 
         private AreaPreloader EnsurePreloader()
         {
-            return _preloader ??= new AreaPreloader(_residency, _owner.SlideSceneHost, _owner);
+            // <b>実装は握り込まない。</b> 差し替えはいつ来るか分からないので、そのとき引く
+            // （工程 P55-08c。距離による先読みは常駐が立った直後から回る）。
+            return _preloader ??= new AreaPreloader(
+                _residency, () => _owner.SlideSceneHost, _owner);
         }
 
         /// <summary>直前に代理へ渡した主人公の終点（診断・テスト用）。</summary>

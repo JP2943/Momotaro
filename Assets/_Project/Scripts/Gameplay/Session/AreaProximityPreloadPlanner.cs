@@ -77,6 +77,7 @@ namespace Momotaro.Gameplay.Session
         private string _heldPath;
         private StableId _pendingConnection;
         private float _pendingSeconds;
+        private StableId _suppressedConnection;
 
         /// <summary>いま保持している接続（無ければ無効）。</summary>
         public StableId HeldConnectionId => _heldConnection;
@@ -89,6 +90,23 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>切替条件が続いている秒数（診断・テスト用）。</summary>
         public float PendingSeconds => _pendingSeconds;
+
+        /// <summary>
+        /// <b>自動では選び直さない接続</b>（診断・テスト用。工程 P55-08c。GPT 再修正②）。
+        ///
+        /// 遷移が先読みを取り下げた（Rollback・時間切れ・Single 読込前の受け渡し）とき、
+        /// <b>その場に立っているだけで同じ先を言い直してはいけない</b>。
+        /// 言い直すと、遅れて着いた Scene が「また必要な先読み」になって撤去されない
+        /// （§8 の 5 行目が永久に起きない）。
+        ///
+        /// 解けるのは<b>新しい遷移操作</b>のときだけ——§5 の
+        /// 「自動で毎フレーム再試行しない。次の新しい遷移操作で一度だけ再試行できる」と同じ規律である。
+        /// 別の Area へ移ったときも解ける（前の Area の話ではなくなる）。
+        /// </summary>
+        public StableId SuppressedConnectionId => _suppressedConnection;
+
+        /// <summary>自動再選択を抑止した回数（診断・テスト用）。</summary>
+        public int SuppressedCount { get; private set; }
 
         /// <summary>新しく先読みを始めた回数（診断・テスト用）。</summary>
         public int StartedCount { get; private set; }
@@ -140,17 +158,17 @@ namespace Momotaro.Gameplay.Session
                 _heldConnection = default;
                 _heldArea = default;
                 _heldPath = null;
+                _suppressedConnection = default;
                 ClearPending();
             }
 
-            AreaPreloadCandidate best = default;
-            bool hasBest = TryPickBest(candidates, out best);
+            bool hasBest = TryPickBest(candidates, out AreaPreloadCandidate best);
             bool hasHeld = TryFindHeld(candidates, out AreaPreloadCandidate held);
 
             if (!_heldConnection.IsValid)
             {
-                // まだ何も読んでいない。<b>範囲に入った候補だけ</b>を始める。
-                if (hasBest && best.Distance <= best.PreloadDistance)
+                // まだ何も読んでいない。範囲に入った候補だけが <c>TryPickBest</c> を通っている。
+                if (hasBest)
                 {
                     Hold(best);
                     StartedCount++;
@@ -177,10 +195,9 @@ namespace Momotaro.Gameplay.Session
             if (hasBest && !best.ConnectionId.Equals(_heldConnection))
             {
                 float heldDistance = hasHeld ? held.Distance : float.PositiveInfinity;
-                bool nearEnough = best.Distance <= best.PreloadDistance;
                 bool clearlyCloser = heldDistance - best.Distance >= SwitchMarginUnits;
 
-                if (nearEnough && clearlyCloser)
+                if (clearlyCloser)
                 {
                     if (!_pendingConnection.Equals(best.ConnectionId))
                     {
@@ -221,13 +238,38 @@ namespace Momotaro.Gameplay.Session
             return true;
         }
 
-        /// <summary>保持を捨てる（遷移が引き取った・望みを取り下げたとき）。</summary>
+        /// <summary>保持を捨てる（遷移が引き取ったとき）。抑止はしない。</summary>
         public void Forget()
         {
             _heldConnection = default;
             _heldArea = default;
             _heldPath = null;
             ClearPending();
+        }
+
+        /// <summary>
+        /// <b>保持を捨て、同じ先を自動では選び直さない</b>（工程 P55-08c。GPT 再修正②）。
+        ///
+        /// 呼ぶのは「遷移が先読みを取り下げた」と分かったときである。
+        /// <see cref="Forget"/> だけでは、<b>その場に立っているだけで次のフレームに言い直す</b>。
+        /// </summary>
+        public void SuppressHeld()
+        {
+            if (_heldConnection.IsValid)
+            {
+                _suppressedConnection = _heldConnection;
+                SuppressedCount++;
+            }
+
+            Forget();
+        }
+
+        /// <summary>
+        /// 抑止を解く。<b>新しい遷移操作だけが解ける</b>（§5 の「次の新しい遷移操作で一度だけ」）。
+        /// </summary>
+        public void ClearSuppression()
+        {
+            _suppressedConnection = default;
         }
 
         private void Hold(in AreaPreloadCandidate candidate)
@@ -271,7 +313,7 @@ namespace Momotaro.Gameplay.Session
         /// 候補が一つしかない P5.5 実試遊では現れないが、増やした瞬間に
         /// <b>毎フレーム読み直す</b>形になって気付く。
         /// </summary>
-        private static bool TryPickBest(
+        private bool TryPickBest(
             IReadOnlyList<AreaPreloadCandidate> candidates, out AreaPreloadCandidate best)
         {
             best = default;
@@ -285,6 +327,21 @@ namespace Momotaro.Gameplay.Session
             {
                 AreaPreloadCandidate c = candidates[i];
                 if (!c.IsValid)
+                {
+                    continue;
+                }
+
+                // <b>開始距離は候補ごとに違う。</b> 先に最寄りを選んでから 1 件だけ距離を見ると、
+                // 「距離 3・開始距離 2」の<b>まだ範囲外の候補</b>が
+                // 「距離 4・開始距離 6」の有効な候補を遮る（GPT 再修正の指摘）。
+                // 絞ってから順位付けする。
+                if (c.Distance > c.PreloadDistance)
+                {
+                    continue;
+                }
+
+                // 取り下げられた先は、新しい遷移操作まで自動では選び直さない（§5）。
+                if (_suppressedConnection.IsValid && c.ConnectionId.Equals(_suppressedConnection))
                 {
                     continue;
                 }

@@ -75,7 +75,7 @@ namespace Momotaro.Gameplay.Session
     public sealed class AreaPreloader
     {
         private readonly AreaResidencyLedger _ledger;
-        private readonly IAreaSceneHost _host;
+        private readonly System.Func<IAreaSceneHost> _hostSource;
         private readonly object _owner;
 
         private StableId _desiredArea;
@@ -85,13 +85,34 @@ namespace Momotaro.Gameplay.Session
         private AreaInstanceHandle _loading;
         private bool _retryArmed;
 
-        /// <summary>作る。<paramref name="owner"/> は現行 Area の指定に使う所有者（§5.2 の所有者一致）。</summary>
-        public AreaPreloader(AreaResidencyLedger ledger, IAreaSceneHost host, object owner)
+        /// <summary>
+        /// 作る。<paramref name="owner"/> は現行 Area の指定に使う所有者（§5.2 の所有者一致）。
+        ///
+        /// <b>Scene 操作の実装は「そのとき引く」</b>（工程 P55-08c）。
+        ///
+        /// 以前は作るときの実装を握り込んでいたので、<b>作られる時機が注入の時機を縛っていた</b>——
+        /// だから「初回の要求で作る」という遅延に頼っていた。距離による先読み（§5）は
+        /// 常駐が立った直後から回るので、その遅延はもう成り立たない。
+        /// 毎回引く形にすれば、いつ作られても差し替えが効く。
+        /// </summary>
+        public AreaPreloader(
+            AreaResidencyLedger ledger, System.Func<IAreaSceneHost> hostSource, object owner)
         {
             _ledger = ledger;
-            _host = host;
+            _hostSource = hostSource;
             _owner = owner;
         }
+
+        /// <summary>
+        /// 作る（実装を固定する形。テストと単一 Area 構成の互換）。
+        /// </summary>
+        public AreaPreloader(AreaResidencyLedger ledger, IAreaSceneHost host, object owner)
+            : this(ledger, () => host, owner)
+        {
+        }
+
+        /// <summary>いまの Scene 操作の実装（差し替えを毎回引く）。</summary>
+        private IAreaSceneHost Host => _hostSource?.Invoke();
 
         /// <summary>いまの段階。</summary>
         public AreaPreloadPhase Phase { get; private set; } = AreaPreloadPhase.Idle;
@@ -268,7 +289,8 @@ namespace Momotaro.Gameplay.Session
                 return false;
             }
 
-            if (_host != null && _host.IsLoaded(StagedSceneHandle))
+            IAreaSceneHost loadedHost = Host;
+            if (loadedHost != null && loadedHost.IsLoaded(StagedSceneHandle))
             {
                 return false;
             }
@@ -454,7 +476,7 @@ namespace Momotaro.Gameplay.Session
                 // 確かめずに台帳を空けると、A ＋ B が載ったままなのに「空きあり」と見なして
                 // C を読み、実 Scene が 3 枚になる。しかも B をもう一度撤去するための
                 // handle まで失う（GPT レビュー R10 の指摘 2）。
-                if (_host.IsLoaded(StagedSceneHandle))
+                if (Host != null && Host.IsLoaded(StagedSceneHandle))
                 {
                     Fail(AreaPreloadPhase.ReleaseFailed,
                         "先読みした Scene の撤去が失敗し、まだ載っています。");
@@ -522,7 +544,7 @@ namespace Momotaro.Gameplay.Session
             }
 
             _loading = handle;
-            _operation = _host.LoadAdditive(_desiredPath);
+            _operation = Host.LoadAdditive(_desiredPath);
             LoadStartedCount++;
             Phase = AreaPreloadPhase.Loading;
             FailureReason = string.Empty;
@@ -549,7 +571,7 @@ namespace Momotaro.Gameplay.Session
             ConsumeRetryPermission();
 
             _ledger.TrySetPhase(StagedArea, AreaActivationPhase.Retiring);
-            _operation = _host.Unload(StagedSceneHandle);
+            _operation = Host.Unload(StagedSceneHandle);
             ReleaseStartedCount++;
             Phase = AreaPreloadPhase.Releasing;
             FailureReason = string.Empty;
