@@ -742,7 +742,7 @@ namespace Momotaro.Infrastructure.World
 
             while (true)
             {
-                float step = Mathf.Min(Time.unscaledDeltaTime, MaxDisplayStepSeconds);
+                float step = DisplayStep();
                 bool running = camera.TickSlide(step);
 
                 // カメラと<b>同じ</b>進行度を配る（§7.2）。自前の時計から作ると別の曲線になる。
@@ -922,7 +922,7 @@ namespace Momotaro.Infrastructure.World
             {
                 while (true)
                 {
-                    float step = Mathf.Min(Time.unscaledDeltaTime, MaxDisplayStepSeconds);
+                    float step = DisplayStep();
                     bool running = camera.TickSlide(step);
 
                     // 逆向き：行きの進行度を 1→0 へたどり直す。
@@ -945,6 +945,38 @@ namespace Momotaro.Infrastructure.World
 
             yield return Rollback(transitionId, departure, departureHandle, reason, destination);
         }
+
+        /// <summary>
+        /// <b>表示に使ってよい 1 フレームぶんの秒数</b>（§7.1。工程 P55-10f）。
+        ///
+        /// 2 つのことを同時に守る。
+        /// <list type="bullet">
+        /// <item><description><b>非フォーカス中は進めない</b>——0 を返す。
+        /// スライドはその場で止まり、戻ってきたところから続く。</description></item>
+        /// <item><description><b>復帰時に巨大 delta で飛ばさない</b>——
+        /// <see cref="MaxDisplayStepSeconds"/> で頭を押さえる。
+        /// 非フォーカスから戻った 1 フレームの <c>unscaledDeltaTime</c> は<b>止まっていた時間そのもの</b>
+        /// になりうるので、そのまま渡すとスライドが一瞬で終わる。</description></item>
+        /// </list>
+        ///
+        /// <b>ロード監視には使わない。</b> §7.1 は「ロード監視は別の unscaled／実時間で継続する」と
+        /// 定める——止めると、非フォーカスのあいだに終端したロードを誰も引き取らず、
+        /// 復帰した瞬間に時間切れが確定する（<b>触っていないのに失敗する</b>）。
+        /// 監視の側は <c>Time.unscaledDeltaTime</c> をそのまま使い続ける。
+        /// </summary>
+        private static float DisplayStep() =>
+            ResolveDisplayStep(Time.unscaledDeltaTime, AppFocusProvider.IsFocused);
+
+        /// <summary>
+        /// 同じ規則を<b>値だけで</b>言い直したもの（受入用。§7.1。工程 P55-10f）。
+        ///
+        /// <b>巨大 delta は実 Scene では作れない。</b> 背面に回しても Unity はフレームを回し続けるので、
+        /// 復帰した 1 フレームの <c>unscaledDeltaTime</c> は普通のフレーム時間のままになる——
+        /// 実機で起きる「止まっていた時間がそのまま届く」を、実スライドの検査では再現できない。
+        /// 規則そのものはここで、<b>値を与えて</b>決定的に見る。
+        /// </summary>
+        public static float ResolveDisplayStep(float unscaledDeltaTime, bool focused) =>
+            focused ? Mathf.Min(unscaledDeltaTime, MaxDisplayStepSeconds) : 0f;
 
         /// <summary>
         /// 準備待ちを 1 フレーム進め、通算が 0.3 秒を超えていれば待ち表示を出す

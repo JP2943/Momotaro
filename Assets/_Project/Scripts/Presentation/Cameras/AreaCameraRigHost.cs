@@ -464,6 +464,15 @@ namespace Momotaro.Presentation.Cameras
             {
                 gameObject.AddComponent<Transition.AreaTransitionWaitNoticeHost>();
             }
+
+            // <b>前面かどうかの判定も常駐で持つ</b>（§7.1「非フォーカス中はスライドの
+            // 表示時間を進めず、復帰時に巨大 delta で飛ばさない」。工程 P55-10f）。
+            // Unity の <c>OnApplicationFocus</c> は MonoBehaviour にしか来ないので、
+            // Camera と同じ寿命・同じ唯一性で持つ。
+            if (GetComponent<Transition.AppFocusHost>() == null)
+            {
+                gameObject.AddComponent<Transition.AppFocusHost>();
+            }
         }
 
         private void OnDestroy()

@@ -2728,6 +2728,119 @@ namespace Momotaro.Tests.PlayMode
             }
         }
 
+        // ---------------------------------------------------------------- P19（工程 P55-10f）
+
+        /// <summary>
+        /// <b>P19</b>：非フォーカス中はスライドの表示時間を進めず、復帰時に巨大 delta で飛ばさない
+        /// （§7.1。§11 の P19。工程 P55-10f）。
+        ///
+        /// §7.1 は「0.45 秒は<b>演出時間</b>であり Scene ロード時間を含まない。
+        /// アプリ非フォーカス中はスライドの表示時間を進めず、復帰時に巨大 delta で飛ばさない。
+        /// ロード監視は別の unscaled／実時間で継続する」と定める。
+        ///
+        /// <b>見るのは 2 つで、どちらも外しやすい。</b>
+        /// <list type="number">
+        /// <item><description><b>止まること</b>——背面に回っているあいだ、カメラも代理も動かない。
+        /// 進めてしまうと、戻ってきたときには<b>もう着いている</b>（移動を一切見ていない）。</description></item>
+        /// <item><description><b>戻ったときに飛ばないこと</b>——非フォーカスから戻った 1 フレームの
+        /// <c>unscaledDeltaTime</c> は<b>止まっていた時間そのもの</b>になりうる。
+        /// そのまま渡すと、止めた意味が 1 フレームで消える。</description></item>
+        /// </list>
+        ///
+        /// <b>Editor では Engine の通知が使えない。</b> 無人の自動実行では Game View に
+        /// フォーカスが無いのが普通で（<c>PlayModeInputFocusFixture</c> が入力について同じ問題に
+        /// 対処している）、通知を聞くと PlayMode の全件が一斉に止まる。
+        /// だから常駐は Editor で通知を聞かず、ここは<b>窓口を明示的に切り替えて</b>見る——
+        /// ビルドでも同じ道（<c>AppFocusHost.Apply</c>）を通るので、検査だけの別経路にはならない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhileTheAppIsNotFocused_TheSlideDoesNotAdvanceAndDoesNotJumpBack()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+
+            AppFocusHost focus = AppFocusHost.Instance;
+            Assert.IsNotNull(focus, "前面判定の常駐が居る（常駐 Rig が足す）。");
+            Assert.IsTrue(AppFocusProvider.IsFocused, "前提：前面に居る。");
+
+            // ---- スライドが始まるまで歩く ----
+            AreaCameraRigHost rig = AreaCameraRigHost.Instance;
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (!rig.IsSliding && !transitions.HasTerminalFailure
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                yield return null;
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            Assert.IsTrue(rig.IsSliding, "前提：スライドが始まった。失敗=" + transitions.Slide.LastFailure);
+            Assert.Less(rig.SlideEased, 0.5f,
+                "前提：まだ序盤である（止めたあと 1 フレームで終わってしまう位置では見られない）。"
+                + " 進行度=" + rig.SlideEased);
+
+            // ---- 背面へ回す ----
+            focus.Apply(false);
+            Assert.IsFalse(AppFocusProvider.IsFocused, "前提：非フォーカスになった。");
+            Assert.AreEqual(1, focus.LostCount, "前面を失ったと数えている。");
+
+            float easedAtPause = rig.SlideEased;
+            Vector3 rigAtPause = RigPosition();
+            AreaTransitionDisplayProxy proxy = AreaTransitionDisplayHost.Instance.Set.Player;
+            Assert.IsNotNull(proxy, "前提：主人公の表示代理が立っている。");
+            int frameAtPause = proxy.FrameIndex;
+            Vector3 proxyAtPause = proxy.transform.position;
+
+            for (int i = 0; i < 30; i++)
+            {
+                yield return null;
+
+                Assert.AreEqual(easedAtPause, rig.SlideEased, 1e-6f,
+                    "非フォーカス中は進行度が動かない（" + i + " フレーム目）。");
+                Assert.AreEqual(rigAtPause, RigPosition(),
+                    "カメラも動かない（" + i + " フレーム目）。");
+                Assert.AreEqual(frameAtPause, proxy.FrameIndex,
+                    "代理のコマも進まない（表示時計そのものが止まっている。" + i + " フレーム目）。");
+                Assert.AreEqual(proxyAtPause, proxy.transform.position,
+                    "代理も動かない（" + i + " フレーム目）。");
+            }
+
+            Assert.IsTrue(rig.IsSliding, "スライドは終わっていない（止まっているだけ）。");
+            Assert.AreEqual(0, transitions.SlideCommittedCount, "着いてもいない。");
+
+            // ---- 前面へ戻す ----
+            //
+            // <b>ここでは巨大 delta を作れない。</b> 背面に回しても Unity はフレームを回し続けるので、
+            // 戻った 1 フレームの <c>unscaledDeltaTime</c> は普通のフレーム時間のままである
+            // （実機で起きる「止まっていた時間がそのまま届く」は再現できない）。
+            // 上限そのものは EditMode（<c>P55AppFocusTests.AHugeStep_IsCappedSoTheSlideCannotJump</c>）が
+            // 値を与えて見る。ここで見るのは<b>止めた続きから進むこと</b>である。
+            focus.Apply(true);
+            yield return null;
+
+            Assert.AreEqual(1, focus.RegainedCount, "前面へ戻ったと数えている。");
+            Assert.Greater(rig.SlideEased, easedAtPause, "戻ったので進み始めた。");
+            Assert.Less(rig.SlideEased, 1f,
+                "戻った 1 フレームで終端まで飛んでいない（進行度=" + rig.SlideEased + "）。");
+            Assert.IsTrue(rig.IsSliding, "まだスライド中である。");
+
+            // ---- そのまま着く ----
+            float finish = Time.realtimeSinceStartup + 25f;
+            while (transitions.SlideCommittedCount == 0 && !transitions.HasTerminalFailure
+                   && Time.realtimeSinceStartup < finish)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "止めて戻しても、そのまま着く。失敗=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+            Assert.IsFalse(rig.IsSliding, "演出は終わっている。");
+        }
+
         // ---------------------------------------------------------------- 補助
 
         private IEnumerator EnterArea(string scenePath)
@@ -2960,6 +3073,7 @@ namespace Momotaro.Tests.PlayMode
             CurrentAreaProvider.ClearForTests();
             AreaTransitionDisplayProvider.ClearForTests();
             AreaTransitionWaitNoticeProvider.ClearForTests();
+            AppFocusProvider.ClearForTests();
             PerceptionTargetRegistry.Clear();
             AreaInteractableRegistry.Clear();
             InvestigationPointRegistry.Clear();

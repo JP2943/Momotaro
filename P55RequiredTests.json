@@ -212,6 +212,11 @@
       "id": "P55-P18",
       "summary": "待機表示の通算（仕様書 §11 の P18。§5。工程 P55-10e。GPT 追加修正）。受理からスライド開始までの準備待ちを通算して判定する——旧 Area の撤去待ち・先読みの読込待ち・到着側の初期化待ちのどれでも表示する。ロード済みだが到着準備が遅れる場合も表示する。通算 0.3 秒未満では表示しない、段階が変わっても計測をリセットしない（待ちは遷移ごとに 1 本）、スライド開始・Rollback・終端失敗で消える、各段階のタイムアウト上限は表示用の通算とは別に維持する",
       "stage": "P55-10"
+    },
+    {
+      "id": "P55-P19",
+      "summary": "非フォーカス中の表示時計停止（仕様書 §11 の P19。§7.1。工程 P55-10f）。アプリが背面に回っているあいだはスライドの表示時間を進めない——カメラも表示代理も動かず、コマも進まず、遷移は終わらない。前面へ戻ったら止めた続きから進む。復帰時に巨大 delta で飛ばさない（表示に使う 1 フレームぶんの秒数に上限を置く）。窓口が差さっていなければ前面とみなす（配線していない構成でスライドが止まらない）。ロード監視は別の時計で継続する",
+      "stage": "P55-10"
     }
   ],
   "tests": [
@@ -876,6 +881,32 @@
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhileTheRetireIsStillRunning_TheWaitNoticeShows",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheNeighbourIsAlreadyStaged_TheWaitNoticeNeverShows"
+      ]
+    },
+    {
+      "requirementId": "P55-P19",
+      "stage": "P55-10",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhileTheAppIsNotFocused_TheSlideDoesNotAdvanceAndDoesNotJumpBack",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P55-P19",
+      "stage": "P55-10",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55AppFocusTests.AHugeStep_IsCappedSoTheSlideCannotJump",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55AppFocusTests.WhileNotFocused_TheDisplayStepIsZero",
+        "Momotaro.Tests.EditMode.P55AppFocusTests.AnOrdinaryStep_PassesThrough",
+        "Momotaro.Tests.EditMode.P55AppFocusTests.WithoutASource_TheAppCountsAsFocused",
+        "Momotaro.Tests.EditMode.P55AppFocusTests.TheSourceDecides",
+        "Momotaro.Tests.EditMode.P55AppFocusTests.AnotherOwner_CannotTakeOver",
+        "Momotaro.Tests.EditMode.P55AppFocusTests.ReleasingIsOwnerMatched_AndFallsBackToFocused",
+        "Momotaro.Tests.EditMode.P55AppFocusTests.NullsAreRefused"
       ]
     }
   ],
