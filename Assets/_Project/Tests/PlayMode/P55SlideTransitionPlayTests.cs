@@ -2841,6 +2841,282 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsFalse(rig.IsSliding, "演出は終わっている。");
         }
 
+        // ---------------------------------------------------------------- 保持が有効なままの解放失敗（工程 P55-11b）
+
+        /// <summary>
+        /// <b>保持した Area の解放が失敗しても、到着は取り消さない。再試行で片付く</b>
+        /// （§8 の 4 行目／§6.2 手順 11。工程 P55-11b。GPT 指示 2）。
+        ///
+        /// <b>保持を切った検査では、この経路を代替できない。</b> 撤去経路の受入 5 件は
+        /// <c>RetainDepartedArea = false</c> で見ているが、あれは<b>Commit 直後の撤去</b>が
+        /// 失敗する経路である。裁定 2 のあと既定で通るのは<b>こちら</b>——
+        /// 預けた先（先読み枠）の解放が失敗する経路で、抱える場所も再試行の入口も違う。
+        ///
+        /// <list type="number">
+        /// <item><description>保持が有効なまま A→B へ渡り、<b>A が預けられた</b>ことを見る。</description></item>
+        /// <item><description>預けた A の解放を失敗させ、<c>ReleaseFailed</c> と
+        /// <see cref="AreaSlideTransitionRunner.HasUnreleasedScene"/> を見る。</description></item>
+        /// <item><description>解放が失敗しても<b>到着済みの B も進行値も巻き戻らない</b>。</description></item>
+        /// <item><description><b>無操作では再試行を連発しない</b>——押すのはプレイヤー（§5 と同じ規律）。</description></item>
+        /// <item><description>明示的な再試行で解放が進み、抱え込みが解ける。</description></item>
+        /// </list>
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhenTheRetainedAreaCannotBeReleased_TheArrivalStaysAndRetryClearsIt()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            Assert.IsTrue(transitions.RetainDepartedArea, "前提：保持は既定で有効である。");
+
+            // 撤去だけを断る。読込は本物へ通すので、スライドそのものは成立する。
+            var host = new UnloadRefusingSceneHost();
+            transitions.SlideSceneHost = host;
+
+            GameSessionState session = GameSessionProvider.Current;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+
+            // ---- 1. A は預けられた ----
+            AreaPreloader preloader = transitions.Slide.Preloader;
+            Assert.AreEqual(1, transitions.Slide.RetainedCount,
+                "旧 A を預けた。断った理由=" + transitions.Slide.LastRetainDecline);
+            Assert.AreEqual(0, host.UnloadCount, "預けたので撤去は一度も頼んでいない。");
+            Assert.AreEqual(AreaPreloadPhase.Staged, preloader.Phase, "預かっている。");
+            Assert.AreEqual(AreaA.Value, preloader.StagedArea.AreaId.Value, "預かっているのは A。");
+
+            int virtueBefore = session.Progress.Virtue;
+            bool visitedBefore = session.HasVisited(AreaB);
+            int loadsBefore = preloader.LoadStartedCount;
+
+            // ---- 2. 解放を失敗させる ----
+            //
+            // <c>ClearRequest</c> はその場で <c>Poll</c> まで進むので、距離による先読みが
+            // 望みを立て直す前に解放が始まる。撤去を断る host なので、そのまま失敗する。
+            preloader.ClearRequest();
+
+            float deadline = Time.realtimeSinceStartup + 10f;
+            while (preloader.Phase != AreaPreloadPhase.ReleaseFailed
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(AreaPreloadPhase.ReleaseFailed, preloader.Phase,
+                "解放に失敗して抱えている。" + DumpWorld(transitions));
+            Assert.IsTrue(transitions.Slide.HasUnreleasedScene,
+                "「撤去し切れていない Scene がある」と言える（HasUnreleasedScene）。");
+            Assert.IsFalse(transitions.Slide.HasPendingRetire,
+                "抱えているのは<b>撤去経路ではない</b>（預けた先が抱えている）。");
+            Assert.IsNotEmpty(preloader.FailureReason, "理由が残っている。");
+            Assert.AreEqual(2, SceneManager.sceneCount, "A の実 Scene はまだ載っている。");
+            Assert.AreEqual(2, transitions.Slide.Residency.ResidentCount,
+                "在留枠も返さない（空きありと誤認して 3 枚目を読まない）。" + DumpResidency(transitions));
+
+            // ---- 3. 到着も進行値も巻き戻らない ----
+            Assert.AreEqual(1, transitions.SlideCommittedCount, "到着の成功は取り消さない（§8 の 4 行目）。");
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+            Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "B で遊べる。");
+            Assert.AreEqual(virtueBefore, session.Progress.Virtue, "徳は動かない。");
+            Assert.AreEqual(visitedBefore, session.HasVisited(AreaB), "訪問記録も動かない。");
+            Assert.IsTrue(TryFindBundle(AreaA, out AreaRuntimeBundle retained), "A の束はまだある。");
+            Assert.IsFalse(retained.ActivityGate.IsOpen, "抱えている A は非活動のまま。");
+            Assert.IsFalse(retained.Context.IsAreaReady, "A では遊べない。");
+
+            // ---- 4. 無操作では再試行を連発しない ----
+            int unloadsAfterFailure = host.UnloadCount;
+            Assert.AreEqual(1, unloadsAfterFailure, "解放を頼んだのは 1 回だけ。");
+            int suppressedBefore = preloader.SuppressedRetryCount;
+
+            for (int i = 0; i < 30; i++)
+            {
+                yield return null;
+                Assert.AreEqual(unloadsAfterFailure, host.UnloadCount,
+                    "誰も押していないのに解放を撃ち直さない（" + i + " フレーム目）。"
+                    + " 恒久的に失敗する Scene へ延々と操作を出さない（§5 と同じ規律）。");
+                Assert.AreEqual(loadsBefore, preloader.LoadStartedCount,
+                    "抱えている間は次の候補も読まない（" + i + " フレーム目）。");
+            }
+
+            Assert.Greater(preloader.SuppressedRetryCount, suppressedBefore,
+                "見送った回数を数えている（黙って止まっているのではない）。");
+
+            // ---- 5. 明示的な再試行で片付く ----
+            host.RefuseUnload = false;
+            Assert.IsTrue(transitions.Slide.TryRetryRetiringDeparture(),
+                "再試行を始められる（抱えているのが預けた先でも、押す場所は 1 つ）。");
+            Assert.AreEqual(1, transitions.Slide.RetryStartedCount, "再試行を数えている。");
+
+            float cleared = Time.realtimeSinceStartup + 15f;
+            while (transitions.Slide.HasUnreleasedScene && Time.realtimeSinceStartup < cleared)
+            {
+                yield return null;
+            }
+
+            Assert.IsFalse(transitions.Slide.HasUnreleasedScene, "抱え込みが解けた。");
+            Assert.AreEqual(2, host.UnloadCount, "解放を頼んだのは失敗した 1 回と再試行の 1 回だけ。");
+            Assert.AreEqual(1, transitions.SlideCommittedCount, "到着の成功は増減しない。");
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居たまま。");
+            Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "B で遊べたまま。");
+        }
+
+        /// <summary>
+        /// <b>解放の操作が走っているあいだは、Single 読込を発行しない</b>
+        /// （§6.2 手順 11 の契約表「Single 遷移」。工程 P55-11b。GPT 指示 2 の 5）。
+        ///
+        /// <b>止めるのは「終端していない操作」だけである</b>（付録 C.20 の表）。
+        /// 最初この検査を「<c>ReleaseFailed</c> を抱えている間は発行しない」と書いて落ちた——
+        /// <c>ReleaseFailed</c> は<b>操作が終端したあとの状態</b>で、実 Scene が残っているだけである。
+        /// Single 読込は載っている Scene を<b>全部置き換える</b>ので、残っている Scene は
+        /// 発行を止める理由にならない（止めると、一度解放に失敗しただけで
+        /// 死亡再開も扉移動も通らなくなる）。
+        ///
+        /// 止めるべきなのは<b>解放の Unload が走っている最中</b>——そこへ Single を重ねると、
+        /// 終端していない操作の上に新しい操作が乗る。ここではその窓を作って見る。
+        ///
+        /// <b>発行そのものを数える</b>（工程 P55-07c と同じ理由）。「着いていない」では
+        /// 「まだ終わっていない」としか言えない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhileTheRetainedReleaseIsRunning_NoSingleLoadIsIssued()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new UnloadRefusingSceneHost { RefuseUnload = false };
+            transitions.SlideSceneHost = host;
+
+            var loader = new CountingSceneLoader(transitions.Loader);
+            transitions.Loader = loader;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+
+            AreaPreloader preloader = transitions.Slide.Preloader;
+            Assert.AreEqual(1, transitions.Slide.RetainedCount, "前提：A を預けている。");
+            Assert.AreEqual(0, host.UnloadCount, "前提：撤去はまだ一度も頼んでいない。");
+            Assert.AreEqual(0, loader.LoadCount, "前提：Single 読込も発行されていない。");
+
+            // ---- 解放を始めさせ、終端させない ----
+            host.HoldUnload = true;
+            preloader.ClearRequest();
+            yield return null;
+
+            Assert.AreEqual(AreaPreloadPhase.Releasing, preloader.Phase,
+                "前提：解放が走っている。" + DumpWorld(transitions));
+            Assert.IsTrue(transitions.Slide.HasLiveSceneOperation,
+                "終端していない Scene 操作として数えている。");
+            Assert.AreEqual(1, host.UnloadCount, "解放は 1 回だけ頼まれている。");
+
+            // ---- その最中に Fade を頼む ----
+            Assert.IsTrue(transitions.TryTravel(AreaA, AreaAFromBEntry).Accepted,
+                "Fade の要求は受理される（受理そのものは止めない）。");
+
+            for (int i = 0; i < 30; i++)
+            {
+                yield return null;
+                Assert.AreEqual(0, loader.LoadCount,
+                    "解放が終端するまで Single 読込を<b>発行</b>しない（" + i + " フレーム目・先読み="
+                    + preloader.Phase + "）。");
+            }
+
+            Assert.AreEqual(AreaPreloadPhase.Releasing, preloader.Phase,
+                "まだ解放中のまま（前提が崩れていない）。");
+            Assert.AreEqual(1, host.UnloadCount, "解放を撃ち直してもいない。");
+
+            // ---- 終端すれば、一度だけ発行される ----
+            host.ReleaseUnload();
+
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.CompletedCount == 0 && !transitions.HasTerminalFailure
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.IsFalse(transitions.HasTerminalFailure,
+                "終端失敗にならない。理由=" + transitions.TerminalFailureReason);
+            Assert.AreEqual(1, loader.LoadCount, "解放の終端後に一度だけ発行される。");
+            Assert.AreEqual(1, transitions.CompletedCount, "その発行が着いた。");
+            Assert.IsFalse(transitions.Slide.HasUnreleasedScene, "抱え込みも残っていない。");
+        }
+
+        /// <summary>
+        /// <b>解放に失敗して抱えたままでも、Single 読込は止めない</b>
+        /// （付録 C.20 の「『失敗した』と『まだ掴んでいる』は別」。工程 P55-11b）。
+        ///
+        /// <c>ReleaseFailed</c> は<b>操作が終端したあとの履歴</b>で、実 Scene が残っているだけである。
+        /// Single は載っている Scene を全部置き換えるので、ここで止めると
+        /// <b>一度解放に失敗しただけで死亡再開も扉移動も通らなくなる</b>。
+        ///
+        /// <b>置き換えたあとに抱え込みが解ける</b>ことまで見る——解けなければ、
+        /// 在留枠を食ったまま次のスライドが上限で断られる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator EvenWhileHoldingAFailedRelease_TheSingleLoadStillGoesThrough()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new UnloadRefusingSceneHost();
+            transitions.SlideSceneHost = host;
+
+            var loader = new CountingSceneLoader(transitions.Loader);
+            transitions.Loader = loader;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+
+            AreaPreloader preloader = transitions.Slide.Preloader;
+            Assert.AreEqual(1, transitions.Slide.RetainedCount, "前提：A を預けている。");
+
+            preloader.ClearRequest();
+
+            float failed = Time.realtimeSinceStartup + 10f;
+            while (preloader.Phase != AreaPreloadPhase.ReleaseFailed
+                   && Time.realtimeSinceStartup < failed)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(AreaPreloadPhase.ReleaseFailed, preloader.Phase,
+                "前提：解放に失敗して抱えている。");
+            Assert.IsTrue(transitions.Slide.HasUnreleasedScene, "前提：抱え込みがある。");
+            Assert.AreEqual(0, loader.LoadCount, "前提：Single 読込はまだ発行されていない。");
+
+            // 解放できるようになれば、<c>DiscardStagedForSingleLoad</c> の再試行が片付ける。
+            host.RefuseUnload = false;
+
+            Assert.IsTrue(transitions.TryTravel(AreaA, AreaAFromBEntry).Accepted,
+                "Fade の要求は受理される。");
+
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.CompletedCount == 0 && !transitions.HasTerminalFailure
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.IsFalse(transitions.HasTerminalFailure,
+                "抱えていたからといって終端失敗にしない。理由=" + transitions.TerminalFailureReason);
+            Assert.AreEqual(1, loader.LoadCount, "Single は一度だけ発行された。");
+            Assert.AreEqual(1, transitions.CompletedCount, "その発行が着いた。");
+
+            yield return null;
+
+            Assert.IsFalse(transitions.Slide.HasUnreleasedScene,
+                "置き換えたので抱え込みが解けた（在留枠を食ったまま残さない）。");
+            Assert.LessOrEqual(transitions.Slide.Residency.ResidentCount, 2,
+                "台帳も上限の中。" + DumpResidency(transitions));
+        }
+
         // ---------------------------------------------------------------- 補助
 
         private IEnumerator EnterArea(string scenePath)

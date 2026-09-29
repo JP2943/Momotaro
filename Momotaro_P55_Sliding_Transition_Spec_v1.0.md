@@ -334,7 +334,7 @@ NavMeshの到達性・Collider実接触・最終描画はPlayModeと録画で補
 | P07 | 先読み未完で要求。Aを表示した待機→準備後スライド。重複ロードなし |
 | P08 | 実サービスへロード開始失敗・初期化失敗・スライド途中失敗を注入。旧Areaで再操作でき、要求ID／値を保つ |
 | P09 | 遅延ロード・タイムアウト・古いScene到着。活動・訪問・成功通知なし、終端後だけunload／次ロード |
-| P10 | Commit後unload失敗。Bは維持、旧登録・物理は無効、追加ロードの上限を守り撤去再試行可能 |
+| P10 | Commit後unload失敗。Bは維持、旧登録・物理は無効、追加ロードの上限を守り撤去再試行可能。**保持が有効なとき**（既定）は先読み枠側の解放失敗として現れる——到着済みのBと進行値が巻き戻らず、明示的な再試行だけで進み無操作では連発しない。解放の操作が終端するまで次候補ロードを重ねない |
 | P11 | 先読み中の死亡→暗転再開、およびInteract扉のFade。先読みを安全に破棄、Submitの到着Interact化なし |
 | P12 | Camera／AudioListener／入力／HUDの唯一性。移動中と翌フレームのCamera飛び・通常Followとの二重書込なし |
 | P13 | 同じ実プレイ導線でA↔Bを5往復→遭遇戦→死亡再開。進行保持、初回徳22、不要な再出現なし |
@@ -2479,3 +2479,63 @@ EditMode で決定的に見る——5 秒が届いても `MaxDisplayStepSeconds`
 背景面の Renderer を切ると、両配置・両区間の 4 件が落ちる——
 **東西 295025／南北 61650 画素**（921600 中）。
 付録 C.17.4 が記録した「遷移前の虚空」とほぼ同じ数で、覆っていたものがこれだと分かる。
+
+
+## 付録 C.34 保持有効時の解放失敗・再試行（工程 P55-11b。§6.2 手順 11。§11 の P10）
+
+### C.34.1 失敗の出口が移った
+
+旧 Area の引き継ぎ（付録 C.29）を入れるまで、Commit 後の撤去は
+`AreaSlideTransitionRunner` 自身の `UnloadDeparture` が持っていた。
+失敗すれば `HasPendingRetire` が立ち、`TryRetryRetiringDeparture()` が撃ち直す。
+
+保持を入れたあと、**既定の経路ではそこを通らない**。
+旧 Area は `AreaPreloader.TryAdoptRetained` で先読み枠へ移り、
+撤去は後で**先読み枠の解放**として起きる。だから失敗も
+`AreaPreloadPhase.ReleaseFailed` として現れ、`HasPendingRetire` は **false** のままである。
+
+| 保持 | 撤去の担い手 | 失敗の現れ方 | 再試行の入口 |
+|---|---|---|---|
+| 無効（`RetainDepartedArea = false`） | Runner の `UnloadDeparture` | `HasPendingRetire == true` | `TryRetryRetiringDeparture()` の前半 |
+| **有効（既定）** | **先読み枠の解放** | **`Preloader.Phase == ReleaseFailed`** | **同メソッドの後半（`ArmRetry()`）** |
+
+`HasUnreleasedScene` が両方を見ているのはこのためである。
+**抱え込みの有無は、どちらの経路で失敗したかに依らず一つの問いである。**
+
+### C.34.2 「失敗した」と「まだ掴んでいる」は別（付録 C.20 の再確認）
+
+この工程で最初に書いた検査は落ちた——
+「`ReleaseFailed` を抱えている間は Single 読込を発行しない」と書いたが、実際は発行される。
+
+`ReleaseFailed` は**操作が終端したあとの履歴**で、実 Scene が残っているだけである。
+Single 読込は載っている Scene を**全部置き換える**ので、残っている Scene は発行を止める理由にならない。
+**止めれば、一度解放に失敗しただけで死亡再開も扉移動も通らなくなる。**
+
+止めるべきなのは**解放の Unload が走っている最中**（`HasLiveSceneOperation`）だけである。
+`DiscardStagedForSingleLoad` が見ているのもそこである。
+
+**落ちたのは実装ではなく、こちらの期待だった。** 付録 C.20 の表がすでにそう書いていた。
+
+### C.34.3 受入（PlayMode 3 件）
+
+| 検査 | 見るもの |
+|---|---|
+| `WhenTheRetainedAreaCannotBeReleased_TheArrivalStaysAndRetryClearsIt` | 保持の成立 → `ReleaseFailed` かつ `HasUnreleasedScene` → 到着済み B と進行値が巻き戻らない → **30 フレーム無操作で撃ち直さない** → 明示的再試行で片付く |
+| `WhileTheRetainedReleaseIsRunning_NoSingleLoadIsIssued` | 解放を**終端させない**窓を作り、その間 Single の**発行数が 0**。終端後にちょうど 1 回 |
+| `EvenWhileHoldingAFailedRelease_TheSingleLoadStillGoesThrough` | `ReleaseFailed` を抱えていても Single は通る。置き換えたあと抱え込みが解け、台帳も上限の中 |
+
+**発行そのものを数える**（`CountingSceneLoader`）。「着いていない」では「まだ終わっていない」としか言えない。
+
+### C.34.4 切替（`RetainDepartedArea`）の扱い
+
+既定 **true**。**false にするのは撤去経路そのものの受入のときだけ**である。
+通常の Scene 設定にも、プレイヤー向けの設定にも出さない——
+**出口が二つある状態を製品に持ち込まない**ため。
+
+### C.34.5 無効化すると落ちる
+
+| # | 注入 | 結果 |
+|---|---|---|
+| 101 | `TryRetryRetiringDeparture()` の `ReleaseFailed` 経路を常に false にする | **1 件失敗**（明示的再試行が効かない） |
+| 102 | `AreaPreloader.Poll` の `ReleaseFailed` 経路が `HasRetryPermission()` を見ない | **1 件失敗**（無操作で撃ち直す。`Expected: 1 But was: 2`） |
+| 103 | `HasUnreleasedScene` を `HasPendingRetire` だけにする | **2 件失敗**（保持経路の抱え込みが見えなくなる） |

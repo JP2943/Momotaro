@@ -135,7 +135,7 @@
     },
     {
       "id": "P55-P10",
-      "summary": "Commit 後の unload 失敗（§11 の P10／§8 の 4 行目）。到着の成功を取り消さず、旧 Area は非活動・非物理で隔離し、在留枠を返さない。新しいスライドを受け付けず、撤去を再試行できる",
+      "summary": "Commit 後の unload 失敗（§11 の P10／§8 の 4 行目）。到着の成功を取り消さず、旧 Area は非活動・非物理で隔離し、在留枠を返さない。新しいスライドを受け付けず、撤去を再試行できる。**保持が有効なまま**の解放失敗も同じ要求に含める（工程 P55-11b）——裁定 2 のあと既定で通るのは<b>預けた先（先読み枠）の解放が失敗する経路</b>で、抱える場所（`ReleaseFailed`）も再試行の入口も Commit 直後の撤去とは違う。到着済みの Area と進行値が巻き戻らないこと、無操作では再試行を連発しないこと、明示的な再試行で片付くこと、解放の操作が走っているあいだは Single 読込を発行しないこと、解放に失敗して抱えたままでも Single 読込は止めない（Single は載っている Scene を全部置き換えるため。付録 C.20）ことを見る。撤去経路そのもの（`RetainDepartedArea = false`）の検査は、この経路を代替しないので両方を持つ",
       "stage": "P55-04"
     },
     {
@@ -651,7 +651,11 @@
       "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheDepartureCannotBeUnloaded_TheArrivalStaysAndRetireCanBeRetried",
       "requirementIds": [],
       "implemented": true,
-      "supportingTests": []
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheRetainedAreaCannotBeReleased_TheArrivalStaysAndRetryClearsIt",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhileTheRetainedReleaseIsRunning_NoSingleLoadIsIssued",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.EvenWhileHoldingAFailedRelease_TheSingleLoadStillGoesThrough"
+      ]
     },
     {
       "requirementId": "P55-SEC8-2",
