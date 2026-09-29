@@ -202,6 +202,11 @@
       "id": "P55-P17",
       "summary": "再入場準備の分離と旧 Area の引き継ぎ（仕様書 §11 の P17。§6.2 手順 5／11）。往復でのロード回数と Scene handle の再利用、B 側で HP を変えてから A へ戻っても初回入場の値へ戻らないこと、保持した Area では何も進まないこと、Single 読込の前に保持した Area も片付くこと。入場ごとの準備（入口配置・跳ね返り止め・準備完了の報告・途中動作の破棄）と、一度だけの構築（注入・カタログ・配線）を分けていること",
       "stage": "P55-10"
+    },
+    {
+      "id": "P55-P16",
+      "summary": "到着直後も穴 0（仕様書 §11 の P16。§7.3。裁定 1。工程 P55-10d）。試遊基準の 16:9 で、スライド中から Commit 直後への連続した描画・到着位置で立ち止まっている間・到着後に境界から離れる際の保持／解放の切替・即座に逆方向へ戻る場合の 4 場面を<b>連続フレーム</b>で見て、描画すべき地形・背景が欠けて未描画の領域が露出しないこと。安定後の 1 枚では合格にしない。暗転や黒い帯で覆って合格にすることも認めないので、同じフレームで遷移前との明るさの比も見る",
+      "stage": "P55-10"
     }
   ],
   "tests": [
@@ -843,6 +848,17 @@
         "Momotaro.Tests.EditMode.P55PreloadTests.RequestingADifferentArea_ReleasesTheAdoptedOneFirst",
         "Momotaro.Tests.EditMode.P55PreloadTests.AdoptingWhileAlreadyHoldingSomething_IsRefused",
         "Momotaro.Tests.EditMode.P55PreloadTests.AdoptingWithoutAScenePath_IsRefused"
+      ]
+    },
+    {
+      "requirementId": "P55-P16",
+      "stage": "P55-10",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheArrival_ShowsNoVoidAcrossTheWholeRoundTrip(\"EastWest\")",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheArrival_ShowsNoVoidAcrossTheWholeRoundTrip(\"NorthSouth\")"
       ]
     }
   ],

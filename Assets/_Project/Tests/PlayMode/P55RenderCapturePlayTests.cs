@@ -77,10 +77,11 @@ namespace Momotaro.Tests.PlayMode
             internal string TrialScene;
             internal StableId ExitFromA;
             internal Key Forward;
-            internal Vector3 BackStep;
 
-            /// <summary>来た方向が画面のどちら側か（東へ進むなら左、北へ進むなら下）。</summary>
-            internal bool DepartureIsLeft;
+            /// <summary>来た方へ戻る向き（即座の逆移動を作るのに要る）。</summary>
+            internal Key Backward;
+
+            internal Vector3 BackStep;
         }
 
         private static Route RouteOf(string key) => key == "NorthSouth"
@@ -92,8 +93,8 @@ namespace Momotaro.Tests.PlayMode
                 TrialScene = "Assets/_Project/Scenes/Tests/Phase55NS/SCN_Phase55NS_ConnectionTrial.unity",
                 ExitFromA = new StableId("exit_p55_s_north"),
                 Forward = Key.W,
+                Backward = Key.S,
                 BackStep = Vector3.back,
-                DepartureIsLeft = false,
             }
             : new Route
             {
@@ -103,8 +104,8 @@ namespace Momotaro.Tests.PlayMode
                 TrialScene = "Assets/_Project/Scenes/Tests/Phase55/SCN_Phase55_ConnectionTrial.unity",
                 ExitFromA = new StableId("exit_p55_a_east"),
                 Forward = Key.D,
+                Backward = Key.A,
                 BackStep = Vector3.left,
-                DepartureIsLeft = true,
             };
 
         private GameObject _bootstrap;
@@ -181,12 +182,12 @@ namespace Momotaro.Tests.PlayMode
 
             // 遷移前の 1 枚。<b>暗転の物差しはここで採る</b>（絶対値ではなく比で見る）。
             //
-            // <b>この 1 枚には穴がある。</b> 出入口の手前でカメラは境界へ寄っていて、
-            // 隣の Area はまだ<b>読み込まれていない</b>ので、境界の向こうは虚空である。
-            // 実測で東西 295030／南北 48449 画素（921600 中）だった。
-            // これはスライドの欠陥ではなく、<b>距離による先読みが未実装</b>だから
-            // （§5。先読みが効けば境界へ近づく前に隣が載る）。
-            // ここでは穴を判定せず、明るさの物差しとしてだけ使う。
+            // <b>この 1 枚では穴を判定しない。</b> 出入口の手前でカメラは境界へ寄っているので、
+            // 隣の Area が<b>まだ読み終わっていなければ</b>境界の向こうは虚空になる
+            // （距離による先読みが入る前は東西 295030／南北 48449 画素だった。付録 C.17.4）。
+            // §5 の先読みが効けば近づく前に載るが、<b>初回のロード待ちは残る</b>——
+            // そこは §7.3 が「背景の補完も設ける」と言っている区間で、裁定 1 の 4 場面には入らない。
+            // ここでは明るさの物差しとしてだけ使う。
             Frame before = Capture(camera, folder, "00_before");
             Assert.Greater(before.MeanLuminance, 0.01f,
                 "前提：遷移前の画面が真っ暗ではない（平均輝度 " + before.MeanLuminance + "）。");
@@ -234,9 +235,12 @@ namespace Momotaro.Tests.PlayMode
             Assert.GreaterOrEqual(frames.Count, 3,
                 "出発・中間・終端の 3 枚以上を撮れている（実際=" + frames.Count + "）。");
 
-            // ---- 到着後：撤去まで終わってから 1 枚 ----
+            // ---- 到着後：Scene 操作が終端してから 1 枚 ----
+            //
+            // <b>「Scene が 1 枚に戻る」はもう落ち着いた状態ではない</b>（工程 P55-10c）。
+            // 旧 Area は撤去せず非活動のまま預かるので、落ち着いた先は 2 枚である。
             float tail = Time.realtimeSinceStartup + 20f;
-            while (SceneManager.sceneCount > 1 && Time.realtimeSinceStartup < tail)
+            while (transitions.Slide.HasLiveSceneOperation && Time.realtimeSinceStartup < tail)
             {
                 yield return null;
             }
@@ -244,9 +248,13 @@ namespace Momotaro.Tests.PlayMode
             yield return SettleCamera();
             Renderer arrivedHero = AssertExactlyOneHero(camera, sliding: false, label: "到着後");
             Frame arrived = Capture(camera, folder, "04_arrived", arrivedHero);
-            AssertNotBlacked(arrived, before, "到着後");
+            // <b>到着後も穴 0 を求める</b>（裁定 1。工程 P55-10d）。
+            // 以前はここで「虚空は主人公より手前側にしかない」までしか見ていなかった——
+            // 旧 Area を撤去していたので、来た側に帯が出るのが当たり前だったからである
+            // （付録 C.17.4）。引き継ぎ（§6.2 手順 11）が入って、帯そのものが出なくなった。
+            // 連続フレームの最悪は P16（<c>TheArrival_ShowsNoVoidAcrossTheWholeRoundTrip</c>）が見る。
+            AssertDrawing(arrived, before, "到着後");
             AssertHeroIsActuallyDrawn(arrived, "到着後");
-            AssertVoidStaysBehind(camera, arrived, _route.DepartureIsLeft, "到着後");
 
             Assert.AreEqual(0, AreaTransitionDisplayHost.Instance.ProxyCount,
                 "到着後に表示代理は畳まれている（§7.2）。");
@@ -268,6 +276,240 @@ namespace Momotaro.Tests.PlayMode
 
             Debug.Log("P15 録画: " + folder + "（" + (frames.Count + 2) + " 枚・"
                 + CaptureWidth + "x" + CaptureHeight + "）最小明るさ比=" + worstBrightness);
+        }
+
+        // ---------------------------------------------------------------- P16（工程 P55-10d）
+
+        /// <summary>
+        /// <b>P16</b>：到着直後も<b>穴 0</b>（§7.3。裁定 1。工程 P55-10d）。
+        ///
+        /// <b>P15 との違いは「いつ見るか」である。</b> P15 は出発・中間・到着の<b>代表的な数枚</b>を
+        /// 撮って録画に残す検査で、到着後の 1 枚は「落ち着いてから」撮っていた。
+        /// 裁定 1 は<b>安定後の 1 枚では合格にしない</b>と定める——帯は Commit の前後に出るので、
+        /// <b>連続フレームの最悪</b>を見る必要がある。
+        ///
+        /// 見る場面は 4 つ（§7.3）。
+        /// <list type="number">
+        /// <item><description>スライド中から Commit 直後への<b>連続した</b>描画。</description></item>
+        /// <item><description>到着位置で立ち止まっている間。</description></item>
+        /// <item><description>到着後、境界から離れる際の保持・解放の切替。</description></item>
+        /// <item><description>即座に逆方向へ戻る場合。</description></item>
+        /// </list>
+        ///
+        /// <b>穴＝描画すべき地形・背景が欠けて未描画の領域が露出すること。</b>
+        /// 意図した背景装飾による補完は認める（描かれてはいるので、穴の色にならない）。
+        /// <b>暗転や黒い帯で覆って合格にすることは認めない</b>ので、同じフレームで明るさの比も見る。
+        ///
+        /// <b>録画は残さない。</b> 数百フレームを撮るので PNG は書かない——
+        /// 人が見るための録画は P15 が残す。ここは数だけを見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheArrival_ShowsNoVoidAcrossTheWholeRoundTrip(
+            [Values("EastWest", "NorthSouth")] string arrangement)
+        {
+            _route = RouteOf(arrangement);
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            yield return PlaceBeforeExit(_route.ExitFromA, _route.BackStep);
+            yield return SettleCamera();
+
+            Camera camera = ResidentCamera();
+            using (var watch = new HoleWatch(camera))
+            {
+                // 暗転の物差し。<b>絶対値では言えない</b>（照明を変えれば動く）。
+                float reference = watch.ObserveLuminance();
+                Assert.Greater(reference, 0.01f,
+                    "前提：遷移前の画面が真っ暗ではない（平均輝度 " + reference + "）。");
+
+                // ---- 1. スライド中 → Commit 直後（連続） ----
+                float deadline = Time.realtimeSinceStartup + 25f;
+                while (transitions.SlideCommittedCount == 0 && Time.realtimeSinceStartup < deadline)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(_route.Forward));
+                    yield return null;
+
+                    AreaCameraRigHost host = AreaCameraRigHost.Instance;
+                    if (host != null && host.IsSliding)
+                    {
+                        watch.Observe("スライド中", reference);
+                    }
+                }
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                Assert.AreEqual(1, transitions.SlideCommittedCount,
+                    "前提：スライドで渡れている（失敗=" + transitions.Slide.LastFailure + "）。");
+                Assert.Greater(watch.Observations, 3, "スライド中を複数フレーム見ている。");
+
+                // <b>ここが裁定 1 の本題。</b> 以前はこの区間で旧 Area を撤去していたので、
+                // 撤去した側に虚空の帯が出ていた（付録 C.17.4。東西 190555／南北 56320 画素）。
+                for (int i = 0; i < 20; i++)
+                {
+                    yield return null;
+                    watch.Observe("Commit 直後", reference);
+                }
+
+                // ---- 2. 到着位置で立ち止まっている間 ----
+                yield return SettleCamera();
+                for (int i = 0; i < 20; i++)
+                {
+                    yield return null;
+                    watch.Observe("到着位置で停止中", reference);
+                }
+
+                // ---- 3. 境界から離れる（保持・解放の切替）----
+                //
+                // §5 は「一度読み始めた先は、同じ Area で活動している間は境界から離れても保持する」と
+                // 定める。離れても来た方が載ったままであることを、<b>絵で</b>確かめる。
+                for (int i = 0; i < 60; i++)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(_route.Forward));
+                    yield return null;
+                    watch.Observe("境界から離れる", reference);
+                }
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                yield return null;
+
+                // ---- 4. 即座に逆方向へ戻る ----
+                float back = Time.realtimeSinceStartup + 30f;
+                while (transitions.SlideCommittedCount < 2 && Time.realtimeSinceStartup < back)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(_route.Backward));
+                    yield return null;
+                    watch.Observe("逆方向へ戻る", reference);
+                }
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                Assert.AreEqual(2, transitions.SlideCommittedCount,
+                    "前提：逆方向へも渡れている（失敗=" + transitions.Slide.LastFailure + "）。");
+
+                for (int i = 0; i < 20; i++)
+                {
+                    yield return null;
+                    watch.Observe("戻った直後", reference);
+                }
+
+                // ---- 判定 ----
+                Assert.AreEqual(0, watch.WorstHolePixels,
+                    "どのフレームにも穴が無い（最悪 " + watch.WorstHolePixels + " 画素／"
+                    + (CaptureWidth * CaptureHeight) + " 中・場面「" + watch.WorstHoleLabel
+                    + "」・画面 x " + watch.WorstHoleFrame.HoleMinX + "〜" + watch.WorstHoleFrame.HoleMaxX
+                    + " y " + watch.WorstHoleFrame.HoleMinY + "〜" + watch.WorstHoleFrame.HoleMaxY
+                    + "）。見たフレーム数=" + watch.Observations + "（§7.3。裁定 1）。");
+
+                Assert.Greater(watch.WorstLuminanceRatio, 0.5f,
+                    "どのフレームも遷移前より暗転していない（最小の明るさ比 "
+                    + watch.WorstLuminanceRatio + "・場面「" + watch.WorstLuminanceLabel
+                    + "」）。<b>黒く覆って穴を消す</b>のは認めない（§7.3）。");
+
+                Debug.Log("P16 " + _route.Label + "：" + watch.Observations
+                    + " フレームを見て穴 0・最小明るさ比 " + watch.WorstLuminanceRatio);
+            }
+        }
+
+        /// <summary>
+        /// 連続フレームの穴と明るさを見る道具（工程 P55-10d）。
+        ///
+        /// <b>録画用の <see cref="Capture"/> とは別にする。</b> あちらは 1 枚ごとに PNG を書き、
+        /// 描画も 3 回（出荷時・判定用・主人公抜き）行う。数百フレームを見るここでは重すぎる。
+        /// 使い回す RenderTexture を 1 つ持ち、<b>穴の数え方は同じ助けを通す</b>——
+        /// 穴の定義が 2 か所に散ると、片方だけが直る。
+        /// </summary>
+        private sealed class HoleWatch : System.IDisposable
+        {
+            private readonly Camera _camera;
+            private readonly RenderTexture _rt;
+            private readonly Texture2D _buffer;
+
+            internal HoleWatch(Camera camera)
+            {
+                _camera = camera;
+                _rt = new RenderTexture(CaptureWidth, CaptureHeight, 24, RenderTextureFormat.ARGB32);
+                _buffer = new Texture2D(CaptureWidth, CaptureHeight, TextureFormat.RGBA32, false);
+            }
+
+            /// <summary>見たフレーム数。</summary>
+            internal int Observations { get; private set; }
+
+            /// <summary>いちばん穴の大きかったフレームの画素数。</summary>
+            internal int WorstHolePixels { get; private set; }
+
+            /// <summary>そのフレームの場面名。</summary>
+            internal string WorstHoleLabel { get; private set; } = string.Empty;
+
+            /// <summary>そのフレームの中身（穴の位置を言うため）。</summary>
+            internal Frame WorstHoleFrame { get; private set; }
+
+            /// <summary>いちばん暗かったフレームの明るさ比。</summary>
+            internal float WorstLuminanceRatio { get; private set; } = float.MaxValue;
+
+            /// <summary>そのフレームの場面名。</summary>
+            internal string WorstLuminanceLabel { get; private set; } = string.Empty;
+
+            /// <summary>いまの画面の平均輝度（出荷時の設定で 1 枚描く）。</summary>
+            internal float ObserveLuminance() => MeanLuminance(Shoot(hole: false));
+
+            /// <summary>このフレームの穴と明るさを見る。</summary>
+            internal void Observe(string label, float referenceLuminance)
+            {
+                Observations++;
+
+                Frame frame = MeasureHoles(label, Shoot(hole: true), 0f);
+                if (frame.HolePixels > WorstHolePixels)
+                {
+                    WorstHolePixels = frame.HolePixels;
+                    WorstHoleLabel = label;
+                    WorstHoleFrame = frame;
+                }
+
+                float ratio = MeanLuminance(Shoot(hole: false)) / referenceLuminance;
+                if (ratio < WorstLuminanceRatio)
+                {
+                    WorstLuminanceRatio = ratio;
+                    WorstLuminanceLabel = label;
+                }
+            }
+
+            /// <summary>1 枚描いて読み取る。<paramref name="hole"/> なら背景を世界に無い色にする。</summary>
+            private Texture2D Shoot(bool hole)
+            {
+                CameraClearFlags flags = _camera.clearFlags;
+                Color background = _camera.backgroundColor;
+                RenderTexture previous = _camera.targetTexture;
+                RenderTexture active = RenderTexture.active;
+
+                try
+                {
+                    _camera.targetTexture = _rt;
+                    if (hole)
+                    {
+                        _camera.clearFlags = CameraClearFlags.SolidColor;
+                        _camera.backgroundColor = HoleColor;
+                    }
+
+                    _camera.Render();
+                    RenderTexture.active = _rt;
+                    _buffer.ReadPixels(new Rect(0, 0, CaptureWidth, CaptureHeight), 0, 0);
+                    _buffer.Apply();
+                }
+                finally
+                {
+                    _camera.clearFlags = flags;
+                    _camera.backgroundColor = background;
+                    _camera.targetTexture = previous;
+                    RenderTexture.active = active;
+                }
+
+                return _buffer;
+            }
+
+            public void Dispose()
+            {
+                _rt.Release();
+                Object.DestroyImmediate(_rt);
+                Object.DestroyImmediate(_buffer);
+            }
         }
 
         // ---------------------------------------------------------------- 撮る
@@ -561,41 +803,6 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsTrue(OnScreen(camera, player.transform.position),
                 label + "：主人公が画面の中に居る（位置=" + player.transform.position + "）。");
             return realRenderer;
-        }
-
-        /// <summary>
-        /// 到着直後の虚空が<b>来た方向にしか無い</b>こと。
-        ///
-        /// <b>ここは 0 にできない。</b> Commit のあと出発側の Area は撤去される（§6.2 手順 11／
-        /// §1.2 の在留上限）ので、到着位置が境界寄せ領域の中にある間は、
-        /// 来た方向に虚空の帯が残る。0 を求めると「撤去しない」という別の欠陥を招く。
-        ///
-        /// 受け入れられないのは<b>進む先</b>に虚空があることで、そちらは地形が続いていなければ
-        /// おかしい。だから「穴は主人公より手前側にしか無い」を見る。
-        ///
-        /// 帯そのものを消したいなら、距離による先読み（§5。未実装）か
-        /// 撤去の遅延で、境界を離れるまで隣を載せておく必要がある——設計の判断なのでここでは決めない。
-        /// </summary>
-        private static void AssertVoidStaysBehind(
-            Camera camera, Frame frame, bool departureIsLeft, string label)
-        {
-            if (frame.HolePixels == 0)
-            {
-                return;
-            }
-
-            var player = Object.FindFirstObjectByType<PlayerRoot>();
-            Assert.IsNotNull(player, label + "：主人公が居る。");
-            Vector3 v = camera.WorldToViewportPoint(player.transform.position);
-
-            float ahead = departureIsLeft ? frame.HoleMaxX : frame.HoleMaxY;
-            float here = departureIsLeft ? v.x : v.y;
-            string axis = departureIsLeft ? "画面 x" : "画面 y";
-
-            Assert.Less(ahead, here,
-                label + "：進む先に虚空がある（穴の先端 " + axis + "=" + ahead
-                + " 主人公 " + axis + "=" + here + " 穴 " + frame.HolePixels
-                + " 画素）。来た方向の帯だけが許される（§7.3）。");
         }
 
         private static bool OnScreen(Camera camera, Vector3 worldPosition)
