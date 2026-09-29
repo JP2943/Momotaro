@@ -457,6 +457,13 @@ namespace Momotaro.Presentation.Cameras
             {
                 gameObject.AddComponent<Transition.AreaTransitionDisplayHost>();
             }
+
+            // <b>待ち表示も常駐で持つ</b>（§5「0.3 秒以上待つ場合だけ控えめな『読み込み中』」。
+            // 工程 P55-09a）。待ちは出発 Scene の撤去をまたぐことがあるので Area Scene には置けない。
+            if (GetComponent<Transition.AreaTransitionWaitNoticeHost>() == null)
+            {
+                gameObject.AddComponent<Transition.AreaTransitionWaitNoticeHost>();
+            }
         }
 
         private void OnDestroy()

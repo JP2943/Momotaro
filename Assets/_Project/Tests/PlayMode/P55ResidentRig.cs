@@ -57,6 +57,7 @@ namespace Momotaro.Tests.PlayMode
             }
 
             AreaTransitionDisplayProvider.ClearForTests();
+            AreaTransitionWaitNoticeProvider.ClearForTests();
         }
     }
 }

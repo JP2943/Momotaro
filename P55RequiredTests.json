@@ -179,7 +179,7 @@
     },
     {
       "id": "P55-P07",
-      "summary": "先読み未完での要求（§5／§11 の P07）。受理後は A を描画したまま操作を止めて待ち、全画面を黒くしない。カメラは境界へ先に飛ばず、表示代理も準備できてから立てる。準備できたらスライドして着き、読込は 1 回だけ",
+      "summary": "先読み未完での要求（§5／§11 の P07）。受理後は A を描画したまま操作を止めて待ち、全画面を黒くしない。カメラは境界へ先に飛ばず、表示代理も準備できてから立てる。準備できたらスライドして着き、読込は 1 回だけ。**0.3 秒以上待つ場合だけ**控えめな「読み込み中」を出す（工程 P55-09a）——短い待ちでは出さないこと、出しても暗幕を敷かず画面の 5% 未満に収まること、待ちが終われば消えること。閾値の判断は決めた時点の秒数（ShownAtSeconds）で見る",
       "stage": "P55-05"
     },
     {
@@ -733,7 +733,16 @@
       "implemented": true,
       "supportingTests": [
         "Momotaro.Tests.EditMode.P55PreloadTests.RequestingTheSameDestinationTwice_DoesNotLoadItAgain",
-        "Momotaro.Tests.EditMode.P55PreloadTests.WhileAnotherSceneOperationRuns_ThePreloadWaitsInsteadOfFailing"
+        "Momotaro.Tests.EditMode.P55PreloadTests.WhileAnotherSceneOperationRuns_ThePreloadWaitsInsteadOfFailing",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheNeighbourIsAlreadyStaged_TheWaitNoticeNeverShows",
+        "Momotaro.Tests.EditMode.P55WaitNoticeTests.TheThreshold_IsThreeTenthsOfASecond",
+        "Momotaro.Tests.EditMode.P55WaitNoticeTests.AShortWait_ShowsNothing",
+        "Momotaro.Tests.EditMode.P55WaitNoticeTests.AtTheThreshold_ItShows",
+        "Momotaro.Tests.EditMode.P55WaitNoticeTests.OnceShown_ItStaysShownForTheRestOfTheWait",
+        "Momotaro.Tests.EditMode.P55WaitNoticeTests.EachWait_CountsFromZero",
+        "Momotaro.Tests.EditMode.P55WaitNoticeTests.EndingTheWait_ClearsIt",
+        "Momotaro.Tests.EditMode.P55WaitNoticeTests.WithoutBeginning_TickingShowsNothing",
+        "Momotaro.Tests.EditMode.P55WaitNoticeTests.ANegativeStep_DoesNotRewindTheWait"
       ]
     },
     {

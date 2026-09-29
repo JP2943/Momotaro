@@ -1544,17 +1544,42 @@ namespace Momotaro.Tests.PlayMode
             yield return SettleCamera();
             Vector3 cameraBefore = RigPosition();
 
+            // 待ち表示は常駐が持っている（§5。工程 P55-09a）。
+            AreaTransitionWaitNoticeHost notice = AreaTransitionWaitNoticeHost.Instance;
+            Assert.IsNotNull(notice, "待ち表示の常駐が居る。");
+            Assert.AreSame(notice, AreaTransitionWaitNoticeProvider.Current,
+                "差さっているのは生きている常駐。");
+            Assert.IsFalse(notice.IsShowing, "前提：まだ出ていない。");
+
             // 受理されるまで押す（先読みは頼んでいないので、受理後に読み始める）。
             yield return HoldUntil(Key.D, () => transitions.ConnectionTravelCount > 0, 25f);
             Assert.AreEqual(1, transitions.ConnectionTravelCount, "受理された。");
 
             // ---- 準備できるまでの待ち：A が見えている・カメラは動かない・代理はまだ立たない ----
             int frames = 0;
+            bool sawNotice = false;
             float deadline = Time.realtimeSinceStartup + 2f;
             while (Time.realtimeSinceStartup < deadline)
             {
                 yield return null;
                 frames++;
+
+                // <b>0.3 秒の壁</b>（§5。工程 P55-09a）。
+                //
+                // <b>フレームごとの値では言えない。</b> Scene ロード中はフレームが重いので、
+                // 「読んだ時点で 0.3 秒を超えている」は閾値を無視した実装でも成り立つ
+                // （実際そうなった——注入 80 が素通りした）。
+                // <b>決めた時点の秒数</b>を実装に記録させて、そこを見る。
+                if (notice.IsShowing)
+                {
+                    sawNotice = true;
+                    Assert.AreEqual(AreaTransitionWaitNoticeHost.NoticeText, notice.ShownLine,
+                        "控えめな 1 行だけを出す。");
+                    Assert.IsFalse(notice.HasFullScreenBackdrop,
+                        "暗幕を敷かない（§5「全画面を黒くしない」）。");
+                    Assert.Less(notice.ScreenAreaFraction, 0.05f,
+                        "占める面積は画面の 5% 未満（控えめ）。実測=" + notice.ScreenAreaFraction);
+                }
 
                 Assert.AreEqual(AreaSlideTransactionPhase.Preparing,
                     transitions.Slide.Coordinator.Phase, "準備の段階で待っている。");
@@ -1575,6 +1600,16 @@ namespace Momotaro.Tests.PlayMode
             Assert.Greater(frames, 10, "待ちを複数フレーム観測できた。");
             Assert.AreEqual(1, host.LoadCount, "待っている間に読み直さない（重複ロードなし。§5）。");
 
+            // 2 秒待ったのだから、0.3 秒の壁は越えている。
+            Assert.IsTrue(sawNotice,
+                "0.3 秒以上待ったので「読み込み中」が出た（待ち="
+                + transitions.Slide.WaitNotice.WaitedSeconds + " 秒）。");
+            Assert.IsTrue(notice.IsShowing, "待っている間は出したまま。");
+            Assert.AreEqual(1, notice.ShowCount, "毎フレーム出し直していない。");
+            Assert.GreaterOrEqual(transitions.Slide.WaitNotice.ShownAtSeconds, 0.29f,
+                "<b>出すと決めたのは 0.3 秒に届いてから</b>である（§5）。決めた時点="
+                + transitions.Slide.WaitNotice.ShownAtSeconds + " 秒");
+
             // ---- 準備できたらスライドして着く ----
             host.ReleaseLoad();
 
@@ -1589,9 +1624,73 @@ namespace Momotaro.Tests.PlayMode
                 "準備できてからスライドして着いた。理由=" + transitions.Slide.LastFailure);
             Assert.AreEqual(0, transitions.SlideRolledBackCount, "戻していない。");
             Assert.AreEqual(1, host.LoadCount, "読込は 1 回だけ。");
+
+            // <b>待ちが終われば消える</b>（§5。工程 P55-09a）。出したまま残すと、
+            // スライドの最中も到着後も「読み込み中」が居座る。
+            Assert.IsFalse(notice.IsShowing, "待ちが終わったので消えている。");
+            Assert.AreEqual(1, notice.HideCount, "消したのは 1 回。");
             Assert.AreEqual(1, AreaCameraRigHost.Instance.SlideCount, "演出も 1 回だけ。");
             Assert.Greater(RigPosition().x, cameraBefore.x + 5f, "東へスライドした。");
             Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+        }
+
+        /// <summary>
+        /// <b>隣がもう載っているなら、待ち表示は一度も出ない</b>（§5。工程 P55-09a）。
+        ///
+        /// §5 の「0.3 秒以上待つ場合<b>だけ</b>」の後半である。距離による先読みが間に合っている
+        /// 正常系では待ちは 1〜2 フレームで終わるので、そこで字が出ると<b>ちらつき</b>になる。
+        ///
+        /// <b>「出す」側だけを実装しても受入は通る。</b> 誰も「出ない」を見ないからである。
+        /// 閾値そのものは EditMode が決定的に見るが、<b>正常系で本当に出ないか</b>は
+        /// 実遷移でしか言えない——待ちの長さは実際のロードが決めるので。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhenTheNeighbourIsAlreadyStaged_TheWaitNoticeNeverShows()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            AreaExitGate gate = FindExitGate(ExitAEast);
+
+            // 出入口へ近づいて、距離による先読みに隣を載せさせる（§5）。
+            yield return PlacePlayerAt(gate.transform.position + (Vector3.left * 4f));
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(AreaPreloadPhase.Staged, transitions.Slide.Preloader.Phase,
+                "前提：隣が閉じたまま載っている。" + DumpWorld(transitions));
+
+            AreaTransitionWaitNoticeHost notice = AreaTransitionWaitNoticeHost.Instance;
+            Assert.IsNotNull(notice, "待ち表示の常駐が居る。");
+            Assert.AreEqual(0, notice.ShowCount, "前提：まだ一度も出していない。");
+
+            yield return StandJustBefore(gate, Vector3.left);
+            yield return SettleCamera();
+
+            // ---- 受理から到着まで、毎フレーム「出ていないこと」を見る ----
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.SlideCommittedCount == 0
+                   && !transitions.HasTerminalFailure
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                yield return null;
+
+                Assert.IsFalse(notice.IsShowing,
+                    "隣が載っているのだから待ち表示は出ない（待ち="
+                    + transitions.Slide.WaitNotice.WaitedSeconds + " 秒）。");
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "スライドで着いた。理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(0, notice.ShowCount, "一度も出していない（ちらつかせない）。");
+            Assert.Less(transitions.Slide.WaitNotice.WaitedSeconds,
+                AreaTransitionWaitNoticeTimer.ThresholdSeconds,
+                "そもそも待ちが 0.3 秒に届いていない。");
+            Assert.AreEqual(1, transitions.Slide.WaitNotice.BegunCount,
+                "待ちの数え直しは 1 回（遷移ごとに 0 から数える）。");
         }
 
         /// <summary>その Area の地形（床・壁）が描かれているか。暗転していないことの証拠に使う。</summary>
@@ -2464,6 +2563,7 @@ namespace Momotaro.Tests.PlayMode
             AreaBundleDirectory.ClearForTests();
             CurrentAreaProvider.ClearForTests();
             AreaTransitionDisplayProvider.ClearForTests();
+            AreaTransitionWaitNoticeProvider.ClearForTests();
             PerceptionTargetRegistry.Clear();
             AreaInteractableRegistry.Clear();
             InvestigationPointRegistry.Clear();

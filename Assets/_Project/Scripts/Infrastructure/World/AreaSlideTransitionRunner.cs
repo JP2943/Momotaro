@@ -88,6 +88,8 @@ namespace Momotaro.Infrastructure.World
         private readonly System.Collections.Generic.List<AreaPreloadCandidate> _candidates =
             new System.Collections.Generic.List<AreaPreloadCandidate>();
 
+        private readonly AreaTransitionWaitNoticeTimer _waitNotice = new AreaTransitionWaitNoticeTimer();
+
         /// <summary>Single 読込の発行権を、この遷移系が押さえている最中か（工程 P55-07c）。</summary>
         private bool _singleLoadClaimed;
 
@@ -399,7 +401,15 @@ namespace Momotaro.Infrastructure.World
             preloader.ArmRetry(); // 新しい遷移操作は、抱えている失敗を 1 回だけ再試行できる（§5）。
             preloader.Request(connection.ToAreaId, entry.ScenePath);
 
-            float waited = 0f;
+            // <b>待ちが長いときだけ「読み込み中」を出す</b>（§5。工程 P55-09a）。
+            //
+            // 先読みが間に合っている正常系では、この待ちは 1〜2 フレームで終わる。
+            // そこで一瞬だけ字を出すと<b>ちらつきとして見える</b>ので、0.3 秒の壁を置く。
+            // 壁の判断は <c>AreaTransitionWaitNoticeTimer</c> が持ち、
+            // 表示側は「出す・消す」しか知らない。
+            IAreaTransitionWaitNotice waitNotice = AreaTransitionWaitNoticeProvider.Current;
+            _waitNotice.Begin();
+
             bool timedOut = false;
             while (preloader.Phase == AreaPreloadPhase.Loading
                    || preloader.Phase == AreaPreloadPhase.Releasing)
@@ -411,15 +421,25 @@ namespace Momotaro.Infrastructure.World
                 // 受入（§11 の P07「重複ロードなし」）でも読込の回数を数える。
                 preloader.Request(connection.ToAreaId, entry.ScenePath);
                 preloader.Poll();
-                if (waited >= _owner.TimeoutSeconds)
+                if (_waitNotice.WaitedSeconds >= _owner.TimeoutSeconds)
                 {
                     timedOut = true;
                     break;
                 }
 
-                waited += Time.unscaledDeltaTime;
+                // <b>待ちの秒数は 1 か所で数える。</b> 監視上限と待ち表示で別々に数えると、
+                // どちらかが止まったときに気付けない。
+                if (_waitNotice.Tick(Time.unscaledDeltaTime))
+                {
+                    waitNotice?.Show();
+                }
+
                 yield return null;
             }
+
+            // <b>待ちが終わったら必ず消す</b>（成功でも時間切れでも）。
+            _waitNotice.End();
+            waitNotice?.Hide();
 
             preloader.Poll();
 
@@ -1311,6 +1331,9 @@ namespace Momotaro.Infrastructure.World
 
         /// <summary>距離による先読みが読込を頼んだ回数（診断・テスト用）。</summary>
         public int ProximityPreloadRequestCount { get; private set; }
+
+        /// <summary>待ち表示の時計（診断・テスト用。§5。工程 P55-09a）。</summary>
+        public AreaTransitionWaitNoticeTimer WaitNotice => _waitNotice;
 
         /// <summary>
         /// <b>距離で先読みを始める</b>（§5 の 1〜3 行目。工程 P55-08b）。
