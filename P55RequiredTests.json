@@ -207,6 +207,11 @@
       "id": "P55-P16",
       "summary": "到着直後も穴 0（仕様書 §11 の P16。§7.3。裁定 1。工程 P55-10d）。試遊基準の 16:9 で、スライド中から Commit 直後への連続した描画・到着位置で立ち止まっている間・到着後に境界から離れる際の保持／解放の切替・即座に逆方向へ戻る場合の 4 場面を<b>連続フレーム</b>で見て、描画すべき地形・背景が欠けて未描画の領域が露出しないこと。安定後の 1 枚では合格にしない。暗転や黒い帯で覆って合格にすることも認めないので、同じフレームで遷移前との明るさの比も見る",
       "stage": "P55-10"
+    },
+    {
+      "id": "P55-P18",
+      "summary": "待機表示の通算（仕様書 §11 の P18。§5。工程 P55-10e。GPT 追加修正）。受理からスライド開始までの準備待ちを通算して判定する——旧 Area の撤去待ち・先読みの読込待ち・到着側の初期化待ちのどれでも表示する。ロード済みだが到着準備が遅れる場合も表示する。通算 0.3 秒未満では表示しない、段階が変わっても計測をリセットしない（待ちは遷移ごとに 1 本）、スライド開始・Rollback・終端失敗で消える、各段階のタイムアウト上限は表示用の通算とは別に維持する",
+      "stage": "P55-10"
     }
   ],
   "tests": [
@@ -859,6 +864,18 @@
       "implemented": true,
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheArrival_ShowsNoVoidAcrossTheWholeRoundTrip(\"NorthSouth\")"
+      ]
+    },
+    {
+      "requirementId": "P55-P18",
+      "stage": "P55-10",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheArrivalPreparationIsLate_TheWaitNoticeShowsAndThenClears",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhileTheRetireIsStillRunning_TheWaitNoticeShows",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheNeighbourIsAlreadyStaged_TheWaitNoticeNeverShows"
       ]
     }
   ],

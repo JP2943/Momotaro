@@ -381,6 +381,18 @@ namespace Momotaro.Infrastructure.World
                 yield break;
             }
 
+            // <b>準備待ちはここから通算で数える</b>（§5。工程 P55-10e。GPT 追加修正）。
+            //
+            // 工程 P55-09a では先読みの読込待ちだけを数えていた。その前後——
+            // <b>旧 Area の撤去待ち</b>と<b>到着側の初期化待ち</b>——が抜けていたので、
+            // ロードが終わっていても初期化が遅れれば<b>操作不能のまま表示なしで待たされた</b>。
+            //
+            // 表示の条件は「ロードを待っているか」ではなく
+            // <b>「操作できないまま待たされているか」</b>である。だから受理からスライド開始までを
+            // 1 本の待ちとして数え、<b>段階が変わってもリセットしない</b>——
+            // 区間ごとに 0 から数えると、どの区間も 0.3 秒に届かないまま合計 1 秒待つ、が起きる。
+            _waitNotice.Begin();
+
             // <b>前の撤去が終わるのを待つ</b>（§8 末尾。GPT 受入②）。
             //
             // 到着通知は撤去より先に出るので、通知の中から次のスライドを頼むと、
@@ -395,7 +407,10 @@ namespace Momotaro.Infrastructure.World
                 float retireWaited = 0f;
                 while (IsRetireInFlight && retireWaited < _owner.TimeoutSeconds)
                 {
+                    // <b>段階ごとの上限は段階が数える。</b> 表示用の通算とは別に持つ
+                    // （通算へ寄せると「読込は終わったが初期化が返ってこない」の切り分けが消える）。
                     retireWaited += Time.unscaledDeltaTime;
+                    PumpWaitNotice();
                     yield return null;
                 }
 
@@ -437,10 +452,8 @@ namespace Momotaro.Infrastructure.World
             // そこで一瞬だけ字を出すと<b>ちらつきとして見える</b>ので、0.3 秒の壁を置く。
             // 壁の判断は <c>AreaTransitionWaitNoticeTimer</c> が持ち、
             // 表示側は「出す・消す」しか知らない。
-            IAreaTransitionWaitNotice waitNotice = AreaTransitionWaitNoticeProvider.Current;
-            _waitNotice.Begin();
-
             bool timedOut = false;
+            float preloadWaited = 0f;
             while (preloader.Phase == AreaPreloadPhase.Loading
                    || preloader.Phase == AreaPreloadPhase.Releasing)
             {
@@ -451,25 +464,24 @@ namespace Momotaro.Infrastructure.World
                 // 受入（§11 の P07「重複ロードなし」）でも読込の回数を数える。
                 preloader.Request(connection.ToAreaId, entry.ScenePath);
                 preloader.Poll();
-                if (_waitNotice.WaitedSeconds >= _owner.TimeoutSeconds)
+
+                // <b>この段階の上限は、この段階が数える</b>（§5。工程 P55-10e。GPT 追加修正）。
+                //
+                // 工程 P55-09a では表示用の通算と共通にしていた（記録 037「1 か所で数える」）。
+                // 通算が受理からスライド開始までへ広がったので、共通にすると
+                // <b>読込の監視が撤去待ちの時間まで含めて切れる</b>——
+                // 「読込は終わったが初期化が返ってこない」の切り分けも消える。
+                // <b>表示は通算・監視は段階ごと</b>で分ける。
+                if (preloadWaited >= _owner.TimeoutSeconds)
                 {
                     timedOut = true;
                     break;
                 }
 
-                // <b>待ちの秒数は 1 か所で数える。</b> 監視上限と待ち表示で別々に数えると、
-                // どちらかが止まったときに気付けない。
-                if (_waitNotice.Tick(Time.unscaledDeltaTime))
-                {
-                    waitNotice?.Show();
-                }
-
+                preloadWaited += Time.unscaledDeltaTime;
+                PumpWaitNotice();
                 yield return null;
             }
-
-            // <b>待ちが終わったら必ず消す</b>（成功でも時間切れでも）。
-            _waitNotice.End();
-            waitNotice?.Hide();
 
             preloader.Poll();
 
@@ -573,6 +585,7 @@ namespace Momotaro.Infrastructure.World
                    && bindWaited < _owner.BindTimeoutSeconds)
             {
                 bindWaited += Time.unscaledDeltaTime;
+                PumpWaitNotice();
                 yield return null;
 
                 // <b>毎フレーム隠し直す。</b> 初期化担当が Actor を置き、Animator や
@@ -710,6 +723,11 @@ namespace Momotaro.Infrastructure.World
             LastCompanionRouteTo = companionTo;
 
             // ---- 手順 6：スライド ----
+            //
+            // <b>ここで準備待ちは終わる</b>（§5「スライド開始・Rollback・終端失敗で消す」）。
+            // 以後は操作不能でも<b>絵が動いている</b>ので、「待たされている」ではない。
+            EndWaitNotice();
+
             if (!camera.BeginSlide(slideTo, ResolveSeconds(connection)))
             {
                 yield return Rollback(transitionId, departure, departureHandle,
@@ -929,6 +947,31 @@ namespace Momotaro.Infrastructure.World
         }
 
         /// <summary>
+        /// 準備待ちを 1 フレーム進め、通算が 0.3 秒を超えていれば待ち表示を出す
+        /// （§5。工程 P55-10e）。
+        ///
+        /// <b>窓口は毎回引く。</b> 常駐は入れ替わりうるので、入口で 1 回引いて持ち回ると
+        /// 入れ替わったあと誰にも届かない（記録 035 §2 と同じ形）。
+        /// </summary>
+        private void PumpWaitNotice()
+        {
+            if (_waitNotice.Tick(Time.unscaledDeltaTime))
+            {
+                AreaTransitionWaitNoticeProvider.Current?.Show();
+            }
+        }
+
+        /// <summary>
+        /// 準備待ちを終える（§5「スライド開始・Rollback・終端失敗で消す」）。
+        /// 何度呼んでも安全なので、早期 return の経路からも遠慮なく呼べる。
+        /// </summary>
+        private void EndWaitNotice()
+        {
+            _waitNotice.End();
+            AreaTransitionWaitNoticeProvider.Current?.Hide();
+        }
+
+        /// <summary>
         /// 旧 Area を<b>撤去せずに預ける</b>（§6.2 手順 11。裁定 2。工程 P55-10c）。
         ///
         /// 預け先は<b>先読み管理</b>である（<see cref="AreaPreloader.TryAdoptRetained"/>）。
@@ -1052,6 +1095,10 @@ namespace Momotaro.Infrastructure.World
         {
             LastFailure = reason;
             GameLog.Warning(LogCategory.Scene, "Slide transition rolled back: " + reason);
+
+            // <b>失敗でも消す</b>（§5）。出したままにすると、出発側へ戻って遊べているのに
+            // 「読み込み中」が residual で残る。
+            EndWaitNotice();
 
             // <b>失敗した接続を名指しで抑止する</b>（工程 P55-08d。GPT 再修正の残件）。
             //
@@ -1474,6 +1521,14 @@ namespace Momotaro.Infrastructure.World
             if (_slide.IsTransitioning)
             {
                 return;
+            }
+
+            // <b>出したまま忘れない。</b> 準備待ちの表示は遷移の中で消すのが本筋だが、
+            // 準備区間には早期 return の経路が十数本ある（世代が進んだ・常駐が居ない等）。
+            // 遷移が走っていないのに出ているなら、それは消し忘れである（§5。工程 P55-10e）。
+            if (_waitNotice.ShouldShow)
+            {
+                EndWaitNotice();
             }
 
             SyncResidencyToLoadedAreas();

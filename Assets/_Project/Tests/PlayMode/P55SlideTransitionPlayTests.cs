@@ -2523,6 +2523,211 @@ namespace Momotaro.Tests.PlayMode
                 "台帳も上限の中。" + DumpResidency(transitions));
         }
 
+        // ---------------------------------------------------------------- P18（工程 P55-10e）
+
+        /// <summary>
+        /// <b>ロードが終わっていても、到着準備が遅れれば待ち表示を出す</b>
+        /// （§5。§11 の P18。工程 P55-10e。GPT 追加修正）。
+        ///
+        /// 工程 P55-09a の実装は先読みの <c>Loading</c>／<c>Releasing</c> の間<b>だけ</b>数えていた。
+        /// その前後——旧 Area の撤去待ちと<b>到着側の初期化待ち</b>——では表示されない。
+        /// つまり<b>ロードは終わったのに初期化が返ってこない</b>とき、
+        /// プレイヤーは操作不能のまま、何の説明も無く待たされていた。
+        ///
+        /// <b>09a の検査はこの経路を一度も通っていなかった。</b> 待ちを作る手段が
+        /// 「先読み未完」しか無かったからである——読み終わったあとの区間は作れなかった。
+        ///
+        /// ここでは<b>隣を先に載せてから</b>、到着側の初期化担当を取り除く。
+        /// 読込の待ちは 0 フレームで、待ちはすべて「準備の報告が来ない」区間になる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhenTheArrivalPreparationIsLate_TheWaitNoticeShowsAndThenClears()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            AreaExitGate gate = FindExitGate(ExitAEast);
+
+            // 出入口へ近づいて、距離による先読みに隣を載せさせる（§5）。
+            yield return PlacePlayerAt(gate.transform.position + (Vector3.left * 4f));
+            yield return SettleWorld(transitions);
+
+            AreaPreloader preloader = transitions.Slide.Preloader;
+            Assert.AreEqual(AreaPreloadPhase.Staged, preloader.Phase,
+                "前提：隣が閉じたまま載っている（読込の待ちは 0 になる）。" + DumpWorld(transitions));
+            int loadsBefore = preloader.LoadStartedCount;
+
+            // <b>到着側の初期化担当を取り除く。</b> 準備完了の報告が誰からも来なくなるので、
+            // 遷移は「到着側の準備待ち」で <c>BindTimeoutSeconds</c> まで待ってから戻る。
+            // 実際の遅れ（重い Awake・Bootstrap 待ち）と同じ区間を、決定的に作れる。
+            int removed = 0;
+            foreach (AreaInitializer initializer in
+                Object.FindObjectsByType<AreaInitializer>(
+                    FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (initializer != null && initializer.AreaId.Equals(AreaB))
+                {
+                    Object.DestroyImmediate(initializer);
+                    removed++;
+                }
+            }
+
+            Assert.AreEqual(1, removed, "前提：到着側の初期化担当を 1 つ取り除いた。");
+
+            // 0.3 秒の壁を越えるが、検査が長引かない長さにする。
+            transitions.BindTimeoutSeconds = 1.2f;
+
+            AreaTransitionWaitNoticeHost notice = AreaTransitionWaitNoticeHost.Instance;
+            Assert.IsNotNull(notice, "待ち表示の常駐が居る。");
+            Assert.AreEqual(0, notice.ShowCount, "前提：まだ一度も出していない。");
+
+            yield return StandJustBefore(gate, Vector3.left);
+            yield return SettleCamera();
+
+            yield return HoldUntil(Key.D, () => transitions.SlideRolledBackCount > 0, 25f);
+
+            Assert.AreEqual(1, transitions.SlideRolledBackCount,
+                "到着側の準備が来ないので戻した。理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(0, transitions.SlideCommittedCount, "着いていない。");
+
+            // ---- 待ち表示は出た ----
+            AreaTransitionWaitNoticeTimer timer = transitions.Slide.WaitNotice;
+            Assert.AreEqual(1, timer.ShownCount,
+                "ロード済みでも、到着準備の遅れで待ち表示を出す（待ち="
+                + timer.WaitedSeconds + " 秒・出した時点=" + timer.ShownAtSeconds + " 秒）。");
+            Assert.GreaterOrEqual(timer.ShownAtSeconds,
+                AreaTransitionWaitNoticeTimer.ThresholdSeconds - 0.001f,
+                "出したのは 0.3 秒を越えてから（決めた時点の秒数で見る）。");
+            Assert.AreEqual(1, notice.ShowCount, "常駐にも 1 回だけ出させた。");
+
+            // ---- 待ちは 1 本。段階が変わってもリセットしない ----
+            Assert.AreEqual(1, timer.BegunCount,
+                "受理からスライド開始までを<b>1 本の待ち</b>として数えている"
+                + "（段階ごとに 0 から数え直していない）。");
+
+            // ---- 読込の待ちではない ----
+            Assert.AreEqual(loadsBefore, preloader.LoadStartedCount,
+                "読み直していない（待ちはすべて準備の報告待ちだった）。");
+
+            // ---- 戻したら消える ----
+            Assert.IsFalse(notice.IsShowing, "Rollback で消えている（§5）。");
+            Assert.AreEqual(1, notice.HideCount, "消したのは 1 回。");
+
+            // ---- 段階ごとの上限は、段階が持ったまま ----
+            Assert.Less(timer.WaitedSeconds, transitions.BindTimeoutSeconds + 1.5f,
+                "到着側の待ちは自分の上限（" + transitions.BindTimeoutSeconds
+                + " 秒）で切れている。通算へ寄せていたら切れない。");
+
+            // ---- 戻った先で遊べる ----
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に戻っている。");
+            Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "A で遊べる。");
+        }
+
+        /// <summary>
+        /// <b>旧 Area の撤去待ちでも待ち表示を出す</b>（§5。§11 の P18。工程 P55-10e）。
+        ///
+        /// GPT が名指しした「その前の旧 Area 撤去待ち」の側である。到着通知の中から次の遷移を頼むと、
+        /// 新しい遷移は<b>前の撤去が終わるまで</b>進めない（§8 末尾）。
+        /// そこで操作不能のまま待たされるのに、09a では表示されなかった。
+        ///
+        /// <b>保持を切って見る。</b> 裁定 2（工程 P55-10c）で旧 Area は既定で保持されるので、
+        /// そもそも撤去が走らない——この区間は保持を切った構成にしか存在しない。
+        /// 通らない経路は壊れても誰も気付かないので、切って通す（付録 C.29.5）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhileTheRetireIsStillRunning_TheWaitNoticeShows()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            transitions.RetainDepartedArea = false;
+
+            var host = new DelayedRealSceneHost();
+            transitions.SlideSceneHost = host;
+
+            bool requested = false;
+            void OnArrived(StableId areaId)
+            {
+                if (requested || !areaId.Equals(AreaB))
+                {
+                    return;
+                }
+
+                requested = true;
+                Assert.IsTrue(
+                    transitions.Connections.TryGetFromExit(AreaB, ExitBWest, out AreaConnectionSnapshot west),
+                    "西向きの接続を引ける。");
+                Assert.IsTrue(transitions.TryTravel(west).Accepted, "通知の中からの要求が受理される。");
+            }
+
+            transitions.ArrivalCompleted += OnArrived;
+            try
+            {
+                yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+
+                // <b>撤去だけを止める。</b> 読込は毎フレーム解放する。
+                host.HoldUnload = true;
+
+                float slideDeadline = Time.realtimeSinceStartup + 25f;
+                while (transitions.SlideCommittedCount == 0
+                       && !transitions.HasTerminalFailure
+                       && Time.realtimeSinceStartup < slideDeadline)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                    yield return null;
+                    host.ReleaseLoad();
+                }
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                yield return null;
+
+                Assert.AreEqual(1, transitions.SlideCommittedCount, "前提：スライドで着いた。");
+                Assert.IsTrue(requested, "前提：到着通知の中から次の遷移を頼んだ。");
+                Assert.IsTrue(transitions.Slide.IsRetiring, "前提：撤去がまだ走っている。");
+
+                AreaTransitionWaitNoticeHost notice = AreaTransitionWaitNoticeHost.Instance;
+                Assert.IsNotNull(notice, "待ち表示の常駐が居る。");
+
+                // ---- 撤去待ちのまま 0.3 秒を越えさせる ----
+                float until = Time.realtimeSinceStartup + 0.8f;
+                while (Time.realtimeSinceStartup < until)
+                {
+                    host.ReleaseLoad();
+                    yield return null;
+                }
+
+                Assert.IsTrue(transitions.Slide.IsRetiring, "まだ撤去中（前提が崩れていない）。");
+                Assert.IsTrue(notice.IsShowing,
+                    "撤去の終わりを待っている間も待ち表示を出す（待ち="
+                    + transitions.Slide.WaitNotice.WaitedSeconds + " 秒・出した時点="
+                    + transitions.Slide.WaitNotice.ShownAtSeconds + " 秒）。");
+                Assert.AreEqual(2, transitions.Slide.WaitNotice.BegunCount,
+                    "待ちは<b>遷移ごとに 1 本</b>（ここまで 2 回遷移したので 2 本）。"
+                    + "段階ごとに数え直していたら、この数は段階の数だけ増える。");
+
+                // ---- 撤去が終われば進み、スライド開始で消える ----
+                host.ReleaseUnload();
+
+                float deadline = Time.realtimeSinceStartup + 25f;
+                while (transitions.SlideCommittedCount < 2
+                       && !transitions.HasTerminalFailure
+                       && Time.realtimeSinceStartup < deadline)
+                {
+                    host.ReleaseLoad();
+                    host.ReleaseUnload();
+                    yield return null;
+                }
+
+                Assert.AreEqual(2, transitions.SlideCommittedCount,
+                    "撤去が終わってから二度目も着いた。理由=" + transitions.Slide.LastFailure);
+                Assert.IsFalse(notice.IsShowing, "スライドが始まったので消えている（§5）。");
+            }
+            finally
+            {
+                transitions.ArrivalCompleted -= OnArrived;
+            }
+        }
+
         // ---------------------------------------------------------------- 補助
 
         private IEnumerator EnterArea(string scenePath)
