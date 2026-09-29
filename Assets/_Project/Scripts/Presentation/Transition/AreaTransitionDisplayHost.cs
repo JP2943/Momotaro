@@ -46,6 +46,13 @@ namespace Momotaro.Presentation.Transition
         public bool CompanionRouteDropped => _set != null && _set.CompanionRouteDropped;
 
         /// <inheritdoc />
+        public int PlayerMoveFrameCount => _set != null ? _set.PlayerMoveFrameCount : 0;
+
+        /// <inheritdoc />
+        public string MoveFrameFallbackReason =>
+            _set != null ? _set.MoveFrameFallbackReason : string.Empty;
+
+        /// <inheritdoc />
         public void DropCompanionProxy() => _set?.DropCompanion();
 
         /// <summary>いま抱えている代理の集合（テスト用。無ければ null）。</summary>

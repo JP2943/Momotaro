@@ -111,6 +111,13 @@ namespace Momotaro.Presentation.Transition
 
             Player = BuildFor(player != null ? player.VisualRoot : null, "Proxy_Player", frozen: false);
 
+            // <b>Move の既存 6 コマを渡す</b>（§7.2。工程 P55-09b）。
+            //
+            // コマ送りの仕掛けは前からあったが、<b>本番では誰も素材を渡していなかった</b>——
+            // 代理は写した 1 枚を出し続け、通路を渡る主人公が<b>滑って移動する</b>絵になっていた。
+            // 取り出せなければ渡さない（止まった絵のほうが、推測のコマより嘘が小さい）。
+            AssignPlayerMoveFrames(player);
+
             // Away は代理も作らない（§7.2）。<b>絵が見えているかどうかで決めない</b>——
             // 状態で決める。見た目に頼ると、退場中でも絵が残る構成で代理が立つ。
             if (companion != null && companion.IsAway)
@@ -123,6 +130,41 @@ namespace Momotaro.Presentation.Transition
                     || companion.State == CompanionState.Stagger;
                 Companion = BuildFor(companion.transform, "Proxy_Companion", keepPosture);
             }
+        }
+
+        /// <summary>主人公の代理へ渡したコマの数（診断・テスト用。0 なら止まった絵）。</summary>
+        public int PlayerMoveFrameCount { get; private set; }
+
+        /// <summary>コマを渡せなかった理由（診断・テスト用。渡せたなら空）。</summary>
+        public string MoveFrameFallbackReason { get; private set; } = string.Empty;
+
+        private readonly List<Sprite> _moveFrames = new List<Sprite>();
+
+        /// <summary>
+        /// 主人公の代理へ Move のコマを渡す（§7.2）。
+        ///
+        /// <b>向きは取り出し側が実 Actor から読む。</b> ここで向きを決めると、
+        /// 命名規則と向きの解決が 2 か所に散る。
+        /// </summary>
+        private void AssignPlayerMoveFrames(PlayerRoot player)
+        {
+            PlayerMoveFrameCount = 0;
+            MoveFrameFallbackReason = string.Empty;
+
+            if (Player == null || player == null)
+            {
+                return;
+            }
+
+            if (!AreaTransitionMoveFrames.TryResolvePlayerMoveFrames(
+                    player.transform, _moveFrames, out float cycleSeconds))
+            {
+                MoveFrameFallbackReason = AreaTransitionMoveFrames.LastReason;
+                return;
+            }
+
+            Player.SetMoveFrames(_moveFrames, cycleSeconds);
+            PlayerMoveFrameCount = _moveFrames.Count;
         }
 
         /// <summary>

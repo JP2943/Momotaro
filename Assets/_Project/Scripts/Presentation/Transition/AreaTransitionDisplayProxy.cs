@@ -112,6 +112,16 @@ namespace Momotaro.Presentation.Transition
         ///
         /// <b>渡されなければコマ送りしない。</b> 写した 1 枚を出し続ける——
         /// 手元に無いコマを推測で作るより、止まった絵の方が嘘が小さい。
+        ///
+        /// <b>渡した瞬間に絵を替えない</b>（工程 P55-09b）。§7.2 は「開始時に実 Actor と
+        /// <b>同じ Sprite</b>・足元位置・縮尺・色・Sorting をコピーし」と定める。
+        /// ここで 1 コマ目を当てると、写した直後に絵が飛ぶ。
+        ///
+        /// <b>写した絵がコマの中にあれば、その位置から続ける。</b> 実際の遷移は
+        /// 主人公が<b>歩いている最中</b>に受理されるので、写した絵はたいてい Move の途中のコマである。
+        /// 0 コマ目へ巻き戻すと、そこで歩きが 1 回つまずく。
+        /// 見つからなければ（立ち止まりの絵など）写した 1 枚のまま——
+        /// 時計が進んだところで周期に乗る。
         /// </summary>
         public void SetMoveFrames(IReadOnlyList<Sprite> frames, float cycleSeconds = MoveCycleSeconds)
         {
@@ -128,9 +138,33 @@ namespace Momotaro.Presentation.Transition
             }
 
             _cycleSeconds = cycleSeconds > 0f ? cycleSeconds : MoveCycleSeconds;
-            _clock = 0f;
-            FrameIndex = 0;
-            ApplyFrame();
+
+            int startIndex = IndexOfShownSprite();
+            FrameIndex = startIndex < 0 ? 0 : startIndex;
+            _clock = _frames.Count > 0 && startIndex > 0
+                ? startIndex * (_cycleSeconds / _frames.Count)
+                : 0f;
+
+            // 絵は替えない（写した 1 枚のまま）。周期に乗るのは時計が進んでから。
+        }
+
+        /// <summary>いま出している絵がコマの何番目か（無ければ −1）。</summary>
+        private int IndexOfShownSprite()
+        {
+            if (_renderer == null || _renderer.sprite == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < _frames.Count; i++)
+            {
+                if (ReferenceEquals(_frames[i], _renderer.sprite))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
         }
 
         /// <summary>

@@ -151,7 +151,11 @@ namespace Momotaro.Tests.EditMode
 
             List<Sprite> frames = NewFrames(AreaTransitionDisplayProxy.MoveFrameCount);
             proxy.SetMoveFrames(frames);
-            Assert.AreSame(frames[0], proxy.Renderer.sprite, "渡した直後は 1 コマ目。");
+
+            // <b>渡した瞬間には替えない</b>（工程 P55-09b）。§7.2 の「開始時に実 Actor と
+            // 同じ Sprite をコピー」を守るため、周期に乗るのは時計が進んでからである。
+            Assert.AreSame(source.sprite, proxy.Renderer.sprite,
+                "渡した直後は写した 1 枚のまま（絵が飛ばない）。");
 
             float perFrame = AreaTransitionDisplayProxy.MoveCycleSeconds / frames.Count;
             proxy.TickDisplayClock(perFrame * 1.1f);
@@ -166,13 +170,39 @@ namespace Momotaro.Tests.EditMode
         }
 
         /// <summary>
+        /// <b>写した絵がコマの中にあれば、その位置から続ける</b>（工程 P55-09b）。
+        ///
+        /// 実際の遷移は主人公が<b>歩いている最中</b>に受理されるので、写した絵はたいてい
+        /// Move の途中のコマである。0 コマ目へ巻き戻すと、そこで歩きが 1 回つまずく。
+        /// </summary>
+        [Test]
+        public void TheCycle_ContinuesFromTheCapturedFrame()
+        {
+            AreaTransitionDisplayProxy proxy = NewProxy(out SpriteRenderer source);
+            List<Sprite> frames = NewFrames(AreaTransitionDisplayProxy.MoveFrameCount);
+
+            // 歩いている最中を模す：写した絵は 3 コマ目である。
+            source.sprite = frames[3];
+            proxy.Capture(source);
+
+            proxy.SetMoveFrames(frames);
+
+            Assert.AreEqual(3, proxy.FrameIndex, "3 コマ目から続ける（巻き戻さない）。");
+            Assert.AreSame(frames[3], proxy.Renderer.sprite, "絵も飛ばない。");
+
+            float perFrame = AreaTransitionDisplayProxy.MoveCycleSeconds / frames.Count;
+            proxy.TickDisplayClock(perFrame * 1.1f);
+            Assert.AreEqual(4, proxy.FrameIndex, "次は 4 コマ目。");
+        }
+
+        /// <summary>
         /// Down／Stagger は<b>姿勢を保って位置だけ運ぶ</b>（§7.2）。
         /// 回復演出を勝手に再生しないので、コマ送りを止める。
         /// </summary>
         [Test]
         public void AFrozenProxy_KeepsItsPostureButStillTravels()
         {
-            AreaTransitionDisplayProxy proxy = NewProxy(out _);
+            AreaTransitionDisplayProxy proxy = NewProxy(out SpriteRenderer frozenSource);
             List<Sprite> frames = NewFrames(AreaTransitionDisplayProxy.MoveFrameCount);
             proxy.SetMoveFrames(frames);
             proxy.Freeze(true);
@@ -182,7 +212,8 @@ namespace Momotaro.Tests.EditMode
 
             Assert.IsTrue(proxy.IsFrozen);
             Assert.AreEqual(0, proxy.FrameIndex, "コマは進まない（姿勢を保つ）。");
-            Assert.AreSame(frames[0], proxy.Renderer.sprite);
+            Assert.AreSame(frozenSource.sprite, proxy.Renderer.sprite,
+                "写した姿勢のまま（コマへ替えない）。");
 
             proxy.SetProgress(0.5f);
             Assert.AreEqual(5f, proxy.transform.position.x, 0.001f, "位置だけは運ばれる。");

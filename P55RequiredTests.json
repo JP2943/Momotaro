@@ -89,7 +89,7 @@
     },
     {
       "id": "P55-P06A",
-      "summary": "遷移中の表示代理（§7.2／§11 P06 のうち代理の持ち物と犬丸の状態別扱い）。描画部品しか持たず、登録簿・物理・当たりを 1 つも増やさない。Away は代理も作らず、Down／Stagger は姿勢を保って位置だけ運ぶ。表示経路の安全判定と実スライドとの結線は P55-04",
+      "summary": "遷移中の表示代理（§7.2／§11 P06 のうち代理の持ち物と犬丸の状態別扱い）。描画部品しか持たず、登録簿・物理・当たりを 1 つも増やさない。Away は代理も作らず、Down／Stagger は姿勢を保って位置だけ運ぶ。表示経路の安全判定と実スライドとの結線は P55-04。**Move の既存 6 コマを実資産のクリップから取り出して回す**（工程 P55-09b）——Animator を代理へ載せず、代理を作るときに 6 回だけ焼き付けて取り出す。取り出せなければ渡さず理由を残す",
       "stage": "P55-03"
     },
     {
@@ -494,7 +494,14 @@
         "Momotaro.Tests.EditMode.P55DisplayProxyTests.AFrozenProxy_KeepsItsPostureButStillTravels",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheDepartureSideHasAWallOnTheRoute_ThePreparationFails",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheDestinationSideHasAWallOnTheRoute_ThePreparationFails",
-        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheObstacleProbe_RestoresOnlyTheRememberedColliders"
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheObstacleProbe_RestoresOnlyTheRememberedColliders",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheProxy_PlaysTheRealSixFrameMoveCycleWhileSliding",
+        "Momotaro.Tests.EditMode.P55MoveFrameSourceTests.ASixFrameClip_YieldsSixFramesAndAHalfSecondCycle",
+        "Momotaro.Tests.EditMode.P55MoveFrameSourceTests.AClipWithADifferentLength_YieldsItsOwnFrameCount",
+        "Momotaro.Tests.EditMode.P55MoveFrameSourceTests.AnEmptyClip_FailsWithAReason",
+        "Momotaro.Tests.EditMode.P55MoveFrameSourceTests.NoClip_FailsWithAReason",
+        "Momotaro.Tests.EditMode.P55MoveFrameSourceTests.Extracting_LeavesNoProbeBehind",
+        "Momotaro.Tests.EditMode.P55MoveFrameSourceTests.TheExtractedFrames_DriveTheProxyCycle"
       ]
     },
     {

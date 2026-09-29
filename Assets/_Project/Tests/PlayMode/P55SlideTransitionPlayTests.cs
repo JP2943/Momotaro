@@ -3722,6 +3722,83 @@ namespace Momotaro.Tests.PlayMode
             return sb.Append(']').ToString();
         }
 
+        // ---------------------------------------------------------------- Move 周期（§7.2。P55-09b）
+
+        /// <summary>
+        /// <b>代理は Move の既存 6 コマを表示専用の時計で回す</b>（§7.2。工程 P55-09b）。
+        ///
+        /// コマ送りの仕掛けは工程 P55-03d-2 からあったが、<b>本番では誰も素材を渡していなかった</b>
+        /// ——代理は写した 1 枚を出し続け、通路を渡る主人公が<b>滑って移動する</b>絵だった。
+        ///
+        /// ここは<b>実資産に対する検査</b>である。EditMode はテストが組んだクリップで
+        /// 取り出しの規則を見るが、<b>本番のクリップから本当に 6 コマ出るか</b>は
+        /// 実 Scene の Animator を通さないと言えない
+        /// （コマ数の数え方は <c>clip.length</c> の解釈に依っていて、そこを間違えると
+        /// 5 コマや 7 コマになる——実際に 7 コマ出た）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheProxy_PlaysTheRealSixFrameMoveCycleWhileSliding()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+
+            var seenFrames = new HashSet<int>();
+            var seenSprites = new HashSet<string>();
+            int frameCount = -1;
+            string fallbackReason = null;
+
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.SlideCommittedCount == 0
+                   && !transitions.HasTerminalFailure
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                yield return null;
+
+                AreaTransitionDisplayHost display = AreaTransitionDisplayHost.Instance;
+                AreaTransitionDisplayProxy proxy = display != null && display.Set != null
+                    ? display.Set.Player : null;
+                if (proxy == null)
+                {
+                    continue;
+                }
+
+                frameCount = display.PlayerMoveFrameCount;
+                fallbackReason = display.MoveFrameFallbackReason;
+                seenFrames.Add(proxy.FrameIndex);
+                if (proxy.Renderer != null && proxy.Renderer.sprite != null)
+                {
+                    seenSprites.Add(proxy.Renderer.sprite.name);
+                }
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "スライドで着いた。理由=" + transitions.Slide.LastFailure);
+
+            // <b>本番のクリップから 6 コマ</b>（§7.2「既存 6 コマ周期」）。
+            Assert.AreEqual(AreaTransitionDisplayProxy.MoveFrameCount, frameCount,
+                "実資産の Move クリップから 6 コマ取り出せた。理由=" + fallbackReason);
+            Assert.IsEmpty(fallbackReason, "取りこぼしていない。");
+
+            // <b>回っていること</b>——止まった絵なら 1 種類しか見えない。
+            Assert.Greater(seenFrames.Count, 1,
+                "スライド中にコマが進んだ（見えたコマ番号=" + string.Join(",", seenFrames) + "）。");
+            Assert.Greater(seenSprites.Count, 1,
+                "絵も実際に替わった（見えた Sprite=" + string.Join(",", seenSprites) + "）。");
+
+            // 代理は<b>描画部品しか持たない</b>ままである（コマを渡しても増やさない。§7.2）。
+            AreaTransitionDisplayProxy[] proxies =
+                Object.FindObjectsByType<AreaTransitionDisplayProxy>(FindObjectsSortMode.None);
+            Assert.AreEqual(0, proxies.Length, "着いたので代理は畳まれている。");
+        }
+
         /// <summary>いま描かれている犬丸の数（実体・代理を問わない）。</summary>
         private static int DrawnCompanionCount()
         {

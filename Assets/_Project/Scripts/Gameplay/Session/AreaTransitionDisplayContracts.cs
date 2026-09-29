@@ -41,6 +41,15 @@ namespace Momotaro.Gameplay.Session
         bool CompanionRouteDropped { get; }
 
         /// <summary>
+        /// 主人公の代理へ渡した Move のコマ数（診断・テスト用。§7.2。工程 P55-09b）。
+        /// <b>0 は「止まった絵」</b>——コマを取り出せなかったことを黙って通さないために数える。
+        /// </summary>
+        int PlayerMoveFrameCount { get; }
+
+        /// <summary>コマを渡せなかった理由（診断・テスト用。渡せたなら空）。</summary>
+        string MoveFrameFallbackReason { get; }
+
+        /// <summary>
         /// 犬丸の表示代理を<b>取り下げる</b>（工程 P55-07c）。
         ///
         /// §7.2 は犬丸について「障害物を横切らない表示経路を<b>選び</b>」と定め、
