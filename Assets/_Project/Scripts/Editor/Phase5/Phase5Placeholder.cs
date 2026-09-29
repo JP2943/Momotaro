@@ -22,6 +22,15 @@ namespace Momotaro.Editor.Phase5
         /// <summary>壁。</summary>
         public static readonly Color WallColor = new Color(0.34f, 0.33f, 0.31f);
 
+        /// <summary>
+        /// 背景面の色（P5.5 §7.3。工程 P55-11a）。
+        ///
+        /// <b>床より少し暗い同系色</b>にする。「地形に馴染む簡素な背景面」であって、
+        /// 正式な遠景素材ではない。<b>黒ではない</b>——黒で覆うのは §7.3 が認めない対応で、
+        /// 明るさの比を見る受入（§11 の P16）でも落ちる。
+        /// </summary>
+        public static readonly Color BackdropColor = new Color(0.44f, 0.43f, 0.40f);
+
         /// <summary>水場（通行不可）。</summary>
         public static readonly Color WaterColor = new Color(0.25f, 0.45f, 0.70f);
 

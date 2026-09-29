@@ -18,6 +18,31 @@ namespace Momotaro.Editor.Phase5
         /// <summary>壁の高さ。低い壁＋開放天井で中が見える（§1.3）。</summary>
         public const float WallHeight = 2.0f;
 
+        /// <summary>
+        /// <b>背景面</b>が地形の外側へはみ出す幅（P5.5 §7.3。工程 P55-11a）。
+        ///
+        /// 隣 Area がまだ読み込まれていない間、境界の向こうは<b>未描画の虚空</b>になる。
+        /// §7.3 は「必要な箇所には背景の補完も設ける」と定めるので、
+        /// 各 Area が自分の地形より広い背景面を 1 枚持つ。
+        ///
+        /// <b>数の根拠。</b> 正射影カメラの見える範囲は
+        /// 半幅 ＝ <see cref="CameraOrthographicSize"/> × 画面比（16:9 で約 8.9）、
+        /// 半奥行 ＝ サイズ ÷ sin(俯角)（約 6.1）。カメラは Area の端まで寄れるので、
+        /// 端から<b>半幅ぶん</b>はみ出していれば画面は覆える。14 はその上に余裕を足した値。
+        /// </summary>
+        public const float BackdropMargin = 14f;
+
+        /// <summary>背景面の厚み（板として置くだけ。Collider は持たない）。</summary>
+        public const float BackdropThickness = 0.5f;
+
+        /// <summary>
+        /// 背景面の上面を床の<b>下面</b>からどれだけ下げるか。
+        ///
+        /// 地形より<b>奥</b>に置く（§7.3 の「実地形より奥に描画し、地形が読み込まれたら
+        /// 自然に隠れる」）。同じ高さに置くと Z ファイティングで<b>ちらつく</b>。
+        /// </summary>
+        public const float BackdropDropBelowFloor = 0.15f;
+
         /// <summary>壁の厚み。</summary>
         public const float WallThickness = 0.5f;
 

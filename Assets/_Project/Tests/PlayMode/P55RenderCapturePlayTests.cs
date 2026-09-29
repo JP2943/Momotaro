@@ -512,6 +512,164 @@ namespace Momotaro.Tests.PlayMode
             }
         }
 
+        // ---------------------------------------------------------------- 背景の補完（工程 P55-11a）
+
+        /// <summary>
+        /// <b>隣がまだ載っていない間も、未描画の領域を出さない</b>（§7.3 の「背景の補完」。工程 P55-11a）。
+        ///
+        /// 旧 Area の引き継ぎ（§6.2 手順 11）が消したのは<b>到着まわり</b>の虚空だけである。
+        /// §7.3 は「旧 Area の保持だけでは<b>初回ロード待ち</b>や<b>別候補への切替</b>を
+        /// すべて覆えないため、必要な箇所には背景の補完も設ける」とも定める。
+        ///
+        /// <b>通常速度では見えないことがある。</b> 先読みが間に合えば境界へ近づく前に隣が載るので、
+        /// 「たまたま通る」検査になってしまう。ここでは<b>読込を終わらせない</b>差し替えで、
+        /// 隣が永久に来ない状態を作る——遅延の度合いに寄りかからない。
+        ///
+        /// ここで見るのは<b>初回ロード待ち</b>——隣が一度も載らないまま境界へ寄る区間である。
+        /// もう一方の「別候補への切替中」は
+        /// <see cref="NearTheSeam_ShowsNoVoidWhileTheNeighbourIsReleased"/> が見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator NearTheSeam_ShowsNoVoidWhileTheNeighbourIsMissing(
+            [Values("EastWest", "NorthSouth")] string arrangement)
+        {
+            _route = RouteOf(arrangement);
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            // <b>読込を終わらせない。</b> 隣は永久に来ない——遅延の度合いに寄りかからない形。
+            var frozen = new NeverFinishingSceneHost();
+            transitions.SlideSceneHost = frozen;
+
+            yield return PlaceBeforeExit(_route.ExitFromA, _route.BackStep);
+            yield return SettleCamera();
+
+            Camera camera = ResidentCamera();
+            using (var watch = new HoleWatch(camera))
+            {
+                float reference = watch.ObserveLuminance();
+                Assert.Greater(reference, 0.01f, "前提：画面が真っ暗ではない。");
+
+                // ---- 1. 初回ロード待ち ----
+                for (int i = 0; i < 60; i++)
+                {
+                    yield return null;
+                    watch.Observe("初回ロード待ち", reference);
+                }
+
+                Assert.AreNotEqual(AreaPreloadPhase.Staged, transitions.Slide.Preloader.Phase,
+                    "前提：隣はまだ載っていない（載っていたら『ロード待ち』を見ていない）。"
+                    + " 先読み=" + transitions.Slide.Preloader.Phase);
+                Assert.AreEqual(1, SceneManager.sceneCount, "前提：Scene は 1 枚だけ。");
+
+                Assert.AreEqual(0, watch.WorstHolePixels,
+                    "隣が載っていなくても未描画の領域を出さない（最悪 " + watch.WorstHolePixels
+                    + " 画素・場面「" + watch.WorstHoleLabel + "」・画面 x "
+                    + watch.WorstHoleFrame.HoleMinX + "〜" + watch.WorstHoleFrame.HoleMaxX
+                    + " y " + watch.WorstHoleFrame.HoleMinY + "〜" + watch.WorstHoleFrame.HoleMaxY
+                    + "）。§7.3 の背景の補完。");
+
+                Assert.Greater(watch.WorstLuminanceRatio, 0.5f,
+                    "覆っているのは<b>背景であって暗幕ではない</b>（最小の明るさ比 "
+                    + watch.WorstLuminanceRatio + "）。暗転や黒帯で通す対応は認めない（§7.3）。");
+
+                Debug.Log("背景の補完 " + _route.Label + "：" + watch.Observations
+                    + " フレームを見て穴 0・最小明るさ比 " + watch.WorstLuminanceRatio);
+            }
+        }
+
+        /// <summary>
+        /// <b>隣を手放しているあいだも、未描画の領域を出さない</b>（§7.3。工程 P55-11a）。
+        ///
+        /// 別候補への切替は「保持していたものを<b>解放してから</b>読む」（§6.2 手順 11 の契約表）。
+        /// 画面から見えるのは<b>その解放の区間</b>——隣が消えて、次がまだ来ていない間である。
+        ///
+        /// <b>試遊配置には候補が 1 つしか無い。</b> だから「別の候補へ切り替える」ものは作れない。
+        /// 作れるのは<b>解放だけ</b>で、絵の上ではそれが切替中と同じ区間になる。
+        /// （候補を 2 つ持つ配置そのものは、必要になった工程で足す。）
+        /// </summary>
+        [UnityTest]
+        public IEnumerator NearTheSeam_ShowsNoVoidWhileTheNeighbourIsReleased(
+            [Values("EastWest", "NorthSouth")] string arrangement)
+        {
+            _route = RouteOf(arrangement);
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            yield return PlaceBeforeExit(_route.ExitFromA, _route.BackStep);
+            yield return SettleCamera();
+
+            AreaPreloader preloader = transitions.Slide.Preloader;
+
+            float staged = Time.realtimeSinceStartup + 20f;
+            while (preloader.Phase != AreaPreloadPhase.Staged && Time.realtimeSinceStartup < staged)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(AreaPreloadPhase.Staged, preloader.Phase, "前提：隣が載っている。");
+            Assert.AreEqual(2, SceneManager.sceneCount, "前提：Scene は 2 枚。");
+            int releasesBefore = preloader.ReleaseStartedCount;
+
+            Camera camera = ResidentCamera();
+            using (var watch = new HoleWatch(camera))
+            {
+                float reference = watch.ObserveLuminance();
+
+                // <b>手放させる。</b> <c>ClearRequest</c> はその場で <c>Poll</c> まで進むので、
+                // 距離による先読みが望みを立て直す前に解放が始まる。
+                preloader.ClearRequest();
+
+                bool sawOnlyOne = false;
+                for (int i = 0; i < 60; i++)
+                {
+                    yield return null;
+                    watch.Observe("解放中", reference);
+                    sawOnlyOne = sawOnlyOne || SceneManager.sceneCount == 1;
+                }
+
+                Assert.Greater(preloader.ReleaseStartedCount, releasesBefore,
+                    "前提：解放が始まった（始まっていなければ、この区間を見ていない）。");
+                Assert.IsTrue(sawOnlyOne,
+                    "前提：隣が実際に消えた瞬間がある（消えていなければ虚空も出ようがない）。");
+
+                Assert.AreEqual(0, watch.WorstHolePixels,
+                    "隣を手放しているあいだも未描画の領域を出さない（最悪 " + watch.WorstHolePixels
+                    + " 画素・場面「" + watch.WorstHoleLabel + "」・画面 x "
+                    + watch.WorstHoleFrame.HoleMinX + "〜" + watch.WorstHoleFrame.HoleMaxX
+                    + "）。見たフレーム数=" + watch.Observations + "（§7.3）。");
+
+                Assert.Greater(watch.WorstLuminanceRatio, 0.5f,
+                    "覆っているのは背景であって暗幕ではない（最小の明るさ比 "
+                    + watch.WorstLuminanceRatio + "）。");
+            }
+        }
+
+        /// <summary>
+        /// 読込を<b>終わらせない</b> Scene 操作（撤去は本物へ通す）。
+        ///
+        /// 「遅らせる」ではなく「終わらせない」にしてあるのは、遅延の度合いに
+        /// 寄りかからないためである——秒数で作ると、速い機械で<b>たまたま通る</b>。
+        /// </summary>
+        private sealed class NeverFinishingSceneHost : IAreaSceneHost
+        {
+            private readonly UnityAreaSceneHost _real = new UnityAreaSceneHost();
+
+            public IAreaSceneOperation LoadAdditive(string scenePath) => new NeverDone();
+
+            public IAreaSceneOperation Unload(int sceneHandle) => _real.Unload(sceneHandle);
+
+            public bool IsLoaded(int sceneHandle) => _real.IsLoaded(sceneHandle);
+
+            private sealed class NeverDone : IAreaSceneOperation
+            {
+                public bool IsDone => false;
+                public bool HasError => false;
+                public int SceneHandle => 0;
+            }
+        }
+
         // ---------------------------------------------------------------- 撮る
 
         /// <summary>1 フレームぶんの事実（判定用の数字と、録画に残した枚）。</summary>

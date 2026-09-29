@@ -251,6 +251,50 @@ namespace Momotaro.Editor.Phase55
 
             collected.FloorTop = collected.FloorBounds.max.y;
 
+            // <b>背景面</b>（§7.3 の「背景の補完」。工程 P55-11a）。
+            //
+            // 隣 Area がまだ読み込まれていない間、境界の向こうは未描画の虚空になる。
+            // 保持（§6.2 手順 11）は到着まわりしか覆えないので、各 Area が自分の地形より
+            // 広い背景面を 1 枚持つ。<b>Builder 再生成で消えたことに気付けるように</b>ここで見る。
+            Renderer backdrop = null;
+            foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer != null && renderer.name == "Backdrop")
+                {
+                    backdrop = renderer;
+                    break;
+                }
+            }
+
+            if (backdrop == null)
+            {
+                errors.Add(scenePath + ": 背景面（Backdrop）が見つかりません（§7.3 の背景の補完）。");
+                return false;
+            }
+
+            if (backdrop.GetComponent<Collider>() != null)
+            {
+                errors.Add(scenePath + ": 背景面が Collider を持っています"
+                    + "（移動可能範囲・NavMesh・AI に関与させない。§7.3）。");
+            }
+
+            if (backdrop.bounds.max.y > collected.FloorBounds.min.y)
+            {
+                errors.Add(scenePath + ": 背景面が床より奥にありません（背景の上面 "
+                    + backdrop.bounds.max.y + " ／床の下面 " + collected.FloorBounds.min.y
+                    + "）。地形が読み込まれたら自然に隠れる構成にする（§7.3）。");
+            }
+
+            float marginX = backdrop.bounds.extents.x - collected.FloorBounds.extents.x;
+            float marginZ = backdrop.bounds.extents.z - collected.FloorBounds.extents.z;
+            float required = Phase5Layout.BackdropMargin - 0.5f;
+            if (marginX < required || marginZ < required)
+            {
+                errors.Add(scenePath + ": 背景面が地形の外側へ十分はみ出していません（x+"
+                    + marginX + " z+" + marginZ + " ／必要 " + required
+                    + "）。カメラが端へ寄ったときに虚空が出る（§7.3）。");
+            }
+
             // 外周壁。接続口の判定に使う（同じ理由で Renderer から採る）。
             //
             // <b>4 面すべてを採る。</b> 以前は東西の 2 面だけ採っていたので、

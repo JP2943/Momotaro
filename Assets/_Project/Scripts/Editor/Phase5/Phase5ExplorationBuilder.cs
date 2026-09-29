@@ -596,6 +596,7 @@ namespace Momotaro.Editor.Phase5
             const float w = Phase5Layout.AreaAWidth;
             const float d = Phase5Layout.AreaADepth;
 
+            CreateBackdrop(env.transform, Vector3.zero, w, d);
             CreateFloor(env.transform, Vector3.zero, w, d, floorMat);
             CreateOuterWalls(env.transform, Vector3.zero, w, d, wallMat, t.AreaASeam);
 
@@ -714,6 +715,7 @@ namespace Momotaro.Editor.Phase5
             const float w = Phase5Layout.AreaBWidth;
             const float d = Phase5Layout.AreaBDepth;
 
+            CreateBackdrop(env.transform, Vector3.zero, w, d);
             CreateFloor(env.transform, Vector3.zero, w, d, floorMat);
             CreateOuterWalls(env.transform, Vector3.zero, w, d, wallMat, t.AreaBSeam);
 
@@ -864,6 +866,44 @@ namespace Momotaro.Editor.Phase5
             so.FindProperty("_catalog").objectReferenceValue =
                 AssetDatabase.LoadAssetAtPath<AreaCatalogData>(t.CatalogDataPath);
             so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>
+        /// <b>背景面</b>を 1 枚置く（P5.5 §7.3。裁定 1。工程 P55-11a）。
+        ///
+        /// <b>何のために置くか。</b> 隣 Area がまだ読み込まれていない間、境界の向こうは
+        /// <b>未描画の虚空</b>になる。旧 Area の引き継ぎ（§6.2 手順 11）で到着まわりの虚空は
+        /// 消えたが、<b>初回のロード待ち</b>と<b>別候補への切替中</b>は保持では覆えない——
+        /// §7.3 が「必要な箇所には背景の補完も設ける」と言っているのはここである。
+        ///
+        /// <b>置き方の条件</b>（§7.3／裁定 1）。
+        /// <list type="bullet">
+        /// <item><description><b>実地形より奥</b>——床の下面よりさらに下げる。
+        /// 地形が読み込まれれば、その地形が前に出て自然に隠れる。</description></item>
+        /// <item><description><b>Collider を持たない</b>（<c>solid: false</c>）。
+        /// 移動可能範囲・NavMesh・AI・報酬・進行状態のどれにも関与しない。</description></item>
+        /// <item><description><b>黒で覆わない</b>——床より少し暗い同系色にする。
+        /// 暗転や黒帯で検査を通す対応は §7.3 が認めていない。</description></item>
+        /// <item><description><b>Area を増やさない</b>——背景は各 Area が自分で持つので、
+        /// 在留上限 2 は変わらない。</description></item>
+        /// </list>
+        ///
+        /// 正式な遠景素材はここでは要らない（「地形に馴染む簡素な背景面でよい」）。
+        /// 差し替えるときはこの 1 か所とマテリアルだけを変える。
+        /// </summary>
+        private static void CreateBackdrop(Transform parent, Vector3 center, float width, float depth)
+        {
+            Material mat = Phase5Placeholder.EnsureMaterial(
+                "M_P5_Backdrop", Phase5Placeholder.BackdropColor);
+
+            float top = -Phase5Layout.FloorThickness - Phase5Layout.BackdropDropBelowFloor;
+            Phase5Placeholder.CreateBox("Backdrop", parent,
+                center + new Vector3(0f, top - (Phase5Layout.BackdropThickness * 0.5f), 0f),
+                new Vector3(
+                    width + (Phase5Layout.BackdropMargin * 2f),
+                    Phase5Layout.BackdropThickness,
+                    depth + (Phase5Layout.BackdropMargin * 2f)),
+                mat, solid: false);
         }
 
         private static void CreateFloor(Transform parent, Vector3 center, float width, float depth, Material mat)
