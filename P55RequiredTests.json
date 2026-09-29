@@ -9,7 +9,8 @@
     "P55-03",
     "P55-04",
     "P55-05",
-    "P55-06"
+    "P55-06",
+    "P55-10"
   ],
   "requirements": [
     {
@@ -191,6 +192,11 @@
       "id": "P55-P15",
       "summary": "出発・中間・到着の実描画（§11 の P15）。16:9 で描き、背景を世界に無い色へ替えた 1 枚で地形の穴を数え（0 画素）、主人公の絵を消した 1 枚との差で「実際に塗っている」ことを見る（200 画素以上）。暗転は遷移前との明るさ比で見る。到着直後の虚空は来た方向にしか無いこと。16:9 の連番を Recordings/ へ残す。東西・南北の両配置",
       "stage": "P55-06"
+    },
+    {
+      "id": "P55-SEC6-2E",
+      "summary": "初回の Scene 構築と、入場ごとの準備処理の分離（仕様書 §6.2 手順 5。工程 P55-10b）。構築は Scene インスタンスにつき一度だけ、入場準備は入場のたびに走る。入場ごとに入口へ置き直し、出入口の跳ね返り止めを掛け直し、準備完了を報告し直す。前の入場の途中動作（減速・移動止め・向きの固定・先行入力・必殺の溜め）は捨て、値（HP・スタミナ・CD）には触らない——値は運ばれてきた Snapshot が正本である。徳・訪問記録のような一度限りのものを二度処理しない。§11 の P17（往復のロード回数・Scene handle の再利用・B で HP／CD を変えて A へ戻る）は、旧 Area の引き継ぎが入る工程 P55-10c で追加する",
+      "stage": "P55-10"
     }
   ],
   "tests": [
@@ -774,6 +780,36 @@
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheSlide_DrawsConnectedGroundWithOneHeroAndNoBlackout(\"NorthSouth\")",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.FromAcceptanceToCommit_ExactlyOneHeroIsDrawnEveryFrame"
+      ]
+    },
+    {
+      "requirementId": "P55-SEC6-2E",
+      "stage": "P55-10",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.PreparingTheEntryTwice_BuildsTheSceneOnce",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.EachEntry_ReportsPreparedAgain",
+        "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.EachEntry_PlacesThePlayerAtTheEntryAgain",
+        "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.EachEntry_DisarmsTheExitGatesAgain",
+        "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.EachEntry_DropsTheStaleActionButKeepsTheValues",
+        "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.EachEntry_DoesNotGrantAnythingTwice"
+      ]
+    },
+    {
+      "requirementId": "P55-SEC6-2E",
+      "stage": "P55-10",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55AreaEntryResetTests.ResetForAreaEntry_ReturnsThePlayerToNeutral",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55AreaEntryResetTests.ResetForAreaEntry_KeepsTheInputWired",
+        "Momotaro.Tests.EditMode.P55AreaEntryResetTests.ResetForAreaEntry_LocksTheSpecialUntilTheButtonIsReleased",
+        "Momotaro.Tests.EditMode.P55AreaEntryResetTests.ResetForCampaignRespawn_DoesTheSameAsAreaEntry",
+        "Momotaro.Tests.EditMode.P55AreaEntryResetTests.ThePort_NeutralizesThroughThePlayerRoot",
+        "Momotaro.Tests.EditMode.P55AreaEntryResetTests.ThePort_WithNothingWired_DoesNotThrow"
       ]
     }
   ],

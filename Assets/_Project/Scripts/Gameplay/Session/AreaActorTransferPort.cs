@@ -270,6 +270,48 @@ namespace Momotaro.Gameplay.Session
             return true;
         }
 
+        /// <summary>直近の入場ごとの中立化を行った回数（診断・テスト用）。</summary>
+        public int AreaEntryResetCount { get; private set; }
+
+        /// <summary>
+        /// <b>エリアへ入場するたび</b>の中立化（P5.5 §6.2 手順 5。工程 P55-10b）。
+        ///
+        /// 進行中の行動と先行入力を捨てるだけで、<b>値には触らない</b>——
+        /// HP・スタミナ・CD は運ばれてきた Snapshot が正本である。
+        /// だから呼ぶ順は <b>中立化 → 配置 → <see cref="TryApply"/></b> で固定する。
+        /// 逆にすると、ここで構えを解いたときに生じた CD が復元値を上書きする。
+        ///
+        /// <b>旧実装では要らなかった。</b> 入場ごとに Scene を作り直していたので Actor が新品になり、
+        /// 持ち越しようがなかった。旧 Area を<b>保持して再利用する</b>と（§6.2 手順 11）
+        /// 同じ Actor へ戻ってくるので、出て行ったときの攻撃モーション・構え・先行入力が残る。
+        /// <see cref="RestoreForCampaignRespawn"/> の「Scene が作り直されることを当てにしない」と
+        /// <b>同じ理由</b>で、ここにも 1 か所だけ置く。
+        /// </summary>
+        public void ResetForAreaEntry()
+        {
+            AreaEntryResetCount++;
+
+            // 犬丸：進行中の行動 → 所有権（採取と同じ順）。
+            if (_companionCombat != null)
+            {
+                _companionCombat.CancelAttack();
+            }
+
+            if (_companionDefense != null)
+            {
+                _companionDefense.Guard?.Release();
+                _companionDefense.Evade?.Interrupt();
+            }
+
+            if (_companionStates != null)
+            {
+                _companionStates.ResetArbitration();
+            }
+
+            // 主人公：状態機械・攻撃・先行入力・向きのロック・移動抑制。値は触らない。
+            ResolvePlayerState()?.ResetForAreaEntry();
+        }
+
         /// <summary>
         /// 本編型死亡再開の全回復（P5-08。仕様書 v1.1 §9.1 手順 6）。
         /// 主人公と加入済み犬丸を全回復・CD 解除・短時間状態解除して、<b>出撃できる状態</b>へ戻す。

@@ -33,6 +33,25 @@ namespace Momotaro.Infrastructure.World
     /// <b>「1 フレーム待てば大丈夫」に依存しない。</b> 各段を明示的に順番に呼び、
     /// 途中で失敗したら Ready を確定せずに理由を残す。初期化前の Actor 更新・報酬購読は
     /// <see cref="AreaContext.IsAreaReady"/> と Gameplay 時計のゲートが止める。
+    ///
+    /// <b>上の順序は「初回だけの構築」と「入場ごとの準備」が混ざっている</b>（P5.5 §6.2 手順 5。
+    /// 工程 P55-10b）。入場ごとに Scene を読み直していたあいだは、それで区別する必要が無かった
+    /// ——Scene が新品なら「初回」しか無い。旧 Area を<b>保持して再利用する</b>と
+    /// （§6.2 手順 11）二度目の入場が起きるので、どちらなのかを言い分ける必要が出た。
+    ///
+    /// <list type="table">
+    /// <item><term><see cref="EnsureSceneBuilt"/>（初回だけ）</term>
+    /// <description>Session の取得、進行・調査記録の注入、カタログと接続の受け渡し、
+    /// 死亡再開の実行役と Encounter の取り出し口。<b>この Scene が生きているあいだ変わらないもの。</b></description></item>
+    /// <item><term><see cref="PrepareForEntry"/>（入場ごと）</term>
+    /// <description>入口の解決と配置、Actor 値の復元、門・調査・Encounter の記録の反映、
+    /// 出入口の跳ね返り止め、前の入場の途中動作の破棄、到着世代の報告。
+    /// <b>留守のあいだに変わりうるもの。</b></description></item>
+    /// </list>
+    ///
+    /// <b>どちらに置くかを間違えると、二重処理か未反映のどちらかになる。</b>
+    /// 受入条件は「速いか」ではなく、<b>読み直していた従来とゲーム上の結果が変わらないか</b>
+    /// （§11 の P17）。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class AreaInitializer : MonoBehaviour
@@ -79,6 +98,22 @@ namespace Momotaro.Infrastructure.World
         /// <summary>初期化が成功したか（診断・テスト用）。</summary>
         public bool Initialized { get; private set; }
 
+        /// <summary>
+        /// この Scene インスタンスの構築が済んだか（診断・テスト用。工程 P55-10b）。
+        /// </summary>
+        public bool SceneBuilt { get; private set; }
+
+        /// <summary>
+        /// 構築を行った回数（診断・テスト用）。<b>1 を超えたら「一度だけ」が壊れている。</b>
+        /// </summary>
+        public int BuildCount { get; private set; }
+
+        /// <summary>
+        /// 入場準備を行った回数（診断・テスト用）。保持した Area へ戻るたびに増える。
+        /// <b>ここが増えないまま再利用されるのが、裁定 2 で塞いだ穴である。</b>
+        /// </summary>
+        public int EntryCount { get; private set; }
+
         /// <summary>失敗の理由（診断・テスト用。成功なら空）。</summary>
         public string FailureReason { get; private set; } = string.Empty;
 
@@ -99,6 +134,11 @@ namespace Momotaro.Infrastructure.World
         /// 終端失敗で放棄された遷移のあとに、遅れて読み終わった Scene がここに来る。
         /// </summary>
         public bool SelfActivationBlocked { get; private set; }
+
+        // 構築のときに解決して持ち回るもの（入場ごとに引き直さない）。
+        private GameSessionBootService _sessions;
+        private GameSessionState _session;
+        private AreaTransitionService _transitions;
 
         private void Start()
         {
@@ -134,14 +174,34 @@ namespace Momotaro.Infrastructure.World
             Initialize();
         }
 
-        /// <summary>初期化を実行する（テストから明示的に呼べるよう分離）。</summary>
-        public bool Initialize()
-        {
-            if (Initialized)
-            {
-                return true;
-            }
+        /// <summary>
+        /// 初期化を実行する（テストから明示的に呼べるよう分離）。
+        ///
+        /// 中身は <see cref="PrepareForEntry"/>——<b>初回の Scene 構築と、入場ごとの準備処理は
+        /// 同じ手順の中に並んでいて、二度目からは構築の段だけを飛ばす</b>（§6.2 手順 5）。
+        /// 名前を残しているのは、起動経路と既存テストがこれを初期化の入口として見ているため。
+        /// </summary>
+        public bool Initialize() => PrepareForEntry();
 
+        /// <summary>
+        /// <b>この Area へ入場するたび</b>に走る準備処理（P5.5 §6.2 手順 5。工程 P55-10b）。
+        ///
+        /// <b>以前はここが一度しか走らなかった。</b> 冒頭に <c>if (Initialized) return true;</c> があり、
+        /// <c>Start()</c> も二度目は呼ばれない。入場ごとに Scene を読み直していたあいだは
+        /// それで正しかった——Scene が新品なら「初回」しか無い。
+        /// 旧 Area を<b>保持して再利用する</b>と（§6.2 手順 11）、二度目の入場で
+        /// <b>入口配置・最新 Snapshot の復元・門／調査／Encounter の反映・到着世代の報告が
+        /// まるごと落ちる</b>。それが GPT 裁定 2 の指摘した穴である。
+        ///
+        /// だから<b>初回だけの構築</b>（<see cref="EnsureSceneBuilt"/>：部品の配線と参照解決）と
+        /// <b>入場ごとの準備</b>（ここ）を分けた。順序は §5.1 のままで、
+        /// 二度目からは構築の段が何もしないだけである。
+        ///
+        /// <b>受入条件は「速いか」ではなく「同じ結果か」。</b> 保持して再利用しても、
+        /// 読み直していた従来とゲーム上の結果が変わらないことを要求する（§11 の P17）。
+        /// </summary>
+        public bool PrepareForEntry()
+        {
             // 1. 必須参照の検証（Scene に触る前に落とす）。
             if (_areaRoot == null || _areaRoot.Definition == null || _context == null)
             {
@@ -155,12 +215,17 @@ namespace Momotaro.Infrastructure.World
 
             StableId areaId = _areaRoot.AreaId;
 
+            // 入場ごとに言い直す値は、入場ごとに 0 へ戻す。
+            // 前の入場の「遅れて着いた」判定が残ると、二度目の入場が不当に活動を断られる。
+            SelfActivationBlocked = false;
+
             // 初期化を「始めた時点の」到着要求を捕まえる（GPT レビュー R2 の指摘 4）。
             // 完了時に共有領域から読み直すと自分自身との比較になり、照合の意味が無くなる。
             int arrivalToken = CaptureArrivalToken(areaId);
             ArrivalToken = arrivalToken;
 
             // 2. 到着先の入口を決める。遷移で来たならその入口、直開きなら既定入口（§5.2）。
+            //    <b>入場ごとに決め直す。</b> 同じ Area へ別の入口から入ることがある。
             StableId entryId = ResolveEntryId(areaId);
             if (entryId.IsEmpty)
             {
@@ -174,82 +239,29 @@ namespace Momotaro.Infrastructure.World
 
             _context.BeginInitialize(areaId, entryId);
 
-            // 3. Session を用意する（既存があれば再利用。§5.2）。
-            GameSessionBootService sessions = ResolveSessionService();
-            if (sessions == null)
+            // 3. 初回だけの構築（Session・注入・カタログ・接続・死亡再開の配線）。
+            if (!EnsureSceneBuilt())
             {
-                return Fail("Session サービスが見つかりません（Bootstrap 未起動）。");
+                return false;
             }
 
-            GameSessionState session = sessions.EnsureSession();
-
-            // 4. 注入（Actor の活動開始より前。§4.2／§4.3）。
+            GameSessionState session = _session;
             AreaRuntimeState area = session.GetOrCreateArea(areaId);
 
             // <b>ここで訪問済みにしない</b>（P5.5 §4.1／§11 の E06。工程 P55-04b）。
-            //
-            // P5.5 では到着側が「隔離された Prepared」まで進んでからスライドが走るので、
-            // 初期化の完了は<b>まだ着いていない</b>。ここで記録すると、Rollback した遷移や
-            // タイムアウト後に遅れて着いた Scene が訪問済みを残す。
             // 記録するのは活動を許可した所有者（<see cref="AreaTransitionService.NoteArrival"/>）で、
             // 所有者が居ない直開きだけ下で自分が記録する。
 
-            if (_progress != null && !_progress.Bind(session.Progress))
-            {
-                return Fail("進行データを注入できませんでした（使用後の差し替えの可能性）。");
-            }
+            // 4. <b>前の入場の残りを捨てる。</b> 保持した Area へ戻ると同じ Actor へ帰ってくるので、
+            //    出て行ったときの攻撃モーション・構え・先行入力・向きのロックがそのまま残る。
+            //    値には触らない（下の復元が正本）。順は 中立化 → 配置 → 復元 で固定する。
+            _transferPort?.ResetForAreaEntry();
 
-            if (_record != null && !_record.Bind(area.Investigation))
-            {
-                return Fail("調査記録を注入できませんでした。");
-            }
-
-            // 5. 遷移サービスへカタログと受付条件を渡す。
-            AreaTransitionService transitions = ResolveTransitionService();
-            if (transitions == null)
-            {
-                return Fail("遷移サービスが見つかりません（Bootstrap 未起動）。");
-            }
-
-            if (!transitions.Bind(_catalog, _conditions))
-            {
-                return Fail("Area カタログを構築できませんでした（Data の不整合）。");
-            }
-
-            // 接続一覧（P5.5 §3.1）。<b>未設定は失敗ではない</b>——P5 の Area は接続を持たず、
-            // 出入口が行き先を直接指す。設定されているのに壊れている場合だけ失敗にする。
-            if (!transitions.BindConnections(_connections))
-            {
-                return Fail("エリア接続を構築できませんでした（Data の不整合）。");
-            }
-
-            // 5b. 死亡再開の実行役へ Session と遷移役を渡す（§9.1）。
-            //
-            // <b>この下で失敗しうる段より前に配線する</b>（GPT レビュー R7 の指摘 1）。
-            // 以前は門の復元より後に置いていたので、門の復元で落ちると実行役が未配線のまま残り、
-            // 段階は「再試行待ち」へ戻っているのに <c>RequestRespawn</c> が NotWired で断る、という
-            // <b>再開画面は出るが押しても何も起きない</b>状態になっていた。
-            // ここより前で落ちた場合に備えて、実行役が参照する Session と遷移役は
-            // 常駐（<see cref="GameSessionProvider"/>／<see cref="CampaignRespawnTravelProvider"/>）
-            // からも取り直せるようにしてある。
-            // <b>実行役そのものが Scene に居ない場合はそれでも足りない</b>ので、
-            // 表示と受付の肩代わりを常駐側（<c>CampaignRespawnResidentView</c>）に置いてある。
-            // 判断（一度限り・段階）は Session 側が持ち、ここは配線だけを行う。
-            if (_respawn != null)
-            {
-                _respawn.BindSession(() => session);
-                _respawn.BindTravel(transitions);
-            }
-
-            // 6. 入口へ配置し、運ばれてきた Actor 値を復元する（§4.4〜§4.6）。
+            // 5. 入口へ配置し、運ばれてきた Actor 値を復元する（§4.4〜§4.6）。
             //    値の復元は AreaReady より前。1 つでも失敗したら Ready を確定しない。
             PlaceArrivals(entryPoint, definitionFacing: ResolveFacing(entryId));
 
             // 死亡再開で着いたなら、運ばれてきた値ではなく<b>全回復</b>を適用する（§9.1 手順 6）。
-            //
-            // 「再開は Scene を作り直すのだから Actor は新品」で済ませない。P5 では実際にそうでも、
-            // それは偶然で、復帰の中身がどこにも書かれていない状態になる。
-            // 到着の種類で分岐を 1 つ置き、再開のときだけ全回復を通す。
             bool respawnArrival = session.Respawn.Phase == CampaignRespawnPhase.Requested;
             if (respawnArrival)
             {
@@ -258,16 +270,13 @@ namespace Momotaro.Infrastructure.World
                     return Fail("死亡再開で到着しましたが、Actor を復帰させる窓口が未配線です。");
                 }
 
-                transitions.ClearPendingTransfer();
+                _transitions.ClearPendingTransfer();
                 _transferPort.RestoreForCampaignRespawn();
 
                 // <b>ここで完了扱いにしない</b>（GPT レビュー R6 の指摘 1）。
-                // この下にはまだ門の復元など失敗しうる段があり、さらに活動の許可は
-                // 世代・到着準備を確認した遷移サービスが出す。先に Idle へ戻してしまうと、
-                // そのあとに落ちても失敗通知を受理できず、「再開する」の再表示・再試行が成立しない。
                 // 完了の確定は AreaTransitionService が活動を許可したあとに行う（§9.1 手順 7）。
             }
-            else if (transitions.TryPeekPendingTransfer(out AreaTransferSnapshot transfer))
+            else if (_transitions.TryPeekPendingTransfer(out AreaTransferSnapshot transfer))
             {
                 if (_transferPort == null)
                 {
@@ -280,9 +289,12 @@ namespace Momotaro.Infrastructure.World
                 }
             }
 
-            // 6a. 門の開通を記録から復元する（§4.3／§7.3）。
-            //     復元は「すでに開いていた」のであって、いま開通したのではないので通知は出さない。
-            //     ここで失敗したら Ready を確定しない：見た目だけ開いて通れない状態を受入にしない。
+            // 6. 門の開通を記録から復元する（§4.3／§7.3）。
+            //    復元は「すでに開いていた」のであって、いま開通したのではないので通知は出さない。
+            //    ここで失敗したら Ready を確定しない：見た目だけ開いて通れない状態を受入にしない。
+            //    <b>入場ごとに押し直す。</b> 保持していた側の Area でも、留守のあいだに
+            //    記録が変わっていることがある（同じ Flag を別の Area のレバーが開ける構成）。
+            //    適用済みなら回数は増えない（<see cref="Momotaro.Gameplay.Interaction.AreaFlagDoor.TryApplyOpened"/>）。
             foreach (Momotaro.Gameplay.Interaction.AreaFlagDoor door in _areaRoot.Doors)
             {
                 if (door == null || !area.IsOpen(door.FlagId))
@@ -296,18 +308,14 @@ namespace Momotaro.Infrastructure.World
                 }
             }
 
-            // 6c. Encounter へ Session の世界状態を渡し、クリア済みを復元する（§4.3／§8.4 末尾）。
-            //     常駐 Session は Scene へ serialize できないので、参照ではなく取り出し口を渡す。
-            //     クリア済みの区画で Trigger を踏んでも戦闘が始まらないのは、この復元が効いているため。
-            if (_encounter != null)
-            {
-                _encounter.BindSession(() => area, () => session.RespawnCycle);
-                _encounter.RestoreFromRecord();
-            }
+            // 7. Encounter のクリア済みを復元する（§4.3／§8.4 末尾）。
+            //    取り出し口の配線は構築側（一度だけ）、記録の反映は<b>入場ごと</b>。
+            _encounter?.RestoreFromRecord();
 
-            // 6b. 到着直後の跳ね返りを止める（§6.1 末尾）。
-            //     入口 Trigger の中に立った状態で到着するのが普通なので、
-            //     一度出るまで出入口は要求を出さない。押しっぱなしを新しい押下と解釈しない。
+            // 8. 到着直後の跳ね返りを止める（§6.1 末尾）。
+            //    入口 Trigger の中に立った状態で到着するのが普通なので、
+            //    一度出るまで出入口は要求を出さない。押しっぱなしを新しい押下と解釈しない。
+            //    <b>入場ごとに必要。</b> 落とすと、保持した Area へ戻った瞬間に来た道へ跳ね返る。
             foreach (AreaExitGate gate in _areaRoot.ExitGates)
             {
                 if (gate != null)
@@ -316,7 +324,7 @@ namespace Momotaro.Infrastructure.World
                 }
             }
 
-            // 7. 準備できたことを報告する。<b>活動の許可はここで出さない</b>（GPT レビュー R2 の指摘 1）。
+            // 9. 準備できたことを報告する。<b>活動の許可はここで出さない</b>（GPT レビュー R2 の指摘 1）。
             //    許可は世代・対象・タイムアウトを確認した所有者＝遷移サービスが出す。
             _context.MarkPrepared();
 
@@ -345,9 +353,106 @@ namespace Momotaro.Infrastructure.World
                     "Arrived after the transition was abandoned; not activating this area: " + areaId.Value);
             }
 
+            EntryCount++;
             Initialized = true;
             FailureReason = string.Empty;
-            GameLog.Info(LogCategory.Scene, "Area ready: " + areaId.Value + " / " + entryId.Value);
+            GameLog.Info(LogCategory.Scene,
+                "Area ready: " + areaId.Value + " / " + entryId.Value + " (entry " + EntryCount + ")");
+            return true;
+        }
+
+        /// <summary>
+        /// <b>この Scene インスタンスにつき一度だけ</b>の構築（P5.5 §6.2 手順 5。工程 P55-10b）。
+        ///
+        /// 入れるのは<b>部品の配線と参照解決</b>だけである。Session の取得、進行・調査記録の注入、
+        /// カタログと接続の受け渡し、死亡再開の実行役と Encounter の取り出し口。
+        /// どれも「この Scene が生きているあいだ変わらないもの」で、入場ごとにやり直す意味が無い。
+        ///
+        /// <b>記録から State を反映する処理はここに入れない。</b> 門・調査・Encounter・入口配置は
+        /// 留守のあいだに変わりうるので、入場ごとに <see cref="PrepareForEntry"/> が反映する。
+        /// 「一度だけ」と「毎回」をここで間違えると、二重処理か未反映のどちらかになる。
+        /// </summary>
+        private bool EnsureSceneBuilt()
+        {
+            if (SceneBuilt)
+            {
+                // Session が入れ替わっていたら、注入済みの参照はもう正本ではない。
+                // New Game は Single 読込を伴うのでこの Scene ごと消えるため、通常は起こらない。
+                // 起こったときに<b>静かに古い State を使い続けない</b>ために見ておく。
+                GameSessionState current = _sessions != null ? _sessions.EnsureSession() : null;
+                if (current == null || !ReferenceEquals(current, _session))
+                {
+                    return Fail("Session が入れ替わっています（この Scene の注入はもう正本ではありません）。");
+                }
+
+                return true;
+            }
+
+            StableId areaId = _areaRoot.AreaId;
+
+            // Session を用意する（既存があれば再利用。§5.2）。
+            GameSessionBootService sessions = ResolveSessionService();
+            if (sessions == null)
+            {
+                return Fail("Session サービスが見つかりません（Bootstrap 未起動）。");
+            }
+
+            GameSessionState session = sessions.EnsureSession();
+
+            // 注入（Actor の活動開始より前。§4.2／§4.3）。
+            AreaRuntimeState area = session.GetOrCreateArea(areaId);
+
+            if (_progress != null && !_progress.Bind(session.Progress))
+            {
+                return Fail("進行データを注入できませんでした（使用後の差し替えの可能性）。");
+            }
+
+            if (_record != null && !_record.Bind(area.Investigation))
+            {
+                return Fail("調査記録を注入できませんでした。");
+            }
+
+            // 遷移サービスへカタログと受付条件を渡す。
+            AreaTransitionService transitions = ResolveTransitionService();
+            if (transitions == null)
+            {
+                return Fail("遷移サービスが見つかりません（Bootstrap 未起動）。");
+            }
+
+            if (!transitions.Bind(_catalog, _conditions))
+            {
+                return Fail("Area カタログを構築できませんでした（Data の不整合）。");
+            }
+
+            // 接続一覧（P5.5 §3.1）。<b>未設定は失敗ではない</b>——P5 の Area は接続を持たず、
+            // 出入口が行き先を直接指す。設定されているのに壊れている場合だけ失敗にする。
+            if (!transitions.BindConnections(_connections))
+            {
+                return Fail("エリア接続を構築できませんでした（Data の不整合）。");
+            }
+
+            // 死亡再開の実行役へ Session と遷移役を渡す（§9.1）。
+            //
+            // <b>この下で失敗しうる段より前に配線する</b>（GPT レビュー R7 の指摘 1）。
+            // 以前は門の復元より後に置いていたので、門の復元で落ちると実行役が未配線のまま残り、
+            // <b>再開画面は出るが押しても何も起きない</b>状態になっていた。
+            // 判断（一度限り・段階）は Session 側が持ち、ここは配線だけを行う。
+            if (_respawn != null)
+            {
+                _respawn.BindSession(() => session);
+                _respawn.BindTravel(transitions);
+            }
+
+            // Encounter へ Session の世界状態の<b>取り出し口</b>を渡す（§4.3／§8.4 末尾）。
+            // 常駐 Session は Scene へ serialize できないので、参照ではなく取り出し口を渡す。
+            // 記録の<b>反映</b>（RestoreFromRecord）は入場ごとなので、ここには置かない。
+            _encounter?.BindSession(() => area, () => session.RespawnCycle);
+
+            _sessions = sessions;
+            _session = session;
+            _transitions = transitions;
+            SceneBuilt = true;
+            BuildCount++;
             return true;
         }
 

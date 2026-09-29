@@ -372,20 +372,42 @@ namespace Momotaro.Gameplay.Player
         }
 
         /// <summary>
-        /// 本編型死亡再開のための中立化（P5-08。仕様書 v1.1 §9.1 手順 6「短時間状態解除」）。
+        /// <b>エリアへ入場するたび</b>の中立化（P5.5 §6.2 手順 5。工程 P55-10b）。
         ///
-        /// 被弾中断の共通中立化に加えて<b>状態機械も Idle へ戻す</b>。死亡で入った硬直・
-        /// 直前の Hurt／Defeated の記憶を持ち越すと、生き返った直後に被弾演出が再発火する。
+        /// 被弾中断の共通中立化に加えて<b>状態機械も Idle へ戻す</b>。
+        /// 攻撃の進行・先行入力・回避の連鎖・必殺の溜め・向きのロック・移動抑制を捨て、
+        /// 直前の Hurt／Defeated の記憶も忘れる。押しっぱなしの必殺ボタンは
+        /// <b>ボタンを離すまで再チャージしない</b>（<see cref="NeutralizeForHurt"/> が立てるロック）。
+        ///
+        /// <b>値には触らない。</b> HP・スタミナ・CD は運ばれてきた Snapshot が正本で、
+        /// ここで中立化してから <see cref="Session.AreaActorTransferPort.TryApply"/> が入れる。
+        /// 順序が逆だと、中断で生じた CD が復元値を上書きする。
+        ///
+        /// <b>なぜ入場のたびに要るのか。</b> 旧実装では入場ごとに Scene を作り直していたので
+        /// Actor が新品になり、持ち越しは起こらなかった。旧 Area を<b>保持して再利用する</b>と
+        /// （§6.2 手順 11）同じ Actor へ戻ってくるので、出て行ったときの
+        /// 攻撃モーションや先行入力がそのまま残る。**Scene が作り直されることを当てにしない。**
+        ///
         /// <see cref="ResetToNeutral"/> と違って<b>入力の参照は捨てない</b>：
-        /// あちらは Disable 用で、再開直後の主人公はそのまま操作を受け取らなければならない。
+        /// あちらは Disable 用で、入場直後の主人公はそのまま操作を受け取らなければならない。
         /// </summary>
-        public void ResetForCampaignRespawn()
+        public void ResetForAreaEntry()
         {
             NeutralizeForHurt();
             _machine.Reset();
             _wasHurt = false;
             _wasDefeated = false;
         }
+
+        /// <summary>
+        /// 本編型死亡再開のための中立化（P5-08。仕様書 v1.1 §9.1 手順 6「短時間状態解除」）。
+        ///
+        /// <b>中身は入場ごとの中立化と同じもの</b>だった（工程 P55-10b で気付いた）——
+        /// どちらも「進行中の行動と短時間状態を捨て、状態機械を Idle へ戻す」である。
+        /// 違うのは<b>呼び出し側</b>で、再開ではこのあと全回復を適用し、入場では Snapshot を適用する。
+        /// 同じ処理を 2 か所に書くと、片方だけ直る。
+        /// </summary>
+        public void ResetForCampaignRespawn() => ResetForAreaEntry();
 
         /// <summary>状態・攻撃・ロック・移動抑制・先行入力を中立へ戻す（Disable 時）。</summary>
         public void ResetToNeutral()
