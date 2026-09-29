@@ -307,6 +307,46 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, planner.StartedCount, "始めた回数は増えない。");
         }
 
+        /// <summary>
+        /// <b>保持していなくても抑止できる</b>（工程 P55-08d。GPT 再修正の残件）。
+        ///
+        /// 遷移が走っている間は <see cref="AreaProximityPreloadPlanner.Tick"/> が回らないので、
+        /// <b>手動の再試行から入った遷移では保持が空</b>である。
+        /// 保持から推し測る形だと、そこで失敗しても誰も抑止されない。
+        /// 抑止する相手は<b>失敗した遷移が名指しする</b>。
+        ///
+        /// 実際の順序（解除 → 遷移中は Tick が止まる → 失敗）は
+        /// PlayMode の統合テストで見る（<c>WhenTheRetryFailsToo_…</c>）。
+        /// </summary>
+        [Test]
+        public void SuppressingByName_WorksWithNothingHeld()
+        {
+            var planner = new AreaProximityPreloadPlanner();
+            Assert.IsFalse(planner.HeldConnectionId.IsValid, "前提：何も保持していない。");
+
+            planner.Suppress(ConnEast);
+
+            Assert.AreEqual(ConnEast.Value, planner.SuppressedConnectionId.Value,
+                "名指しで抑止できる。");
+            Assert.IsFalse(
+                planner.Tick(AreaHere, Only(East(2f)), 0.016f, true, out _, out _),
+                "範囲の内に居ても選び直さない。");
+        }
+
+        /// <summary>無効な接続 ID で抑止しても、いまの抑止を壊さない。</summary>
+        [Test]
+        public void SuppressingNothing_DoesNotClearTheCurrentSuppression()
+        {
+            var planner = new AreaProximityPreloadPlanner();
+            planner.Suppress(ConnEast);
+
+            planner.Suppress(default);
+
+            Assert.AreEqual(ConnEast.Value, planner.SuppressedConnectionId.Value,
+                "抑止は残っている。");
+            Assert.AreEqual(1, planner.SuppressedCount, "数え上げも増えない。");
+        }
+
         /// <summary>抑止しても、<b>別の候補</b>は始められる（止めるのは取り下げた先だけ）。</summary>
         [Test]
         public void SuppressingOneCandidate_DoesNotBlockTheOthers()

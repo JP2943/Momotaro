@@ -154,11 +154,20 @@ namespace Momotaro.Gameplay.Session
                     ResetCount++;
                 }
 
+                // <b>抑止を捨てるのは「別の Area へ移った」ときだけ</b>（工程 P55-08d）。
+                //
+                // 初回の <see cref="Tick"/> は<b>移動ではない</b>。ここで捨てると、
+                // まだ一度も回っていない Area で失敗した遷移の抑止が<b>直後に消える</b>——
+                // 抑止は遷移の失敗から名指しで入るので、選定より先に来ることがある。
+                if (_activeArea.IsValid)
+                {
+                    _suppressedConnection = default;
+                }
+
                 _activeArea = activeAreaId;
                 _heldConnection = default;
                 _heldArea = default;
                 _heldPath = null;
-                _suppressedConnection = default;
                 ClearPending();
             }
 
@@ -248,20 +257,44 @@ namespace Momotaro.Gameplay.Session
         }
 
         /// <summary>
-        /// <b>保持を捨て、同じ先を自動では選び直さない</b>（工程 P55-08c。GPT 再修正②）。
+        /// <b>その接続を自動では選び直さない</b>（工程 P55-08d。GPT 再修正の残件）。
         ///
-        /// 呼ぶのは「遷移が先読みを取り下げた」と分かったときである。
-        /// <see cref="Forget"/> だけでは、<b>その場に立っているだけで次のフレームに言い直す</b>。
+        /// <b>抑止する相手は呼び出し側が名指しする。</b> 以前は「いま保持している接続」から
+        /// 推し測っていたが、<b>保持していない場面がある</b>——遷移が走っている間は
+        /// <see cref="Tick"/> が回らないので、手動の再試行から入った遷移では保持が空のままである。
+        /// そこで失敗すると誰も抑止されず、次の <see cref="Tick"/> が同じ接続を選び直した。
+        ///
+        /// <see cref="Forget"/> だけでは足りない。条件（距離）はまだ揃っているので、
+        /// <b>その場に立っているだけで次のフレームに言い直す</b>。
+        /// </summary>
+        public void Suppress(StableId connectionId)
+        {
+            if (!connectionId.IsValid)
+            {
+                return;
+            }
+
+            _suppressedConnection = connectionId;
+            SuppressedCount++;
+
+            if (_heldConnection.Equals(connectionId))
+            {
+                Forget();
+            }
+        }
+
+        /// <summary>
+        /// いま保持している接続を抑止する（呼び出し側が接続を知らない経路のための保険）。
+        ///
+        /// <b>こちらだけに頼らない。</b> 保持は遷移中に更新されないので、
+        /// 失敗した遷移の接続は <see cref="Suppress"/> で名指しする。
         /// </summary>
         public void SuppressHeld()
         {
             if (_heldConnection.IsValid)
             {
-                _suppressedConnection = _heldConnection;
-                SuppressedCount++;
+                Suppress(_heldConnection);
             }
-
-            Forget();
         }
 
         /// <summary>

@@ -76,6 +76,15 @@ namespace Momotaro.Infrastructure.World
 
         private readonly AreaProximityPreloadPlanner _proximity = new AreaProximityPreloadPlanner();
 
+        /// <summary>
+        /// いま走っている（または直前に走っていた）スライドの接続 ID（工程 P55-08d）。
+        ///
+        /// <b>失敗したときに抑止する相手を名指しするために持つ。</b> 距離による先読みの
+        /// 「保持」から推し測ることはできない——遷移中は選定が回らないので、
+        /// 手動の再試行から入った遷移では保持が空のままである。
+        /// </summary>
+        private StableId _slidingConnection;
+
         private readonly System.Collections.Generic.List<AreaPreloadCandidate> _candidates =
             new System.Collections.Generic.List<AreaPreloadCandidate>();
 
@@ -324,6 +333,17 @@ namespace Momotaro.Infrastructure.World
         {
             int departureSceneHandle = departure.SceneHandle;
 
+            // <b>いまの接続を最初に控える</b>（工程 P55-08d）。
+            //
+            // 準備のどこで失敗しても、<c>Rollback</c> が<b>この接続を名指しで抑止できる</b>ように
+            // しておく。段階が進む前に失敗する経路（撤去待ちの時間切れ・在留枠が取れない）も
+            // あるので、控えるのは手順の途中ではなく<b>入口</b>である。
+            _slidingConnection = connection.ConnectionId;
+
+            // <b>抑止はここで解く</b>（§5 の「次の新しい遷移操作で一度だけ再試行できる」）。
+            // プレイヤーが自分で操作したのなら、取り下げた先ももう一度読んでよい。
+            _proximity.ClearSuppression();
+
             if (!_slide.NotifyPreparing(transitionId))
             {
                 yield break;
@@ -377,11 +397,6 @@ namespace Momotaro.Infrastructure.World
             // ここで独自にロードを発行すると、先読みと二重に読むことになる。
             AreaPreloader preloader = EnsurePreloader();
             preloader.ArmRetry(); // 新しい遷移操作は、抱えている失敗を 1 回だけ再試行できる（§5）。
-
-            // <b>抑止も新しい遷移操作で解く</b>（工程 P55-08c。§5 の再試行と同じ時機）。
-            // 距離による先読みが「取り下げられたから選び直さない」と決めた先も、
-            // プレイヤーが自分で操作したのなら、もう一度読んでよい。
-            _proximity.ClearSuppression();
             preloader.Request(connection.ToAreaId, entry.ScenePath);
 
             float waited = 0f;
@@ -887,6 +902,18 @@ namespace Momotaro.Infrastructure.World
         {
             LastFailure = reason;
             GameLog.Warning(LogCategory.Scene, "Slide transition rolled back: " + reason);
+
+            // <b>失敗した接続を名指しで抑止する</b>（工程 P55-08d。GPT 再修正の残件）。
+            //
+            // 距離による先読みを、<b>プレイヤーの再操作なしに</b>同じ先へ向けさせない。
+            // 向けてしまうと、時間切れで遅れて着いた Scene が「また必要な先読み」になり、
+            // §8 の 5 行目（終端後に撤去する）が永久に起きない。
+            //
+            // <b>保持から推し測らない。</b> 遷移中は選定が回らないので、手動の再試行から
+            // 入った遷移では保持が空である——そこで失敗すると誰も抑止されなかった。
+            // 段階の進み方（<c>TryBeginRollback</c>）より先に置くのは、
+            // 世代が進んでいて戻せない場合でも<b>抑止だけは効かせる</b>ため。
+            _proximity.Suppress(_slidingConnection);
 
             if (!_slide.TryBeginRollback(transitionId))
             {

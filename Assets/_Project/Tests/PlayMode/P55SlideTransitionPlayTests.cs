@@ -3769,6 +3769,91 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(1, transitions.Slide.Preloader.HandedOffCount, "引き取りは 1 回。");
         }
 
+        /// <summary>
+        /// <b>再試行も失敗したあと、その場に立っていても先読みが復活しない</b>
+        /// （工程 P55-08d。GPT 再修正の残件）。
+        ///
+        /// 抜けていた経路はこうだった。
+        /// <list type="number">
+        /// <item><description>1 回目の失敗で、取り下げた接続を抑止する。</description></item>
+        /// <item><description>プレイヤーが<b>自分で</b>もう一度操作すると、抑止が解ける（§5）。</description></item>
+        /// <item><description>遷移が走っている間は距離による選定が回らないので、<b>保持は空のまま</b>。</description></item>
+        /// <item><description>再試行も失敗する。</description></item>
+        /// <item><description>保持が空なので<b>誰も抑止されない</b>。</description></item>
+        /// <item><description>次のフレームに同じ接続が自動で選ばれ、
+        /// <b>遅れて着いた Scene が「また必要な先読み」になって撤去されない</b>。</description></item>
+        /// </list>
+        ///
+        /// だから抑止する相手は<b>失敗した遷移が名指しする</b>（保持から推し測らない）。
+        ///
+        /// <b>主人公は動かさない。</b> 出入口の手前に立ったままで後始末が成立することが要件である。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhenTheRetryFailsToo_TheNeighbourIsNotRequestedAgainWhileStandingStill()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new ControllableSceneHost();
+            transitions.SlideSceneHost = host;
+            transitions.TimeoutSeconds = 1f;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+
+            // ---- 1 回目：時間切れで戻る ----
+            yield return HoldUntil(Key.D, () => transitions.Slide.TimedOutCount > 0, 25f);
+
+            Assert.AreEqual(1, transitions.Slide.TimedOutCount, "監視上限を超えた。");
+            Assert.AreEqual(1, transitions.SlideRolledBackCount, "出発側へ戻した。");
+            Assert.AreEqual(1, host.LoadCount, "読込は 1 回だけ発行された。");
+            Assert.IsTrue(transitions.Slide.ProximityPreload.SuppressedConnectionId.IsValid,
+                "失敗した接続を抑止した。" + DumpWorld(transitions));
+
+            // ---- 2 回目（手動の再試行）：これも時間切れで戻る ----
+            //
+            // <b>ここで抑止が解ける</b>（§5 の「次の新しい遷移操作で一度だけ」）。
+            // 解けたあと遷移が走っている間は選定が回らないので、保持は空のままである。
+            yield return HoldUntil(Key.D, () => transitions.Slide.TimedOutCount > 1, 25f);
+
+            Assert.AreEqual(2, transitions.Slide.TimedOutCount, "再試行も時間切れになった。");
+            Assert.AreEqual(2, transitions.SlideRolledBackCount, "もう一度戻した。");
+            Assert.AreEqual(1, host.LoadCount,
+                "終端していない操作の上に読込を重ねていない。" + DumpWorld(transitions));
+            Assert.IsTrue(transitions.Slide.ProximityPreload.SuppressedConnectionId.IsValid,
+                "<b>再失敗でも抑止できている</b>（保持が空でも名指しで抑止する）。"
+                + DumpWorld(transitions));
+
+            // ---- その場で待つ：自動では読み直さない ----
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            for (int i = 0; i < 40; i++)
+            {
+                yield return null;
+                Assert.AreEqual(1, host.LoadCount,
+                    "立っているだけでは追加のロードを発行しない（" + i + " フレーム目）。"
+                    + DumpWorld(transitions));
+                Assert.IsFalse(transitions.Slide.Preloader.DesiredArea.IsValid,
+                    "望みも立て直さない（" + i + " フレーム目）。" + DumpWorld(transitions));
+            }
+
+            // ---- 遅れて終端したら撤去される（§8 の 5 行目）----
+            host.CompleteLoad(987654);
+
+            float deadline = Time.realtimeSinceStartup + 15f;
+            while (host.UnloadCount == 0 && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(1, host.UnloadCount,
+                "誰も望まなくなった遅延到着は撤去される。" + DumpWorld(transitions));
+            Assert.AreEqual(987654, host.LastUnloadHandle, "撤去したのは遅れて着いた Scene。");
+            Assert.AreEqual(1, host.LoadCount, "撤去のあとも読み直さない。");
+            Assert.AreEqual(0, transitions.SlideCommittedCount, "成功扱いにしない。");
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居たまま。");
+            Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "A で遊べる。");
+        }
+
         /// <summary>読み込んだ Scene を記録するだけの host（本物へ転送する）。</summary>
         private sealed class CountingSceneHost : IAreaSceneHost
         {
