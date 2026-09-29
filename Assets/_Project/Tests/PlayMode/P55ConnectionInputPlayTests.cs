@@ -155,7 +155,9 @@ namespace Momotaro.Tests.PlayMode
 
             // 到着まで通る（スライド演出そのものは P55SlideTransitionPlayTests が見る）。
             yield return WaitForArrival(transitions, 1);
-            Assert.AreEqual("area_p55_b", FindAreaRoot().AreaId.Value, "B に居る。");
+            // 「Scene に居る AreaRoot」では言えない——旧 Area を保持するので両方の部品が載っている
+            // （工程 P55-10c）。「どこに居るか」は<b>活動中の指定</b>で言う。
+            Assert.AreEqual("area_p55_b", CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
         }
 
         // ---------------------------------------------------------------- 西へ
@@ -191,7 +193,7 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual("area_p55_a", used.ToAreaId.Value);
 
             yield return WaitForArrival(transitions, 1);
-            Assert.AreEqual("area_p55_a", FindAreaRoot().AreaId.Value, "A に居る。");
+            Assert.AreEqual("area_p55_a", CurrentAreaProvider.Current.AreaId.Value, "A に居る。");
         }
 
         // ---------------------------------------------------------------- P5 の互換
@@ -371,21 +373,27 @@ namespace Momotaro.Tests.PlayMode
         /// <b>経路を問わず数える</b>（<see cref="AreaTransitionService.ArrivalCount"/>）——
         /// P5.5 の接続は P55-04b からスライド経路を通るので、Single 経路の
         /// <c>CompletedCount</c> だけを見ていると「着いていない」ことになる。
-        /// <b>Scene が 1 枚に戻るまで待つ</b>のは、スライド経路では Commit のあとに
-        /// 旧 Area の撤去が続くため（§6.2 手順 11）。そこを待たずに Scene を数えると
-        /// 撤去途中の 2 枚を掴む。
+        ///
+        /// <b>「Scene が 1 枚に戻る」はもう落ち着いた状態ではない</b>（工程 P55-10c）。
+        /// 裁定 2 で旧 Area は撤去せず非活動のまま預かるので、落ち着いた先は
+        /// <b>活動中 1 枚 ＋ 非活動 1 枚</b>である。待つのは「到着が確定して、
+        /// Scene 操作が終端している」ところまで。
         /// </summary>
         private static IEnumerator WaitForArrival(AreaTransitionService transitions, int expected)
         {
             float deadline = Time.realtimeSinceStartup + 20f;
-            while ((transitions.ArrivalCount < expected || SceneManager.sceneCount > 1)
+            while ((transitions.ArrivalCount < expected
+                    || transitions.Slide.HasLiveSceneOperation)
                    && Time.realtimeSinceStartup < deadline)
             {
                 yield return null;
             }
 
             Assert.AreEqual(expected, transitions.ArrivalCount, "到着が確定する。");
-            Assert.AreEqual(1, SceneManager.sceneCount, "旧 Area の撤去まで終わっている。");
+            Assert.IsFalse(transitions.Slide.HasLiveSceneOperation,
+                "終端していない Scene 操作は残っていない。");
+            Assert.LessOrEqual(SceneManager.sceneCount, 2,
+                "載っているのは活動中 ＋ 非活動の最大 2 枚（上限 2。§6.2 手順 11）。");
             yield return null;
         }
 

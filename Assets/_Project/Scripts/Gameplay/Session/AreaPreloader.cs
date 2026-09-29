@@ -270,6 +270,69 @@ namespace Momotaro.Gameplay.Session
         public int HandedOffCount { get; private set; }
 
         /// <summary>
+        /// <b>成功確定後の旧 Area を、非活動のまま預かる</b>（§6.2 手順 11。裁定 2。工程 P55-10c）。
+        ///
+        /// <see cref="TryHandOffStaged"/> の逆向きである。これまでは遷移が旧 Area を毎回
+        /// unload していたが、裁定 2 で「<b>再利用可能な非活動 Area として先読み管理へ引き渡す</b>」
+        /// に変わった。
+        ///
+        /// <b>預け先を先読みにしたのは、契約が全部そこにあるからである。</b>
+        /// <list type="bullet">
+        /// <item><description><b>即時の逆移動</b>：同じ先を <see cref="Request"/> されれば
+        /// Staged のまま返すので、重複ロードにならない。</description></item>
+        /// <item><description><b>別候補への切替</b>：<see cref="Poll"/> が
+        /// <b>解放してから</b>新しい候補を読む（元からそう書いてある）。</description></item>
+        /// <item><description><b>Single 遷移</b>：<c>DiscardStagedForSingleLoad</c> が
+        /// 先読みの預かりを解くので、保持した Area も既存の後始末に乗る。</description></item>
+        /// <item><description><b>在留上限</b>：台帳の枠を返さずに Staged へ移すだけなので、
+        /// Active 1 ＋ 非活動 1 の合計 2 が保たれる。</description></item>
+        /// </list>
+        /// 別の場所に「保持リスト」を作ると、この 4 つを<b>全部書き直す</b>ことになる。
+        ///
+        /// <b>望みも一緒に立てる。</b> 立てないと直後の <see cref="Poll"/> が
+        /// 「望まれていない Staged」と見て即座に撤去しにかかる——
+        /// §5 の「一度読み始めた先は、境界から離れても保持する」とも一致する。
+        /// </summary>
+        /// <param name="handle">預かる実体ハンドル（台帳に登録済みのもの）。</param>
+        /// <param name="sceneHandle">その実 Scene。</param>
+        /// <param name="scenePath">読み直しに使う Scene パス（望みの宣言に要る）。</param>
+        public bool TryAdoptRetained(AreaInstanceHandle handle, int sceneHandle, string scenePath)
+        {
+            if (!handle.IsValid || sceneHandle == 0 || string.IsNullOrEmpty(scenePath))
+            {
+                RefusedCount++;
+                LastRejection = AreaPreloadRejection.InvalidRequest;
+                return false;
+            }
+
+            // <b>すでに何か掴んでいるなら預からない。</b> 枠は 1 つしかないので、
+            // 上書きすると先に預かっていた Scene を撤去する手段を失う。
+            if (HasLiveSceneOperation || HoldsStagedScene
+                || Phase == AreaPreloadPhase.ReleaseFailed)
+            {
+                RefusedCount++;
+                LastRejection = AreaPreloadRejection.AtCapacity;
+                return false;
+            }
+
+            StagedArea = handle;
+            StagedSceneHandle = sceneHandle;
+            _loading = AreaInstanceHandle.None;
+            _desiredArea = handle.AreaId;
+            _desiredPath = scenePath;
+            Phase = AreaPreloadPhase.Staged;
+            FailureReason = string.Empty;
+
+            // 台帳の枠は<b>返さない</b>。Active から非活動へ移すだけである。
+            _ledger.TrySetPhase(handle, AreaActivationPhase.Staged);
+            AdoptedCount++;
+            return true;
+        }
+
+        /// <summary>非活動のまま預かった回数（診断・テスト用）。</summary>
+        public int AdoptedCount { get; private set; }
+
+        /// <summary>
         /// 預かっている Scene が<b>もう載っていない</b>なら、撤去せずに手放す（P5.5 §8。工程 P55-04c）。
         ///
         /// <b>Single 読込（Fade・死亡再開・Launcher への退避）は台帳を通らない。</b>

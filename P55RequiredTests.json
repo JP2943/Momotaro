@@ -30,7 +30,7 @@
     },
     {
       "id": "P55-E04",
-      "summary": "先読みの同一先再利用、候補切替、最大2Area、ロード直列化。さらに距離による選定（§5 の 1〜3 行目。工程 P55-08b）——出入口の 6 units 以内で候補にし距離→ConnectionId の Ordinal 順で選ぶ、一度読み始めた先は境界から離れても保持する、切替は距離差 2 units 以上が 0.5 秒継続したときだけ旧先読みの終端・解放後に行う。取り下げた候補は自動では選び直さず、新しい遷移操作で解く（工程 P55-08c）。開始距離は候補ごとに違うので、絞ってから順位付けする。抑止する相手は失敗した遷移が名指しする（保持から推し測らない。工程 P55-08d）",
+      "summary": "先読みの同一先再利用、候補切替、最大2Area、ロード直列化。さらに距離による選定（§5 の 1〜3 行目。工程 P55-08b）——出入口の 6 units 以内で候補にし距離→ConnectionId の Ordinal 順で選ぶ、一度読み始めた先は境界から離れても保持する、切替は距離差 2 units 以上が 0.5 秒継続したときだけ旧先読みの終端・解放後に行う。取り下げた候補は自動では選び直さず、新しい遷移操作で解く（工程 P55-08c）。開始距離は候補ごとに違うので、絞ってから順位付けする。抑止する相手は失敗した遷移が名指しする（保持から推し測らない。工程 P55-08d）。さらに旧 Area の引き継ぎ（§6.2 手順 11。裁定 2。工程 P55-10c）——成功確定後の旧 Area は撤去せず非活動のまま預かる、同じ先を望まれたら読み直さずそのまま返す、別候補へは解放を終えてから切り替える、預かっても在留枠は返さない（Active 1 ＋ 非活動 1 の合計 2）",
       "stage": "P55-01"
     },
     {
@@ -196,6 +196,11 @@
     {
       "id": "P55-SEC6-2E",
       "summary": "初回の Scene 構築と、入場ごとの準備処理の分離（仕様書 §6.2 手順 5。工程 P55-10b）。構築は Scene インスタンスにつき一度だけ、入場準備は入場のたびに走る。入場ごとに入口へ置き直し、出入口の跳ね返り止めを掛け直し、準備完了を報告し直す。前の入場の途中動作（減速・移動止め・向きの固定・先行入力・必殺の溜め）は捨て、値（HP・スタミナ・CD）には触らない——値は運ばれてきた Snapshot が正本である。徳・訪問記録のような一度限りのものを二度処理しない。§11 の P17（往復のロード回数・Scene handle の再利用・B で HP／CD を変えて A へ戻る）は、旧 Area の引き継ぎが入る工程 P55-10c で追加する",
+      "stage": "P55-10"
+    },
+    {
+      "id": "P55-P17",
+      "summary": "再入場準備の分離と旧 Area の引き継ぎ（仕様書 §11 の P17。§6.2 手順 5／11）。往復でのロード回数と Scene handle の再利用、B 側で HP を変えてから A へ戻っても初回入場の値へ戻らないこと、保持した Area では何も進まないこと、Single 読込の前に保持した Area も片付くこと。入場ごとの準備（入口配置・跳ね返り止め・準備完了の報告・途中動作の破棄）と、一度だけの構築（注入・カタログ・配線）を分けていること",
       "stage": "P55-10"
     }
   ],
@@ -810,6 +815,34 @@
         "Momotaro.Tests.EditMode.P55AreaEntryResetTests.ResetForCampaignRespawn_DoesTheSameAsAreaEntry",
         "Momotaro.Tests.EditMode.P55AreaEntryResetTests.ThePort_NeutralizesThroughThePlayerRoot",
         "Momotaro.Tests.EditMode.P55AreaEntryResetTests.ThePort_WithNothingWired_DoesNotThrow"
+      ]
+    },
+    {
+      "requirementId": "P55-P17",
+      "stage": "P55-10",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.ReturningImmediately_ReusesTheRetainedAreaWithoutLoading",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.ChangingTheHpInB_ThenReturningToA_KeepsTheDentedValue",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.BeforeASingleLoad_TheRetainedAreaIsReleasedToo",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WalkingEastIntoTheSeam_SlidesRightAndArrivesInB"
+      ]
+    },
+    {
+      "requirementId": "P55-E04",
+      "stage": "P55-10",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P55PreloadTests.AdoptingARetainedArea_KeepsItStagedAcrossPolls",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P55PreloadTests.TheAdoptedArea_StaysInTheLedgerAsNonActive",
+        "Momotaro.Tests.EditMode.P55PreloadTests.RequestingTheAdoptedArea_ReusesItWithoutLoading",
+        "Momotaro.Tests.EditMode.P55PreloadTests.RequestingADifferentArea_ReleasesTheAdoptedOneFirst",
+        "Momotaro.Tests.EditMode.P55PreloadTests.AdoptingWhileAlreadyHoldingSomething_IsRefused",
+        "Momotaro.Tests.EditMode.P55PreloadTests.AdoptingWithoutAScenePath_IsRefused"
       ]
     }
   ],

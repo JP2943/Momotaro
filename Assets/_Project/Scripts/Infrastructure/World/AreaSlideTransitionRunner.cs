@@ -140,12 +140,42 @@ namespace Momotaro.Infrastructure.World
         /// <summary>Commit 後に旧 Area の撤去が失敗した回数（診断・テスト用。§8 の 4 行目）。</summary>
         public int UnloadFailureCount { get; private set; }
 
+        /// <summary>旧 Area を預けようとした回数（診断・テスト用。工程 P55-10c）。</summary>
+        public int RetainAttemptCount { get; private set; }
+
+        /// <summary>旧 Area を<b>撤去せずに預けた</b>回数（診断・テスト用）。</summary>
+        public int RetainedCount { get; private set; }
+
+        /// <summary>預けられず、従来どおり撤去した回数（診断・テスト用）。</summary>
+        public int RetainDeclinedCount { get; private set; }
+
+        /// <summary>直近に預けられなかった理由（診断・テスト用。預けられたなら空）。</summary>
+        public string LastRetainDecline { get; private set; } = string.Empty;
+
+        /// <summary>
+        /// 保持していた Area へ<b>戻った</b>回数（診断・テスト用）。
+        /// 読み直していないことは、Scene の読込回数と Scene handle の一致で別に見る。
+        /// </summary>
+        public int ReenteredCount { get; private set; }
+
         /// <summary>
         /// 撤去し切れなかった旧 Area を抱えているか（§8 の 4 行目）。
         /// <b>抱えている間は新しいスライドを受け付けない</b>——在留枠が埋まったままなので、
         /// 受理してから「読めません」で戻すより、受理しないほうが害が小さい。
         /// </summary>
         public bool HasPendingRetire => _retireHandle.IsValid && _retireSceneHandle != 0;
+
+        /// <summary>
+        /// <b>撤去し切れていない Scene を抱えているか</b>（工程 P55-10c）。
+        ///
+        /// 裁定 2 で旧 Area は先読み枠へ預けるようになったので、片付かない Scene は
+        /// 2 か所に出る——預けられずに撤去して失敗した旧 Area（<see cref="HasPendingRetire"/>）と、
+        /// 預けた先の解放失敗（<c>AreaPreloadPhase.ReleaseFailed</c>）。
+        /// 受入と表示はこの 1 つで言う。
+        /// </summary>
+        public bool HasUnreleasedScene =>
+            HasPendingRetire
+            || (_preloader != null && _preloader.Phase == AreaPreloadPhase.ReleaseFailed);
 
         /// <summary>旧 Area を通常どおり撤去している最中か（診断・テスト用）。</summary>
         public bool IsRetiring => _retiring;
@@ -509,6 +539,26 @@ namespace Momotaro.Infrastructure.World
             destination.ActivityGate.Open();
             _residency.TrySetPhase(destinationHandle, AreaActivationPhase.Prepared);
 
+            // <b>保持していた Area へ戻ったなら、入場準備を明示的に呼ぶ</b>
+            // （§6.2 手順 5。裁定 2。工程 P55-10c）。
+            //
+            // 新しく読んだ Scene なら、ゲートを開けた時点で初期化担当の <c>Start</c> が走る。
+            // <b>保持していた Area では走らない</b>——<c>Start</c> に二度目は無いからである。
+            // 呼ばないと入口配置も Snapshot の復元も到着世代の報告も起きず、
+            // 下の「準備できた？」の待ちが必ずタイムアウトする。
+            if (destination.TryResolve(out AreaInitializer arrivalInitializer)
+                && arrivalInitializer.SceneBuilt)
+            {
+                ReenteredCount++;
+                if (!arrivalInitializer.PrepareForEntry())
+                {
+                    yield return Rollback(transitionId, departure, departureHandle,
+                        "保持していた Area の入場準備に失敗しました: " + arrivalInitializer.FailureReason,
+                        destination);
+                    yield break;
+                }
+            }
+
             // <b>開けた瞬間から隠す</b>（工程 P55-07b。GPT 受入③）。
             //
             // 以前は終点を測り終えてから隠していた。ゲートを開けてから隠すまでのあいだ、
@@ -729,7 +779,18 @@ namespace Momotaro.Infrastructure.World
             preloader.TryHandOffStaged(connection.ToAreaId, out _, out _);
 
             _residency.TrySetPhase(destinationHandle, AreaActivationPhase.Active);
-            _residency.TrySetPhase(departureHandle, AreaActivationPhase.Retiring);
+
+            // ---- 手順 11（裁定 2）：旧 Area は撤去せず、非活動のまま先読み枠へ預ける ----
+            //
+            // <b>所有の移動は完了通知より前に確定させる</b>（§6.2 手順 11 の契約表）。
+            // 通知の中から次の要求が来ても、そのときには「誰がこの Area を持っているか」が
+            // もう決まっている必要がある。
+            bool retained = TryRetainDeparture(
+                preloader, departureHandle, departureSceneHandle, departure);
+            if (!retained)
+            {
+                _residency.TrySetPhase(departureHandle, AreaActivationPhase.Retiring);
+            }
 
             CurrentAreaProvider.TrySetCurrent(_owner, destination);
             TrySetActiveScene(destinationSceneHandle);
@@ -757,7 +818,8 @@ namespace Momotaro.Infrastructure.World
 
             // <b>通知より先に「撤去中」を立てる。</b> 通知の中から次の要求が来ても、
             // そこで待てるようにするため（GPT 受入②）。
-            _retiring = true;
+            // <b>預けられたなら撤去は走らない</b>ので、立てる必要も無い。
+            _retiring = !retained;
             // ---- 同期区間ここまで ----
 
             // 手順 10：排他と共有情報を片付けてから、一度だけ通知する。
@@ -766,7 +828,16 @@ namespace Momotaro.Infrastructure.World
                 _owner.RaiseArrivalCompleted(connection.ToAreaId);
             }
 
-            // 手順 11：旧 Area を撤去する。<b>成功は取り消さない</b>（§8 の 4 行目）。
+            if (retained)
+            {
+                // 預けた。<b>毎回の unload は行わない</b>（§6.2 手順 11）。
+                // 解放するのは、別の先読み候補へ切り替えるとき・Single 読込・
+                // New Game／Launcher 退避——どれも既存の経路が面倒を見る。
+                yield break;
+            }
+
+            // 手順 11（預けられなかった場合）：旧 Area を撤去する。
+            // <b>成功は取り消さない</b>（§8 の 4 行目）。
             yield return UnloadDeparture(departureHandle, departureSceneHandle);
 
             // 撤去が終わった（成功でも失敗でも）。失敗なら HasPendingRetire が立っていて、
@@ -855,6 +926,65 @@ namespace Momotaro.Infrastructure.World
             }
 
             yield return Rollback(transitionId, departure, departureHandle, reason, destination);
+        }
+
+        /// <summary>
+        /// 旧 Area を<b>撤去せずに預ける</b>（§6.2 手順 11。裁定 2。工程 P55-10c）。
+        ///
+        /// 預け先は<b>先読み管理</b>である（<see cref="AreaPreloader.TryAdoptRetained"/>）。
+        /// 別に「保持リスト」を作らないのは、保持に必要な契約——即時の逆移動で読み直さない、
+        /// 別候補へは解放してから切り替える、Single 読込の後始末に乗る、在留上限を数える——が
+        /// <b>すべて先読み側に既にある</b>ためである。
+        ///
+        /// <b>預けられないときは黙って進まない。</b> 理由を残したうえで従来どおり撤去する——
+        /// 保持は最適化であって、成功確定を取り消す理由にはならない（§8 の 4 行目）。
+        /// </summary>
+        private bool TryRetainDeparture(
+            AreaPreloader preloader, AreaInstanceHandle handle, int sceneHandle,
+            AreaRuntimeBundle departure)
+        {
+            RetainAttemptCount++;
+
+            if (!_owner.RetainDepartedArea)
+            {
+                return DeclineRetain("保持が無効になっています（撤去経路そのものの受入用）。");
+            }
+
+            if (preloader == null || !handle.IsValid || sceneHandle == 0 || departure == null)
+            {
+                return DeclineRetain("旧 Area の実体・Scene・参照集合のどれかが欠けています。");
+            }
+
+            IAreaSceneHost host = _owner.SlideSceneHost;
+            if (host == null || !host.IsLoaded(sceneHandle))
+            {
+                // すでに載っていない（Single 起動の直後など）。預かる物が無い。
+                return DeclineRetain("旧 Area の Scene がもう載っていません。");
+            }
+
+            AreaCatalog catalog = _owner.Catalog;
+            if (catalog == null || !catalog.TryGetScenePath(departure.AreaId, out string scenePath))
+            {
+                // 読み直しのパスが引けないと、預かった先に「望み」を立てられない。
+                return DeclineRetain("旧 Area の Scene パスを引けません（area=" + departure.AreaId.Value + "）。");
+            }
+
+            if (!preloader.TryAdoptRetained(handle, sceneHandle, scenePath))
+            {
+                return DeclineRetain("先読みが預かりを断りました（" + preloader.Phase + "）。");
+            }
+
+            RetainedCount++;
+            LastRetainDecline = string.Empty;
+            return true;
+        }
+
+        private bool DeclineRetain(string reason)
+        {
+            RetainDeclinedCount++;
+            LastRetainDecline = reason;
+            GameLog.Info(LogCategory.Scene, "Retaining the departed area was declined: " + reason);
+            return false;
         }
 
         /// <summary>
@@ -1266,13 +1396,38 @@ namespace Momotaro.Infrastructure.World
         ///
         /// <b>自動で再試行しない。</b> 毎フレーム撤去を撃ち続けると、恒久的に失敗する Scene へ
         /// 延々と操作を出す（先読みの再試行と同じ考え方。§5）。押すのはプレイヤー（表示側）。
+        ///
+        /// <b>保持した Area の解放失敗もここで扱う</b>（工程 P55-10c）。裁定 2 で旧 Area は
+        /// 撤去せず先読み枠へ預けるようになったので、「撤去し切れていない Scene」は
+        /// <b>2 か所に出うる</b>——預けられずに撤去して失敗した場合（<see cref="HasPendingRetire"/>）と、
+        /// 預けた先が解放に失敗した場合（<c>AreaPreloadPhase.ReleaseFailed</c>）。
+        /// プレイヤーから見れば同じ「片付かない」なので、押す場所を 2 つにしない。
         /// </summary>
-        /// <returns>再試行を<b>始めた</b>ら true（成否は <see cref="HasPendingRetire"/> で見る）。</returns>
+        /// <returns>再試行を<b>始めた</b>ら true（成否は <see cref="HasUnreleasedScene"/> で見る）。</returns>
         public bool TryRetryRetiringDeparture()
         {
-            if (!HasPendingRetire || _slide.IsTransitioning || _retrying)
+            if (_slide.IsTransitioning || _retrying)
             {
                 return false;
+            }
+
+            if (!HasPendingRetire)
+            {
+                // 預けた Area の解放が失敗しているなら、そちらへ 1 回分の許可を出す。
+                // 進めるのは常駐の <see cref="Pump"/>（先読みと同じ規律。§5）。
+                if (_preloader == null || _preloader.Phase != AreaPreloadPhase.ReleaseFailed)
+                {
+                    return false;
+                }
+
+                if (_owner.IsSingleLoadInFlight)
+                {
+                    RetryBlockedCount++;
+                    return false;
+                }
+
+                RetryStartedCount++;
+                return _preloader.ArmRetry();
             }
 
             // <b>Single 遷移が始まっていたら割り込まない</b>（工程 P55-07c。GPT 再修正①）。

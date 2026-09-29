@@ -509,6 +509,142 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1111, _host.LastUnloadHandle);
         }
 
+        // ---------------------------------------------------------------- 旧 Area の預かり（工程 P55-10c）
+
+        /// <summary>
+        /// <b>預かった Area は、Poll を回しても手放さない</b>（§6.2 手順 11。裁定 2）。
+        ///
+        /// <see cref="AreaPreloader.TryAdoptRetained"/> は望みも一緒に立てる。立てないと
+        /// 直後の <see cref="AreaPreloader.Poll"/> が「望まれていない Staged」と見て
+        /// <b>その場で撤去しにかかる</b>——預けた意味が消える。
+        ///
+        /// <b>実 Scene の検査（PlayMode）ではこれを捕まえられなかった。</b> 到着した主人公は
+        /// 出入口のすぐ内側に立っているので、§5 の距離による先読みが<b>同じフレームに</b>
+        /// 同じ先を望み直す。望みを立てない実装でも、外から立て直されて素通りする
+        /// （欠陥注入 92 で実測した）。規則そのものはここで見る。
+        /// </summary>
+        [Test]
+        public void AdoptingARetainedArea_KeepsItStagedAcrossPolls()
+        {
+            AreaInstanceHandle handle = AdmitActive(AreaB);
+            _host.SceneStillLoaded = true;
+
+            Assert.IsTrue(_preloader.TryAdoptRetained(handle, 4242, PathB), "預かれる。");
+            Assert.AreEqual(1, _preloader.AdoptedCount, "数えている。");
+
+            for (int i = 0; i < 3; i++)
+            {
+                _preloader.Poll();
+            }
+
+            Assert.AreEqual(AreaPreloadPhase.Staged, _preloader.Phase, "預かったまま。");
+            Assert.AreEqual(4242, _preloader.StagedSceneHandle, "同じ Scene を預かっている。");
+            Assert.AreEqual(0, _host.UnloadCount, "撤去しにかかっていない。");
+            Assert.AreEqual(0, _host.LoadCount, "読み直してもいない。");
+        }
+
+        /// <summary>
+        /// 預かった Area は<b>在留枠を返さない</b>（契約表「在留上限」）。
+        /// Active から非活動へ移すだけで、Area の数は変わらない。
+        /// </summary>
+        [Test]
+        public void TheAdoptedArea_StaysInTheLedgerAsNonActive()
+        {
+            AreaInstanceHandle handle = AdmitActive(AreaB);
+            _host.SceneStillLoaded = true;
+            Assert.AreEqual(1, _ledger.ResidentCount, "前提：台帳に 1 つある。");
+            Assert.AreEqual(AreaActivationPhase.Active, _ledger.PhaseOf(handle), "前提：活動中。");
+
+            Assert.IsTrue(_preloader.TryAdoptRetained(handle, 4242, PathB));
+
+            Assert.AreEqual(1, _ledger.ResidentCount, "枠は返さない（実 Scene は載ったまま）。");
+            Assert.AreEqual(AreaActivationPhase.Staged, _ledger.PhaseOf(handle),
+                "台帳の上では非活動（Active は到着側だけ）。");
+        }
+
+        /// <summary>
+        /// <b>即時の逆移動</b>：同じ先を望まれたら、預かったものをそのまま返す（契約表）。
+        /// <b>読み直さない</b>——ここが「毎回 unload しない」の見返りである。
+        /// </summary>
+        [Test]
+        public void RequestingTheAdoptedArea_ReusesItWithoutLoading()
+        {
+            AreaInstanceHandle handle = AdmitActive(AreaB);
+            _host.SceneStillLoaded = true;
+            Assert.IsTrue(_preloader.TryAdoptRetained(handle, 4242, PathB));
+
+            Assert.IsTrue(_preloader.Request(AreaB, PathB), "同じ先を望める。");
+
+            Assert.AreEqual(AreaPreloadPhase.Staged, _preloader.Phase, "預かったまま返せる。");
+            Assert.AreEqual(0, _host.LoadCount, "読み直していない。");
+            Assert.AreEqual(0, _host.UnloadCount, "撤去もしていない。");
+
+            Assert.IsTrue(
+                _preloader.TryHandOffStaged(AreaB, out AreaInstanceHandle back, out int sceneHandle),
+                "遷移へ引き渡せる。");
+            Assert.AreEqual(handle, back, "<b>同じ実体</b>が返る（世代も同じ）。");
+            Assert.AreEqual(4242, sceneHandle, "同じ Scene が返る。");
+        }
+
+        /// <summary>
+        /// <b>別候補への切替は、預かったものを解放してから</b>（契約表）。
+        /// 先に読むと実 Scene が 3 枚になる。
+        /// </summary>
+        [Test]
+        public void RequestingADifferentArea_ReleasesTheAdoptedOneFirst()
+        {
+            AreaInstanceHandle handle = AdmitActive(AreaB);
+            _host.SceneStillLoaded = true;
+            Assert.IsTrue(_preloader.TryAdoptRetained(handle, 4242, PathB));
+
+            Assert.IsTrue(_preloader.Request(AreaC, PathC), "別の先を望める。");
+
+            Assert.AreEqual(AreaPreloadPhase.Releasing, _preloader.Phase, "先に解放へ入る。");
+            Assert.AreEqual(1, _host.UnloadCount, "解放を 1 回だけ頼んだ。");
+            Assert.AreEqual(4242, _host.LastUnloadHandle, "解放するのは預かっていた Scene。");
+            Assert.AreEqual(0, _host.LoadCount, "<b>まだ読んでいない</b>（解放の完了が先）。");
+
+            _host.CompleteUnload();
+            _preloader.Poll();
+
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase, "解放が終わってから読む。");
+            Assert.AreEqual(1, _host.LoadCount, "読込は 1 回だけ。");
+        }
+
+        /// <summary>すでに何か掴んでいるなら預からない（枠は 1 つしかない）。</summary>
+        [Test]
+        public void AdoptingWhileAlreadyHoldingSomething_IsRefused()
+        {
+            Assert.IsTrue(_preloader.Request(AreaC, PathC), "前提：先読みを始める。");
+            Assert.AreEqual(AreaPreloadPhase.Loading, _preloader.Phase, "前提：読込中。");
+
+            AreaInstanceHandle handle = AdmitActive(AreaB);
+            Assert.IsFalse(_preloader.TryAdoptRetained(handle, 4242, PathB),
+                "掴んでいるものを上書きしない（撤去する手段を失う）。");
+            Assert.AreEqual(0, _preloader.AdoptedCount, "預かっていない。");
+        }
+
+        /// <summary>読み直しのパスが無ければ預からない（望みを立てられない）。</summary>
+        [Test]
+        public void AdoptingWithoutAScenePath_IsRefused()
+        {
+            AreaInstanceHandle handle = AdmitActive(AreaB);
+
+            Assert.IsFalse(_preloader.TryAdoptRetained(handle, 4242, null), "パスが無い。");
+            Assert.IsFalse(_preloader.TryAdoptRetained(handle, 0, PathB), "Scene が無い。");
+            Assert.IsFalse(_preloader.TryAdoptRetained(default, 4242, PathB), "実体が無い。");
+            Assert.AreEqual(0, _preloader.AdoptedCount, "どれも預かっていない。");
+        }
+
+        /// <summary>台帳へ「活動中の Area」として 1 つ入れる（遷移の出発側に相当）。</summary>
+        private AreaInstanceHandle AdmitActive(StableId areaId)
+        {
+            AreaInstanceHandle handle = _ledger.NextHandle(areaId);
+            Assert.IsTrue(_ledger.TryAdmitStaged(handle), "台帳へ入れられる。");
+            Assert.IsTrue(_ledger.TrySetPhase(handle, AreaActivationPhase.Active), "活動中にできる。");
+            return handle;
+        }
+
         // ---------------------------------------------------------------- 差し替え
 
         /// <summary>

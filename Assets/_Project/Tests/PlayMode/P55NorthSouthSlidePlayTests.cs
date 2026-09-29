@@ -196,19 +196,24 @@ namespace Momotaro.Tests.PlayMode
                 expectUp: true, expectRight: false,
                 because: "北の行き先はスライド中の画面で上に見える（§11 の P03）。");
 
-            Assert.AreEqual("area_p55_n", FindAreaRoot().AreaId.Value, "N に居る。");
+            // <b>「Scene に居る AreaRoot」では言えなくなった</b>（工程 P55-10c）。
+            // 旧 Area を保持するようになったので、2 つの Area の部品が同時に載っている。
+            // 「どこに居るか」は<b>活動中の指定</b>で言う。
+            Assert.AreEqual("area_p55_n", CurrentAreaProvider.Current.AreaId.Value, "N に居る。");
 
-            // <b>枚数では「撤去できた」を言えなくなった</b>（工程 P55-08b）。
-            // 到着した主人公は逆向きの出入口のすぐ内側に居るので、§5 の距離による先読みが
-            // 来た方の Area をもう一度 Staged で持つ。撤去は<b>実体</b>で言う。
+            // <b>旧 Area は撤去せず預けた</b>（§6.2 手順 11。裁定 2）。
             yield return SettleWorld(transitions);
-            Assert.IsFalse(transitions.SlideSceneHost.IsLoaded(departureSceneHandle),
-                "出発時の Scene は撤去されている。");
+            Assert.IsTrue(transitions.SlideSceneHost.IsLoaded(departureSceneHandle),
+                "出発時の Scene は載ったまま（毎回の unload をしない）。");
             Assert.AreEqual(0, transitions.Slide.UnloadFailureCount, "撤去は失敗していない。");
+            Assert.AreEqual(1, transitions.Slide.RetainedCount,
+                "預けた。断った理由=" + transitions.Slide.LastRetainDecline);
             Assert.AreEqual(2, SceneManager.sceneCount,
-                "載っているのは活動中の N と、距離で読み直した S の 2 枚。");
+                "載っているのは活動中の N と、非活動のまま預かった S の 2 枚。");
             Assert.AreEqual("area_p55_s", transitions.Slide.Preloader.StagedArea.AreaId.Value,
-                "持っているのは来た方の S。");
+                "預かっているのは来た方の S。");
+            Assert.AreEqual(departureSceneHandle, transitions.Slide.Preloader.StagedSceneHandle,
+                "預かっているのは<b>同じ Scene</b>（読み直していない）。");
         }
 
         // ---------------------------------------------------------------- 南へ（P03）
@@ -248,7 +253,7 @@ namespace Momotaro.Tests.PlayMode
                 expectUp: false, expectRight: false,
                 because: "南の行き先はスライド中の画面で下に見える（§11 の P03）。");
 
-            Assert.AreEqual("area_p55_s", FindAreaRoot().AreaId.Value, "S に居る。");
+            Assert.AreEqual("area_p55_s", CurrentAreaProvider.Current.AreaId.Value, "S に居る。");
         }
 
         // ---------------------------------------------------------------- 東西と比べる（P03）

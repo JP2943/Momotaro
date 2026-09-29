@@ -214,23 +214,35 @@ namespace Momotaro.Tests.PlayMode
             AreaPreloader preloader = transitions.Slide.Preloader;
             Assert.AreEqual(1, preloader.HandedOffCount, "遷移が到着 Area を引き取った。");
 
-            // <b>旧 Area の実体は撤去された</b>（§6.2 手順 11）。
+            // <b>旧 Area は撤去せず、非活動のまま先読み枠へ預けた</b>（§6.2 手順 11。裁定 2。工程 P55-10c）。
             //
-            // 枚数では言えなくなった（工程 P55-08b）。到着した主人公は逆向きの出入口の
-            // すぐ内側に居るので、§5 の距離による先読みが<b>同じ Area をもう一度 Staged で持つ</b>。
-            // 撤去できたかどうかは<b>実体（世代つきハンドル）</b>で言う——読み直した A は別の世代である。
+            // <b>ここは反転した検査である。</b> 以前は「出発時の Scene は撤去されている」を見ていた——
+            // 撤去してすぐ同じ Area を読み直していたので、同じ Area でも Scene は別物だった
+            // （到着直後に虚空が出ていたのはこのため。付録 C.17.4）。
+            // いまは<b>同じ Scene をそのまま預かる</b>ので、handle の一致が保持の証拠になる。
             Assert.AreEqual(0, transitions.Slide.UnloadFailureCount, "撤去は失敗していない。");
-            Assert.IsFalse(transitions.SlideSceneHost.IsLoaded(departureSceneHandle),
-                "出発時の Scene は撤去されている。");
+            Assert.AreEqual(1, transitions.Slide.RetainedCount,
+                "旧 Area を預けた。断った理由=" + transitions.Slide.LastRetainDecline);
+            Assert.AreEqual(0, transitions.Slide.RetainDeclinedCount, "預かりは断られていない。");
+            Assert.IsTrue(transitions.SlideSceneHost.IsLoaded(departureSceneHandle),
+                "出発時の Scene は載ったまま（毎回の unload をしない）。");
 
             yield return SettleWorld(transitions);
 
             Assert.AreEqual(AreaPreloadPhase.Staged, preloader.Phase,
-                "落ち着いた先は「隣を持っている」（§5 の距離による先読み）。");
+                "落ち着いた先は「隣を持っている」（保持したものがそのまま在庫になる）。");
             Assert.AreEqual(AreaA.Value, preloader.StagedArea.AreaId.Value,
-                "持っているのは来た方の A（B の西の出入口が 6 units 以内）。");
-            Assert.AreNotEqual(departureSceneHandle, preloader.StagedSceneHandle,
-                "読み直した A は別の Scene である（撤去は本当に起きた）。");
+                "持っているのは来た方の A。");
+            Assert.AreEqual(departureSceneHandle, preloader.StagedSceneHandle,
+                "預かっているのは<b>同じ Scene</b> である（読み直していない）。");
+
+            // <b>預けた Area では何も進まない</b>（§6.2 手順 11 の契約表「非活動Area」）。
+            Assert.IsTrue(TryFindBundle(AreaA, out AreaRuntimeBundle retained), "旧 Area の束はまだある。");
+            Assert.IsFalse(retained.ActivityGate.IsOpen, "活動ゲートは閉じたまま。");
+            Assert.IsFalse(retained.Context.IsAreaReady, "旧 Area では遊べない。");
+            Assert.AreEqual(AreaActivationPhase.Staged,
+                transitions.Slide.Residency.PhaseOf(retained.Instance),
+                "台帳の上でも非活動（Active は B だけ）。");
             Assert.AreEqual(2, transitions.Slide.Residency.ResidentCount,
                 "在留は活動中 B と Staged の A（上限 2 のまま）。台帳=" + DumpResidency(transitions)
                 + " Scene 枚数=" + SceneManager.sceneCount
@@ -624,6 +636,10 @@ namespace Momotaro.Tests.PlayMode
             yield return EnterArea(P55AreaAScene);
 
             AreaTransitionService transitions = Transitions();
+            // <b>この検査は撤去経路そのものを見る</b>（工程 P55-10c）。
+            // 裁定 2 で旧 Area は既定で保持されるようになったので、保持を切って
+            // 従来どおり毎回撤去させる——保持に隠れた経路は壊れても誰も気付かない。
+            transitions.RetainDepartedArea = false;
             var host = new UnloadRefusingSceneHost();
             transitions.SlideSceneHost = host;
 
@@ -2332,6 +2348,181 @@ namespace Momotaro.Tests.PlayMode
             }
         }
 
+        // ---------------------------------------------------------------- 旧 Area の引き継ぎ（工程 P55-10c）
+
+        /// <summary>
+        /// <b>すぐ戻ってきたら、預けた Area をそのまま使う</b>（§6.2 手順 11 の契約表「即時の逆移動」）。
+        ///
+        /// 裁定 2 の前は、Commit のたびに旧 Area を unload し、到着した主人公が逆向きの出入口の
+        /// すぐ内側に居るので<b>その場でもう一度読み直していた</b>。撤去と読込を 1 往復ぶん
+        /// 無駄に撃っていたうえ、その隙間が到着直後の虚空になっていた（付録 C.17.4）。
+        ///
+        /// <b>「読み直していない」は読込の回数で言う。</b> 「同じ Area に居る」では言えない——
+        /// 読み直しても Area は同じである。数えるのは <c>LoadAdditive</c> の呼び出しで、
+        /// 裏づけに Scene handle の一致も見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ReturningImmediately_ReusesTheRetainedAreaWithoutLoading()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new CountingSceneHost();
+            transitions.SlideSceneHost = host;
+
+            Assert.IsTrue(TryFindBundle(AreaA, out AreaRuntimeBundle before), "A の束を引ける。");
+            int areaASceneHandle = before.SceneHandle;
+
+            // ---- A → B ----
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(1, transitions.Slide.RetainedCount,
+                "A を預けた。断った理由=" + transitions.Slide.LastRetainDecline);
+            Assert.AreEqual(1, host.CountOf(P55AreaBScene), "B は 1 回だけ読んだ。");
+            Assert.AreEqual(0, host.CountOf(P55AreaAScene),
+                "A は読み直していない（預かったままなので読む必要が無い）。読んだ順="
+                + string.Join(", ", host.Loaded));
+
+            // ---- B → A（すぐ戻る）----
+            yield return StandJustBefore(FindExitGate(ExitBWest), Vector3.right);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.A, () => transitions.SlideCommittedCount > 1, 25f);
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(2, transitions.SlideCommittedCount,
+                "二度目も着いた。失敗=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(0, host.CountOf(P55AreaAScene),
+                "戻るときも A を読み直していない（契約表「重複ロードしない」）。読んだ順="
+                + string.Join(", ", host.Loaded));
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に戻っている。");
+            Assert.AreEqual(areaASceneHandle, CurrentAreaProvider.Current.SceneHandle,
+                "戻った先は<b>同じ Scene</b>である（handle が一致する）。");
+            Assert.AreEqual(1, transitions.Slide.ReenteredCount,
+                "保持していた Area への再入場として数えている（入場準備を呼んだ経路）。");
+            Assert.AreEqual(0, transitions.Slide.RetireWaitCount,
+                "撤去の終わりを待っていない——そもそも撤去していない。");
+            Assert.AreEqual(0, transitions.Slide.RolledBackCount, "戻していない。");
+            Assert.AreEqual(2, transitions.Slide.Residency.ResidentCount,
+                "在留は 2 のまま（上限を超えていない）。" + DumpResidency(transitions));
+            Assert.AreEqual(2, SceneManager.sceneCount, "実 Scene も 2 枚。");
+        }
+
+        /// <summary>
+        /// <b>B で削った値は、A へ戻っても削れたまま</b>（§11 の P17。§6.2 手順 5）。
+        ///
+        /// <b>これが「再入場準備の分離」を入れた理由である。</b> 保持した Area へ戻ると
+        /// 同じ Actor へ帰るので、入場準備が走らないと<b>初回入場のときの値</b>がそのまま残る——
+        /// 読み直していた従来なら Actor が新品になって Snapshot から復元されるので、
+        /// この壊れ方は起こりようがなかった。
+        ///
+        /// <b>1 往復では出ない壊れ方である。</b> 行きは初回入場なので必ず正しい。
+        /// 見えるのは<b>2 周目</b>——だから往復してから値を見る。
+        ///
+        /// 見るのは HP だけにする。スタミナは時間で戻り、CD は時間で減るので、
+        /// 歩いている時間の長さに検査が依存してしまう（値が持ち越されたかの話ではなくなる）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ChangingTheHpInB_ThenReturningToA_KeepsTheDentedValue()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            // ---- A → B ----
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "前提：B に居る。");
+
+            // ---- B 側で HP を削る ----
+            ActorValues inB = ReadActorValues();
+            Assert.IsTrue(inB.Found, "B 側の Actor 部品がそろっている。");
+            Assert.Greater(inB.MaxHp, 3, "HP を減らせる構成である。");
+
+            var vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            int dentedHp = inB.MaxHp - 3;
+            Assert.IsTrue(vitals.TryImportTransferSnapshot(new PlayerVitalsTransferSnapshot(
+                    new VitalTransferSnapshot(dentedHp),
+                    new StaminaTransferSnapshot(inB.Stamina, inB.StaminaRegenDelay, 0f))),
+                "B で HP を削れた。");
+            yield return null;
+            Assert.AreEqual(dentedHp, ReadActorValues().Hp, "前提：B 側の HP が削れている。");
+
+            // ---- B → A ----
+            yield return StandJustBefore(FindExitGate(ExitBWest), Vector3.right);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.A, () => transitions.SlideCommittedCount > 1, 25f);
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value,
+                "A に戻っている。失敗=" + transitions.Slide.LastFailure);
+
+            ActorValues backInA = ReadActorValues();
+            Assert.IsTrue(backInA.Found, "A 側の Actor 部品がそろっている。");
+            Assert.AreEqual(dentedHp, backInA.Hp,
+                "B で削った HP がそのまま（初回入場の値へ戻っていない。§11 の P17）。"
+                + " 最大=" + backInA.MaxHp + " 再入場=" + transitions.Slide.ReenteredCount);
+        }
+
+        /// <summary>
+        /// <b>Single 読込の前には、預けた Area も片付ける</b>（§6.2 手順 11 の契約表「Single 遷移」）。
+        ///
+        /// 保持を「先読みの預かり」として実装したので、既存の後始末
+        /// （<c>DiscardStagedForSingleLoad</c>）が<b>そのまま効く</b>。
+        /// 別に保持リストを作っていたら、この経路をもう一度書く必要があった。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator BeforeASingleLoad_TheRetainedAreaIsReleasedToo()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var loader = new CountingSceneLoader(transitions.Loader);
+            transitions.Loader = loader;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(1, transitions.Slide.RetainedCount, "前提：A を預けている。");
+            Assert.AreEqual(2, SceneManager.sceneCount, "前提：2 枚載っている。");
+            Assert.AreEqual(0, loader.LoadCount, "前提：ここまで Single 読込は発行されていない。");
+
+            // <b>預かっている実 Scene を控える。</b> 枚数では言えない——Single 読込で着いた先でも
+            // §5 の距離による先読みがすぐ隣を持つので、落ち着いた先はまた 2 枚になる。
+            int retainedSceneHandle = transitions.Slide.Preloader.StagedSceneHandle;
+            Assert.AreNotEqual(0, retainedSceneHandle, "前提：預かっている Scene がある。");
+
+            Assert.IsTrue(transitions.TryTravel(AreaA, AreaAFromBEntry).Accepted,
+                "Fade の要求は受理される。");
+
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.CompletedCount == 0 && !transitions.HasTerminalFailure
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.IsFalse(transitions.HasTerminalFailure,
+                "終端失敗にならない。理由=" + transitions.TerminalFailureReason);
+            Assert.AreEqual(1, transitions.CompletedCount, "Single 読込で着いた。");
+            Assert.AreEqual(1, loader.LoadCount, "Single の発行は 1 回だけ。");
+            Assert.AreEqual(1, transitions.Slide.DiscardedForSingleLoadCount,
+                "預かりを先に解いてから発行した。");
+            Assert.IsFalse(transitions.SlideSceneHost.IsLoaded(retainedSceneHandle),
+                "預けていた実 Scene は消えている（抱えたまま残さない）。");
+            Assert.LessOrEqual(SceneManager.sceneCount, 2,
+                "載っているのは着いた先と、その隣を先読みした分まで（上限 2）。");
+            Assert.LessOrEqual(transitions.Slide.Residency.ResidentCount, 2,
+                "台帳も上限の中。" + DumpResidency(transitions));
+        }
+
         // ---------------------------------------------------------------- 補助
 
         private IEnumerator EnterArea(string scenePath)
@@ -2743,6 +2934,10 @@ namespace Momotaro.Tests.PlayMode
             yield return EnterArea(P55AreaAScene);
 
             AreaTransitionService transitions = Transitions();
+            // <b>この検査は撤去経路そのものを見る</b>（工程 P55-10c）。
+            // 裁定 2 で旧 Area は既定で保持されるようになったので、保持を切って
+            // 従来どおり毎回撤去させる——保持に隠れた経路は壊れても誰も気付かない。
+            transitions.RetainDepartedArea = false;
             int notified = 0;
             bool requested = false;
             AreaTransitionDecision inside = default;
@@ -2960,6 +3155,10 @@ namespace Momotaro.Tests.PlayMode
             yield return EnterArea(P55AreaAScene);
 
             AreaTransitionService transitions = Transitions();
+            // <b>この検査は撤去経路そのものを見る</b>（工程 P55-10c）。
+            // 裁定 2 で旧 Area は既定で保持されるようになったので、保持を切って
+            // 従来どおり毎回撤去させる——保持に隠れた経路は壊れても誰も気付かない。
+            transitions.RetainDepartedArea = false;
 
             // <b>本物の Scene を使う。</b> 偽 Scene では到着そのものが起きないので、
             // 「到着通知の中から頼む」という条件が作れない。
@@ -3348,6 +3547,10 @@ namespace Momotaro.Tests.PlayMode
             yield return EnterArea(P55AreaAScene);
 
             AreaTransitionService transitions = Transitions();
+            // <b>この検査は撤去経路そのものを見る</b>（工程 P55-10c）。
+            // 裁定 2 で旧 Area は既定で保持されるようになったので、保持を切って
+            // 従来どおり毎回撤去させる——保持に隠れた経路は壊れても誰も気付かない。
+            transitions.RetainDepartedArea = false;
             var host = new UnloadRefusingSceneHost();
             transitions.SlideSceneHost = host;
 
@@ -3419,6 +3622,10 @@ namespace Momotaro.Tests.PlayMode
             yield return EnterArea(P55AreaAScene);
 
             AreaTransitionService transitions = Transitions();
+            // <b>この検査は撤去経路そのものを見る</b>（工程 P55-10c）。
+            // 裁定 2 で旧 Area は既定で保持されるようになったので、保持を切って
+            // 従来どおり毎回撤去させる——保持に隠れた経路は壊れても誰も気付かない。
+            transitions.RetainDepartedArea = false;
             var host = new UnloadRefusingSceneHost();
             transitions.SlideSceneHost = host;
 
