@@ -1180,6 +1180,174 @@ namespace Momotaro.Tests.PlayMode
                 + " / 境界の外面 x=" + outerX + "・回避 " + dodges + " 回）。");
         }
 
+        // ================================ 読み込みは遷移の受理だけ（工程 P55-15c。読み込み方針の裁定）
+
+        /// <summary>
+        /// <b>エリア内を歩き回っても、ロードも解放も一度も起きない</b>
+        /// （工程 P55-15c。試遊報告②。GPT 作業指示 4・6）。
+        ///
+        /// 試遊で「エリア内を歩き回っていると時折ゲームが一瞬止まり、ロードが行われたような挙動」
+        /// と報告された。裁定は<b>接近ではロードせず、初めてそのエリアへ遷移するときにロードする</b>
+        /// ——待ち時間を<b>プレイヤーが理解できる場所へまとめる</b>ためである。
+        ///
+        /// <b>歩くのは実キーで、座標は変えない</b>（付録 C.39）。
+        /// レバーを引き、仕切りを回り、通路へ入り、また戻る——
+        /// <b>以前なら先読みの境目（6 units）を何度もまたぐ道のり</b>である。
+        ///
+        /// <b>フレーム時間も一緒に測る</b>（GPT 作業指示 6）。
+        /// 「ロード 0 回」と「止まらない」は別のことなので、両方を数で残す——
+        /// 残る停止があれば、それはロード以外の原因である。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WalkingInsideTheArea_NeverLoadsOrReleasesAnything()
+        {
+            _route = RouteOf("EastWest");
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            AreaPreloader preloader = transitions.Slide.Preloader;
+
+            // 落ち着かせてから数え始める。
+            for (int i = 0; i < 60; i++)
+            {
+                yield return null;
+            }
+
+            int loads0 = preloader.LoadStartedCount;
+            int releases0 = preloader.ReleaseStartedCount;
+            int requests0 = transitions.Slide.PreloadRequestCount;
+            int scenes0 = SceneManager.sceneCount;
+
+            Assert.AreEqual(1, scenes0,
+                "前提：まだ隣は載っていない（初訪問の前）。" );
+            Assert.AreEqual(AreaPreloadPhase.Idle, preloader.Phase,
+                "前提：先読みは何も抱えていない。");
+
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, "主人公が居る。");
+
+            // ---- 以前なら先読みの境目をまたぐ道のりを歩く ----
+            var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.IsNotNull(lever, "レバーがある。");
+            yield return WalkTo(lever.InteractionAnchor, 1.1f, 25f, "開始点 → レバー");
+            yield return PressKeyUntil(Key.E, () => lever.OpenedCount >= 1, 6f);
+
+            AreaExitGate exit = FindExitGate(_route.ExitFromA);
+            Vector3 gateAt = exit.transform.position;
+
+            foreach (Vector3 waypoint in WaypointsAroundDivider(player.transform.position, gateAt))
+            {
+                yield return WalkTo(waypoint, 1.4f, 25f, "仕切りの抜け口へ");
+            }
+
+            // 出入口の手前まで寄って（以前はここで読み始めた）、また仕切りの向こうへ離れる。
+            //
+            // <b>直線では戻れない</b>——仕切り壁があるので、抜け口を回る
+            // （付録 C.39 の「寄り道の目標は座標変更ではない」）。
+            Vector3 nearSeam = gateAt + new Vector3(-3f, 0f, 0f);
+            Vector3 farFromSeam = lever.InteractionAnchor;
+            for (int lap = 0; lap < 2; lap++)
+            {
+                foreach (Vector3 waypoint in WaypointsAroundDivider(
+                             player.transform.position, nearSeam))
+                {
+                    yield return WalkTo(waypoint, 1.4f, 25f, "境界へ寄る（抜け口）");
+                }
+
+                yield return WalkToUntil(nearSeam, 1.4f, 25f, "境界へ寄る",
+                    () => transitions.SlideCommittedCount > 0);
+
+                foreach (Vector3 waypoint in WaypointsAroundDivider(
+                             player.transform.position, farFromSeam))
+                {
+                    yield return WalkTo(waypoint, 1.4f, 25f, "離れる（抜け口）");
+                }
+
+                yield return WalkToUntil(farFromSeam, 1.6f, 25f, "境界から離れる",
+                    () => transitions.SlideCommittedCount > 0);
+            }
+
+            Assert.AreEqual(0, transitions.SlideCommittedCount,
+                "前提：この間に遷移していない（歩いただけ）。");
+
+            // ---- 数える ----
+            Assert.AreEqual(loads0, preloader.LoadStartedCount,
+                "<b>歩いている間にロードを始めていない</b>（この間 "
+                + (preloader.LoadStartedCount - loads0) + " 回）。試遊報告②の場所である。");
+            Assert.AreEqual(releases0, preloader.ReleaseStartedCount,
+                "<b>解放も始めていない</b>（この間 "
+                + (preloader.ReleaseStartedCount - releases0) + " 回）。");
+            Assert.AreEqual(requests0, transitions.Slide.PreloadRequestCount,
+                "<b>読込を一度も頼んでいない</b>（この間 "
+                + (transitions.Slide.PreloadRequestCount - requests0) + " 回）。");
+            Assert.AreEqual(scenes0, SceneManager.sceneCount,
+                "<b>Scene の枚数が変わっていない</b>（" + scenes0 + " → "
+                + SceneManager.sceneCount + " 枚）。");
+            Assert.AreEqual(AreaPreloadPhase.Idle, preloader.Phase,
+                "先読みは何も抱えないまま（" + preloader.Phase + "）。");
+        }
+
+        /// <summary>
+        /// <b>初訪問で 1 回だけ読み、往復では読み直さない</b>
+        /// （工程 P55-15c。裁定の「ロード済みエリアへの再移動は保持した Scene を再利用する」）。
+        ///
+        /// <b>歩いて渡る</b>——置き直しでは「そこへ行ける」も「読みに行く時機」も見ていない。
+        /// 数えるのは<b>実 Scene のロード開始</b>で、望みの回数ではない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheFirstTravelLoadsOnce_AndTheRoundTripReusesIt()
+        {
+            _route = RouteOf("EastWest");
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            AreaPreloader preloader = transitions.Slide.Preloader;
+
+            for (int i = 0; i < 60; i++)
+            {
+                yield return null;
+            }
+
+            int loads0 = preloader.LoadStartedCount;
+
+            // ---- 歩いて B へ（ここで初めて読む）----
+            yield return WalkFromStartToB();
+            Assert.AreEqual(1, transitions.SlideCommittedCount, "B へ渡った。");
+
+            int loadsAfterFirst = preloader.LoadStartedCount;
+            Assert.AreEqual(loads0 + 1, loadsAfterFirst,
+                "<b>初訪問でちょうど 1 回読んだ</b>（" + (loadsAfterFirst - loads0) + " 回）。");
+
+            // ---- 戻る・また行く：読み直さない ----
+            yield return WalkBackAndForthOnce(transitions);
+
+            Assert.AreEqual(3, transitions.SlideCommittedCount,
+                "3 回渡った（A→B→A→B）。失敗=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(loadsAfterFirst, preloader.LoadStartedCount,
+                "<b>往復では一度も読み直していない</b>（この間 "
+                + (preloader.LoadStartedCount - loadsAfterFirst) + " 回）。"
+                + " 保持した Scene を再利用している（裁定）。");
+        }
+
+        /// <summary>B→A→B と歩いて往復する（座標は変えない）。</summary>
+        private IEnumerator WalkBackAndForthOnce(AreaTransitionService transitions)
+        {
+            int before = transitions.SlideCommittedCount;
+
+            // <b>半径は小さく採る。</b> 1.6 だと出入口の Trigger（奥行 1.6）へ入る前に
+            // 「着いた」ことになり、遷移しないまま戻ってしまう。
+            AreaExitGate back = FindExitGate(_route.ExitFromB);
+            yield return WalkToUntil(back.transform.position, 0.4f, 30f, "B → A",
+                () => transitions.SlideCommittedCount > before);
+            yield return WaitUntilFreeToTravel();
+
+            int mid = transitions.SlideCommittedCount;
+            AreaExitGate forward = FindExitGate(_route.ExitFromA);
+            yield return WalkToUntil(forward.transform.position, 0.4f, 30f, "A → B",
+                () => transitions.SlideCommittedCount > mid);
+            yield return WaitUntilFreeToTravel();
+        }
+
         // ---------------------------------------------------------------- 歩く（座標を変えない）
 
         /// <summary>

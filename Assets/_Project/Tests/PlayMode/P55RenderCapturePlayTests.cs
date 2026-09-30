@@ -725,18 +725,37 @@ namespace Momotaro.Tests.PlayMode
             yield return EnterArea(_route.AreaAScene);
 
             AreaTransitionService transitions = Transitions();
+            AreaPreloader preloader = transitions.Slide.Preloader;
+
+            // <b>「隣が載っている」の作り方が変わった</b>（工程 P55-15c。読み込み方針の裁定）。
+            //
+            // 以前は<b>出入口へ近づいて距離による先読みに載せさせて</b>いた。
+            // 距離で読むのをやめたので、載っている状態は<b>一度訪れて戻ったあと</b>にしか作れない
+            // ——裁定 2 の引き継ぎ（付録 C.29）で、出発 Area が非活動のまま預けられる。
             yield return PlaceBeforeExit(_route.ExitFromA, _route.BackStep);
             yield return SettleCamera();
 
-            AreaPreloader preloader = transitions.Slide.Preloader;
+            float over = Time.realtimeSinceStartup + 30f;
+            while (transitions.SlideCommittedCount < 1 && Time.realtimeSinceStartup < over)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(_route.Forward));
+                yield return null;
+            }
 
-            float staged = Time.realtimeSinceStartup + 20f;
-            while (preloader.Phase != AreaPreloadPhase.Staged && Time.realtimeSinceStartup < staged)
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "前提：隣へ渡れている（失敗=" + transitions.Slide.LastFailure + "）。");
+
+            float settle = Time.realtimeSinceStartup + 20f;
+            while (transitions.Slide.HasLiveSceneOperation && Time.realtimeSinceStartup < settle)
             {
                 yield return null;
             }
 
-            Assert.AreEqual(AreaPreloadPhase.Staged, preloader.Phase, "前提：隣が載っている。");
+            yield return SettleCamera();
+
+            Assert.AreEqual(AreaPreloadPhase.Staged, preloader.Phase,
+                "前提：来た側が非活動のまま預けられている（引き継ぎ）。");
             Assert.AreEqual(2, SceneManager.sceneCount, "前提：Scene は 2 枚。");
             int releasesBefore = preloader.ReleaseStartedCount;
 
@@ -745,8 +764,9 @@ namespace Momotaro.Tests.PlayMode
             {
                 float reference = watch.ObserveLuminance();
 
-                // <b>手放させる。</b> <c>ClearRequest</c> はその場で <c>Poll</c> まで進むので、
-                // 距離による先読みが望みを立て直す前に解放が始まる。
+                // <b>手放させる。</b> <c>ClearRequest</c> はその場で <c>Poll</c> まで進む。
+                // 距離で読み直す経路はもう無いので（工程 P55-15c）、
+                // 解放したあと誰かが勝手に読み直すこともない。
                 preloader.ClearRequest();
 
                 bool sawOnlyOne = false;

@@ -95,11 +95,6 @@ namespace Momotaro.Data.World
                 }
             }
 
-            if (c.PreloadDistance <= 0f)
-            {
-                error(who + " の PreloadDistance が 0 以下です。");
-            }
-
             // <b>Slide は通路幅が要る</b>（§7.1 改定。工程 P55-14d）。
             // 0 だと帯が消えて、接続軸からわずかに外れた進入でも遷移が成立しなくなる——
             // 「通路の端を歩いてきたら隣へ行けない」という形で出る。

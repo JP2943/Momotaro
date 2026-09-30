@@ -34,7 +34,6 @@ MonoBehaviour:
     _reverseConnectionId:
       _value: conn_p55_b_west_to_a
     _slideDuration: 0.45
-    _preloadDistance: 6
     _corridorWidth: 4
   - _connectionId:
       _value: conn_p55_b_west_to_a
@@ -51,5 +50,4 @@ MonoBehaviour:
     _reverseConnectionId:
       _value: conn_p55_a_east_to_b
     _slideDuration: 0.45
-    _preloadDistance: 6
     _corridorWidth: 4

@@ -209,7 +209,6 @@ namespace Momotaro.Gameplay.Session
             Direction = c.Direction;
             ReverseConnectionId = c.ReverseConnectionId;
             SlideDuration = c.SlideDuration;
-            PreloadDistance = c.PreloadDistance;
             CorridorWidth = c.CorridorWidth;
         }
 
@@ -239,9 +238,6 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>スライドの所要秒。</summary>
         public float SlideDuration { get; }
-
-        /// <summary>先読みを始める距離。</summary>
-        public float PreloadDistance { get; }
 
         /// <summary>接続口（通路）の幅。カメラの許容帯の正本（§7.1）。</summary>
         public float CorridorWidth { get; }

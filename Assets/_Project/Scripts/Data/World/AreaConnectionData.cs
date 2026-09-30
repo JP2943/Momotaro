@@ -71,9 +71,6 @@ namespace Momotaro.Data.World
         [Tooltip("スライドの所要秒。初期値 0.45。試遊調整範囲は 0.30〜0.70。")]
         [SerializeField] private float _slideDuration = DefaultSlideDuration;
 
-        [Tooltip("先読みを始める出入口からの XZ 距離（world units）。初期値 6。")]
-        [SerializeField] private float _preloadDistance = DefaultPreloadDistance;
-
         [Tooltip("接続口（通路）の幅。スライドが接続軸の外へ動いてよい帯をここから求める。初期値 4。")]
         [SerializeField] private float _corridorWidth = DefaultCorridorWidth;
 
@@ -85,9 +82,6 @@ namespace Momotaro.Data.World
 
         /// <summary>試遊で調整してよい上限（§3.1）。</summary>
         public const float MaxSlideDuration = 0.70f;
-
-        /// <summary>先読み距離の既定（§3.1）。</summary>
-        public const float DefaultPreloadDistance = 6f;
 
         /// <summary>
         /// 接続口（通路）の幅の既定（§7.1。工程 P55-14d）。
@@ -128,9 +122,6 @@ namespace Momotaro.Data.World
         /// <summary>スライドの所要秒。</summary>
         public float SlideDuration => _slideDuration;
 
-        /// <summary>先読みを始める距離。</summary>
-        public float PreloadDistance => _preloadDistance;
-
         /// <summary>接続口（通路）の幅。カメラの許容帯の正本（§7.1）。</summary>
         public float CorridorWidth => _corridorWidth;
 
@@ -141,7 +132,6 @@ namespace Momotaro.Data.World
             AreaTransitionStyle style, AreaConnectionDirection direction,
             StableId reverseConnectionId,
             float slideDuration = DefaultSlideDuration,
-            float preloadDistance = DefaultPreloadDistance,
             float corridorWidth = DefaultCorridorWidth)
         {
             _connectionId = connectionId;
@@ -153,7 +143,6 @@ namespace Momotaro.Data.World
             _direction = direction;
             _reverseConnectionId = reverseConnectionId;
             _slideDuration = slideDuration;
-            _preloadDistance = preloadDistance;
             _corridorWidth = corridorWidth;
         }
     }
