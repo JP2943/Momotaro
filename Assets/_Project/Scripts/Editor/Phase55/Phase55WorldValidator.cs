@@ -348,6 +348,41 @@ namespace Momotaro.Editor.Phase55
                 }
             }
 
+            // <b>接続口をふさぐ見えない境界</b>（工程 P55-14b。§7.3。試遊報告③）。
+            //
+            // 外周壁は開口ぶん空いているので、当たりが無いと
+            // <b>出口判定が成立しないまま Area の外へ出られる</b>。
+            // 見た目を持たせてはいけない——壁を消した理由（スライド中に画面を覆う）へ逆戻りする。
+            List<Momotaro.Gameplay.Session.AreaSeamBarrier> barriers =
+                Phase5ExplorationValidator.Components<Momotaro.Gameplay.Session.AreaSeamBarrier>(scene);
+            if (barriers.Count == 0)
+            {
+                errors.Add("接続口の見えない境界（AreaSeamBarrier）がありません（§7.3。工程 P55-14b）。"
+                           + "Scene を作り直してください。");
+            }
+
+            for (int i = 0; i < barriers.Count; i++)
+            {
+                Momotaro.Gameplay.Session.AreaSeamBarrier barrier = barriers[i];
+                if (!barrier.IsWired)
+                {
+                    errors.Add("接続口の境界が未配線です（Collider か接続 ID が無い）: " + barrier.name);
+                    continue;
+                }
+
+                if (!barrier.IsInvisible)
+                {
+                    errors.Add("接続口の境界が見た目を持っています（" + barrier.name
+                               + "）。スライド中に画面を覆うので Renderer は持たせません。");
+                }
+
+                if (barrier.Blocker.isTrigger)
+                {
+                    errors.Add("接続口の境界が Trigger になっています（" + barrier.name
+                               + "）。通行を止められません。");
+                }
+            }
+
             List<AreaCameraRegionSet> sets =
                 Phase5ExplorationValidator.Components<AreaCameraRegionSet>(scene);
             if (sets.Count != 1)

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Momotaro.Gameplay.Combat;
 using UnityEngine;
 
@@ -31,7 +32,20 @@ namespace Momotaro.Gameplay.Companion.Investigation
         }
 
         /// <inheritdoc />
-        public bool IsClear(Vector3 from, Vector3 to)
+        public bool IsClear(Vector3 from, Vector3 to) => IsClear(from, to, null);
+
+        /// <summary>
+        /// <b>指定した Collider を障害物として数えずに</b>直線を見る（工程 P55-14b。GPT 受入 3）。
+        ///
+        /// スライドの表示経路検査で、<b>いま使っている接続の境界壁だけ</b>を外すために要る
+        /// （<see cref="Momotaro.Gameplay.Session.AreaSeamBarrier"/>）。
+        /// 境界壁は通常移動を止めるためのもので、遷移そのものは主人公を入口へ配置するので跨がない。
+        /// 普通の壁として数えると、接続が必ず「表示経路を安全に作れません」で失敗する。
+        ///
+        /// <b>外すのは渡された Collider だけ</b>である。レイヤーで一括除外にすると、
+        /// 別の接続の境界や通常の壁まで見えなくなる。
+        /// </summary>
+        public bool IsClear(Vector3 from, Vector3 to, IReadOnlyList<Collider> ignored)
         {
             Vector3 a = from; a.y += _height;
             Vector3 b = to; b.y += _height;
@@ -43,12 +57,48 @@ namespace Momotaro.Gameplay.Companion.Investigation
             }
 
             Physics.SyncTransforms();
-            if (_radius > 0f)
+
+            if (ignored == null || ignored.Count == 0)
             {
-                return !Physics.SphereCast(a, _radius, dir / dist, out _, dist, _wallMask, QueryTriggerInteraction.Ignore);
+                if (_radius > 0f)
+                {
+                    return !Physics.SphereCast(a, _radius, dir / dist, out _, dist, _wallMask, QueryTriggerInteraction.Ignore);
+                }
+
+                return !Physics.Raycast(a, dir / dist, dist, _wallMask, QueryTriggerInteraction.Ignore);
             }
 
-            return !Physics.Raycast(a, dir / dist, dist, _wallMask, QueryTriggerInteraction.Ignore);
+            // 除外がある場合は当たりを全部拾って選り分ける。
+            // 1 回の遷移につき数回しか通らないので、確実さを採る。
+            RaycastHit[] hits = _radius > 0f
+                ? Physics.SphereCastAll(a, _radius, dir / dist, dist, _wallMask, QueryTriggerInteraction.Ignore)
+                : Physics.RaycastAll(a, dir / dist, dist, _wallMask, QueryTriggerInteraction.Ignore);
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                Collider hit = hits[i].collider;
+                if (hit == null)
+                {
+                    continue;
+                }
+
+                bool skip = false;
+                for (int k = 0; k < ignored.Count; k++)
+                {
+                    if (ignored[k] != null && ignored[k] == hit)
+                    {
+                        skip = true;
+                        break;
+                    }
+                }
+
+                if (!skip)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }

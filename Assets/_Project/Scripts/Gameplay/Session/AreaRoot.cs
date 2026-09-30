@@ -36,6 +36,9 @@ namespace Momotaro.Gameplay.Session
         [Tooltip("門を開けるレバー（§7.3）。開通したら経路を更新する対象（§10.1）。")]
         [SerializeField] private List<Interaction.AreaFlagLever> _levers = new List<Interaction.AreaFlagLever>();
 
+        [Tooltip("接続口をふさぐ見えない境界（工程 P55-14b）。")]
+        [SerializeField] private List<AreaSeamBarrier> _seamBarriers = new List<AreaSeamBarrier>();
+
         /// <summary>このエリアの定義。</summary>
         public AreaDefinition Definition => _definition;
 
@@ -56,6 +59,9 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>門を開けるレバー（読み取り専用。§7.3）。</summary>
         public IReadOnlyList<Interaction.AreaFlagLever> Levers => _levers;
+
+        /// <summary>接続口をふさぐ見えない境界（工程 P55-14b。§7.3）。</summary>
+        public IReadOnlyList<AreaSeamBarrier> SeamBarriers => _seamBarriers;
 
         /// <summary>指定 ID の入口を Scene から引く。</summary>
         public bool TryGetEntryPoint(StableId entryId, out AreaEntryPoint point)
@@ -82,7 +88,8 @@ namespace Momotaro.Gameplay.Session
             List<AreaExitGate> exitGates = null,
             List<Interaction.AreaFlagDoor> doors = null,
             List<Interaction.AreaTransitionDoor> transitionDoors = null,
-            List<Interaction.AreaFlagLever> levers = null)
+            List<Interaction.AreaFlagLever> levers = null,
+            List<AreaSeamBarrier> seamBarriers = null)
         {
             _definition = definition;
             _entryPoints = entryPoints ?? new List<AreaEntryPoint>();
@@ -90,6 +97,7 @@ namespace Momotaro.Gameplay.Session
             _doors = doors ?? new List<Interaction.AreaFlagDoor>();
             _transitionDoors = transitionDoors ?? new List<Interaction.AreaTransitionDoor>();
             _levers = levers ?? new List<Interaction.AreaFlagLever>();
+            _seamBarriers = seamBarriers ?? new List<AreaSeamBarrier>();
         }
 #endif
     }

@@ -224,6 +224,11 @@
       "id": "P55-SEC4-2B",
       "summary": "活動ゲートの**出荷状態の復元**（仕様書 §4.2。工程 P55-14a。試遊報告「赤いラインが通過できず戦闘区域に入れない」）。初回の Open は一律に有効化せず、**閉じる直前に記録した出荷状態**を復元する。出荷状態とは Builder が閉じる前の有効状態で、地形・外周壁は有効、**戦闘中だけ有効なアリーナ封鎖は無効**、閉じた門は有効である。一律に有効化すると、わざと無効で出荷した Collider まで有効になり、意図（`AreaArenaBoundary.IsEnabled`）は「封鎖していない」のに実体（`ActiveBlockerCount`）は「4 枚とも壁」になる——**意図と実体の両方を見る**。記録が無い Scene は一律有効化へ落ちるので `UniformOpenCount` で数え、Scene 検査でも記録の有無を見る。非活動時はいずれも停止させる責任はゲートが持ち続ける（除外方式にはしない）",
       "stage": "P55-14"
+    },
+    {
+      "id": "P55-SEC7-3B",
+      "summary": "接続口をふさぐ**見えない境界**（仕様書 §7.3。工程 P55-14b。試遊報告③「出口を踏まずにエリアの外へ出られる」）。外周壁は接続口の区間を空けて 2 本に分けてあるので、当たりが無いと**出口判定が成立しないまま Area の外へ出られる**——カメラは追従範囲に収まっているので主人公が画面から消えたまま進む。見た目は持たせない（壁を消した理由はスライド中に画面を覆うことで、それは Renderer の話）。開口の全幅＋左右の壁への食い込みでふさぎ、斜めからも回り込めない。遷移は主人公を入口へ配置するので境界を跨がず、常設でよい。**スライドの表示経路検査からは、いま使う接続の境界だけを外す**——普通の壁として数えると接続が必ず準備失敗になり、一括で外すと通常の壁や別の接続の境界まで見えなくなる。境界に止められた位置が出口 Trigger の内側であること、到着位置が行き先の境界より内側で主人公・犬丸が重ならないことも見る",
+      "stage": "P55-14"
     }
   ],
   "tests": [
@@ -939,6 +944,19 @@
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.TheFirstOpen_RestoresTheShippedState(\"A\")",
         "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.TheFirstOpen_RestoresTheShippedState(\"B\")"
+      ]
+    },
+    {
+      "requirementId": "P55-SEC7-3B",
+      "stage": "P55-14",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WithoutTheExitGate_PushingIntoTheSeamNeverLeavesTheArea",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.StoppedByTheBarrier_TheExitGateStillAccepts",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AfterArriving_TheHeroAndCompanionAreInsideTheDestinationBarrier",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheDisplayRoute_IgnoresExactlyTheBarriersOfThisConnection"
       ]
     }
   ],

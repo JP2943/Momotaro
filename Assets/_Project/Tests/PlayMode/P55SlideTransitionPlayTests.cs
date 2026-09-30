@@ -3562,6 +3562,247 @@ namespace Momotaro.Tests.PlayMode
                 "台帳も上限の中。" + DumpResidency(transitions));
         }
 
+        // ------------------------------------------------- 接続口の見えない境界（工程 P55-14b。§7.3）
+
+        /// <summary>
+        /// <b>出口判定が成立しなくても、Area の外へは出られない</b>
+        /// （§7.3。工程 P55-14b。試遊報告③。GPT 受入 3 の条件 1・3）。
+        ///
+        /// <b>試遊で出た壊れ方。</b> 外周壁は接続口の区間を空けて 2 本に分けてある——
+        /// スライド中は両 Area が描かれるので、境界に<b>見える</b>壁が立つと画面を覆う。
+        /// ところがそれで<b>当たりまで無くした</b>ので、出口判定（範囲内で出口方向へ 0.15 秒連続入力）が
+        /// 成立しないまま通り抜けると主人公が Area の外へ出られた。
+        /// カメラは追従範囲に収まっているので、<b>主人公は画面から消えたまま進む</b>。
+        ///
+        /// <b>出口判定を止めて、境界だけを見る。</b> 出入口の部品を取り除いてから境界へ押し込む——
+        /// そうしないと「遷移したから外に出ていない」と区別が付かない。
+        /// 斜めからも押す（角をかすめて回り込めないこと。条件 1）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WithoutTheExitGate_PushingIntoTheSeamNeverLeavesTheArea()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            AreaExitGate gate = FindExitGate(ExitAEast);
+            Assert.IsNotNull(gate, "前提：出入口がある。");
+            Vector3 seamAt = gate.transform.position;
+
+            // <b>境界が居ることを先に確かめる。</b> 無ければこの検査は何も守っていない。
+            Assert.IsTrue(TryFindBundle(AreaA, out AreaRuntimeBundle bundle), "A の束を引ける。");
+            Assert.IsTrue(bundle.TryResolve(out AreaRoot areaRoot), "A の根を引ける。");
+            Assert.AreEqual(1, areaRoot.SeamBarriers.Count, "接続口の境界が 1 枚ある。");
+
+            AreaSeamBarrier barrier = areaRoot.SeamBarriers[0];
+            Assert.IsTrue(barrier.IsWired, "境界が配線されている（Collider と接続 ID）。");
+            Assert.IsTrue(barrier.IsInvisible,
+                "<b>見た目を持っていない</b>（持たせると、壁を消した理由へ逆戻りする）。");
+            Assert.IsTrue(barrier.Blocker.enabled, "活動中なので当たりが有効。");
+
+            float barrierX = barrier.Blocker.bounds.max.x;
+
+            // <b>先に手前へ立たせる。</b> 出入口を取り除くと立ち位置の基準が無くなる。
+            yield return StandJustBefore(gate, Vector3.left);
+            yield return SettleCamera();
+
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, "主人公が居る。");
+            Assert.Less(Vector3.Distance(player.transform.position, seamAt), 4f,
+                "前提：出入口の手前に立てている。");
+
+            // ---- 出口判定を止める ----
+            Object.DestroyImmediate(gate);
+            yield return null;
+
+            // <c>FindExitGate</c> は見つからないと自分で失敗するので、ここでは使わない。
+            AreaExitGate[] remaining = Object.FindObjectsByType<AreaExitGate>(FindObjectsSortMode.None);
+            for (int i = 0; i < remaining.Length; i++)
+            {
+                Assert.AreNotEqual(ExitAEast.Value, remaining[i].ExitId.Value,
+                    "前提：この出入口はもう無い（遷移は起こりえない）。");
+            }
+
+            float worstX = player.transform.position.x;
+
+            // まっすぐ・斜め上・斜め下の 3 通りで押す（角から回り込めないこと）。
+            Key[][ ] pushes =
+            {
+                new[] { Key.D },
+                new[] { Key.D, Key.W },
+                new[] { Key.D, Key.S },
+            };
+
+            for (int p = 0; p < pushes.Length; p++)
+            {
+                for (int i = 0; i < 40; i++)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(pushes[p]));
+                    yield return null;
+                    worstX = Mathf.Max(worstX, player.transform.position.x);
+                }
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                yield return null;
+            }
+
+            Assert.AreEqual(0, transitions.SlideCommittedCount, "前提：遷移は起きていない。");
+            Assert.Less(worstX, barrierX + 0.01f,
+                "<b>境界より外へ出ていない</b>（最も進んだ x=" + worstX + " / 境界の外面 x=" + barrierX
+                + "）。斜めからも回り込めない。");
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居たまま。");
+        }
+
+        /// <summary>
+        /// <b>境界に止められた位置でも、出口判定は続いて遷移が成立する</b>
+        /// （GPT 受入 3 の条件 2。工程 P55-14b）。
+        ///
+        /// 境界を置いたことで「押し当てているのに出入口の範囲から外れて遷移できない」になっては、
+        /// 通れない接続を作ったのと同じである。**止まった位置が範囲の内側**でなければならない。
+        ///
+        /// <b>止められたことも確かめる。</b> 止まらずに通り抜けていたら、
+        /// 「範囲内だった」は境界のおかげではない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator StoppedByTheBarrier_TheExitGateStillAccepts()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            AreaExitGate gate = FindExitGate(ExitAEast);
+            Assert.IsNotNull(gate, "前提：出入口がある。");
+
+            Assert.IsTrue(TryFindBundle(AreaA, out AreaRuntimeBundle bundle), "A の束を引ける。");
+            Assert.IsTrue(bundle.TryResolve(out AreaRoot areaRoot), "A の根を引ける。");
+            AreaSeamBarrier barrier = areaRoot.SeamBarriers[0];
+            float barrierX = barrier.Blocker.bounds.min.x;
+
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+
+            yield return StandJustBefore(gate, Vector3.left);
+            yield return SettleCamera();
+
+            bool sawInsideWhileHeld = false;
+            bool sawStopped = false;
+            float previousX = player.transform.position.x;
+            float held = 0f;
+
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.SlideCommittedCount == 0 && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                yield return null;
+
+                if (gate != null)
+                {
+                    held = Mathf.Max(held, gate.HeldSeconds);
+                    if (gate.PlayerInside && gate.HeldSeconds > 0f)
+                    {
+                        sawInsideWhileHeld = true;
+                    }
+                }
+
+                float x = player.transform.position.x;
+                // 境界へ触れる距離まで来て、なお前進が止まっている＝押し当てている。
+                if (x > barrierX - 1.2f && Mathf.Abs(x - previousX) < 0.002f)
+                {
+                    sawStopped = true;
+                }
+
+                previousX = x;
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "境界に押し当てたまま遷移が成立した。失敗=" + transitions.Slide.LastFailure);
+            Assert.IsTrue(sawInsideWhileHeld,
+                "押しているあいだ、出入口の範囲の内側に居た（止まった位置が範囲内）。"
+                + " 最大の連続入力=" + held + " 秒 / 必要=" + AreaExitGate.RequiredHoldSeconds + " 秒");
+            Assert.IsTrue(sawStopped,
+                "境界の手前で前進が止まった（通り抜けていない）。止まらないなら、"
+                + "「範囲内だった」は境界のおかげではない。");
+        }
+
+        /// <summary>
+        /// <b>到着位置は行き先の境界より内側で、境界と重なっていない</b>
+        /// （GPT 受入 3 の条件 4。工程 P55-14b）。
+        ///
+        /// 重なって到着すると、物理が主人公を押し出す——押し出された先が境界の外側なら、
+        /// **到着した瞬間に Area の外へ出る**。犬丸も同じ（入口から進行方向と逆へ 1.2m に置かれる）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AfterArriving_TheHeroAndCompanionAreInsideTheDestinationBarrier()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に着いた。");
+
+            Assert.IsTrue(TryFindBundle(AreaB, out AreaRuntimeBundle bundle), "B の束を引ける。");
+            Assert.IsTrue(bundle.TryResolve(out AreaRoot areaRoot), "B の根を引ける。");
+            Assert.AreEqual(1, areaRoot.SeamBarriers.Count, "B にも境界が 1 枚ある。");
+
+            Bounds blocker = areaRoot.SeamBarriers[0].Blocker.bounds;
+
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, "主人公が居る。");
+            Vector3 at = player.transform.position;
+
+            Assert.IsFalse(blocker.Contains(new Vector3(at.x, blocker.center.y, at.z)),
+                "主人公が境界と重なっていない（位置=" + at + " 境界=" + blocker + "）。");
+            Assert.Greater(at.x, blocker.max.x,
+                "主人公は境界より<b>内側</b>に居る（x=" + at.x + " 境界の内面 x=" + blocker.max.x + "）。");
+
+            var companion = Object.FindFirstObjectByType<CompanionActor>();
+            if (companion != null && companion.State != CompanionState.Away)
+            {
+                Vector3 dog = companion.transform.position;
+                Assert.IsFalse(blocker.Contains(new Vector3(dog.x, blocker.center.y, dog.z)),
+                    "犬丸も境界と重なっていない（位置=" + dog + "）。");
+                Assert.Greater(dog.x, blocker.max.x,
+                    "犬丸も境界より内側（x=" + dog.x + "）。");
+            }
+        }
+
+        /// <summary>
+        /// <b>表示経路検査から外すのは、いま使う接続の境界だけ</b>
+        /// （GPT 受入 3。工程 P55-14b）。
+        ///
+        /// 境界を普通の壁として数えると、主人公の表示経路は<b>必ず塞がっている</b>ことになり、
+        /// 接続そのものが「表示経路を安全に作れません」で失敗する。
+        /// 逆に一括で外すと、通常の壁や別の接続の境界まで見えなくなる。
+        ///
+        /// 外した枚数を数で見る（出発側と到着側の 2 枚）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheDisplayRoute_IgnoresExactlyTheBarriersOfThisConnection()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            Assert.AreEqual(0, transitions.Slide.SeamBarriersIgnoredForRoute, "前提：まだ数えていない。");
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "スライドが成立した（境界を普通の壁として数えていたら準備失敗になる）。失敗="
+                + transitions.Slide.LastFailure);
+            Assert.AreEqual(0, transitions.Slide.RolledBackCount, "戻していない。");
+            Assert.AreEqual(2, transitions.Slide.SeamBarriersIgnoredForRoute,
+                "外したのは出発側と到着側の境界 2 枚だけ（"
+                + transitions.Slide.SeamBarriersIgnoredForRoute + " 枚）。");
+        }
+
         // ---------------------------------------------------------------- 補助
 
         private IEnumerator EnterArea(string scenePath)

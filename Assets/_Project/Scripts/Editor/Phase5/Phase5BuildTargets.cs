@@ -208,6 +208,16 @@ namespace Momotaro.Editor.Phase5
         public Vector3 AreaBOrigin { get; set; } = Vector3.zero;
 
         /// <summary>エリア A の外周壁に開ける接続口。</summary>
+        /// <summary>
+        /// 接続口をふさぐ見えない境界に持たせる接続 ID（工程 P55-14b）。
+        /// 順方向と逆方向の両方を持たせるのは、往復が<b>同じ口</b>を使うためである。
+        /// 接続口が無い配置（P5 の探索試遊）では空でよい。
+        /// </summary>
+        public Core.Identification.StableId SeamConnectionForwardId { get; set; }
+
+        /// <summary>同じ口の逆方向の接続 ID（工程 P55-14b）。</summary>
+        public Core.Identification.StableId SeamConnectionReverseId { get; set; }
+
         public Phase5SeamOpening AreaASeam { get; set; } = Phase5SeamOpening.None;
 
         /// <summary>エリア B の外周壁に開ける接続口。</summary>

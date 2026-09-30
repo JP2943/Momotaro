@@ -222,6 +222,8 @@ namespace Momotaro.Editor.Phase55
             AreaBId = Phase55WorldIds.AreaB,
             AreaAOrigin = AreaAOrigin,
             AreaBOrigin = AreaBOrigin,
+            SeamConnectionForwardId = Phase55WorldIds.ConnectionAToB,
+            SeamConnectionReverseId = Phase55WorldIds.ConnectionBToA,
             AreaASeam = new Phase5SeamOpening(Phase5SeamSide.East, SeamZ, PassageWidth),
             AreaBSeam = new Phase5SeamOpening(Phase5SeamSide.West, SeamZ, PassageWidth),
             ExitAToB = Phase55WorldIds.ExitAEast,

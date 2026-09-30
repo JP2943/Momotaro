@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using Momotaro.Core.Identification;
 using Momotaro.Core.Logging;
 using Momotaro.Data.World;
@@ -666,14 +667,28 @@ namespace Momotaro.Infrastructure.World
             //
             // 戻すのは Collider だけで、Gameplay（根・仕掛け・NavMesh）は止めたまま。
             // 到着側は既に開いているので、こちらは何もしなくても見える。
+            // <b>いま使う接続の境界壁だけを障害物から外す</b>（工程 P55-14b。GPT 受入 3）。
+            //
+            // 接続口には<b>見えない境界</b>（<see cref="AreaSeamBarrier"/>）が立っている——
+            // 出口判定が成立しないまま Area の外へ出られないようにするためである（試遊報告③）。
+            // それを普通の壁として数えると、主人公の表示経路は<b>必ず塞がっている</b>ことになり、
+            // 接続そのものが「表示経路を安全に作れません」で失敗する。
+            //
+            // <b>外すのはこの接続の境界だけ。</b> 通常の壁・閉じた門・別の接続の境界は障害物のまま。
+            // レイヤーで一括除外にしないのは、壁レイヤーが Default だからでもあるが、
+            // それ以前に<b>外して良いのはこの 1 枚だけ</b>だからである。
+            List<Collider> ignoredForRoute = CollectSeamBarriers(
+                departure, destination, connection.ConnectionId, connection.ReverseConnectionId);
+
             bool playerRouteClear;
             bool companionRouteClear;
             departure.ActivityGate?.BeginObstacleProbe();
             try
             {
-                playerRouteClear = IsDisplayRouteClear(playerFrom, playerTo);
+                playerRouteClear = IsDisplayRouteClear(playerFrom, playerTo, ignoredForRoute);
                 companionRouteClear =
-                    !hasCompanionRoute || IsDisplayRouteClear(companionFrom, companionTo);
+                    !hasCompanionRoute
+                    || IsDisplayRouteClear(companionFrom, companionTo, ignoredForRoute);
             }
             finally
             {
@@ -1752,6 +1767,56 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         private static bool IsDisplayRouteClear(Vector3 from, Vector3 to) =>
             DisplayRouteProbe.IsClear(from, to);
+
+        private static bool IsDisplayRouteClear(
+            Vector3 from, Vector3 to, List<Collider> ignored) =>
+            DisplayRouteProbe.IsClear(from, to, ignored);
+
+        /// <summary>直近の表示経路検査で障害物から外した境界壁の数（診断・テスト用。工程 P55-14b）。</summary>
+        public int SeamBarriersIgnoredForRoute { get; private set; }
+
+        /// <summary>
+        /// <b>その接続の境界壁</b>を両側から集める（工程 P55-14b）。
+        ///
+        /// 往復は同じ口を使うので、<b>順方向と逆方向のどちらの ID でも一致</b>させる
+        /// （<see cref="AreaSeamBarrier.Covers"/>）。
+        /// 出発側と到着側の両方を見るのは、表示経路が<b>両 Area をまたぐ</b>ためである。
+        /// </summary>
+        private List<Collider> CollectSeamBarriers(
+            AreaRuntimeBundle departure, AreaRuntimeBundle destination,
+            StableId connectionId, StableId reverseConnectionId)
+        {
+            var found = new List<Collider>();
+            AddSeamBarriers(found, departure, connectionId, reverseConnectionId);
+            AddSeamBarriers(found, destination, connectionId, reverseConnectionId);
+            SeamBarriersIgnoredForRoute = found.Count;
+            return found;
+        }
+
+        private static void AddSeamBarriers(
+            List<Collider> into, AreaRuntimeBundle bundle,
+            StableId connectionId, StableId reverseConnectionId)
+        {
+            if (bundle == null || !bundle.TryResolve(out AreaRoot root) || root == null)
+            {
+                return;
+            }
+
+            System.Collections.Generic.IReadOnlyList<AreaSeamBarrier> barriers = root.SeamBarriers;
+            for (int i = 0; i < barriers.Count; i++)
+            {
+                AreaSeamBarrier barrier = barriers[i];
+                if (barrier == null || barrier.Blocker == null)
+                {
+                    continue;
+                }
+
+                if (barrier.Covers(connectionId) || barrier.Covers(reverseConnectionId))
+                {
+                    into.Add(barrier.Blocker);
+                }
+            }
+        }
 
         private static readonly Momotaro.Gameplay.Companion.Investigation.PhysicsObstacleProbe
             DisplayRouteProbe = new Momotaro.Gameplay.Companion.Investigation.PhysicsObstacleProbe();

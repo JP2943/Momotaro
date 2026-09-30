@@ -656,6 +656,12 @@ namespace Momotaro.Editor.Phase5
 
             // 仕掛け（§7）。目印ではなく実物を置く。
             var fixtures = new Fixtures();
+
+            // <b>接続口の見えない境界</b>（工程 P55-14b。§7.3。試遊報告③）。
+            // 外周壁は開口ぶん空いているので、当たりはここで足す。
+            CreateSeamBarrier(env.transform, Vector3.zero,
+                Phase5Layout.AreaAWidth, Phase5Layout.AreaADepth, t.AreaASeam, fixtures,
+                t.SeamConnectionForwardId, t.SeamConnectionReverseId);
             var fixtureRoot = new GameObject("Fixtures");
             fixtureRoot.transform.SetParent(root, false);
 
@@ -691,7 +697,8 @@ namespace Momotaro.Editor.Phase5
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
             areaRoot.EditorSet(definition, new List<AreaEntryPoint> { start, fromB },
                 new List<AreaExitGate> { toB }, new List<AreaFlagDoor> { fixtures.Door },
-                null, new List<AreaFlagLever> { fixtures.Lever });
+                null, new List<AreaFlagLever> { fixtures.Lever },
+                new List<Momotaro.Gameplay.Session.AreaSeamBarrier>(fixtures.SeamBarriers));
 
             CreateAreaSystems(root, areaRoot, definition, fixtures, residentRig, t);
 
@@ -769,6 +776,11 @@ namespace Momotaro.Editor.Phase5
             // A へ戻る扉（§6.1 の 2 行目。押下 1 回で要求する）。
             // 同じ場所の開放出入口と併存させる：方向入力でも Interact でも戻れる。
             var fixtures = new Fixtures();
+
+            // <b>接続口の見えない境界</b>（工程 P55-14b。§7.3）。
+            CreateSeamBarrier(env.transform, Vector3.zero,
+                Phase5Layout.AreaBWidth, Phase5Layout.AreaBDepth, t.AreaBSeam, fixtures,
+                t.SeamConnectionForwardId, t.SeamConnectionReverseId);
             var fixtureRoot = new GameObject("Fixtures");
             fixtureRoot.transform.SetParent(root, false);
             fixtures.TransitionDoor = CreateTransitionDoor(fixtureRoot.transform, "DoorToA",
@@ -796,7 +808,8 @@ namespace Momotaro.Editor.Phase5
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
             areaRoot.EditorSet(definition, new List<AreaEntryPoint> { fromA },
                 new List<AreaExitGate> { toA }, null,
-                new List<AreaTransitionDoor> { fixtures.TransitionDoor });
+                new List<AreaTransitionDoor> { fixtures.TransitionDoor }, null,
+                new List<Momotaro.Gameplay.Session.AreaSeamBarrier>(fixtures.SeamBarriers));
 
             CreateAreaSystems(root, areaRoot, definition, fixtures, residentRig, t);
 
@@ -939,6 +952,64 @@ namespace Momotaro.Editor.Phase5
                 mat, SeamOn(seam, Phase5SeamSide.East));
             CreateEdgeWall(parent, "Wall_West", Phase5SeamAxis.Z, center.x - hx, center.z, depth + t,
                 mat, SeamOn(seam, Phase5SeamSide.West));
+        }
+
+        /// <summary>
+        /// 接続口をふさぐ<b>見えない境界</b>（工程 P55-14b。§7.3。試遊報告③）。
+        ///
+        /// <b>見た目は持たない。</b> 外周壁を開口ぶん空けてあるのは
+        /// 「スライド中は両 Area が描かれるので、境界に立つ壁が画面を覆う」からで、
+        /// それは Renderer の話である。当たりだけなら画面を覆わない。
+        ///
+        /// <b>開口の全幅＋壁への食い込み。</b> 幅を開口とぴったりにすると、
+        /// 斜めから角をかすめて外へ出られる。左右の壁へ <c>WallThickness</c> ぶん食い込ませる。
+        ///
+        /// <b>遷移は跨がない</b>ので常設でよい——受理されると主人公は行き先の入口へ配置される。
+        /// スライドの表示経路検査からは<b>この接続の境界だけ</b>が外される
+        /// （<see cref="Momotaro.Gameplay.Session.AreaSeamBarrier"/>）。
+        /// </summary>
+        private static void CreateSeamBarrier(
+            Transform parent, Vector3 center, float width, float depth,
+            Phase5SeamOpening seam, Fixtures fixtures,
+            StableId seamForwardId, StableId seamReverseId)
+        {
+            if (!seam.IsSet)
+            {
+                return; // 接続口が無い配置（P5 の探索試遊）には境界も要らない。
+            }
+
+            float t = Phase5Layout.WallThickness;
+            float h = Phase5Layout.WallHeight;
+
+            // 壁が乗る線（外周壁と同じ位置）。
+            Phase5SeamAxis spanAxis = seam.Axis == Phase5SeamAxis.X
+                ? Phase5SeamAxis.Z   // 東西の接続：壁は Z へ伸びる
+                : Phase5SeamAxis.X;  // 南北の接続：壁は X へ伸びる
+            float wallLine = seam.Side == Phase5SeamSide.East ? center.x + width * 0.5f
+                : seam.Side == Phase5SeamSide.West ? center.x - width * 0.5f
+                : seam.Side == Phase5SeamSide.North ? center.z + depth * 0.5f
+                : center.z - depth * 0.5f;
+
+            // 開口の全幅に、左右の壁へ食い込むぶんを足す。
+            float span = seam.Width + (t * 2f);
+
+            Vector3 barrierCenter = PointOn(spanAxis, seam.Center, wallLine);
+            barrierCenter.y = h * 0.5f;
+            Vector3 size = SizeOn(spanAxis, span, t);
+            size.y = h;
+
+            GameObject go = Phase5Placeholder.CreateBlocker("SeamBarrier", parent, barrierCenter, size);
+            var box = go.GetComponent<BoxCollider>();
+            box.size = Vector3.one; // 大きさは scale で表す（CreateBlocker は size を使うので上書きする）
+            go.transform.localScale = size;
+
+            var barrier = go.AddComponent<Momotaro.Gameplay.Session.AreaSeamBarrier>();
+            barrier.Configure(seamForwardId, seamReverseId, box);
+            fixtures.SeamBarriers.Add(barrier);
+
+            // 境界は探索中の地形ではない。NavMesh のベイクから外す
+            // （焼き込むと、接続口が通れない床として残って犬丸が迂回し続ける）。
+            IgnoreFromNavMeshBuild(go);
         }
 
         /// <summary>その面に開口があるときだけ開口を返す（違う面なら無し）。</summary>
@@ -1084,6 +1155,9 @@ namespace Momotaro.Editor.Phase5
             public AreaArenaBoundary Arena;
             public AreaEncounterTrigger EncounterTrigger;
             public readonly List<Collider> ArenaBlockers = new List<Collider>();
+
+            public readonly List<Momotaro.Gameplay.Session.AreaSeamBarrier> SeamBarriers =
+                new List<Momotaro.Gameplay.Session.AreaSeamBarrier>();
             public readonly List<Transform> SpawnPoints = new List<Transform>();
             public readonly List<CompanionInvestigationPoint> Points = new List<CompanionInvestigationPoint>();
             public readonly List<AreaCameraRegion> CameraRegions = new List<AreaCameraRegion>();

@@ -46,6 +46,14 @@ namespace Momotaro.Tests.EditMode
             // Validator が直接見るようになったため免除が要らなくなった。
             { "NavMeshModifier", "Unity AI Navigation の標準部品。焼き込みの結果は NavMesh 検査が見る。" },
 
+            // --- P5.5 の接続口にしか置かない ---
+            {
+                "AreaSeamBarrier",
+                "接続口をふさぐ見えない境界（工程 P55-14b）。接続口が無い P5 の探索試遊には"
+                + "1 つも置かれないので、P5 の Scene 検査が見る相手が居ない。"
+                + "配線・見た目の不在・Trigger でないことは P5.5 世界検査（Phase55WorldValidator）が見る。"
+            },
+
             // --- 間接的に必ず検出される ---
             {
                 "CombatSessionController",
