@@ -393,6 +393,567 @@ namespace Momotaro.Tests.PlayMode
         /// （§6.1）。到着直後は入力が一度切れるまで溜まらない——
         /// 前の <see cref="HoldUntil"/> が離しているので、そこは人の操作と同じ。
         /// </summary>
+        // ================================================================ 歩いて到達できるか（工程 P55-14c）
+
+        /// <summary>
+        /// <b>歩いて到達できるか</b>を見る（工程 P55-14c。GPT 受入 4）。
+        ///
+        /// <b>なぜ別に要るのか。</b> 既存の検査は目的地のたびに
+        /// <c>PlaceAt</c> で主人公を<b>置き直して</b>いた。だから
+        /// 「そこで押せば通る」は見ていたが、<b>そこまで歩けるか</b>は見ていなかった——
+        /// 試遊で出た「戦闘区域に入れない」（アリーナ封鎖 4 枚が立っていた）は、
+        /// 壁が立っていても既存の検査がすべて緑のままだった。
+        ///
+        /// <b>この検査は途中で座標を変えない。</b> 実キーだけで歩き、着けたかどうかだけを見る。
+        /// Trigger を占有させたり、遷移を直接要求したりもしない——
+        /// 到着後の配置だけはゲーム自身の遷移が行う。
+        ///
+        /// <b>寄り道の目標（waypoint）は座標変更ではない。</b> L 字の通路があるので
+        /// 直線では仕切り壁に当たる。仕切りの<b>実際の当たりから</b>抜け口を割り出して、
+        /// そこを目標にしてから次へ向かう。決め打ちの座標を書かないので、
+        /// 配置を作り直しても壊れない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FromTheStart_WalkingReachesTheLeverTheInvestigationAndTheExit()
+        {
+            _route = RouteOf("EastWest");
+            yield return EnterArea(_route.AreaAScene);
+
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, "主人公が居る。");
+            Vector3 startedAt = player.transform.position;
+
+            GameSessionState session = Sessions().Session;
+            Assert.IsTrue(session.TryGetArea(_route.AreaAId, out AreaRuntimeState areaA), "A の記録がある。");
+
+            // ---- 1. 調査地点まで歩く ----
+            InvestigationInteractable point = FindInvestigation(OpenInvestigationPoint);
+            Assert.IsNotNull(point, "調査地点がある。");
+            yield return WalkTo(point.InteractionAnchor, 1.1f, 25f, "開始点 → 調査地点");
+
+            var coordinator = Object.FindFirstObjectByType<InvestigationCoordinator>();
+            yield return PressKeyUntil(Key.E, () => coordinator.LastRequestId > 0, 6f);
+            yield return WaitUntilOrTimeout(() => areaA.InvestigatedCount >= 1, 15f);
+            Assert.AreEqual(1, areaA.InvestigatedCount,
+                "歩いて着いた場所で調査が通った。調停の理由=" + coordinator.LastRejectReason);
+
+            // ---- 2. レバーまで歩く ----
+            var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.IsNotNull(lever, "レバーがある。");
+            Assert.IsFalse(lever.Door.IsOpened, "前提：門は閉じている。");
+            StableId gateFlag = lever.FlagId;
+
+            yield return WalkTo(lever.InteractionAnchor, 1.1f, 25f, "調査地点 → レバー");
+            yield return PressKeyUntil(Key.E, () => lever.OpenedCount >= 1, 6f);
+            Assert.AreEqual(1, lever.OpenedCount, "歩いて着いた場所でレバーを引けた。");
+            Assert.IsTrue(areaA.IsOpen(gateFlag), "開通が記録に残る。");
+
+            // ---- 3. 開通した門をくぐって出口まで歩く ----
+            //
+            // 仕切り壁の抜け口を<b>壁の当たりから</b>割り出す（決め打ちの座標を書かない）。
+            AreaExitGate exit = FindExitGate(_route.ExitFromA);
+            Assert.IsNotNull(exit, "出入口がある。");
+
+            foreach (Vector3 waypoint in WaypointsAroundDivider(lever.InteractionAnchor,
+                         exit.transform.position))
+            {
+                yield return WalkTo(waypoint, 1.4f, 25f, "仕切りの抜け口へ");
+            }
+
+            // <b>出口へ歩くと、着く前に遷移が成立する。</b> 出入口の範囲の中で出口方向へ
+            // 0.15 秒押し続けた時点で受理されるので、そこで世界は止まる（§6.3）——
+            // 「着くまで歩く」形にすると、止まった主人公を待って時間切れになる。
+            AreaTransitionService transitions = Transitions();
+            yield return WalkToUntil(exit.transform.position, 1.6f, 30f, "抜け口 → 出口",
+                () => transitions.SlideCommittedCount > 0);
+
+            yield return WaitUntilOrTimeout(() => transitions.SlideCommittedCount > 0, 25f);
+
+            Assert.IsTrue(lever.Door.IsOpened, "門は開いたまま（くぐれた）。");
+            Assert.Greater(Vector3.Distance(player.transform.position, startedAt), 5f,
+                "実際に移動している（開始点に居たままではない）。");
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "<b>歩いて行っただけで遷移が成立した</b>（途中で座標を変えていない）。失敗="
+                + transitions.Slide.LastFailure);
+        }
+
+        /// <summary>
+        /// <b>B の到着地点から戦闘区域へ歩いて入れる。封鎖は戦闘開始のときだけ立つ</b>
+        /// （工程 P55-14c。GPT 受入 4。試遊報告①がここで捕まる）。
+        ///
+        /// <b>試遊で最初に詰まった経路である。</b> 活動ゲートの初回 Open が
+        /// アリーナ封鎖 4 枚まで有効にしていたので、入口から戦闘区域の手前に壁が立っていた。
+        /// 既存の検査は <c>PlaceAt</c> で区域の中へ置いていたので、素通りしていた。
+        ///
+        /// 見るのは 3 点。<b>入る前は封鎖が 0 枚</b>、<b>歩いて入れる</b>、
+        /// <b>戦闘が始まって初めて封鎖される</b>。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FromTheArrivalInB_WalkingEntersTheArenaAndOnlyThenItSeals()
+        {
+            _route = RouteOf("EastWest");
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            // ---- A から B へ（歩くだけ。到着配置はゲーム自身が行う）----
+            yield return WalkFromStartToB();
+            AssertSettled(transitions, _route.AreaBId, "往路");
+
+            var arena = Object.FindFirstObjectByType<AreaArenaBoundary>();
+            Assert.IsNotNull(arena, "アリーナ境界が居る。");
+            Assert.Greater(arena.BlockerCount, 0, "前提：封鎖する Collider がある。");
+            Assert.AreEqual(0, arena.ActiveBlockerCount,
+                "<b>入る前は 1 枚も立っていない</b>（" + arena.ActiveBlockerCount + " / "
+                + arena.BlockerCount + " 枚）。立っていたら歩いて入れない。");
+
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Vector3 arrivedAt = player.transform.position;
+
+            var runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            Assert.IsNotNull(runner, "遭遇の調停がある。");
+            Assert.AreEqual(AreaEncounterState.Dormant, runner.State, "前提：まだ始まっていない。");
+
+            // ---- 歩いて戦闘区域へ入る ----
+            Vector3 trigger = EncounterTriggerPoint();
+            Assert.Greater(Vector3.Distance(arrivedAt, trigger), 4f,
+                "前提：到着地点は戦闘区域の外にある（" + arrivedAt + " → " + trigger + "）。"
+                + " 中に着いているなら、この検査は歩いて入ることを見ていない。");
+
+            yield return WalkToUntil(trigger, 1.0f, 30f, "B の到着地点 → 戦闘区域",
+                () => runner.State != AreaEncounterState.Dormant);
+
+            Assert.AreNotEqual(AreaEncounterState.Dormant, runner.State,
+                "歩いて戦闘区域へ入り、遭遇が始まった（いま=" + runner.State + "）。"
+                + " 主人公=" + player.transform.position + " 目標=" + trigger);
+
+            // ---- 封鎖はここで初めて立つ ----
+            yield return WaitUntilOrTimeout(() => arena.ActiveBlockerCount > 0, 8f);
+            Assert.IsTrue(arena.IsEnabled, "戦闘が始まって封鎖した（§8.2 手順 5）。");
+            Assert.AreEqual(arena.BlockerCount, arena.ActiveBlockerCount,
+                "封鎖 Collider が実際に有効（" + arena.ActiveBlockerCount + " 枚）。");
+            Assert.AreEqual(1, arena.EnableCount, "封鎖したのは 1 回だけ。");
+        }
+
+        /// <summary>
+        /// <b>戦闘が終わると封鎖が解け、歩いて出られる</b>（工程 P55-14c。GPT 受入 4）。
+        ///
+        /// 解放したつもりで壁が残ると、戦闘後に<b>区域から出られなくなる</b>。
+        /// <c>IsEnabled</c>（意図）だけでなく <c>ActiveBlockerCount</c>（実体）を見て、
+        /// さらに<b>実際に歩いて出る</b>。
+        ///
+        /// <b>敵を倒す区間だけは既存の戦闘補助を使う</b>（<c>KillWithRealHitbox</c>）。
+        /// あれは敵へ張り付くので位置を動かすが、**封鎖された区域の内側での移動**であり、
+        /// 到達可能性については何も主張していない。歩いて確かめるのは
+        /// 「区域へ入る」（上の検査）と「区域から出る」（この検査）である。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AfterTheFight_TheArenaReleasesAndWalkingLeavesIt()
+        {
+            _route = RouteOf("EastWest");
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            yield return WalkFromStartToB();
+            AssertSettled(transitions, _route.AreaBId, "往路");
+
+            var arena = Object.FindFirstObjectByType<AreaArenaBoundary>();
+            var runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
+
+            Vector3 trigger = EncounterTriggerPoint();
+            yield return WalkToUntil(trigger, 1.0f, 30f, "戦闘区域へ",
+                () => runner.State != AreaEncounterState.Dormant);
+            Assert.AreNotEqual(AreaEncounterState.Dormant, runner.State, "前提：遭遇が始まった。");
+
+            yield return FightToVictory(runner);
+
+            Assert.AreEqual(0, arena.ActiveBlockerCount, "前提：封鎖が解けている（実体）。");
+
+            // ---- 歩いて区域から出る ----
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Bounds safe = arena.SafeBounds;
+            Vector3 outside = new Vector3(safe.min.x - 3f, player.transform.position.y,
+                player.transform.position.z);
+
+            yield return WalkTo(outside, 1.8f, 30f, "戦闘区域 → 外へ");
+
+            Assert.Less(player.transform.position.x, safe.min.x,
+                "歩いて区域の外へ出られた（x=" + player.transform.position.x
+                + " 区域の西端 x=" + safe.min.x + "）。");
+        }
+
+        /// <summary>
+        /// <b>斜めや端から境界へ寄っても、遷移するか Area 内で止まるかのどちらかになる</b>
+        /// （工程 P55-14c。GPT 受入 4）。<b>未遷移のまま外へは出ない。</b>
+        ///
+        /// 試遊報告③の再現経路である。境界（<c>AreaSeamBarrier</c>）が入ったので、
+        /// 出口判定が成立しなければ押し当てて止まる。
+        ///
+        /// 通路の端・斜めの 2 通りで寄せ、<b>どのフレームでも Area の外に居ない</b>ことを見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ApproachingTheSeamOffCentre_NeverLeavesTheAreaUntransitioned()
+        {
+            _route = RouteOf("EastWest");
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+
+            Assert.IsTrue(TryFindAreaRoot(_route.AreaAId, out AreaRoot areaRoot), "A の根を引ける。");
+            Assert.AreEqual(1, areaRoot.SeamBarriers.Count, "前提：接続口に境界がある。");
+            float outerX = areaRoot.SeamBarriers[0].Blocker.bounds.max.x;
+
+            AreaExitGate exit = FindExitGate(_route.ExitFromA);
+            Vector3 gateAt = exit.transform.position;
+
+            // <b>門を開けてから通路へ入る。</b> 開けないと通路へ辿り着けない。
+            var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.IsNotNull(lever, "レバーがある。");
+            yield return WalkTo(lever.InteractionAnchor, 1.1f, 25f, "開始点 → レバー");
+            yield return PressKeyUntil(Key.E, () => lever.OpenedCount >= 1, 6f);
+            Assert.AreEqual(1, lever.OpenedCount, "門を開通させた。");
+
+            foreach (Vector3 waypoint in WaypointsAroundDivider(
+                         player.transform.position, gateAt))
+            {
+                yield return WalkTo(waypoint, 1.4f, 25f, "仕切りの抜け口へ");
+            }
+
+            // 通路の端へ寄ってから、斜めに押し込む。
+            Vector3 offCentre = gateAt + new Vector3(-3f, 0f, 1.4f);
+            yield return WalkToUntil(offCentre, 1.4f, 25f, "通路の端へ",
+                () => transitions.SlideCommittedCount > 0);
+
+            float worstX = player.transform.position.x;
+            Key[][ ] pushes =
+            {
+                new[] { Key.D, Key.S },
+                new[] { Key.D, Key.W },
+                new[] { Key.D },
+            };
+
+            bool committed = false;
+            for (int p = 0; p < pushes.Length && !committed; p++)
+            {
+                for (int i = 0; i < 60; i++)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(pushes[p]));
+                    yield return null;
+
+                    if (transitions.SlideCommittedCount > 0)
+                    {
+                        committed = true;
+                        break;
+                    }
+
+                    worstX = Mathf.Max(worstX, player.transform.position.x);
+                    Assert.Less(player.transform.position.x, outerX + 0.01f,
+                        "<b>遷移していないのに境界より外へ出た</b>（x="
+                        + player.transform.position.x + " / 境界の外面 x=" + outerX + "）。");
+                }
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                yield return null;
+            }
+
+            // どちらでもよい——遷移したか、Area 内で止まったか。
+            Assert.IsTrue(committed || worstX < outerX + 0.01f,
+                "遷移が成立したか、Area 内で止まったかのどちらかである（遷移="
+                + transitions.SlideCommittedCount + " 最も進んだ x=" + worstX + "）。");
+        }
+
+        /// <summary>
+        /// <b>門を開けて離脱し、再入場しても、見た目と当たりがともに開通状態</b>
+        /// （工程 P55-14c。GPT 受入 4）。
+        ///
+        /// <b>ゲームの導線だけで A を作り直させる。</b> B へスライドしてから
+        /// <b>B の扉（Fade）を歩いて使う</b>と Single 読込になり、A が新しく読み直される。
+        /// そこで活動ゲートの<b>初回 Open</b>が走る——工程 P55-14a で
+        /// 「出荷状態を復元する」ようにした経路である。
+        ///
+        /// 出荷状態では門の Collider は<b>有効</b>（閉じた門だから）。
+        /// 開通の記録は入場準備が反映するので、<b>Open のあとに無効へ戻る</b>のが正しい。
+        /// 順序が崩れると「見た目は開いているのに通れない」になる。
+        ///
+        /// <b>通れることを歩いて確かめる。</b> 状態の値だけでは、
+        /// 当たりが残っているかは言えない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AfterOpeningTheGateLeavingAndComingBack_TheGateIsStillPassable()
+        {
+            _route = RouteOf("EastWest");
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            GameSessionState session = Sessions().Session;
+
+            // ---- 1. 歩いてレバーを引く ----
+            var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.IsNotNull(lever, "レバーがある。");
+            StableId gateFlag = lever.FlagId;
+
+            yield return WalkTo(lever.InteractionAnchor, 1.1f, 25f, "開始点 → レバー");
+            yield return PressKeyUntil(Key.E, () => lever.OpenedCount >= 1, 6f);
+            Assert.AreEqual(1, lever.OpenedCount, "門を開通させた。");
+
+            // ---- 2. 歩いて B へ ----
+            yield return WalkFromStartToB();
+            AssertSettled(transitions, _route.AreaBId, "往路");
+
+            // ---- 3. B の扉まで歩いて Fade（A が読み直される）----
+            var door = Object.FindFirstObjectByType<AreaTransitionDoor>();
+            Assert.IsNotNull(door, "B に A へ戻る扉がある。");
+
+            int completedBefore = transitions.CompletedCount;
+            yield return WalkTo(door.InteractionAnchor, 1.2f, 30f, "B の到着地点 → 扉");
+            yield return PressKeyUntil(Key.E, () => transitions.CompletedCount > completedBefore, 25f);
+
+            yield return WaitUntilOrTimeout(
+                () => CurrentAreaProvider.Current != null
+                      && CurrentAreaProvider.Current.AreaId.Value == _route.AreaAId.Value, 25f);
+            Assert.AreEqual(_route.AreaAId.Value, CurrentAreaProvider.Current.AreaId.Value,
+                "扉で A へ戻った（暗転経路）。");
+            yield return null;
+
+            // <b>枚数では言えない。</b> Single のあとも §5 の距離による先読みがすぐ隣を持つので、
+            // 落ち着いた先はまた 2 枚になる。見たいのは「A が<b>新しく読み直された</b>」ことなので、
+            // その Area の活動ゲートが<b>初回の Open</b>を通ったことで言う。
+            var freshGate = Object.FindFirstObjectByType<AreaActivityGate>();
+            Assert.IsNotNull(freshGate, "読み直した A に活動ゲートが居る。");
+            Assert.IsFalse(freshGate.HasRestoreState,
+                "閉める直前の記録を持っていない＝この Scene は新しく読まれた（保持していた A ではない）。");
+            Assert.AreEqual(1, freshGate.OpenCount, "初回の Open を通っている。");
+
+            // ---- 4. 見た目と当たりの両方 ----
+            var reloaded = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.IsNotNull(reloaded, "読み直した A にレバーがある。");
+            Assert.IsTrue(session.TryGetArea(_route.AreaAId, out AreaRuntimeState areaA));
+            Assert.IsTrue(areaA.IsOpen(gateFlag), "記録は開通したまま。");
+            Assert.IsTrue(reloaded.Door.IsOpened, "<b>見た目</b>も開通している。");
+
+            var doorBlocker = reloaded.Door.GetComponentInChildren<Collider>(true);
+            if (doorBlocker != null)
+            {
+                Assert.IsFalse(doorBlocker.enabled,
+                    "<b>当たりも開通している</b>（門の Collider が無効）。"
+                    + " 有効なら「見た目は開いているのに通れない」になる。");
+            }
+
+            // ---- 5. 歩いてくぐれる ----
+            var gate = Object.FindFirstObjectByType<AreaActivityGate>();
+            Assert.IsNotNull(gate, "活動ゲートが居る。");
+            Assert.AreEqual(0, gate.UniformOpenCount,
+                "一律有効化へ落ちていない（落ちると門も塞ぎ直される）。");
+
+            AreaExitGate exit = FindExitGate(_route.ExitFromA);
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            float doorX = reloaded.Door.transform.position.x;
+
+            foreach (Vector3 waypoint in WaypointsAroundDivider(player.transform.position,
+                         exit.transform.position))
+            {
+                yield return WalkTo(waypoint, 1.4f, 25f, "仕切りの抜け口へ");
+            }
+
+            // 門を越えた時点で止める（出口まで行くと遷移が成立して世界が止まる）。
+            yield return WalkToUntil(exit.transform.position, 1.6f, 30f, "門をくぐって出口へ",
+                () => player.transform.position.x > doorX + 0.8f);
+
+            Assert.Greater(player.transform.position.x, doorX,
+                "門をくぐれた（主人公 x=" + player.transform.position.x
+                + " 門 x=" + doorX + "）。くぐれないなら当たりが残っている。");
+        }
+
+        /// <summary>
+        /// <b>歩いてレバーを引き、仕切りの抜け口を通って B へ渡る</b>（工程 P55-14c）。
+        ///
+        /// 座標は一切書き換えない。Trigger を占有させたり遷移を直接要求したりもしない——
+        /// <b>到着後の配置だけ</b>をゲーム自身の遷移が行う。
+        ///
+        /// <b>門を開けないと通路へ入れない。</b> 門（x≈9）は通路の入口を横に塞いでいて、
+        /// 仕切りの抜け口を通ったあとに立ちはだかる。README が
+        /// 「まず門を開けてください。レバーを引かないと境界へ行けません」と書いているとおり。
+        /// </summary>
+        private IEnumerator WalkFromStartToB()
+        {
+            AreaTransitionService transitions = Transitions();
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, "主人公が居る。");
+
+            var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.IsNotNull(lever, "レバーがある。");
+
+            if (!lever.Door.IsOpened)
+            {
+                yield return WalkTo(lever.InteractionAnchor, 1.1f, 25f, "開始点 → レバー");
+                yield return PressKeyUntil(Key.E, () => lever.OpenedCount >= 1, 6f);
+                Assert.AreEqual(1, lever.OpenedCount, "歩いてレバーを引けた。");
+            }
+
+            AreaExitGate exit = FindExitGate(_route.ExitFromA);
+            Assert.IsNotNull(exit, "出入口がある。");
+
+            foreach (Vector3 waypoint in WaypointsAroundDivider(
+                         player.transform.position, exit.transform.position))
+            {
+                yield return WalkTo(waypoint, 1.4f, 25f, "仕切りの抜け口へ");
+            }
+
+            int before = transitions.SlideCommittedCount;
+            yield return WalkToUntil(exit.transform.position, 1.6f, 30f, "抜け口 → 出口",
+                () => transitions.SlideCommittedCount > before);
+            yield return WaitUntilOrTimeout(
+                () => transitions.SlideCommittedCount > before, 25f);
+
+            Assert.Greater(transitions.SlideCommittedCount, before,
+                "<b>歩いて行っただけで B へ渡れた</b>。失敗=" + transitions.Slide.LastFailure);
+            yield return WaitUntilFreeToTravel();
+        }
+
+        // ---------------------------------------------------------------- 歩く（座標を変えない）
+
+        /// <summary>
+        /// <b>実キーだけで目標へ歩く</b>（工程 P55-14c）。座標は一切書き換えない。
+        ///
+        /// 着かなければ失敗させる。メッセージに出発点・現在地・目標・残り距離を入れるのは、
+        /// <b>何に止められたか</b>を読めるようにするためである（試遊報告の 2 件はどちらも
+        /// 「見えない壁に止められていた」形だった）。
+        /// </summary>
+        private IEnumerator WalkTo(Vector3 target, float radius, float seconds, string label) =>
+            WalkToUntil(target, radius, seconds, label, null);
+
+        /// <summary>
+        /// 目標へ歩く。<paramref name="until"/> が真になったらそこで止める
+        /// （遭遇のように「着く前に起きること」を待つため）。
+        /// </summary>
+        private IEnumerator WalkToUntil(
+            Vector3 target, float radius, float seconds, string label, System.Func<bool> until)
+        {
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, label + "：主人公が居る。");
+
+            Vector3 from = player.transform.position;
+            float deadline = Time.realtimeSinceStartup + seconds;
+            float closest = Flat(from, target);
+            Vector3 stuckAt = from;
+            float stuckFor = 0f;
+
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                if (until != null && until())
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                    yield return null;
+                    yield break;
+                }
+
+                Vector3 at = player.transform.position;
+                float distance = Flat(at, target);
+                closest = Mathf.Min(closest, distance);
+                if (distance <= radius)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                    yield return null;
+                    yield break;
+                }
+
+                // 止まったままの時間を数える（何に止められたかを言えるように）。
+                if (Flat(at, stuckAt) < 0.05f)
+                {
+                    stuckFor += Time.unscaledDeltaTime;
+                }
+                else
+                {
+                    stuckAt = at;
+                    stuckFor = 0f;
+                }
+
+                var keys = new System.Collections.Generic.List<Key>(2);
+                float dx = target.x - at.x;
+                float dz = target.z - at.z;
+                if (dz > 0.35f) { keys.Add(Key.W); }
+                else if (dz < -0.35f) { keys.Add(Key.S); }
+                if (dx > 0.35f) { keys.Add(Key.D); }
+                else if (dx < -0.35f) { keys.Add(Key.A); }
+
+                InputSystem.QueueStateEvent(_keyboard, keys.Count == 0
+                    ? new KeyboardState()
+                    : keys.Count == 1 ? new KeyboardState(keys[0]) : new KeyboardState(keys[0], keys[1]));
+                yield return null;
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+
+            if (until != null && until())
+            {
+                yield break;
+            }
+
+            Vector3 endedAt = player.transform.position;
+            Assert.Fail(label + "：歩いて着けませんでした。出発=" + from + " 現在=" + endedAt
+                + " 目標=" + target + " 残り=" + Flat(endedAt, target)
+                + " 最接近=" + closest + " 同じ場所に留まった時間=" + stuckFor + " 秒。"
+                + " 何かに止められている可能性があります（見えない当たり・封鎖・門）。");
+        }
+
+        private static float Flat(Vector3 a, Vector3 b) =>
+            Vector2.Distance(new Vector2(a.x, a.z), new Vector2(b.x, b.z));
+
+        /// <summary>
+        /// 仕切り壁の抜け口を<b>壁の実際の当たりから</b>割り出して、そこを通る目標にする。
+        ///
+        /// 決め打ちの座標を書かないので、配置を作り直しても壊れない。
+        /// 目標と同じ側に居るなら寄り道は要らない。
+        /// </summary>
+        private static System.Collections.Generic.IEnumerable<Vector3> WaypointsAroundDivider(
+            Vector3 from, Vector3 to)
+        {
+            GameObject divider = null;
+            foreach (Collider c in Object.FindObjectsByType<Collider>(FindObjectsSortMode.None))
+            {
+                if (c != null && c.gameObject.name == "Wall_Divider")
+                {
+                    divider = c.gameObject;
+                    break;
+                }
+            }
+
+            if (divider == null)
+            {
+                yield break; // 仕切りが無い配置なら寄り道も要らない。
+            }
+
+            Bounds b = divider.GetComponent<Collider>().bounds;
+            bool crossing = (from.x < b.center.x) != (to.x < b.center.x);
+            if (!crossing)
+            {
+                yield break;
+            }
+
+            // 抜け口は壁の南側（当たりの min.z より手前）。壁の手前・向こう側の 2 点を通る。
+            float gapZ = b.min.z - 1.5f;
+            yield return new Vector3(b.center.x - 2.0f, from.y, gapZ);
+            yield return new Vector3(b.center.x + 2.0f, from.y, gapZ);
+        }
+
+        /// <summary>その Area の根を引く（束の索引から）。</summary>
+        private static bool TryFindAreaRoot(StableId areaId, out AreaRoot root)
+        {
+            foreach (AreaRoot candidate in Object.FindObjectsByType<AreaRoot>(FindObjectsSortMode.None))
+            {
+                if (candidate != null && candidate.AreaId.Value == areaId.Value)
+                {
+                    root = candidate;
+                    return true;
+                }
+            }
+
+            root = null;
+            return false;
+        }
+
         private IEnumerator SlideAcross(Key key, int expectedCommits, string label)
         {
             AreaTransitionService transitions = Transitions();
