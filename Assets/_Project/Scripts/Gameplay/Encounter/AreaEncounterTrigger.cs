@@ -1,4 +1,5 @@
 using Momotaro.Gameplay.Player;
+using Momotaro.Gameplay.Session;
 using UnityEngine;
 
 namespace Momotaro.Gameplay.Encounter
@@ -49,6 +50,37 @@ namespace Momotaro.Gameplay.Encounter
                 _player = player;
             }
         }
+
+        /// <summary>
+        /// <b>「範囲内」を、いまの重なりから測り直す</b>（工程 P55-15a。出入口と同じ理由）。
+        ///
+        /// こちらの残留は逆向きに出る——<c>_playerInside</c> が true で固まると
+        /// <c>OnTriggerEnter</c> が即 return するので、<b>遭遇戦が二度と始まらない</b>。
+        /// 強制移動ほど目立たないが、同じ欠陥である。
+        ///
+        /// <b>ここでは戦闘を開始しない。</b> 測り直しは事実を合わせる操作で、
+        /// 開始は主人公が<b>入ってくる</b>ことで決まる（入場時の主人公は入口に居て、区域の外である）。
+        /// </summary>
+        public void ResyncOccupancy()
+        {
+            ResyncCount++;
+
+            bool inside = AreaTriggerOccupancy.IsOverlappingPlayer(
+                GetComponent<Collider>(), _player);
+
+            if (_playerInside && !inside)
+            {
+                StaleOccupancyClearedCount++;
+            }
+
+            _playerInside = inside;
+        }
+
+        /// <summary>範囲内を測り直した回数（診断・テスト用。工程 P55-15a）。</summary>
+        public int ResyncCount { get; private set; }
+
+        /// <summary>測り直しで固まっていた true を落とした回数（診断・テスト用）。</summary>
+        public int StaleOccupancyClearedCount { get; private set; }
 
         private void OnTriggerEnter(Collider other)
         {

@@ -3844,6 +3844,247 @@ namespace Momotaro.Tests.PlayMode
                 + transitions.Slide.SeamBarriersIgnoredForRoute + " 枚）。");
         }
 
+        // ================================================ 出入口の範囲内の残留（工程 P55-15a。試遊報告①）
+
+        /// <summary>
+        /// <b>去った出入口が「まだ範囲内に居る」と思い込んだままにならない</b>
+        /// （工程 P55-15a。試遊報告①「エリア B の戦闘区域を歩き回っていると、突然
+        /// エリア A の『B へ』の位置まで強制的に移動させられる」）。
+        ///
+        /// <b>原因は 2 つの事実の組み合わせだった。</b>
+        /// <list type="number">
+        /// <item><c>OnTriggerEnter</c>／<c>OnTriggerExit</c> は<b>その MonoBehaviour が有効な間</b>
+        /// しか届かない。<see cref="AreaActivityGate"/> は非活動 Area の出入口を止めるので、
+        /// 止まっている間に主人公が範囲から出ても<b>退出が一度も届かない</b>。</item>
+        /// <item><b>到着入口は出入口の Trigger の外にある</b>——東西配置では
+        /// 出入口が x=−13.4（奥行 1.6 なので −14.2〜−12.6）、到着入口が x=−11.5。
+        /// だから再入場でも入退出が起きず、<b>去ったときの true が固まって残る</b>。</item>
+        /// </list>
+        ///
+        /// 残ると、出口方向へ 0.15 秒入力するだけで<b>主人公がどこに居ても遷移が要求される</b>。
+        ///
+        /// <b>「false になっている」だけでは受入にならない。</b> 直す前から false の配置なら
+        /// 何も守っていないので、<b>固まった true を実際に落としたこと</b>
+        /// （<c>StaleOccupancyClearedCount</c>）も見る——残留が起きていた証拠である。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AfterLeavingAndComingBack_TheExitGateNoLongerThinksTheHeroIsInside()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            // ---- A → B（B の出入口はまだ使っていない）----
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+
+            // ---- B → A（ここで B の出入口が「範囲内」になる）----
+            AreaExitGate backToA = FindExitGate(ExitBWest);
+            yield return StandJustBefore(backToA, Vector3.right);
+            Assert.IsTrue(backToA.PlayerInside, "前提：B の出入口の範囲内に居る。");
+
+            yield return SettleCamera();
+            yield return HoldUntil(Key.A, () => transitions.SlideCommittedCount > 1, 25f);
+            yield return SettleWorld(transitions);
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に戻った。");
+
+            // ---- A → B（もう一度。ここで残留が表に出る）----
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 2, 25f);
+            yield return SettleWorld(transitions);
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "また B に居る。");
+
+            AreaExitGate gate = FindExitGate(ExitBWest);
+            Assert.Greater(gate.ResyncCount, 0,
+                "入場のたびに範囲内を測り直している（" + gate.ResyncCount + " 回）。");
+            Assert.Greater(gate.StaleOccupancyClearedCount, 0,
+                "<b>固まっていた『範囲内』を実際に落とした</b>（" + gate.StaleOccupancyClearedCount
+                + " 回）。0 なら残留が起きていないので、この検査は何も守っていない。");
+
+            // <b>到着位置は Trigger の外である</b>ことを数で残す（これが残留の前提）。
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, "主人公が居る。");
+            Collider trigger = gate.GetComponent<Collider>();
+            Assert.IsNotNull(trigger, "出入口は Trigger を持つ。");
+            Assert.IsFalse(gate.PlayerInside,
+                "<b>到着した主人公は B の出入口の範囲内に居ない</b>（主人公 x="
+                + player.transform.position.x + " / Trigger x "
+                + trigger.bounds.min.x + "〜" + trigger.bounds.max.x
+                + "）。居ないのに true が残っていたのが試遊報告①である。");
+        }
+
+        /// <summary>
+        /// <b>境界から離れた場所で出口方向を押し続けても、遷移しない</b>
+        /// （工程 P55-15a。試遊報告①の振る舞いそのもの）。
+        ///
+        /// 上の検査が<b>状態</b>を見るのに対し、こちらは<b>結果</b>を見る——
+        /// 直したつもりでも別の道で要求が飛べば、プレイヤーには同じ現象として出る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FarFromTheSeam_HoldingTheExitDirection_DoesNotTravel()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            // A → B → A → B（残留が作られる往復を通す）。
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+
+            yield return StandJustBefore(FindExitGate(ExitBWest), Vector3.right);
+            yield return HoldUntil(Key.A, () => transitions.SlideCommittedCount > 1, 25f);
+            yield return SettleWorld(transitions);
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 2, 25f);
+            yield return SettleWorld(transitions);
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+
+            int committedBefore = transitions.SlideCommittedCount;
+            AreaExitGate gate = FindExitGate(ExitBWest);
+
+            // <b>要求数は 0 ではない。</b> この出入口は往路で一度<b>正しく</b>要求している。
+            // 見たいのは「ここから先で増えないこと」なので、控えてから比べる。
+            int requestsBefore = gate.RequestCount;
+
+            // <b>戦闘区域のあたりへ移す。</b> 出入口からは十分に離れている。
+            // ここは「そこへ歩けるか」の検査ではないので、座標で置いてよい
+            // （歩いて到達できることは付録 C.39 が別に見ている）。
+            yield return PlaceHero(Phase55ArenaProbe());
+
+            // <b>「範囲内でない」は前提に置かない。</b> 前提で落とすと、
+            // 残留しているときに<b>実際に連れて行かれること</b>を見ないまま終わる——
+            // プレイヤーが報告したのは状態ではなく<b>飛ばされたこと</b>である。
+            // 状態は下の最後で見る。
+
+            // ---- 出口方向（西）を押し続ける ----
+            //
+            // <b>一度別の向きを押してから</b>にする。到着直後は「入力が一度切れるまで」
+            // 要求しない仕組み（§6.1 末尾）が効いているので、
+            // それだけで通ってしまう検査にしない。
+            for (int i = 0; i < 10; i++)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                yield return null;
+            }
+
+            for (int i = 0; i < 120; i++)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.A));
+                yield return null;
+
+                Assert.AreEqual(committedBefore, transitions.SlideCommittedCount,
+                    "<b>境界から離れた場所で西を押しても遷移しない</b>（frame " + i
+                    + " 要求数=" + gate.RequestCount + " 範囲内=" + gate.PlayerInside
+                    + " 溜め=" + gate.HeldSeconds + "）。試遊報告①の現象である。");
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+
+            Assert.AreEqual(requestsBefore, gate.RequestCount,
+                "境界から離れている間、出入口は一度も要求していない（"
+                + gate.RequestCount + " / 往路の正しい要求 " + requestsBefore + " 回）。");
+            Assert.IsFalse(gate.PlayerInside,
+                "出入口は「範囲内」と思っていない（主人公は戦闘区域のあたりに居る）。");
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value,
+                "B から動いていない。");
+        }
+
+        /// <summary>
+        /// <b>活動していない Area の出入口は、共有の移動入力を数えない</b>
+        /// （工程 P55-15a）。
+        ///
+        /// 先読みと引き継ぎで<b>隣の Area も載っている</b>のが常態である（§5／§6.2 手順 11）。
+        /// その Area の <c>AreaExitGateDriver</c> は <c>Update</c> で回り続けるので、
+        /// 出入口が入力を数えると<b>隣の Area の出入口が遷移を要求できる</b>。
+        ///
+        /// 止めているのは <see cref="AreaActivityGate"/> が出入口を <c>enabled = false</c> に
+        /// することだが、<c>Tick</c> は Unity の呼び出しではないので<b>止まっていても呼べる</b>——
+        /// そこを見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WhileTheAreaIsNotCurrent_ItsExitGatesDoNotCountInput()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            AreaExitGate gateInA = FindExitGate(ExitAEast);
+            yield return StandJustBefore(gateInA, Vector3.left);
+            Assert.IsTrue(gateInA.PlayerInside, "前提：A の出入口の範囲内に居る。");
+
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+
+            // A はまだ載っている（引き継ぎ。§6.2 手順 11）。その出入口を直接叩く。
+            Assert.IsTrue(gateInA != null, "A の出入口の参照が生きている（Scene が載っている）。");
+            Assert.IsFalse(gateInA.enabled,
+                "A は活動していないので出入口は止まっている（活動ゲートが止める）。");
+
+            int skippedBefore = gateInA.SkippedWhileDisabledCount;
+            // 往路で一度<b>正しく</b>要求しているので、増えないことを見る。
+            int requestsBefore = gateInA.RequestCount;
+            bool requested = false;
+            for (int i = 0; i < 20; i++)
+            {
+                // 出口方向（東）を、十分な時間ぶん入れる。
+                requested |= gateInA.Tick(0.05f, Vector3.right);
+            }
+
+            Assert.IsFalse(requested,
+                "<b>止まっている出入口は要求しない</b>（溜め=" + gateInA.HeldSeconds
+                + " 範囲内=" + gateInA.PlayerInside + "）。"
+                + " 要求すると、隣の Area の出入口が主人公を連れて行く。");
+            Assert.AreEqual(requestsBefore, gateInA.RequestCount,
+                "要求数も増えない（" + gateInA.RequestCount + " / 往路の正しい要求 "
+                + requestsBefore + " 回）。");
+            Assert.Greater(gateInA.SkippedWhileDisabledCount, skippedBefore,
+                "止まっていたことを数えている（" + gateInA.SkippedWhileDisabledCount + "）。");
+        }
+
+        /// <summary>
+        /// 主人公をそこへ置く（<b>到達可能性は主張しない</b>——
+        /// 歩いて行けることは付録 C.39 が別に見ている。ここは出入口の状態の検査である）。
+        /// </summary>
+        private static IEnumerator PlaceHero(Vector3 spot)
+        {
+            var root = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(root, "主人公の根がある。");
+            root.transform.position = new Vector3(spot.x, root.transform.position.y, spot.z);
+            if (root.Body != null)
+            {
+                root.Body.position = root.transform.position;
+                root.Body.linearVelocity = Vector3.zero;
+            }
+
+            Physics.SyncTransforms();
+            yield return new WaitForFixedUpdate();
+            yield return null;
+        }
+
+        /// <summary>戦闘区域のあたり（出入口から十分に離れた場所）。</summary>
+        private static Vector3 Phase55ArenaProbe()
+        {
+            var root = CurrentAreaProvider.Current;
+            Assert.IsNotNull(root, "活動中 Area がある。");
+            var encounter = Object.FindFirstObjectByType<
+                Momotaro.Gameplay.Encounter.AreaEncounterTrigger>();
+            if (encounter != null)
+            {
+                return encounter.transform.position;
+            }
+
+            // 遭遇 Trigger が無い構成でも、Area の中心なら出入口から離れている。
+            return root.Root != null ? root.Root.transform.position : Vector3.zero;
+        }
+
         // ------------------------------------------------- 到着後の追従（工程 P55-14d。裁定の注意点 3）
 
         /// <summary>

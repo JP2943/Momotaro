@@ -320,6 +320,10 @@ namespace Momotaro.Infrastructure.World
             {
                 if (gate != null)
                 {
+                    // <b>順は「測り直し → 解除待ち」。</b> 測り直しは範囲内を事実へ合わせ、
+                    // 解除待ちは持ち込んだ入力を無効にする——別のことなので両方呼ぶ
+                    // （工程 P55-15a。試遊報告①）。
+                    gate.ResyncOccupancy();
                     gate.DisarmOnArrival();
                 }
             }

@@ -88,6 +88,18 @@ namespace Momotaro.Gameplay.Session
         /// <summary>要求を出した回数（診断・テスト用）。</summary>
         public int RequestCount { get; private set; }
 
+        /// <summary>範囲内を測り直した回数（診断・テスト用。工程 P55-15a）。</summary>
+        public int ResyncCount { get; private set; }
+
+        /// <summary>
+        /// 測り直したときに<b>固まっていた true を落とした</b>回数（診断・テスト用）。
+        /// 0 でなければ、その配置では残留が起きていた（試遊報告①）。
+        /// </summary>
+        public int StaleOccupancyClearedCount { get; private set; }
+
+        /// <summary>この Tick で有効でなかったため何もしなかった回数（診断・テスト用）。</summary>
+        public int SkippedWhileDisabledCount { get; private set; }
+
         /// <summary>主人公が配線されているか（Validator・テスト用）。配線が無いと Trigger を無視する。</summary>
         public bool IsWired => _player != null;
 
@@ -169,6 +181,39 @@ namespace Momotaro.Gameplay.Session
         }
 
         /// <summary>
+        /// <b>「範囲内」を、いまの重なりから測り直す</b>（工程 P55-15a。試遊報告①）。
+        ///
+        /// <b>入場のたびに呼ぶ。</b> <c>OnTriggerEnter</c>／<c>OnTriggerExit</c> は
+        /// この MonoBehaviour が有効なあいだしか届かないので、
+        /// <see cref="AreaActivityGate"/> が非活動 Area を止めている間に主人公が範囲から出ても
+        /// <b>退出が届かない</b>。しかも到着入口は出入口の Trigger の外にあるので
+        /// （東西配置：Trigger −14.2〜−12.6／到着 −11.5）、
+        /// 再入場でも入退出が一度も起きず、<b>去ったときの true が固まったまま残る</b>。
+        ///
+        /// 残ると、出口方向へ 0.15 秒入力するだけで<b>主人公がどこに居ても遷移が要求される</b>
+        /// ——「戦闘区域を歩いていたら隣の Area へ飛ばされる」という形で出る。
+        ///
+        /// <b>記憶を消すだけにはしない。</b> 一律 false にすると、
+        /// 到着位置が本当に Trigger の中にある配置で「出られない」が起きる。
+        /// <see cref="AreaTriggerOccupancy"/> で<b>実際の重なりを測る</b>。
+        /// </summary>
+        public void ResyncOccupancy()
+        {
+            ResyncCount++;
+
+            bool inside = AreaTriggerOccupancy.IsOverlappingPlayer(
+                GetComponent<Collider>(), _player);
+
+            if (_playerInside && !inside)
+            {
+                StaleOccupancyClearedCount++;
+            }
+
+            _playerInside = inside;
+            _held = 0f;
+        }
+
+        /// <summary>
         /// 時間を進める（Gameplay 時計。Pause 中は呼ばれない）。
         /// <paramref name="moveInput"/> は XZ の移動入力。
         /// </summary>
@@ -177,6 +222,19 @@ namespace Momotaro.Gameplay.Session
         {
             if (GameplayClockProvider.IsFrozen)
             {
+                return false;
+            }
+
+            // <b>止められている出入口は入力を数えない</b>（工程 P55-15a。試遊報告①）。
+            //
+            // <see cref="AreaActivityGate"/> は非活動 Area の出入口を <c>enabled = false</c> にする。
+            // <c>Tick</c> は Unity の呼び出しではなく素のメソッドなので、
+            // <b>止まっていても呼べてしまう</b>——先読みで載っているだけの Area の出入口が、
+            // 共有の移動入力で遷移を要求できる状態だった。
+            if (!enabled)
+            {
+                SkippedWhileDisabledCount++;
+                _held = 0f;
                 return false;
             }
 
