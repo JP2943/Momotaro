@@ -181,7 +181,10 @@ namespace Momotaro.Tests.PlayMode
             AssertMonotonicIncreasingX(samples.CameraSamples);
 
             Vector3 cameraAfter = RigPosition();
-            Assert.Greater(cameraAfter.x, cameraBefore.x + 5f, "カメラが東へ大きく動いた（右スライド）。");
+            float movedEast = cameraAfter.x - cameraBefore.x;
+            Assert.GreaterOrEqual(movedEast, AreaConnectionRules.MinAlongMovement,
+                "カメラが東へ動いた（右スライド。" + movedEast + " m／§7.1 の最低 "
+                + AreaConnectionRules.MinAlongMovement + "）。**5 m は継ぎ目領域が居た時代の値**——連続追従では出発位置が境界のすぐ手前になる（工程 P55-14d）。");
             Assert.AreEqual(transitions.Slide.LastSlideTo.x, cameraAfter.x, 0.01f, "終点へ厳密に着いた。");
 
             // <b>事前に境界位置へ瞬間移動していない</b>（§7.1）。
@@ -191,8 +194,14 @@ namespace Momotaro.Tests.PlayMode
                 "受理から準備完了までの間、実カメラは動いていない。");
             Assert.AreEqual(samples.LastPreSlideX, samples.CameraSamples[0].x, 0.2f,
                 "スライドは準備完了時点の実カメラ位置から始まる（§7.1）。");
-            Assert.Less(samples.LastPreSlideX, transitions.Slide.LastSlideTo.x - 5f,
-                "始点は到着側ではなく出発側にある。");
+            // <b>5 m という差は継ぎ目領域が居た時代の値である</b>（工程 P55-14d）。
+            // 連続追従では出発位置が主人公の位置（＝境界のすぐ手前）になるので、
+            // 始点と終点の差はもっと小さい。**言いたいのは「始点が終点側に居ない」こと**なので、
+            // §7.1 が定める最低移動距離で言う。
+            Assert.Less(samples.LastPreSlideX,
+                transitions.Slide.LastSlideTo.x - AreaConnectionRules.MinAlongMovement,
+                "始点は到着側ではなく出発側にある（始点 x=" + samples.LastPreSlideX
+                + " 終点 x=" + transitions.Slide.LastSlideTo.x + "）。");
 
             // ---- 到着後 ----
             yield return null;
@@ -280,7 +289,12 @@ namespace Momotaro.Tests.PlayMode
             yield return HoldWhileSampling(Key.A, samples, () => transitions.SlideCommittedCount > 0, 25f);
 
             Assert.AreEqual(1, transitions.SlideCommittedCount, "左へスライドして着いた。");
-            Assert.Less(RigPosition().x, cameraBefore.x - 5f, "カメラが西へ大きく動いた（左スライド）。");
+            float movedWest = cameraBefore.x - RigPosition().x;
+            Assert.GreaterOrEqual(movedWest, AreaConnectionRules.MinAlongMovement,
+                "カメラが西へ動いた（左スライド。" + movedWest + " m／§7.1 の最低 "
+                + AreaConnectionRules.MinAlongMovement + "）。**5 m は継ぎ目領域が居た時代の値**——連続追従では出発位置が境界のすぐ手前になる（工程 P55-14d）。");
+            Assert.AreEqual(transitions.Slide.LastSlideTo.x, RigPosition().x, 0.01f,
+                "終点へ厳密に着いた。");
             Assert.Less(samples.WorstAxisDrift, 0.1f, "東西のスライドで Z が動かない。");
             AssertMonotonicDecreasingX(samples.CameraSamples);
             Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に居る。");
@@ -521,9 +535,15 @@ namespace Momotaro.Tests.PlayMode
 
             // <b>気付いた時点で引き返す。</b> 終点まで行ってから戻ると、失敗した遷移で
             // プレイヤーに到着側を見せてしまい、戻しも上限いっぱいの 0.25 秒かかる。
-            Assert.Less(peakX, transitions.Slide.LastSlideTo.x - 3f,
-                "壊れたと気付いた場所から引き返している（終点まで進んでいない）。到達点=" + peakX
-                + " 終点=" + transitions.Slide.LastSlideTo.x);
+            // <b>3 m という差も継ぎ目領域が居た時代の値だった</b>（工程 P55-14d）。
+            // スライドの区間そのものが短くなったので、**区間に対する割合**で言う——
+            // 配置を変えても「途中で引き返した」の意味が変わらない。
+            float slideSpan = transitions.Slide.LastSlideTo.x - transitions.Slide.LastSlideFrom.x;
+            Assert.Greater(slideSpan, 0f, "前提：東へ進む区間である。");
+            Assert.Less(peakX, transitions.Slide.LastSlideFrom.x + (slideSpan * 0.5f),
+                "壊れたと気付いた場所から引き返している（区間の前半で折り返した）。到達点=" + peakX
+                + " 始点=" + transitions.Slide.LastSlideFrom.x
+                + " 終点=" + transitions.Slide.LastSlideTo.x + " 区間=" + slideSpan);
             Assert.AreEqual(1, transitions.SlideRolledBackCount, "出発側へ戻した。");
             Assert.AreEqual(0, transitions.SlideCommittedCount, "成功扱いにしない。");
             Assert.IsNotEmpty(transitions.Slide.LastFailure, "理由が残っている。");
@@ -541,7 +561,14 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(1, transitions.Slide.Residency.ResidentCount, "在留も 1 つへ戻った。");
 
             // ---- 戻し切った位置に留まる（翌フレームに跳ねない）----
-            Assert.AreEqual(cameraBefore.x, RigPosition().x, 0.2f, "カメラが出発位置へ戻っている。");
+            //
+            // <b>戻り先は「スライドの始点」であって「歩き出す前の位置」ではない</b>（工程 P55-14d）。
+            // 連続追従になったので、出入口の中で押している間にカメラは主人公について進む——
+            // 置いた直後の位置とスライドの始点は<b>別の場所</b>になった。
+            // §8 の 3 行目が言うのは「同じ経路を逆向きに戻す」なので、戻り先は経路の始点である。
+            Assert.AreEqual(transitions.Slide.LastSlideFrom.x, RigPosition().x, 0.2f,
+                "カメラがスライドの始点へ戻っている（始点 x=" + transitions.Slide.LastSlideFrom.x
+                + " いま x=" + RigPosition().x + " 置いた直後 x=" + cameraBefore.x + "）。");
 
             float settled = RigPosition().x;
             for (int i = 0; i < 4; i++)
@@ -1601,8 +1628,19 @@ namespace Momotaro.Tests.PlayMode
                     transitions.Slide.Coordinator.Phase, "準備の段階で待っている。");
                 Assert.AreEqual(0, transitions.SlideCommittedCount, "まだ着いていない。");
                 Assert.AreEqual(0, AreaCameraRigHost.Instance.SlideCount, "演出は始まっていない。");
-                Assert.AreEqual(cameraBefore.x, RigPosition().x, 0.01f,
-                    "待っている間カメラは動かない（境界へ先に飛ばない。§7.1）。");
+                // <b>「動かない」から「主人公に付いているだけ」へ</b>（§7.1 改定。工程 P55-14d）。
+                //
+                // 以前は継ぎ目領域がカメラを 1 点へ留めていたので、待っている間の位置は
+                // 1 mm も動かなかった。連続追従では<b>主人公が動けばカメラも動く</b>——
+                // それは正常である。言いたいのは「<b>境界へ先に飛んでいない</b>」ことなので、
+                // カメラが主人公に付いていること（＝勝手に進んでいないこと）で言う。
+                var waitingPlayer = Object.FindFirstObjectByType<PlayerRoot>();
+                Assert.IsNotNull(waitingPlayer, "主人公が居る。");
+                Assert.AreEqual(waitingPlayer.transform.position.x, RigPosition().x, 0.2f,
+                    "待っている間、カメラは主人公に付いているだけで境界へ先に飛んでいない（§7.1）。"
+                    + " カメラ x=" + RigPosition().x
+                    + " 主人公 x=" + waitingPlayer.transform.position.x
+                    + " 待ち始め x=" + cameraBefore.x);
 
                 // <b>全画面を黒くしない</b>（§5）。出発側の地形が見えていることで見る。
                 Assert.IsTrue(DepartureTerrainIsVisible(AreaA),
@@ -1646,7 +1684,10 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsFalse(notice.IsShowing, "待ちが終わったので消えている。");
             Assert.AreEqual(1, notice.HideCount, "消したのは 1 回。");
             Assert.AreEqual(1, AreaCameraRigHost.Instance.SlideCount, "演出も 1 回だけ。");
-            Assert.Greater(RigPosition().x, cameraBefore.x + 5f, "東へスライドした。");
+            float slidEast = RigPosition().x - cameraBefore.x;
+            Assert.GreaterOrEqual(slidEast, AreaConnectionRules.MinAlongMovement,
+                "東へスライドした（" + slidEast + " m／§7.1 の最低 "
+                + AreaConnectionRules.MinAlongMovement + "）。**5 m は継ぎ目領域が居た時代の値**——連続追従では出発位置が境界のすぐ手前になる（工程 P55-14d）。");
             Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
         }
 
@@ -3801,6 +3842,180 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(2, transitions.Slide.SeamBarriersIgnoredForRoute,
                 "外したのは出発側と到着側の境界 2 枚だけ（"
                 + transitions.Slide.SeamBarriersIgnoredForRoute + " 枚）。");
+        }
+
+        // ------------------------------------------------- 到着後の追従（工程 P55-14d。裁定の注意点 3）
+
+        /// <summary>
+        /// <b>スライドの終点と、到着後の通常追従の位置が一致する</b>
+        /// （裁定の注意点 3。工程 P55-14d）。
+        ///
+        /// <b>到着直後にもう一度寄り直したり、横へ跳ねたりしない。</b>
+        /// 終点は <c>TryComputeArrivalPoint</c> が、追従は <c>TryComputeFocus</c> が求めるが、
+        /// どちらも<b>同じ純粋関数</b>（領域選択 ＋ <c>ClampFocus</c>）を通る。
+        /// 領域が 1 つになったので、<b>到着位置で選ばれる領域と、その後に選ばれる領域が必ず同じ</b>になる——
+        /// 以前は到着位置が継ぎ目領域で、動き出すと別の領域へ移るので寄り直しが起きえた。
+        ///
+        /// <b>入力を入れずに待つ。</b> 動かしてしまうと、寄り直しと通常追従の区別が付かない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AfterTheSlide_TheCameraDoesNotReSnapOrJump()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            AreaCameraRigHost host = AreaCameraRigHost.Instance;
+            Assert.IsNotNull(host, "常駐 Rig が立っている。");
+
+            int changesBefore = host.Rig.Blend.RegionChangeCount;
+
+            // <b>測るのは Rig の位置である</b>（＝カメラが見ている床の上の点）。
+            //
+            // 間違えた測り方を 2 つ通った。<c>Blend.Current</c> はスライド中に据え置かれる——
+            // スライド中は通常追従を止めて<b>Rig を直接動かす</b>ので、追従側の値は出発位置のまま残り、
+            // 到着時に追いつくのを「3.15 m の跳び」と読んでしまう（診断：到着時 Blend=(11.35,0,0)／
+            // 終点=(14.50,0,0)／落ち着き=(14.50,0,0)）。
+            // <c>Camera.transform.position</c> は<b>俯角ぶん後ろの空中</b>にあるので、
+            // 追従が求める床の上の点（(14.50, 0, 0)）とは 9.8 m ずれる——比べる相手が違う。
+            // <b>Rig の位置だけが、スライドでも追従でも同じ空間の同じ量である。</b>
+
+            Vector3 atArrival = Vector3.zero;
+            bool captured = false;
+            void OnArrived(StableId areaId)
+            {
+                atArrival = RigPosition();
+                captured = true;
+            }
+
+            transitions.ArrivalCompleted += OnArrived;
+            try
+            {
+                yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+                yield return SettleCamera();
+                yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+
+                // <b>入力を切る。</b> 押しっぱなしのままだと動いてしまう。
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                yield return null;
+
+                Assert.IsTrue(captured, "到着の瞬間のカメラ位置を採れた。");
+
+                // ---- 到着直後の 30 フレームを、入力なしで見る ----
+                float worstJump = 0f;
+                Vector3 previous = atArrival;
+                for (int i = 0; i < 30; i++)
+                {
+                    yield return null;
+                    Vector3 now = RigPosition();
+                    float step = Vector2.Distance(
+                        new Vector2(now.x, now.z), new Vector2(previous.x, previous.z));
+                    worstJump = Mathf.Max(worstJump, step);
+                    previous = now;
+                }
+
+                Vector3 settled = RigPosition();
+
+                Assert.AreEqual(changesBefore, host.Rig.Blend.RegionChangeCount,
+                    "<b>領域の切替が起きていない</b>（" + host.Rig.Blend.RegionChangeCount
+                    + " / 開始時 " + changesBefore + "）。起きると 0.15 秒の寄り直しが走る。");
+                Assert.IsFalse(host.Rig.Blend.IsBlending, "補間も走っていない。");
+                Assert.Less(worstJump, 0.02f,
+                    "<b>1 フレームも跳ねていない</b>（最大の動き " + worstJump + " m）。"
+                    + " 入力を入れていないので、動いたなら寄り直しである。");
+                Assert.Less(
+                    Vector2.Distance(new Vector2(atArrival.x, atArrival.z),
+                        new Vector2(settled.x, settled.z)),
+                    0.02f,
+                    "<b>到着の瞬間と落ち着いた先が同じ</b>（到着 " + atArrival
+                    + " → 落ち着き " + settled + "）。ずれるなら終点と追従位置が一致していない。");
+
+                // <b>スライドの終点と、到着後の通常追従の位置が一致する</b>（裁定 4）。
+                // 終点だけ合わせて追従が別を向いていると、次に動いた瞬間に横へ跳ぶ。
+                Assert.IsTrue(host.Rig.TryComputeFocus(out Vector3 wanted), "追従位置を求められる。");
+                Assert.Less(
+                    Vector2.Distance(new Vector2(settled.x, settled.z),
+                        new Vector2(wanted.x, wanted.z)),
+                    0.05f,
+                    "通常追従が求める位置と一致している（いま " + settled + " 追従 " + wanted + "）。");
+
+                Vector3 slideEnd = transitions.Slide.LastSlideTo;
+                Assert.Less(
+                    Vector2.Distance(new Vector2(slideEnd.x, slideEnd.z),
+                        new Vector2(wanted.x, wanted.z)),
+                    0.05f,
+                    "<b>スライドの終点＝到着後の通常追従位置</b>（終点 " + slideEnd
+                    + " 追従 " + wanted + "）。ずれるなら到着後に寄り直しが要る配置である（裁定 4）。");
+            }
+            finally
+            {
+                transitions.ArrivalCompleted -= OnArrived;
+            }
+        }
+
+        /// <summary>
+        /// <b>往復しても、スライド・到着後の追従・犬丸の表示がつながる</b>
+        /// （裁定の注意点 3 と受入表の最後の行。工程 P55-14d）。
+        ///
+        /// 行きと帰りで同じことを見る——片方だけ整えても往復では崩れる。
+        /// 犬丸は<b>到着後に見えている</b>こと（退場中でなければ）を見る：
+        /// スライド中は表示代理が運ぶので、実体の Renderer を戻し忘れると消えたままになる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheRoundTrip_KeepsTheCameraAndTheCompanionContinuous()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            AreaCameraRigHost host = AreaCameraRigHost.Instance;
+
+            for (int leg = 1; leg <= 2; leg++)
+            {
+                bool forward = leg == 1;
+                StableId exitId = forward ? ExitAEast : ExitBWest;
+                Key key = forward ? Key.D : Key.A;
+                int changesBefore = host.Rig.Blend.RegionChangeCount;
+
+                yield return StandJustBefore(FindExitGate(exitId), forward ? Vector3.left : Vector3.right);
+                yield return SettleCamera();
+                yield return HoldUntil(key, () => transitions.SlideCommittedCount >= leg, 25f);
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                yield return null;
+                yield return SettleWorld(transitions);
+
+                string label = forward ? "往路" : "復路";
+                Assert.AreEqual(leg, transitions.SlideCommittedCount,
+                    label + "：着いた。失敗=" + transitions.Slide.LastFailure);
+                Assert.AreEqual(changesBefore, host.Rig.Blend.RegionChangeCount,
+                    label + "：領域の切替が起きていない（" + host.Rig.Blend.RegionChangeCount + "）。");
+                Assert.IsFalse(host.Rig.Blend.IsBlending, label + "：補間も走っていない。");
+
+                // 犬丸が見えている（退場中でなければ）。
+                var companion = Object.FindFirstObjectByType<CompanionActor>();
+                if (companion != null && companion.State != CompanionState.Away)
+                {
+                    bool visible = false;
+                    foreach (Renderer r in companion.GetComponentsInChildren<Renderer>(true))
+                    {
+                        if (r != null && r.enabled && r.gameObject.activeInHierarchy)
+                        {
+                            visible = true;
+                            break;
+                        }
+                    }
+
+                    Assert.IsTrue(visible,
+                        label + "：犬丸が見えている（状態=" + companion.State
+                        + "）。代理から実体へ戻し忘れると消えたままになる。");
+                }
+
+                // 追従が求める位置と一致している。
+                Assert.IsTrue(host.Rig.TryComputeFocus(out Vector3 wanted), label + "：追従位置を求められる。");
+                Vector3 now = host.Rig.Blend.Current;
+                Assert.Less(
+                    Vector2.Distance(new Vector2(now.x, now.z), new Vector2(wanted.x, wanted.z)),
+                    0.05f, label + "：いまの基準位置が通常追従と一致（" + now + " / " + wanted + "）。");
+            }
         }
 
         // ---------------------------------------------------------------- 補助

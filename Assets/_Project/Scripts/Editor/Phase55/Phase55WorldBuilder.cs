@@ -141,7 +141,8 @@ namespace Momotaro.Editor.Phase55
                 arrangement.AreaAId, arrangement.ExitFromA,
                 arrangement.AreaBId, arrangement.EntryInB,
                 AreaTransitionStyle.Slide, arrangement.ForwardDirection,
-                arrangement.ConnectionBToA);
+                arrangement.ConnectionBToA,
+                corridorWidth: arrangement.PassageWidth);
 
             var backward = new AreaConnectionDefinition();
             backward.Configure(
@@ -149,7 +150,8 @@ namespace Momotaro.Editor.Phase55
                 arrangement.AreaBId, arrangement.ExitFromB,
                 arrangement.AreaAId, arrangement.EntryInA,
                 AreaTransitionStyle.Slide, arrangement.BackwardDirection,
-                arrangement.ConnectionAToB);
+                arrangement.ConnectionAToB,
+                corridorWidth: arrangement.PassageWidth);
 
             asset.SetConnections(new List<AreaConnectionDefinition> { forward, backward });
             EditorUtility.SetDirty(asset);

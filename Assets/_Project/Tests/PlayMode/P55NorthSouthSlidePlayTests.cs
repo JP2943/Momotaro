@@ -187,8 +187,13 @@ namespace Momotaro.Tests.PlayMode
                 "スライドが複数フレームにわたっている（1 フレームで飛んでいない）。");
             Assert.Less(track.WorstAxisDrift, 0.1f,
                 "南北のスライドで X が動かない（最大のずれ=" + track.WorstAxisDrift + "。§7.1）。");
-            Assert.Greater(RigPosition().z, cameraBefore.z + 5f,
-                "カメラが北へ大きく動いた（before z=" + cameraBefore.z + " after z=" + RigPosition().z + "）。");
+            float movedNorth = RigPosition().z - cameraBefore.z;
+            Assert.GreaterOrEqual(movedNorth, AreaConnectionRules.MinAlongMovement,
+                "カメラが北へ動いた（before z=" + cameraBefore.z + " after z=" + RigPosition().z
+                + " 差 " + movedNorth + "／§7.1 の最低 " + AreaConnectionRules.MinAlongMovement
+                + "）。**5 m は継ぎ目領域が居た時代の値**——連続追従では出発位置が境界のすぐ手前になる（工程 P55-14d）。");
+            Assert.AreEqual(transitions.Slide.LastSlideTo.z, RigPosition().z, 0.01f,
+                "終点へ厳密に着いた。");
             track.AssertMonotonicIncreasingAlong();
 
             // ---- 画面の向き（P03 の本体）----
@@ -247,13 +252,102 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual("area_p55_s", used.ToAreaId.Value);
 
             Assert.Less(track.WorstAxisDrift, 0.1f, "南北のスライドで X が動かない。");
-            Assert.Less(RigPosition().z, cameraBefore.z - 5f, "カメラが南へ大きく動いた。");
+            float movedSouth = cameraBefore.z - RigPosition().z;
+            Assert.GreaterOrEqual(movedSouth, AreaConnectionRules.MinAlongMovement,
+                "カメラが南へ動いた（before z=" + cameraBefore.z + " after z=" + RigPosition().z
+                + " 差 " + movedSouth + "／§7.1 の最低 " + AreaConnectionRules.MinAlongMovement
+                + "）。**5 m は継ぎ目領域が居た時代の値**——連続追従では出発位置が境界のすぐ手前になる（工程 P55-14d）。");
+            Assert.AreEqual(transitions.Slide.LastSlideTo.z, RigPosition().z, 0.01f,
+                "終点へ厳密に着いた。");
             track.AssertMonotonicDecreasingAlong();
             track.AssertScreenDirection(
                 expectUp: false, expectRight: false,
                 because: "南の行き先はスライド中の画面で下に見える（§11 の P03）。");
 
             Assert.AreEqual("area_p55_s", CurrentAreaProvider.Current.AreaId.Value, "S に居る。");
+        }
+
+        // ---------------------------------------------------------------- 帯（§7.1 改定。工程 P55-14d）
+
+        /// <summary>
+        /// <b>南北でも、通路の中央・両端のどちらから入っても双方向に成立する</b>
+        /// （§7.1 改定。工程 P55-14d。GPT 受入表の 1 行目）。
+        ///
+        /// 東西で通ったことは南北の証拠にならない——軸が入れ替わるので、
+        /// <b>軸外成分を X で数えるか Z で数えるか</b>を取り違えた実装は片方だけ通る。
+        /// ここでは南北の帯（軸外＝X）で、北行き・南行きの両方を見る。
+        ///
+        /// 見るのは 3 つ：<b>端から入っても成立する</b>／始点が<b>帯の内側</b>／
+        /// 終点は<b>接続軸の上</b>（到着位置は入口のまま。裁定 5）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(
+            [Values(0f, 1.5f, -1.5f)] float offsetX, [Values(true, false)] bool northbound)
+        {
+            yield return EnterArea(northbound ? NsAreaSScene : NsAreaNScene);
+
+            AreaTransitionService transitions = Transitions();
+            StableId connectionId = northbound ? ConnectionSToN : ConnectionNToS;
+            float corridorWidth = CorridorWidthOf(transitions, connectionId);
+            float band = AreaConnectionRules.SlideAcrossHalfWidth(corridorWidth);
+            Assert.Greater(band, 0f, "前提：接続 Data が通路幅を持っている（幅=" + corridorWidth + "）。");
+
+            AreaExitGate gate = FindExitGate(northbound ? ExitSNorth : ExitNSouth);
+            yield return StandJustBefore(gate, northbound ? Vector3.back : Vector3.forward, offsetX);
+            yield return SettleCamera();
+
+            yield return HoldUntil(northbound ? Key.W : Key.S,
+                () => transitions.SlideCommittedCount > 0, 12f);
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "<b>スライドが成立した</b>（" + (northbound ? "北行き" : "南行き")
+                + "・進入 x ずらし=" + offsetX + "）。失敗=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(0, transitions.Slide.RolledBackCount,
+                "戻していない。失敗=" + transitions.Slide.LastFailure);
+
+            Vector3 from = transitions.Slide.LastSlideFrom;
+            Vector3 to = transitions.Slide.LastSlideTo;
+            float along = Mathf.Abs(to.z - from.z);
+            float acrossFrom = Mathf.Abs(from.x - NsSeamAxisX);
+            float acrossTo = Mathf.Abs(to.x - NsSeamAxisX);
+
+            Assert.LessOrEqual(acrossFrom, band + AreaConnectionRules.AxisEpsilon,
+                "<b>始点が帯の内側</b>（軸外 " + acrossFrom + "／"
+                + AreaConnectionRules.DescribeSlideBand(corridorWidth)
+                + "）。始点=" + from + " 終点=" + to + "。");
+            Assert.LessOrEqual(acrossTo, AreaConnectionRules.AxisEpsilon,
+                "<b>終点は接続軸の上</b>（軸外 " + acrossTo + "）。始点=" + from + " 終点=" + to + "。");
+            Assert.GreaterOrEqual(along, AreaConnectionRules.MinAlongMovement,
+                "<b>接続方向へ動いている</b>（z の移動 " + along + "）。始点=" + from + " 終点=" + to + "。");
+        }
+
+        /// <summary>
+        /// その接続の通路幅（カメラの帯の正本。§7.1）。
+        ///
+        /// <b>受理側と同じ台帳から引く。</b> Data の Asset を直接読むと、
+        /// 実行時が見ている値と別のものを期待値にしてしまう。
+        /// </summary>
+        private static float CorridorWidthOf(AreaTransitionService transitions, StableId connectionId)
+        {
+            Assert.IsNotNull(transitions.Connections, "接続の台帳が差さっている。");
+            Assert.IsTrue(transitions.Connections.TryGet(connectionId, out AreaConnectionSnapshot c),
+                "接続 '" + connectionId.Value + "' が台帳にあります。");
+            return c.CorridorWidth;
+        }
+
+        /// <summary>条件が成るまで押しっぱなしにする。</summary>
+        private IEnumerator HoldUntil(Key key, System.Func<bool> condition, float seconds)
+        {
+            float deadline = Time.realtimeSinceStartup + seconds;
+            while (!condition() && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(key));
+                yield return null;
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+            yield return null;
         }
 
         // ---------------------------------------------------------------- 東西と比べる（P03）
@@ -498,10 +592,13 @@ namespace Momotaro.Tests.PlayMode
             yield return null;
         }
 
-        /// <summary>出入口の範囲内へ立つ（<paramref name="back"/> は出口と逆向きの少しだけ手前）。</summary>
-        private IEnumerator StandJustBefore(AreaExitGate gate, Vector3 back)
+        /// <summary>
+        /// 出入口の範囲内へ立つ（<paramref name="back"/> は出口と逆向きの少しだけ手前、
+        /// <paramref name="offsetX"/> は通路の軸外へのずらし）。
+        /// </summary>
+        private IEnumerator StandJustBefore(AreaExitGate gate, Vector3 back, float offsetX = 0f)
         {
-            Vector3 spot = gate.transform.position + back * 0.4f;
+            Vector3 spot = gate.transform.position + back * 0.4f + new Vector3(offsetX, 0f, 0f);
             var root = Object.FindFirstObjectByType<PlayerRoot>();
             Assert.IsNotNull(root, "主人公の根がある。");
             root.transform.position = new Vector3(spot.x, root.transform.position.y, spot.z);

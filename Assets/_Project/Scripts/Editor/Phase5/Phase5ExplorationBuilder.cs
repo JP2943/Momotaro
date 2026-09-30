@@ -457,27 +457,6 @@ namespace Momotaro.Editor.Phase5
             }
         }
 
-        /// <summary>
-        /// 接続境界の手前に<b>Z を接続軸へ固定する領域</b>を置く（P5.5 §7.1）。
-        ///
-        /// 奥行を<b>見える奥行より狭く</b>すると、<c>ClampFocus</c> はその軸を領域の中央へ
-        /// 固定する（無理に clamp しない）。これで、通路の端から入っても Camera の Z が
-        /// 接続軸に乗る——東西の接続で Z にもずれる問題への対処（GPT レビュー R14 の指摘 2）。
-        ///
-        /// <b>優先度は既存より高い 2。</b> 同じ場所に重なる A の東通路・B の全体より
-        /// こちらを勝たせる。奥行 0 の指定では置かない（P5 の構成）。
-        /// </summary>
-        private static void AddSeamCameraRegion(
-            Transform parent, Fixtures fixtures, StableId regionId, Vector3 center, Vector2 size)
-        {
-            if (!regionId.IsValid || size.x <= 0f || size.y <= 0f)
-            {
-                return;
-            }
-
-            fixtures.CameraRegions.Add(CreateCameraRegion(parent, regionId, 2, center, size));
-        }
-
         /// <summary>カメラ領域を 1 つ置く（§11。XZ の軸平行矩形。回転は持たない）。</summary>
         private static AreaCameraRegion CreateCameraRegion(
             Transform parent, StableId regionId, int priority, Vector3 center, Vector2 size)
@@ -683,16 +662,18 @@ namespace Momotaro.Editor.Phase5
             // 「入りきる軸は追従、入りきらない軸は中央固定」の両方を実 Scene で通すための配置。
             var cameraRegions = new GameObject("CameraRegions");
             cameraRegions.transform.SetParent(root, false);
+            // <b>A 内は 1 領域だけ</b>（工程 P55-14d。裁定：同一 Area 内は連続追従）。
+            //
+            // 以前は「西の大部屋」「東の通路」「継ぎ目」を重ねていた。部屋ごとに基準位置が
+            // 切り替わり、そのたびに 0.15 秒の補間が走る——試遊で
+            // 「門を開けてから通過すると画面スライドが発生する」として報告された振る舞いである。
+            // 門（x=9）と仕切りの抜け口（x=6）が、ちょうど西／東の境目のすぐ内側にあった。
+            //
+            // 領域を<b>エリア全体＋見える範囲の半分</b>にすると clamp が効かなくなり、
+            // 基準位置は主人公の位置そのままになる。<b>継ぎ目領域も置かない</b>——
+            // 出口へ近づいただけで寄せが始まるのを避けるため（裁定の注意点 1）。
             fixtures.DefaultCameraRegion = CreateCameraRegion(cameraRegions.transform,
-                Phase5AreaIds.RegionADefault, 0, Vector3.zero, Phase5Layout.AreaADefaultRegionSize);
-            fixtures.CameraRegions.Add(CreateCameraRegion(cameraRegions.transform,
-                Phase5AreaIds.RegionAWest, 1,
-                Phase5Layout.AreaAWestRegionCenter, Phase5Layout.AreaAWestRegionSize));
-            fixtures.CameraRegions.Add(CreateCameraRegion(cameraRegions.transform,
-                Phase5AreaIds.RegionAEast, 1,
-                Phase5Layout.AreaAEastRegionCenter, Phase5Layout.AreaAEastRegionSize));
-            AddSeamCameraRegion(cameraRegions.transform, fixtures,
-                t.SeamCameraRegionAId, t.SeamCameraRegionACenter, t.SeamCameraRegionASize);
+                Phase5AreaIds.RegionADefault, 0, Vector3.zero, Phase5Layout.AreaAFollowRegionSize);
 
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
             areaRoot.EditorSet(definition, new List<AreaEntryPoint> { start, fromB },
@@ -800,10 +781,9 @@ namespace Momotaro.Editor.Phase5
             // カメラ領域（§11）。B は 1 部屋なので既定領域だけ。
             var cameraRegions = new GameObject("CameraRegions");
             cameraRegions.transform.SetParent(root, false);
+            // <b>B 内も 1 領域だけ</b>（工程 P55-14d）。継ぎ目領域も置かない。
             fixtures.DefaultCameraRegion = CreateCameraRegion(cameraRegions.transform,
-                Phase5AreaIds.RegionBDefault, 0, Vector3.zero, Phase5Layout.AreaBDefaultRegionSize);
-            AddSeamCameraRegion(cameraRegions.transform, fixtures,
-                t.SeamCameraRegionBId, t.SeamCameraRegionBCenter, t.SeamCameraRegionBSize);
+                Phase5AreaIds.RegionBDefault, 0, Vector3.zero, Phase5Layout.AreaBFollowRegionSize);
 
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
             areaRoot.EditorSet(definition, new List<AreaEntryPoint> { fromA },

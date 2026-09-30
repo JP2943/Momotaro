@@ -74,12 +74,6 @@ namespace Momotaro.Editor.Phase55
         /// <summary>B の西の出入口（A へ）。</summary>
         public static readonly StableId ExitBWest = new StableId("exit_p55_b_west");
 
-        /// <summary>A 側の境界寄せカメラ領域（§7.1）。</summary>
-        public static readonly StableId RegionASeam = new StableId("region_p55_a_seam");
-
-        /// <summary>B 側の境界寄せカメラ領域。</summary>
-        public static readonly StableId RegionBSeam = new StableId("region_p55_b_seam");
-
         /// <summary>A → B（東へ）の接続。</summary>
         public static readonly StableId ConnectionAToB = new StableId("conn_p55_a_east_to_b");
 
@@ -141,43 +135,6 @@ namespace Momotaro.Editor.Phase55
         /// </summary>
         public const float AreaAGateZ = -3.2f;
 
-        /// <summary>
-        /// 境界寄せカメラ領域の奥行（§7.1）。<b>見える奥行より狭いこと</b>が条件。
-        ///
-        /// 見える奥行の半分は <c>orthographicSize / sin(俯角)</c> ＝ 5/sin55° ≒ 6.10 で、
-        /// 画面比に依らない。奥行 8（半分 4 &lt; 6.10）なので <c>ClampFocus</c> は
-        /// Z を<b>領域の中央＝接続軸</b>へ固定する。
-        /// <b>この関係は定数で信じず検査で見る</b>——俯角や投影サイズを変えたら壊れる。
-        /// </summary>
-        public const float SeamCameraRegionDepth = 8f;
-
-        /// <summary>
-        /// A 側の境界寄せ領域の中心（Area ローカル）。東の通路の、境界寄りの区間を覆う。
-        /// </summary>
-        public static readonly Vector3 SeamCameraRegionACenter =
-            new Vector3(Phase5Layout.AreaAEastRegionCenter.x, 0f, SeamZ);
-
-        /// <summary>
-        /// 同・大きさ（X, Z）。<b>両軸とも見える広がりより狭い</b>。
-        /// 幅 6 は見える横幅（≒17.8）より狭いので X も通路の中央へ固定され、
-        /// 奥行 8 は見える奥行（≒12.2）より狭いので Z も接続軸へ固定される——
-        /// 境界での画面が 1 点に止まるので、スライドは純粋な X の移動になる。
-        /// </summary>
-        public static readonly Vector2 SeamCameraRegionASize =
-            new Vector2(Phase5Layout.AreaAEastRegionSize.x, SeamCameraRegionDepth);
-
-        /// <summary>
-        /// B 側の境界寄せ領域の中心（Area ローカル）。西端から 10m を覆う。
-        /// <b>B の全体を覆わない</b>——覆うと戦闘区画（z −8〜8）でも Z が固定され、
-        /// 追従の見え方が変わってしまう。
-        /// </summary>
-        public static readonly Vector3 SeamCameraRegionBCenter =
-            new Vector3(-Phase5Layout.AreaBWidth * 0.5f + 5f, 0f, SeamZ);
-
-        /// <summary>同・大きさ（X, Z）。</summary>
-        public static readonly Vector2 SeamCameraRegionBSize =
-            new Vector2(10f, SeamCameraRegionDepth);
-
         /// <summary>接続境界へ向かう向き（A から見て東）。</summary>
         public static readonly Vector3 EastwardStep = Vector3.right;
 
@@ -230,12 +187,6 @@ namespace Momotaro.Editor.Phase55
             ExitBToA = Phase55WorldIds.ExitBWest,
             AreaAGatePosition = new Vector3(
                 Phase5Layout.AreaAGate.x, Phase5Layout.AreaAGate.y, AreaAGateZ),
-            SeamCameraRegionAId = Phase55WorldIds.RegionASeam,
-            SeamCameraRegionBId = Phase55WorldIds.RegionBSeam,
-            SeamCameraRegionACenter = SeamCameraRegionACenter,
-            SeamCameraRegionASize = SeamCameraRegionASize,
-            SeamCameraRegionBCenter = SeamCameraRegionBCenter,
-            SeamCameraRegionBSize = SeamCameraRegionBSize,
             AreaAExitPosition = Shift(Phase5Layout.AreaAExitToB),
             AreaAExitDirection = Vector3.right,
             AreaAEntryFromB = Shift(Phase5Layout.AreaAFromB),

@@ -136,20 +136,47 @@ namespace Momotaro.Editor.Phase5
         public static Vector3 CameraLocalOffset =>
             new Vector3(0f, CameraHeight, -CameraHeight / Mathf.Tan(CameraPitchDegrees * Mathf.Deg2Rad));
 
-        /// <summary>A の既定領域（エリア全体）。どの部屋にも入らないときに使う。</summary>
-        public static readonly Vector2 AreaADefaultRegionSize = new Vector2(AreaAWidth, AreaADepth);
+        /// <summary>
+        /// カメラ領域を求めるときの<b>画面比の上限</b>（工程 P55-14d。裁定：エリア内は連続追従）。
+        ///
+        /// 受入の対象は 16:9 だが、<b>広い画面でもクランプが効かない</b>ようにここは広く採る。
+        /// 21:9 の半幅は 5 × 2.33 ＝ 約 11.7 で、背景の余白（<see cref="BackdropMargin"/> ＝ 14）が
+        /// それを覆う。クランプが効かない領域を余分に広く採っても害は無い——
+        /// はみ出した先は背景が覆うだけで、追従は主人公の位置そのままになる。
+        /// </summary>
+        public const float CameraRegionAspect = 21f / 9f;
 
-        /// <summary>A 西の大部屋（仕切り x=6 より西）。</summary>
-        public static readonly Vector3 AreaAWestRegionCenter = new Vector3(-3f, 0f, 0f);
+        /// <summary>
+        /// 床で見える範囲の半分（<see cref="CameraOrthographicSize"/>・
+        /// <see cref="CameraRegionAspect"/>・<see cref="CameraPitchDegrees"/> から求める）。
+        ///
+        /// <b>実行時と同じ純粋関数を使う</b>（別の期待値を作らない）。
+        /// </summary>
+        public static Vector2 CameraHalfFootprint =>
+            Momotaro.Presentation.Cameras.CameraBoundsMath.HalfFootprint(
+                CameraOrthographicSize, CameraRegionAspect, CameraPitchDegrees);
 
-        /// <summary>A 西の大部屋の広がり。</summary>
-        public static readonly Vector2 AreaAWestRegionSize = new Vector2(18f, AreaADepth);
+        /// <summary>
+        /// <b>連続追従のための領域の大きさ</b>（工程 P55-14d。裁定：同一 Area 内は連続追従）。
+        ///
+        /// <b>エリアの大きさに、見える範囲の半分を四方へ足す。</b>
+        /// <c>CameraBoundsMath.ClampFocus</c> は<b>画面がはみ出さないように</b>基準位置を寄せるので、
+        /// 領域をエリアと同じにすると<b>端でカメラが止まる</b>（＝追従が切れる）。
+        /// 四方へ半画面ぶん広げると <c>low = min, high = max</c> になり、
+        /// **主人公がエリア内のどこに居ても基準位置はその位置そのもの**になる。
+        ///
+        /// <b>これが選べるのは背景の補完（付録 C.33）が入ったからである。</b>
+        /// それまではカメラがエリアの外を映すと虚空が見えたので、
+        /// 部屋ごとに小さな領域でクランプする必要があった。
+        /// </summary>
+        public static Vector2 FollowRegionSize(float width, float depth)
+        {
+            Vector2 half = CameraHalfFootprint;
+            return new Vector2(width + (half.x * 2f), depth + (half.y * 2f));
+        }
 
-        /// <summary>A 東の通路（仕切りと外壁の間）。横が入りきらないので中央固定になる。</summary>
-        public static readonly Vector3 AreaAEastRegionCenter = new Vector3(9f, 0f, 0f);
-
-        /// <summary>A 東の通路の広がり。</summary>
-        public static readonly Vector2 AreaAEastRegionSize = new Vector2(6f, AreaADepth);
+        /// <summary>A の追従領域（エリア全体＋見える範囲の半分）。**A 内は 1 領域だけ**。</summary>
+        public static Vector2 AreaAFollowRegionSize => FollowRegionSize(AreaAWidth, AreaADepth);
 
         // ---- エリア B ----
 
@@ -205,7 +232,7 @@ namespace Momotaro.Editor.Phase5
         /// <summary>戦闘開始 Trigger の広がり（XZ）。境界より十分内側に収まる大きさ（§8.2 末尾）。</summary>
         public static readonly Vector2 AreaBEncounterTriggerSize = new Vector2(3f, 3f);
 
-        /// <summary>B の既定領域（エリア全体）。B は 1 部屋なので領域を分けない。</summary>
-        public static readonly Vector2 AreaBDefaultRegionSize = new Vector2(AreaBWidth, AreaBDepth);
+        /// <summary>B の追従領域（エリア全体＋見える範囲の半分）。**B 内も 1 領域だけ**。</summary>
+        public static Vector2 AreaBFollowRegionSize => FollowRegionSize(AreaBWidth, AreaBDepth);
     }
 }

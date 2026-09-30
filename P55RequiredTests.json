@@ -227,12 +227,17 @@
     },
     {
       "id": "P55-SEC7-3B",
-      "summary": "接続口をふさぐ**見えない境界**（仕様書 §7.3。工程 P55-14b。試遊報告③「出口を踏まずにエリアの外へ出られる」）。外周壁は接続口の区間を空けて 2 本に分けてあるので、当たりが無いと**出口判定が成立しないまま Area の外へ出られる**——カメラは追従範囲に収まっているので主人公が画面から消えたまま進む。見た目は持たせない（壁を消した理由はスライド中に画面を覆うことで、それは Renderer の話）。開口の全幅＋左右の壁への食い込みでふさぎ、斜めからも回り込めない。遷移は主人公を入口へ配置するので境界を跨がず、常設でよい。**スライドの表示経路検査からは、いま使う接続の境界だけを外す**——普通の壁として数えると接続が必ず準備失敗になり、一括で外すと通常の壁や別の接続の境界まで見えなくなる。境界に止められた位置が出口 Trigger の内側であること、到着位置が行き先の境界より内側で主人公・犬丸が重ならないことも見る",
+      "summary": "接続口をふさぐ**見えない境界**（仕様書 §7.3。工程 P55-14b。試遊報告③「出口を踏まずにエリアの外へ出られる」）。外周壁は接続口の区間を空けて 2 本に分けてあるので、当たりが無いと**出口判定が成立しないまま Area の外へ出られる**——カメラは追従範囲に収まっているので主人公が画面から消えたまま進む。見た目は持たせない（壁を消した理由はスライド中に画面を覆うことで、それは Renderer の話）。開口の全幅＋左右の壁への食い込みでふさぎ、斜めからも回り込めない。遷移は主人公を入口へ配置するので境界を跨がず、常設でよい。**スライドの表示経路検査からは、いま使う接続の境界だけを外す**——普通の壁として数えると接続が必ず準備失敗になり、一括で外すと通常の壁や別の接続の境界まで見えなくなる。境界に止められた位置が出口 Trigger の内側であること、到着位置が行き先の境界より内側で主人公・犬丸が重ならないことも見る **実ステップ回避で突っ込む経路も見る**（工程 P55-14d で追加。GPT 指摘）——14b の検査は歩行と斜め移動しか作っておらず、試遊報告①の回避（1 回で約 3m・出口 Trigger の中に居るフレーム数が少ない）を一度も通していなかった。回避が実際に発動したこと（`IsStepping` のフレーム数）も見る。注入 114（境界を Trigger にする）で「回避で境界を越えた（x=12.31575／境界の外面 x=12.25）」として落ちる",
       "stage": "P55-14"
     },
     {
       "id": "P55-REACH",
       "summary": "**歩いて到達できるか**（工程 P55-14c。GPT 受入 4）。既存の検査は目的地のたびに `PlaceAt` で主人公を置き直していたので、「そこで押せば通る」は見ていたが**そこまで歩けるか**は見ていなかった——試遊で出た「戦闘区域に入れない」（アリーナ封鎖 4 枚が立っていた）は、壁が立っていても既存の検査がすべて緑のままだった。この要求の検査は**途中で座標を変えない**。実キーだけで歩き、Trigger を占有させたり遷移を直接要求したりもしない（到着後の配置だけはゲーム自身の遷移が行う）。経路：A 開始地点→調査→レバー→開通した門→出口で遷移成立／B 到着地点→戦闘区域（入る前は封鎖 0 枚、歩いて入れる、戦闘開始で初めて封鎖）／戦闘終了後に封鎖が解けて歩いて退出できる／境界へ斜め・端から寄っても遷移成立か Area 内で停止のどちらかで、未遷移のまま外へ出ない／門開通後に扉（Fade）で離脱・再入場しても見た目と当たりがともに開通状態で歩いてくぐれる。寄り道の目標は仕切り壁の**実際の当たりから**割り出す（決め打ちの座標を書かない）",
+      "stage": "P55-14"
+    },
+    {
+      "id": "P55-SEC7-1B",
+      "summary": "**斜め成分を含むスライドを許可し、帯で縛る**（§7.1 改定。工程 P55-14d。GPT 裁定 (a)）。同一 Area 内でカメラが主人公へ連続追従するようになったので、通路の端から出口へ入るとスライドの始点は接続軸から外れる——そこを不合格にすると**通路の端を歩いてきたプレイヤーは隣の Area へ行けない**（注入 117 で再現）。許容する帯は接続 Data の `CorridorWidth` から求め、浮動小数点の誤差許容（`AxisEpsilon`）とは別に扱う。**許容値を大きくするだけにしない**：(1) 到着側のカメラは接続軸に乗っている（誤差許容のみ。入口のずれは通さない。注入 116）／(2) 出発側は帯の内側／(3) 補間経路も帯の内側（16 点で刻む）／(4) 接続方向へ動いている（`MinAlongMovement` 以上）。帯の定義は `AreaConnectionRules` が正本で、Runtime と Validator が同じ関数を使う。あわせて、同一 Area 内では位置によって基準位置を切り替えない（旧部屋境界・門の通過・出口への接近で補間を始めない）ことと、スライドの終点＝到着後の通常追従位置が一致すること（到着後に寄り直さない）を見る。覆い（§7.3）は帯の端から出発する経路でも成り立つことを Scene 検査で静的に、斜めのスライドの穴 0 を実描画で確かめる",
       "stage": "P55-14"
     }
   ],
@@ -474,7 +479,7 @@
       "requirementIds": [],
       "implemented": true,
       "supportingTests": [
-        "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.DirectOpen_PlacesTheCameraAtTheEntryEvenWhenTheSavedPositionIsInAnotherRegion",
+        "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.DirectOpen_PlacesTheCameraAtTheEntryEvenWhenTheSavedPositionIsFarAway",
         "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.ComputingTheDestinationArrivalPoint_UsesTheDestinationRegionsAndChangesNothing",
         "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.OpeningAreaBDirectly_StandsUpTheResidentRigOnce",
         "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.AreaScenes_OwnNoCameraOrListenerOrLightOfTheirOwn",
@@ -514,8 +519,6 @@
       "requirementIds": [],
       "implemented": true,
       "supportingTests": [
-        "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.EnteringTheSeamOffCentre_KeepsTheCameraOnTheConnectionAxis(1.0f)",
-        "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.EnteringTheSeamOffCentre_KeepsTheCameraOnTheConnectionAxis(-1.0f)",
         "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.WalkingWestIntoTheSeam_ResolvesTheWestwardSlideConnection",
         "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.TheP5Area_StillTravelsWithoutAnyConnectionRecord"
       ]
@@ -961,7 +964,8 @@
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.StoppedByTheBarrier_TheExitGateStillAccepts",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AfterArriving_TheHeroAndCompanionAreInsideTheDestinationBarrier",
-        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheDisplayRoute_IgnoresExactlyTheBarriersOfThisConnection"
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheDisplayRoute_IgnoresExactlyTheBarriersOfThisConnection",
+        "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.DodgingIntoTheSeam_NeverLeavesTheAreaUntransitioned"
       ]
     },
     {
@@ -976,6 +980,34 @@
         "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.AfterTheFight_TheArenaReleasesAndWalkingLeavesIt",
         "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.ApproachingTheSeamOffCentre_NeverLeavesTheAreaUntransitioned",
         "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.AfterOpeningTheGateLeavingAndComingBack_TheGateIsStillPassable"
+      ]
+    },
+    {
+      "requirementId": "P55-SEC7-1B",
+      "stage": "P55-14",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.FromTheCorridorCentreAndEdges_TheSlideStaysInsideTheBand(0.0f)",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.FromTheCorridorCentreAndEdges_TheSlideStaysInsideTheBand(1.5f)",
+        "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.FromTheCorridorCentreAndEdges_TheSlideStaysInsideTheBand(-1.5f)",
+        "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.EnteringTheSeamOffCentre_KeepsTheCameraInsideTheConnectionBand(1.0f)",
+        "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.EnteringTheSeamOffCentre_KeepsTheCameraInsideTheConnectionBand(-1.0f)",
+        "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(0.0f,True)",
+        "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(0.0f,False)",
+        "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(1.5f,True)",
+        "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(1.5f,False)",
+        "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(-1.5f,True)",
+        "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(-1.5f,False)",
+        "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheDiagonalSlide_FromTheCorridorEdge_ShowsNoVoid(\"EastWest\",1.5f)",
+        "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheDiagonalSlide_FromTheCorridorEdge_ShowsNoVoid(\"EastWest\",-1.5f)",
+        "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheDiagonalSlide_FromTheCorridorEdge_ShowsNoVoid(\"NorthSouth\",1.5f)",
+        "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheDiagonalSlide_FromTheCorridorEdge_ShowsNoVoid(\"NorthSouth\",-1.5f)",
+        "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.WalkingAcrossTheOldRoomBoundariesAndTheGate_TheCameraFollowsContinuously",
+        "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheFollowRegion_LetsTheClampGoAndTheBackdropCoversTheOutside",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AfterTheSlide_TheCameraDoesNotReSnapOrJump",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheRoundTrip_KeepsTheCameraAndTheCompanionContinuous"
       ]
     }
   ],

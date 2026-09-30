@@ -48,7 +48,17 @@ namespace Momotaro.Infrastructure.World
         public const float FallbackSlideSeconds = 0.45f;
 
         /// <summary>スライドを接続軸に載せる許容ずれ（m）。</summary>
-        public const float AxisTolerance = 0.05f;
+        public const float AxisTolerance = AreaConnectionRules.AxisEpsilon;
+
+        /// <summary>
+        /// 帯の検査で刻む数（工程 P55-14d）。
+        ///
+        /// 直線ならば始点・終点だけで足りる（帯は凸なので間は必ず内側）。
+        /// <b>刻むのは、経路が直線でなくなった日に気付くため</b>である——
+        /// §7.1 の補間曲線は進み方だけを変えていて経路は線分のままだが、
+        /// そこを変える改修が入ったときに、この検査が黙って空振りするのを避ける。
+        /// </summary>
+        private const int BandSamples = 16;
 
         /// <summary>戻しにかける秒の上限（§8 の 3 行目「最大 0.25 秒で戻す」）。</summary>
         public const float ReverseSeconds = 0.25f;
@@ -633,14 +643,14 @@ namespace Momotaro.Infrastructure.World
                 yield break;
             }
 
-            // <b>接続軸から外れる経路は準備失敗</b>（§7.1 末尾／§7.2 末尾
+            // <b>帯の外へ出る経路は準備失敗</b>（§7.1 改定／§7.2 末尾
             // 「表示経路を安全に作れない接続は準備失敗とする」）。
             // 無断で暗転へ切り替えて成功扱いにしない。
-            if (!IsOnConnectionAxis(connection, slideFrom, slideTo))
+            if (!TryCheckSlideBand(connection, arrival.ArrivalPosition, slideFrom, slideTo,
+                    out string bandFailure))
             {
                 yield return Rollback(transitionId, departure, departureHandle,
-                    "スライドが接続軸から外れます（" + connection.Axis + " / from=" + slideFrom
-                    + " to=" + slideTo + "）。", destination);
+                    bandFailure, destination);
                 yield break;
             }
 
@@ -1836,23 +1846,94 @@ namespace Momotaro.Infrastructure.World
             connection.SlideDuration > 0f ? connection.SlideDuration : FallbackSlideSeconds;
 
         /// <summary>
-        /// カメラの移動が接続軸だけに乗っているか（§7.1 末尾）。
-        /// 東西なら Z が動かず、南北なら X が動かない。
+        /// スライドが<b>接続の帯の内側</b>に収まっているか（§7.1 改定。工程 P55-14d）。
+        ///
+        /// <b>「接続軸だけを動く」から「接続方向へ動き、軸外は通路の幅の内側」へ変わった。</b>
+        /// 同一 Area 内でカメラが主人公へ連続追従するようになったので、
+        /// 通路の端から出口へ入ると<b>スライドの始点は接続軸から外れる</b>——
+        /// そこを不合格にすると、通路の端を歩いてきたプレイヤーは隣の Area へ行けない。
+        ///
+        /// <b>許容値を大きくしただけにしない</b>（GPT 裁定 (a) の注意）。見るのは 4 つで、
+        /// どれも<b>配置ミスを通さない</b>ために要る：
+        ///
+        /// <list type="number">
+        /// <item><b>到着側は接続軸に乗っている</b>（誤差許容 <c>AxisEpsilon</c> のみ）。
+        /// 入口が通路の中心からずれている配置は、ここで落ちる。</item>
+        /// <item><b>出発側は帯の内側</b>（通路の半幅＋誤差許容）。帯は<b>接続 Data の通路幅</b>
+        /// から求める——広い通路は広く、狭い通路は狭い。</item>
+        /// <item><b>補間経路も帯の内側</b>。始点・終点だけでは、経路が直線でなくなった日に気付けない。</item>
+        /// <item><b>接続方向へ動いている</b>（<c>MinAlongMovement</c> 以上）。
+        /// 帯の中で横へ動くだけの配置は、帯の検査だけでは捕まらない。</item>
+        /// </list>
+        ///
+        /// <b>帯の定義は <see cref="AreaConnectionRules"/> が正本</b>で、
+        /// Scene 検査（<c>Phase55WorldValidator</c>）も同じ関数を使う。
         /// </summary>
-        private static bool IsOnConnectionAxis(
-            in AreaConnectionSnapshot connection, Vector3 from, Vector3 to)
+        /// <param name="connection">受理時に固定した接続。</param>
+        /// <param name="arrivalPosition">到着入口の位置。<b>接続軸の座標をここから採る</b>。</param>
+        /// <param name="from">スライドの始点（受理時の実 Rig 位置）。</param>
+        /// <param name="to">スライドの終点（到着側の通常追従位置）。</param>
+        /// <param name="failure">不合格のときの理由（値を全部埋める）。</param>
+        private static bool TryCheckSlideBand(
+            in AreaConnectionSnapshot connection, Vector3 arrivalPosition,
+            Vector3 from, Vector3 to, out string failure)
         {
-            Vector3 delta = to - from;
-            switch (connection.Axis)
+            failure = null;
+            if (connection.Axis == AreaConnectionRules.Axis.None)
             {
-                case AreaConnectionRules.Axis.X:
-                    return Mathf.Abs(delta.z) <= AxisTolerance;
-                case AreaConnectionRules.Axis.Z:
-                    return Mathf.Abs(delta.x) <= AxisTolerance;
-                default:
-                    return false;
+                failure = "接続の向きが未指定なので、スライドの帯を決められません（§3.1）。";
+                return false;
             }
+
+            bool alongX = connection.Axis == AreaConnectionRules.Axis.X;
+            float axis = Across(arrivalPosition, alongX);
+            float band = connection.SlideAcrossHalfWidth;
+            string acrossName = alongX ? "z" : "x";
+
+            // (1) 到着側は接続軸に乗っている（誤差許容だけ。ここは緩めない）。
+            float arrivalOffset = Across(to, alongX) - axis;
+            if (Mathf.Abs(arrivalOffset) > AreaConnectionRules.AxisEpsilon)
+            {
+                failure = "到着側のカメラが接続軸に乗っていません（" + acrossName + "="
+                          + Across(to, alongX) + " 軸 " + axis + " ずれ " + arrivalOffset
+                          + "）。入口の配置がずれています（§7.1）。";
+                return false;
+            }
+
+            // (2)(3) 始点・終点・その間が帯の内側。
+            for (int i = 0; i <= BandSamples; i++)
+            {
+                Vector3 at = Vector3.Lerp(from, to, i / (float)BandSamples);
+                float offset = Across(at, alongX) - axis;
+                if (!AreaConnectionRules.IsWithinSlideBand(offset, connection.CorridorWidth))
+                {
+                    failure = "スライドの経路が接続の帯から外れます（" + i + "/" + BandSamples
+                              + " で " + acrossName + "=" + Across(at, alongX) + " 軸 " + axis
+                              + " ずれ " + offset + "／"
+                              + AreaConnectionRules.DescribeSlideBand(connection.CorridorWidth)
+                              + "）。from=" + from + " to=" + to + "（§7.1）。";
+                    return false;
+                }
+            }
+
+            // (4) 接続方向へ動いている。
+            float alongDelta = Along(to, alongX) - Along(from, alongX);
+            if (!AreaConnectionRules.MovesAlongConnection(alongDelta))
+            {
+                failure = "スライドが接続方向へ動きません（" + (alongX ? "x" : "z") + " の移動 "
+                          + alongDelta + "／最低 " + AreaConnectionRules.MinAlongMovement
+                          + "）。スライドする意味が無い配置です（§7.1）。";
+                return false;
+            }
+
+            return true;
         }
+
+        /// <summary>接続方向の成分。</summary>
+        private static float Along(Vector3 v, bool alongX) => alongX ? v.x : v.z;
+
+        /// <summary>接続軸と直交する成分。</summary>
+        private static float Across(Vector3 v, bool alongX) => alongX ? v.z : v.x;
 
         /// <summary>
         /// 到着 Scene を active にする（§6.2 手順 8「Scene active 指定」）。

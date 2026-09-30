@@ -562,16 +562,23 @@ namespace Momotaro.Editor.Phase55
         // ---------------------------------------------------------------- カメラ（§7.1）
 
         /// <summary>
-        /// 接続では<b>Camera の移動が接続軸だけ</b>であること（§7.1）。
+        /// 接続では<b>Camera の移動が接続の帯に収まる</b>こと（§7.1 改定。工程 P55-14d）。
         ///
         /// <b>入口の中心だけを比べては足りない</b>（GPT レビュー R14 の指摘 2）。
         /// 出入口には幅があるので、通路の端から入ることができる。
-        /// 領域が見える広がりより広いと clamp は<b>追従先の座標をそのまま残す</b>ので、
-        /// そこから入ると接続軸以外へも Camera が動く。
-        /// 中心だけ見る検査では、ちょうど一致してしまって通ってしまった。
+        /// 同一 Area 内は連続追従になったので、通路の端から入ると
+        /// <b>Camera の基準位置も接続軸から外れる</b>——それは正常である。
         ///
-        /// ここでは<b>通路の幅いっぱいに刻んだ進入位置</b>と、境界へ近づく数点を
-        /// 両側でなめて、すべてで Camera が接続軸に乗ることを求める。
+        /// 見るのは 3 つ：
+        /// <list type="number">
+        /// <item>通路の幅いっぱいに刻んだ進入位置で、Camera が<b>帯の内側</b>に居ること。</item>
+        /// <item><b>到着時の Camera は接続軸に乗っている</b>こと（誤差許容だけ。ここは緩めない）。
+        /// 入口が通路の中心からずれた配置は、ここで落ちる。</item>
+        /// <item>両側の Camera が<b>接続方向へ動く</b>こと。</item>
+        /// </list>
+        ///
+        /// <b>帯の定義は <see cref="AreaConnectionRules"/> が正本</b>で、
+        /// 実行時（<c>AreaSlideTransitionRunner</c>）も同じ関数を使う。
         /// </summary>
         private static void ValidateCameraAxis(
             Phase55Arrangement r, AreaFacts a, AreaFacts b, List<string> errors)
@@ -586,8 +593,8 @@ namespace Momotaro.Editor.Phase55
             float[] aAlongs = { seam - 0.5f * sign, seam - 1.5f * sign, seam - 2.5f * sign };
             float[] bAlongs = { seam + 0.5f * sign, seam + 1.5f * sign, seam + 2.5f * sign };
 
-            AssertApproachStaysOnAxis(r, a, "A", acrosses, aAlongs, axis, errors);
-            AssertApproachStaysOnAxis(r, b, "B", acrosses, bAlongs, axis, errors);
+            AssertApproachStaysInsideBand(r, a, "A", acrosses, aAlongs, axis, errors);
+            AssertApproachStaysInsideBand(r, b, "B", acrosses, bAlongs, axis, errors);
 
             if (!TryFocus(a, r.EntryInA, out Vector3 focusInA, errors)
                 || !TryFocus(b, r.EntryInB, out Vector3 focusInB, errors))
@@ -595,23 +602,33 @@ namespace Momotaro.Editor.Phase55
                 return;
             }
 
-            if (Mathf.Abs(r.Across(focusInA) - axis) > 0.05f
-                || Mathf.Abs(r.Across(focusInB) - axis) > 0.05f)
+            // <b>到着時は接続軸に乗っている</b>——ここは誤差許容だけで、帯へは緩めない。
+            // 帯が守るのは「通路のどこから入ってもよい」であって、
+            // 「入口がどこにあってもよい」ではない（GPT 裁定 (a) の注意）。
+            if (Mathf.Abs(r.Across(focusInA) - axis) > AreaConnectionRules.AxisEpsilon
+                || Mathf.Abs(r.Across(focusInB) - axis) > AreaConnectionRules.AxisEpsilon)
             {
                 errors.Add("到着時のカメラが接続軸に乗っていません（A 側 " + r.AcrossName + "="
                     + r.Across(focusInA) + " B 側 " + r.AcrossName + "=" + r.Across(focusInB)
                     + " 軸 " + r.AcrossName + "=" + axis + "。§7.1）。");
             }
 
-            if (Mathf.Abs(r.Along(focusInA) - r.Along(focusInB)) < 0.5f)
+            if (!AreaConnectionRules.MovesAlongConnection(
+                    r.Along(focusInA) - r.Along(focusInB)))
             {
                 errors.Add("カメラが接続軸へ動きません（両側 " + r.AlongName + "≒"
                     + r.Along(focusInA) + "）。スライドする意味が無い配置です（§7.1）。");
             }
         }
 
-        /// <summary>境界へ近づく道のりのどこからでも、カメラが接続軸に乗ること。</summary>
-        private static void AssertApproachStaysOnAxis(
+        /// <summary>
+        /// 境界へ近づく道のりのどこからでも、カメラが<b>接続の帯の内側</b>に居ること
+        /// （§7.1 改定。工程 P55-14d）。
+        ///
+        /// <b>帯からはみ出す配置は、通路の外まで追従が効いている</b>ことを意味する——
+        /// 通路の脇に立ってカメラだけ通路の外を映している状態で、スライドが始まってしまう。
+        /// </summary>
+        private static void AssertApproachStaysInsideBand(
             Phase55Arrangement r, AreaFacts facts, string label,
             float[] acrosses, float[] alongs, float axis, List<string> errors)
         {
@@ -621,12 +638,14 @@ namespace Momotaro.Editor.Phase55
                 {
                     Vector3 at = r.Point(alongs[i], acrosses[j]);
                     Vector3 focus = FocusAt(facts, at);
-                    if (Mathf.Abs(r.Across(focus) - axis) > 0.05f)
+                    float offset = r.Across(focus) - axis;
+                    if (!AreaConnectionRules.IsWithinSlideBand(offset, r.PassageWidth))
                     {
                         errors.Add(label + " 側の進入位置 " + at + " でカメラの " + r.AcrossName
-                            + " が接続軸から外れます（カメラ " + r.AcrossName + "=" + r.Across(focus)
-                            + " 軸 " + axis + "）。接続軸以外へ動く配置は不合格（§7.1）。"
-                            + " 境界寄せの領域が足りていません。");
+                            + " が接続の帯から外れます（カメラ " + r.AcrossName + "=" + r.Across(focus)
+                            + " 軸 " + axis + " ずれ " + offset + "／"
+                            + AreaConnectionRules.DescribeSlideBand(r.PassageWidth)
+                            + "）。§7.1。");
                         return;
                     }
                 }
@@ -665,31 +684,49 @@ namespace Momotaro.Editor.Phase55
             float acrossLow = Mathf.Max(r.AcrossMin(a.FloorBounds), r.AcrossMin(b.FloorBounds));
             float acrossHigh = Mathf.Min(r.AcrossMax(a.FloorBounds), r.AcrossMax(b.FloorBounds));
 
+            // <b>始点は接続軸の上とは限らない</b>（§7.1 改定。工程 P55-14d）。
+            // 同一 Area 内が連続追従になったので、通路の端から入れば
+            // スライドは<b>帯の端から</b>始まる。覆いは<b>いちばん外から出発する経路</b>で見る。
+            float band = AreaConnectionRules.SlideAcrossHalfWidth(r.PassageWidth);
+            float[] startOffsets = { 0f, band, -band };
+
             const int steps = 16;
-            for (int i = 0; i <= steps; i++)
+            foreach (float startOffset in startOffsets)
             {
-                Vector3 at = Vector3.Lerp(from, to, i / (float)steps);
-                float along = r.Along(at);
-                float across = r.Across(at);
-
-                if (along - alongHalf < alongLow - Tolerance || along + alongHalf > alongHigh + Tolerance)
+                Vector3 start = from + Offset(r, startOffset);
+                for (int i = 0; i <= steps; i++)
                 {
-                    errors.Add("スライド途中（" + i + "/" + steps + "・" + r.AlongName + "=" + along
-                        + "）でカメラが床の外を映します（床 " + r.AlongName + " " + alongLow + "〜"
-                        + alongHigh + "／見える半分 " + alongHalf + "）。黒い帯になります（§7.3）。");
-                    return;
-                }
+                    Vector3 at = Vector3.Lerp(start, to, i / (float)steps);
+                    float along = r.Along(at);
+                    float across = r.Across(at);
 
-                if (across - acrossHalf < acrossLow - Tolerance
-                    || across + acrossHalf > acrossHigh + Tolerance)
-                {
-                    errors.Add("スライド途中（" + i + "/" + steps + "・" + r.AcrossName + "=" + across
-                        + "）でカメラが床の外を映します（両 Area が重なる " + r.AcrossName + " "
-                        + acrossLow + "〜" + acrossHigh + "／見える半分 " + acrossHalf + "）。");
-                    return;
+                    if (along - alongHalf < alongLow - Tolerance
+                        || along + alongHalf > alongHigh + Tolerance)
+                    {
+                        errors.Add("スライド途中（軸外の出発 " + startOffset + "・" + i + "/" + steps
+                            + "・" + r.AlongName + "=" + along
+                            + "）でカメラが床の外を映します（床 " + r.AlongName + " " + alongLow + "〜"
+                            + alongHigh + "／見える半分 " + alongHalf + "）。黒い帯になります（§7.3）。");
+                        return;
+                    }
+
+                    if (across - acrossHalf < acrossLow - Tolerance
+                        || across + acrossHalf > acrossHigh + Tolerance)
+                    {
+                        errors.Add("スライド途中（軸外の出発 " + startOffset + "・" + i + "/" + steps
+                            + "・" + r.AcrossName + "=" + across
+                            + "）でカメラが床の外を映します（両 Area が重なる " + r.AcrossName + " "
+                            + acrossLow + "〜" + acrossHigh + "／見える半分 " + acrossHalf
+                            + "）。帯の端から出発しても覆えている必要があります（§7.3）。");
+                        return;
+                    }
                 }
             }
         }
+
+        /// <summary>接続軸と直交する向きのずらし。</summary>
+        private static Vector3 Offset(Phase55Arrangement r, float across) =>
+            r.Axis == Phase5SeamAxis.X ? new Vector3(0f, 0f, across) : new Vector3(across, 0f, 0f);
 
         /// <summary>その入口へ到着したときのカメラ基準位置（領域選択と clamp は実行時と同じ純粋関数）。</summary>
         private static bool TryFocus(

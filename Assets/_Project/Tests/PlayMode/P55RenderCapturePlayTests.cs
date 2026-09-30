@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using Momotaro.Core.Identification;
+using Momotaro.Data.World;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Interaction;
@@ -276,6 +277,110 @@ namespace Momotaro.Tests.PlayMode
 
             Debug.Log("P15 録画: " + folder + "（" + (frames.Count + 2) + " 枚・"
                 + CaptureWidth + "x" + CaptureHeight + "）最小明るさ比=" + worstBrightness);
+        }
+
+        // ------------------------------------------------ 斜めのスライド（工程 P55-14d。§7.1 改定）
+
+        /// <summary>
+        /// <b>通路の端から入って斜めに動くスライドでも、穴 0・暗転なし</b>
+        /// （§7.1 改定・§7.3。工程 P55-14d）。
+        ///
+        /// <b>これまでの描画検査は通路の中央からしか入っていなかった。</b>
+        /// 中央から入るとカメラの軸外成分は 0 なので、スライドは接続軸だけを動く——
+        /// 斜めに動く区間は<b>一度も撮っていなかった</b>。
+        ///
+        /// 斜めのぶん、カメラは<b>接続軸から離れた側の床の端</b>へ寄る。
+        /// Scene 検査（<c>ValidateSlideIsCovered</c>）は帯の端から出発する経路でも
+        /// 覆えることを静的に見ているが、<b>実際に描いて確かめるのは別の話</b>である
+        /// （記録 042 §5「最初から通った検査は、測れていることを別に確かめる」）。
+        ///
+        /// 撮るのは出発・中間・終端と到着後。穴 0 と、遷移前との明るさ比で見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheDiagonalSlide_FromTheCorridorEdge_ShowsNoVoid(
+            [Values("EastWest", "NorthSouth")] string arrangement,
+            [Values(1.5f, -1.5f)] float across)
+        {
+            _route = RouteOf(arrangement);
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            yield return PlaceBeforeExit(_route.ExitFromA, _route.BackStep, across);
+            yield return SettleCamera();
+
+            Camera camera = ResidentCamera();
+            string folder = RecordingFolder(_route.Folder + "_diagonal");
+
+            Frame before = Capture(camera, folder, "00_before");
+            Assert.Greater(before.MeanLuminance, 0.01f,
+                "前提：遷移前の画面が真っ暗ではない（平均輝度 " + before.MeanLuminance + "）。");
+
+            var frames = new List<Frame>();
+            float deadline = Time.realtimeSinceStartup + 25f;
+            int shot = 0;
+            while (transitions.SlideCommittedCount == 0 && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(_route.Forward));
+                yield return null;
+
+                AreaCameraRigHost host = AreaCameraRigHost.Instance;
+                if (host == null || !host.IsSliding)
+                {
+                    continue;
+                }
+
+                // <b>スライドの全区間を毎フレーム撮る。</b> 斜めの区間はどのフレームで
+                // 端へ寄るか分からないので、代表的な数枚では足りない。
+                frames.Add(CaptureMoment(camera, folder, "slide_" + shot.ToString("00"), before));
+                shot++;
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "斜めでもスライドで渡れている（失敗=" + transitions.Slide.LastFailure + "）。");
+            Assert.GreaterOrEqual(frames.Count, 3,
+                "スライド中を複数フレーム撮れている（実際=" + frames.Count + "）。");
+
+            // <b>実際に斜めだったことを確かめる。</b> 軸外成分が 0 なら、この検査は
+            // 中央から入る検査と同じものを見ているだけになる。
+            Vector3 from = transitions.Slide.LastSlideFrom;
+            Vector3 to = transitions.Slide.LastSlideTo;
+            float acrossSpan = _route.Forward == Key.D || _route.Forward == Key.A
+                ? Mathf.Abs(to.z - from.z)
+                : Mathf.Abs(to.x - from.x);
+            Assert.Greater(acrossSpan, AreaConnectionRules.AxisEpsilon,
+                "<b>このスライドは実際に斜めだった</b>（軸外の移動 " + acrossSpan
+                + "／始点 " + from + " 終点 " + to + "）。0 なら中央から入ったのと同じである。");
+
+            float tail = Time.realtimeSinceStartup + 20f;
+            while (transitions.Slide.HasLiveSceneOperation && Time.realtimeSinceStartup < tail)
+            {
+                yield return null;
+            }
+
+            yield return SettleCamera();
+            Renderer arrivedHero = AssertExactlyOneHero(camera, sliding: false, label: "斜め到着後");
+            Frame arrived = Capture(camera, folder, "99_arrived", arrivedHero);
+            AssertDrawing(arrived, before, "斜め到着後");
+            AssertHeroIsActuallyDrawn(arrived, "斜め到着後");
+
+            float worstBrightness = 1f;
+            int worstHole = 0;
+            for (int i = 0; i < frames.Count; i++)
+            {
+                worstBrightness = Mathf.Min(worstBrightness,
+                    frames[i].MeanLuminance / before.MeanLuminance);
+                worstHole = Mathf.Max(worstHole, frames[i].HolePixels);
+            }
+
+            Assert.AreEqual(0, worstHole,
+                "<b>斜めのスライドのどのフレームにも穴が無い</b>（最大 " + worstHole + " 画素・"
+                + frames.Count + " フレーム・軸外 " + across + "）。"
+                + " 出るなら、帯の端まで許した軸外成分に対して床と背景の覆いが足りていない（§7.3）。");
+            Assert.Greater(worstBrightness, 0.5f,
+                "斜めのスライド中も暗転していない（最小の明るさ比 " + worstBrightness + "）。");
         }
 
         // ---------------------------------------------------------------- P16（工程 P55-10d）
@@ -1069,10 +1174,10 @@ namespace Momotaro.Tests.PlayMode
             yield return null;
         }
 
-        private IEnumerator PlaceBeforeExit(StableId exitId, Vector3 back)
+        private IEnumerator PlaceBeforeExit(StableId exitId, Vector3 back, float across = 0f)
         {
             AreaExitGate gate = FindExitGate(exitId);
-            Vector3 spot = gate.transform.position + back * 0.4f;
+            Vector3 spot = gate.transform.position + back * 0.4f + AcrossOffset(across);
             var root = Object.FindFirstObjectByType<PlayerRoot>();
             Assert.IsNotNull(root, "主人公の根がある。");
             root.transform.position = new Vector3(spot.x, root.transform.position.y, spot.z);
@@ -1089,6 +1194,12 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsTrue(gate.IsWired, "出入口に主人公の根が配線されている。");
             Assert.IsTrue(gate.PlayerInside, "範囲内に居る。");
         }
+
+        /// <summary>接続軸と直交する向きのずらし（東西なら Z、南北なら X）。</summary>
+        private Vector3 AcrossOffset(float across) =>
+            _route.Forward == Key.D || _route.Forward == Key.A
+                ? new Vector3(0f, 0f, across)
+                : new Vector3(across, 0f, 0f);
 
         private static AreaExitGate FindExitGate(StableId exitId)
         {

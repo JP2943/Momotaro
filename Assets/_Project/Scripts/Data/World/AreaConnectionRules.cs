@@ -99,6 +99,15 @@ namespace Momotaro.Data.World
             {
                 error(who + " の PreloadDistance が 0 以下です。");
             }
+
+            // <b>Slide は通路幅が要る</b>（§7.1 改定。工程 P55-14d）。
+            // 0 だと帯が消えて、接続軸からわずかに外れた進入でも遷移が成立しなくなる——
+            // 「通路の端を歩いてきたら隣へ行けない」という形で出る。
+            if (c.Style == AreaTransitionStyle.Slide && c.CorridorWidth <= 0f)
+            {
+                error(who + " は Slide ですが CorridorWidth が 0 以下です（"
+                    + c.CorridorWidth.ToString("0.###") + "）。カメラの許容帯が決まりません（§7.1）。");
+            }
         }
 
         /// <summary>
@@ -164,5 +173,69 @@ namespace Momotaro.Data.World
 
         /// <summary>SlideDuration の上限。</summary>
         public const float MaxAllowedDuration = AreaConnectionDefinition.MaxSlideDuration;
+
+        // ---------------------------------------------------------------- スライドの帯（§7.1 改定）
+
+        /// <summary>
+        /// <b>浮動小数点の誤差許容</b>（工程 P55-14d。GPT 裁定 (a)）。
+        ///
+        /// <b>仕様として許可する幅とは別物である。</b> ここは「同じ値を別の経路で計算したときの
+        /// 端数」だけを飲み込む。許可する幅を大きくしたいときにこの値を触ると、
+        /// <b>配置ミスまで通る</b>ようになる——到着位置が接続軸から外れている配置は、
+        /// この誤差許容で不合格にならなければならない。
+        /// </summary>
+        public const float AxisEpsilon = 0.05f;
+
+        /// <summary>
+        /// スライドが<b>接続方向へ動いたと言える最小の距離</b>（§7.1）。
+        ///
+        /// これを下回る配置は「スライドする意味が無い」——
+        /// 斜め成分を許可したあとは、<b>軸方向へ動いていることを別に見る</b>必要がある。
+        /// 許可した帯の中で横へ動くだけの配置を、帯の検査だけでは捕まえられない。
+        /// </summary>
+        public const float MinAlongMovement = 0.5f;
+
+        /// <summary>
+        /// <b>接続軸の外へ動いてよい片側の幅</b>（§7.1 改定。工程 P55-14d）。
+        ///
+        /// <b>通路の幅の半分。</b> 出口判定が成立する範囲は通路の中なので、
+        /// 連続追従しているカメラの基準位置も通路の中にある。
+        /// 通路が広い接続ほど帯は広くなり、狭い接続では狭くなる——
+        /// <b>固定の許容値ではなく、その接続の Data から求める。</b>
+        ///
+        /// <b>主人公の通行可能範囲とは別物である。</b> 主人公は Collider の半径ぶん内側しか
+        /// 通れないので、実際に現れる軸外成分はこの帯より狭い。
+        /// ここは「これより外は配置がおかしい」という上限を与える。
+        /// </summary>
+        public static float SlideAcrossHalfWidth(float corridorWidth)
+        {
+            double w = corridorWidth > 0.0 ? corridorWidth : 0.0;
+            return (float)(w * 0.5);
+        }
+
+        /// <summary>
+        /// その軸外成分が帯の内側か（<see cref="SlideAcrossHalfWidth"/> ＋ <see cref="AxisEpsilon"/>）。
+        /// </summary>
+        /// <param name="acrossOffset">接続軸からの軸外成分（符号つき）。</param>
+        /// <param name="corridorWidth">その接続の通路幅。</param>
+        public static bool IsWithinSlideBand(float acrossOffset, float corridorWidth)
+        {
+            float allowed = SlideAcrossHalfWidth(corridorWidth) + AxisEpsilon;
+            return (float)System.Math.Abs(acrossOffset) <= allowed;
+        }
+
+        /// <summary>接続方向へ動いたと言えるか（<see cref="MinAlongMovement"/> 以上）。</summary>
+        public static bool MovesAlongConnection(float alongDelta)
+        {
+            return (float)System.Math.Abs(alongDelta) >= MinAlongMovement;
+        }
+
+        /// <summary>帯の説明（失敗メッセージへ埋める）。</summary>
+        public static string DescribeSlideBand(float corridorWidth)
+        {
+            return "通路幅 " + corridorWidth.ToString("0.###")
+                   + " → 許される軸外成分 ±" + SlideAcrossHalfWidth(corridorWidth).ToString("0.###")
+                   + "（誤差許容 " + AxisEpsilon.ToString("0.###") + " は別枠）";
+        }
     }
 }

@@ -811,6 +811,375 @@ namespace Momotaro.Tests.PlayMode
             yield return WaitUntilFreeToTravel();
         }
 
+        // ================================================================ エリア内は連続追従（工程 P55-14d）
+
+        /// <summary>
+        /// <b>同一 Area 内では、どこを通ってもカメラの基準位置が切り替わらない</b>
+        /// （裁定：同一エリア内は連続追従、エリア間だけスライド。工程 P55-14d。試遊報告②）。
+        ///
+        /// <b>試遊で報告された振る舞い。</b> 以前は A 内に「西の大部屋」「東の通路」「継ぎ目」の
+        /// 3 領域が重なっていて、跨ぐたびに 0.15 秒の補間が走った。
+        /// 門（x=9）と仕切りの抜け口（x=6）が、ちょうど西／東の境目のすぐ内側にあるので、
+        /// 「門を開けてから通過すると画面スライドが発生する」ように見えていた。
+        ///
+        /// <b>旧領域の境目・門・出口への接近を、実キーで全部通る。</b> そのあいだ
+        /// 領域の切替が 0 回で、補間も一度も始まらないことを<b>毎フレーム</b>見る。
+        ///
+        /// <b>「切り替わらない」だけでは足りない。</b> 追従が止まっていても切替は 0 回になる。
+        /// だから<b>基準位置が主人公にぴたりと付いている</b>ことも見る——
+        /// 領域をエリア全体＋半画面へ広げたので、clamp はエリア内では効かない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WalkingAcrossTheOldRoomBoundariesAndTheGate_TheCameraFollowsContinuously()
+        {
+            _route = RouteOf("EastWest");
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaCameraRigHost host = AreaCameraRigHost.Instance;
+            Assert.IsNotNull(host, "常駐 Rig が立っている。");
+            Assert.IsFalse(host.Rig.Blend.IsBlending, "前提：補間は走っていない。");
+
+            int changesBefore = host.Rig.Blend.RegionChangeCount;
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, "主人公が居る。");
+
+            // 毎フレームの見張りを仕掛ける（歩行の補助はフレームを進めるだけなので、
+            // ここで Coroutine を別に回して見る）。
+            var watcher = new CameraFollowWatcher(host, player, changesBefore);
+            _cameraWatcher = watcher;
+
+            try
+            {
+                // ---- 旧「西の大部屋」→ レバー ----
+                var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+                Assert.IsNotNull(lever, "レバーがある。");
+                yield return WalkTo(lever.InteractionAnchor, 1.1f, 25f, "開始点 → レバー");
+                yield return PressKeyUntil(Key.E, () => lever.OpenedCount >= 1, 6f);
+                Assert.AreEqual(1, lever.OpenedCount, "門を開通させた。");
+
+                // ---- 旧「西／東」の境目（仕切りの抜け口）→ 門 → 出口の手前 ----
+                AreaExitGate exit = FindExitGate(_route.ExitFromA);
+                foreach (Vector3 waypoint in WaypointsAroundDivider(
+                             player.transform.position, exit.transform.position))
+                {
+                    yield return WalkTo(waypoint, 1.4f, 25f, "旧領域の境目を越える");
+                }
+
+                AreaTransitionService transitions = Transitions();
+                yield return WalkToUntil(exit.transform.position, 1.6f, 30f, "門をくぐって出口へ",
+                    () => transitions.SlideCommittedCount > 0);
+            }
+            finally
+            {
+                _cameraWatcher = null;
+            }
+
+            Assert.AreEqual(changesBefore, host.Rig.Blend.RegionChangeCount,
+                "<b>領域の切替が一度も起きていない</b>（" + host.Rig.Blend.RegionChangeCount
+                + " / 開始時 " + changesBefore + "）。門の通過・旧部屋境界・出口への接近では"
+                + "カメラの補間演出を始めない（裁定）。");
+            Assert.AreEqual(0, watcher.BlendFrames,
+                "補間が走ったフレームが 1 つも無い（" + watcher.BlendFrames + " フレーム）。");
+            Assert.Greater(watcher.Frames, 60, "十分な数のフレームを見ている（" + watcher.Frames + "）。");
+            Assert.Less(watcher.WorstLag, 0.05f,
+                "<b>エリア内では clamp が基準位置を寄せない</b>（最悪の寄せ " + watcher.WorstLag
+                + " m・場所 " + watcher.WorstLagAt + "）。寄せているなら領域が狭い。");
+            Assert.Greater(watcher.FocusTravel, 5f,
+                "<b>基準位置は実際に動いている</b>（最大 " + watcher.FocusTravel
+                + " m）。動いていないなら追従そのものが止まっている。");
+        }
+
+        /// <summary>
+        /// <b>追従領域は「エリア全体＋見える範囲の半分」で、背景がその外側を覆う</b>
+        /// （裁定の注意点 2。工程 P55-14d）。
+        ///
+        /// 領域をエリアと同じにすると <c>ClampFocus</c> が端でカメラを止める（＝追従が切れる）。
+        /// 四方へ半画面ぶん広げると clamp が効かなくなる代わりに、
+        /// <b>エリアの外が画面に入る</b>——そこは背景の補完（付録 C.33）が覆う。
+        ///
+        /// <b>拡張量は画面比・正射影サイズ・俯角から求める</b>（定数で信じない）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheFollowRegion_LetsTheClampGoAndTheBackdropCoversTheOutside()
+        {
+            _route = RouteOf("EastWest");
+            yield return EnterArea(_route.AreaAScene);
+
+            var set = Object.FindFirstObjectByType<AreaCameraRegionSet>();
+            Assert.IsNotNull(set, "カメラ領域集合がある。");
+            Assert.IsNotNull(set.DefaultRegion, "既定領域がある。");
+            Assert.AreEqual(0, set.Regions.Count,
+                "<b>重ねる領域は 1 つも無い</b>（" + set.Regions.Count + " 個）。"
+                + "継ぎ目領域も置かない（裁定の注意点 1）。");
+
+            CameraRegionDefinition region = set.DefaultRegion.Definition;
+            AreaCameraRigHost host = AreaCameraRigHost.Instance;
+            Assert.IsTrue(host.Rig.TryGetHalfFootprint(out Vector2 half),
+                "見える範囲の半分を求められる。");
+
+            // エリアの広さは床の当たりから採る（決め打ちの定数を書かない）。
+            Bounds floor = default;
+            bool foundFloor = false;
+            foreach (Collider c in Object.FindObjectsByType<Collider>(FindObjectsSortMode.None))
+            {
+                if (c != null && c.gameObject.name == "Floor")
+                {
+                    floor = c.bounds;
+                    foundFloor = true;
+                    break;
+                }
+            }
+
+            Assert.IsTrue(foundFloor, "床が見つかる（広さの正本）。");
+
+            // <b>clamp が効かない</b>＝領域の内側の許容範囲が、エリアと同じか広い。
+            float lowX = region.Min.x + half.x;
+            float highX = region.Max.x - half.x;
+            float lowZ = region.Min.y + half.y;
+            float highZ = region.Max.y - half.y;
+
+            Assert.LessOrEqual(lowX, floor.min.x + 0.01f,
+                "西端でも clamp が効かない（許容 " + lowX + " ≤ 床 " + floor.min.x + "）。");
+            Assert.GreaterOrEqual(highX, floor.max.x - 0.01f,
+                "東端でも clamp が効かない（許容 " + highX + " ≥ 床 " + floor.max.x + "）。");
+            Assert.LessOrEqual(lowZ, floor.min.z + 0.01f, "南端でも効かない。");
+            Assert.GreaterOrEqual(highZ, floor.max.z - 0.01f, "北端でも効かない。");
+
+            // <b>背景がその外側を覆う。</b> 背景の当たりは持たないので、Renderer の範囲で見る。
+            Bounds backdrop = default;
+            bool foundBackdrop = false;
+            foreach (Renderer r in Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+            {
+                if (r != null && r.gameObject.name == "Backdrop")
+                {
+                    backdrop = r.bounds;
+                    foundBackdrop = true;
+                    break;
+                }
+            }
+
+            Assert.IsTrue(foundBackdrop, "背景面がある（付録 C.33）。");
+            Assert.LessOrEqual(backdrop.min.x, floor.min.x - half.x,
+                "背景が西へ半画面ぶん以上はみ出している（背景 " + backdrop.min.x
+                + " ≤ 床 " + floor.min.x + " − " + half.x + "）。カメラが端へ寄っても虚空が出ない。");
+            Assert.GreaterOrEqual(backdrop.max.x, floor.max.x + half.x, "東も同じ。");
+            Assert.LessOrEqual(backdrop.min.z, floor.min.z - half.y, "南も同じ（奥行は俯角で伸びる）。");
+            Assert.GreaterOrEqual(backdrop.max.z, floor.max.z + half.y, "北も同じ。");
+        }
+
+        /// <summary>毎フレーム、追従のずれと補間の有無を見る（工程 P55-14d）。</summary>
+        private sealed class CameraFollowWatcher
+        {
+            private readonly AreaCameraRigHost _host;
+            private readonly PlayerRoot _player;
+
+            internal CameraFollowWatcher(AreaCameraRigHost host, PlayerRoot player, int changesBefore)
+            {
+                _host = host;
+                _player = player;
+                ChangesBefore = changesBefore;
+                _startedFocus = host != null ? host.Rig.Blend.Current : Vector3.zero;
+            }
+
+            internal int ChangesBefore { get; }
+
+            internal int Frames { get; private set; }
+
+            internal int BlendFrames { get; private set; }
+
+            internal float WorstLag { get; private set; }
+
+            internal Vector3 WorstLagAt { get; private set; }
+
+            /// <summary>基準位置が実際に動いた最大距離（追従が止まっていないこと）。</summary>
+            internal float FocusTravel { get; private set; }
+
+            private readonly Vector3 _startedFocus;
+
+            internal void Observe()
+            {
+                if (_host == null || _player == null)
+                {
+                    return;
+                }
+
+                Frames++;
+                if (_host.Rig.Blend.IsBlending)
+                {
+                    BlendFrames++;
+                }
+
+                Vector3 at = _player.transform.position;
+
+                // <b>clamp が効いていないことは純粋計算で見る。</b>
+                //
+                // 基準位置と主人公の現在位置を直接くらべると、<b>1 フレームぶんの順序差</b>が
+                // 混ざる（カメラが読むのは主人公が動く前の位置なので、速度 × dt だけ遅れる）。
+                // 実際それで 0.52 m のずれが出て、clamp と見分けが付かなかった。
+                //
+                // 見たいのは「エリア内では clamp が寄せない」ことなので、
+                // <c>ClampFocus</c> に主人公の位置を通して<b>寄せられないこと</b>を見る。
+                // 実行時と同じ純粋関数なので、別の期待値を作らない。
+                if (_host.Rig.TryGetHalfFootprint(out Vector2 half)
+                    && _host.Rig.TryComputeFocus(out Vector3 wanted))
+                {
+                    float pull = Vector2.Distance(
+                        new Vector2(wanted.x, wanted.z), new Vector2(at.x, at.z));
+                    if (pull > WorstLag)
+                    {
+                        WorstLag = pull;
+                        WorstLagAt = at;
+                    }
+                }
+
+                Vector3 focus = _host.Rig.Blend.Current;
+                float moved = Vector2.Distance(
+                    new Vector2(focus.x, focus.z), new Vector2(_startedFocus.x, _startedFocus.z));
+                if (moved > FocusTravel)
+                {
+                    FocusTravel = moved;
+                }
+            }
+        }
+
+        private CameraFollowWatcher _cameraWatcher;
+
+        // ================================================================ 実ステップ回避（14b の補完）
+
+        /// <summary>
+        /// <b>実際のステップ回避で接続口へ突っ込んでも、未遷移のまま境界の外へ出ない</b>
+        /// （試遊報告①「ダッシュ等で『B へ』のオブジェクトを踏まずに通過する」。
+        /// 工程 P55-14d で 14b を補完。GPT 指摘）。
+        ///
+        /// <b>14b の検査は歩行と斜め移動しか作っていなかった。</b> 報告された現象は
+        /// <b>ステップ回避</b>——1 回で約 3m を短い時間で移動するので、
+        /// 出口 Trigger の中に居るフレーム数が歩行よりずっと少ない。
+        /// 「0.15 秒の入力が足りない」だけが原因なら、<b>止める物が無ければ通り抜ける</b>。
+        ///
+        /// <b>止めるのは見えない境界</b>（<see cref="AreaSeamBarrier"/>。付録 C.38）である。
+        /// ここでは正面（東）と斜め（北東・南東）から、<b>実キーの Space</b> で連続して
+        /// 突っ込み、毎フレーム「境界の外に居ない」ことを見る。
+        ///
+        /// <b>「遷移しない」を求めてはいない。</b> 突っ込んだ結果スライドが成立するのは正常で、
+        /// 許されないのは<b>遷移していないのに向こう側へ出ている</b>ことだけである。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator DodgingIntoTheSeam_NeverLeavesTheAreaUntransitioned()
+        {
+            _route = RouteOf("EastWest");
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, "主人公が居る。");
+
+            Assert.IsTrue(TryFindAreaRoot(_route.AreaAId, out AreaRoot areaRoot), "A の根を引ける。");
+            Assert.AreEqual(1, areaRoot.SeamBarriers.Count, "前提：接続口に境界がある。");
+            float outerX = areaRoot.SeamBarriers[0].Blocker.bounds.max.x;
+
+            AreaExitGate exit = FindExitGate(_route.ExitFromA);
+            Vector3 gateAt = exit.transform.position;
+
+            // <b>門を開けてから通路へ入る。</b> 開けないと通路へ辿り着けない（付録 C.39）。
+            var lever = Object.FindFirstObjectByType<AreaFlagLever>();
+            Assert.IsNotNull(lever, "レバーがある。");
+            yield return WalkTo(lever.InteractionAnchor, 1.1f, 25f, "開始点 → レバー");
+            yield return PressKeyUntil(Key.E, () => lever.OpenedCount >= 1, 6f);
+            Assert.AreEqual(1, lever.OpenedCount, "門を開通させた。");
+
+            foreach (Vector3 waypoint in WaypointsAroundDivider(player.transform.position, gateAt))
+            {
+                yield return WalkTo(waypoint, 1.4f, 25f, "仕切りの抜け口へ");
+            }
+
+            // 通路の手前・少し離れた位置から助走をつけて突っ込む。
+            Vector3 runUp = gateAt + new Vector3(-3.5f, 0f, 0f);
+            yield return WalkToUntil(runUp, 1.4f, 25f, "通路の手前へ",
+                () => transitions.SlideCommittedCount > 0);
+
+            // 正面・北東・南東。ステップは押した瞬間に消費されるので、押して離すを繰り返す。
+            Key[][] directions =
+            {
+                new[] { Key.D },
+                new[] { Key.D, Key.W },
+                new[] { Key.D, Key.S },
+            };
+
+            // <b>回避が実際に発動したことを見る。</b> Space を送っただけでは受入にならない——
+            // 入力が届いていない構成でも「境界を越えなかった」は成り立ってしまう。
+            var state = Object.FindFirstObjectByType<PlayerStateController>();
+            Assert.IsNotNull(state, "主人公の状態機がある。");
+
+            float worstX = player.transform.position.x;
+            float fastestStep = 0f;
+            int dodges = 0;
+            int steppingFrames = 0;
+            bool committed = transitions.SlideCommittedCount > 0;
+
+            for (int d = 0; d < directions.Length && !committed; d++)
+            {
+                for (int burst = 0; burst < 6 && !committed; burst++)
+                {
+                    var withStep = new System.Collections.Generic.List<Key>(directions[d])
+                        { Key.Space };
+
+                    // 押す（この 1 フレームで回避が始まる）。
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(withStep.ToArray()));
+                    yield return null;
+                    dodges++;
+
+                    // 回避が走っている間は向きだけ押し続ける（Space は離して次を溜めない）。
+                    Vector3 previous = player.transform.position;
+                    for (int i = 0; i < 30; i++)
+                    {
+                        InputSystem.QueueStateEvent(_keyboard, new KeyboardState(directions[d]));
+                        yield return null;
+
+                        if (state.IsStepping)
+                        {
+                            steppingFrames++;
+                        }
+
+                        Vector3 now = player.transform.position;
+                        fastestStep = Mathf.Max(fastestStep,
+                            Vector2.Distance(new Vector2(now.x, now.z),
+                                new Vector2(previous.x, previous.z)));
+                        previous = now;
+
+                        if (transitions.SlideCommittedCount > 0)
+                        {
+                            committed = true;
+                            break;
+                        }
+
+                        worstX = Mathf.Max(worstX, player.transform.position.x);
+                        Assert.Less(player.transform.position.x, outerX + 0.01f,
+                            "<b>回避で境界を越えた</b>（x=" + player.transform.position.x
+                            + " / 境界の外面 x=" + outerX + "・" + dodges + " 回目の回避・"
+                            + (d == 0 ? "正面" : d == 1 ? "北東" : "南東")
+                            + "）。試遊報告①の現象である。");
+                    }
+                }
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                yield return null;
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+
+            Assert.Greater(dodges, 0, "回避を実際に入力した（" + dodges + " 回）。");
+            Assert.Greater(steppingFrames, 0,
+                "<b>回避が実際に発動した</b>（Stepping だったフレーム " + steppingFrames
+                + "）。0 なら Space が届いていないので、この検査は何も見ていない。");
+            Assert.Greater(fastestStep, 0f,
+                "回避中に主人公が動いた（1 フレームの最大移動 " + fastestStep + " m）。");
+            Assert.IsTrue(committed || worstX < outerX + 0.01f,
+                "遷移が成立したか、Area 内で止まったかのどちらかである（遷移="
+                + transitions.SlideCommittedCount + " 最も進んだ x=" + worstX
+                + " / 境界の外面 x=" + outerX + "・回避 " + dodges + " 回）。");
+        }
+
         // ---------------------------------------------------------------- 歩く（座標を変えない）
 
         /// <summary>
@@ -881,6 +1250,7 @@ namespace Momotaro.Tests.PlayMode
                     ? new KeyboardState()
                     : keys.Count == 1 ? new KeyboardState(keys[0]) : new KeyboardState(keys[0], keys[1]));
                 yield return null;
+                _cameraWatcher?.Observe();
             }
 
             InputSystem.QueueStateEvent(_keyboard, new KeyboardState());

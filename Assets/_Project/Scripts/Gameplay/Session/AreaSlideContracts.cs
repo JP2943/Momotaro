@@ -210,6 +210,7 @@ namespace Momotaro.Gameplay.Session
             ReverseConnectionId = c.ReverseConnectionId;
             SlideDuration = c.SlideDuration;
             PreloadDistance = c.PreloadDistance;
+            CorridorWidth = c.CorridorWidth;
         }
 
         /// <summary>接続の安定 ID。</summary>
@@ -241,6 +242,16 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>先読みを始める距離。</summary>
         public float PreloadDistance { get; }
+
+        /// <summary>接続口（通路）の幅。カメラの許容帯の正本（§7.1）。</summary>
+        public float CorridorWidth { get; }
+
+        /// <summary>
+        /// この接続で<b>軸外へ動いてよい片側の幅</b>（§7.1 改定。工程 P55-14d）。
+        /// Runtime と Validator が<b>同じ定義</b>を使う（<see cref="AreaConnectionRules"/> が正本）。
+        /// </summary>
+        public float SlideAcrossHalfWidth =>
+            AreaConnectionRules.SlideAcrossHalfWidth(CorridorWidth);
 
         /// <summary>スライドで見せる接続か。</summary>
         public bool IsSlide => Style == AreaTransitionStyle.Slide;

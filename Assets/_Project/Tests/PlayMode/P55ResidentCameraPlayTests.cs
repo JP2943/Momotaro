@@ -257,19 +257,26 @@ namespace Momotaro.Tests.PlayMode
         // ---------------------------------------------------------------- 初回配置の時機（付録 A.10）
 
         /// <summary>
-        /// <b>保存位置と到着位置が別の領域にあっても、最初の描画で到着位置に居る</b>（付録 A.10）。
+        /// <b>保存位置と到着位置が大きく離れていても、最初の描画で到着位置に居る</b>（付録 A.10）。
         ///
         /// A の主人公は<b>既定入口（西の大部屋）</b>の位置で保存されている。そこへ
-        /// 「東の通路の入口へ着く」要求を入れて直開きすると、保存位置と到着位置が
-        /// <b>別のカメラ領域</b>になる——常駐 Rig が結び付けた瞬間に即時配置してしまうと、
-        /// 西を基準に置いたあと東へ移った主人公を追って<b>部屋を跨ぐ補間が始まる</b>。
+        /// 「東の通路の入口へ着く」要求を入れて直開きする——常駐 Rig が結び付けた瞬間に
+        /// 即時配置してしまうと、西を基準に置いたあと東へ移った主人公を追って
+        /// <b>部屋を跨ぐ補間が始まる</b>。
+        ///
+        /// <b>前提の言い方が変わった</b>（工程 P55-14d）。以前は「保存位置と到着位置が
+        /// <b>別のカメラ領域</b>にある」ことを前提にしていた——領域ごとに基準位置が変わるので、
+        /// それがいちばん確実に差を作る方法だった。
+        /// 裁定 1 で同一 Area 内の領域は 1 つになったので、いまは
+        /// <b>2 点が離れていること自体</b>を前提にする（clamp が効かないので、
+        /// 基準位置は位置そのものになり、離れていれば必ず違う値になる）。
         ///
         /// だから見るのは最後の 1 枚ではなく<b>最初の何フレームか全部</b>：
         /// その間 1 度も補間が走らず、即時配置は 1 回だけであること。
         /// 入口配置の前に置いてしまう実装では、ここで補間が立つ。
         /// </summary>
         [UnityTest]
-        public IEnumerator DirectOpen_PlacesTheCameraAtTheEntryEvenWhenTheSavedPositionIsInAnotherRegion()
+        public IEnumerator DirectOpen_PlacesTheCameraAtTheEntryEvenWhenTheSavedPositionIsFarAway()
         {
             AssertSceneRegistered(AreaAScene);
             yield return CreateBootstrap();
@@ -308,23 +315,34 @@ namespace Momotaro.Tests.PlayMode
             AreaInitializer initializer = FindInitializer();
             Assert.IsTrue(initializer.Initialized, "前提：初期化が成立している。理由=" + initializer.FailureReason);
 
-            // 前提：保存位置（既定入口）と到着位置（東の入口）が別の領域である。
-            // これが崩れていると、この検査は何も見ていない。
+            // 前提：保存位置（既定入口）と到着位置（東の入口）が<b>十分に離れている</b>。
+            // これが崩れていると、この検査は何も見ていない——
+            // 2 点が同じなら、どちらを基準に置いても同じ絵になる。
             Assert.IsTrue(AreaCameraRegionSetRegistry.TryGetSingle(out AreaCameraRegionSet set));
             AreaRoot areaRoot = Object.FindFirstObjectByType<AreaRoot>();
             Assert.IsNotNull(areaRoot);
             Vector3 savedSpot = EntryPosition(areaRoot, areaRoot.Definition.DefaultEntryId);
             Vector3 arrivalSpot = EntryPosition(areaRoot, AreaAFromB);
-            Assert.IsTrue(set.TryResolveRegion(savedSpot, out CameraRegionDefinition savedRegion));
+            float apart = Vector2.Distance(
+                new Vector2(savedSpot.x, savedSpot.z), new Vector2(arrivalSpot.x, arrivalSpot.z));
+            Assert.Greater(apart, 5f,
+                "前提：保存位置 " + savedSpot + " と到着位置 " + arrivalSpot
+                + " が離れている（" + apart + " m）。");
+
+            // <b>到着位置を基準に置いている</b>ことを、領域ではなく位置で言う。
             Assert.IsTrue(set.TryResolveRegion(arrivalSpot, out CameraRegionDefinition arrivalRegion));
-            Assert.AreNotEqual(savedRegion.RegionId.Value, arrivalRegion.RegionId.Value,
-                "前提：保存位置と到着位置は別のカメラ領域（" + savedRegion.RegionId.Value + "）。");
+            Assert.AreEqual(arrivalRegion.RegionId.Value, host.Rig.CurrentRegion.RegionId.Value,
+                "カメラが見ている領域は到着位置が属する領域。");
 
             PlayerRoot player = Object.FindFirstObjectByType<PlayerRoot>();
             Assert.IsNotNull(player, "主人公が居る。");
-            Assert.AreEqual(arrivalRegion.RegionId.Value, host.Rig.CurrentRegion.RegionId.Value,
-                "カメラが見ている領域は到着側（東の通路）。");
-            AssertPinnedToTarget(host.Rig, player.transform, "直開き（別領域の入口）");
+            float fromSaved = Vector2.Distance(
+                new Vector2(host.Rig.transform.position.x, host.Rig.transform.position.z),
+                new Vector2(savedSpot.x, savedSpot.z));
+            Assert.Greater(fromSaved, apart * 0.5f,
+                "<b>保存位置を基準に置いていない</b>（カメラ " + host.Rig.transform.position
+                + " は保存位置から " + fromSaved + " m・2 点の隔たりは " + apart + " m）。");
+            AssertPinnedToTarget(host.Rig, player.transform, "直開き（離れた入口）");
         }
 
         // ---------------------------------------------------------------- 移動先の到着点（付録 A.10）

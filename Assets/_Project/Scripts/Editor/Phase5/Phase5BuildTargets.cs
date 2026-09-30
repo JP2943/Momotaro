@@ -237,40 +237,6 @@ namespace Momotaro.Editor.Phase5
         /// </summary>
         public Phase5SeamAxis SeamAxis => AreaASeam.IsSet ? AreaASeam.Axis : Phase5SeamAxis.X;
 
-        /// <summary>
-        /// 接続境界の手前に置く<b>カメラ領域</b>の中心（Area ローカル）と大きさ（XZ）。
-        ///
-        /// <b>領域は接続軸・直交軸の<em>両方</em>で見える範囲より狭くする</b>（P5.5 §7.1）。
-        /// <c>ClampFocus</c> は領域の広がりが見える広がりより狭い軸を<b>領域の中央へ固定する</b>
-        /// （無理に clamp しない）。両軸を狭くすると、境界へ近づく間のカメラは
-        /// <b>1 点に止まる</b>——通路のどの端から入っても同じ位置から出発するので、
-        /// スライドは接続軸だけの移動になる。
-        ///
-        /// <b>「領域が画面より広いから中心へ寄る」は誤りである。</b> 広い領域では clamp の
-        /// 範囲内に収まるだけで、追従先の座標がそのまま残る——通路の端から入ると
-        /// 接続軸以外へも動く（GPT レビュー R14 の指摘 2）。
-        /// 見える半奥行は <c>orthographicSize / sin(俯角)</c>、半幅は <c>orthographicSize × 画面比</c>。
-        /// <b>この関係は定数で信じず検査で見る</b>——俯角や投影サイズを変えたら壊れる。
-        ///
-        /// 大きさが 0 の指定では置かない（P5 の構成）。
-        /// </summary>
-        public Vector3 SeamCameraRegionACenter { get; set; }
-
-        /// <summary>同・A 側の大きさ（幅 X, 奥行 Z）。どちらかが 0 なら置かない。</summary>
-        public Vector2 SeamCameraRegionASize { get; set; }
-
-        /// <summary>同・B 側の中心。</summary>
-        public Vector3 SeamCameraRegionBCenter { get; set; }
-
-        /// <summary>同・B 側の大きさ。</summary>
-        public Vector2 SeamCameraRegionBSize { get; set; }
-
-        /// <summary>境界寄せ領域の ID（A 側）。無効なら置かない。</summary>
-        public Core.Identification.StableId SeamCameraRegionAId { get; set; }
-
-        /// <summary>同・B 側。</summary>
-        public Core.Identification.StableId SeamCameraRegionBId { get; set; }
-
         // ---- 境界まわりの座標（Area ローカル。§3.2）----
         //
         // <b>Builder は境界まわりの座標を計算しない。</b> 以前は P5 のレイアウト定数を

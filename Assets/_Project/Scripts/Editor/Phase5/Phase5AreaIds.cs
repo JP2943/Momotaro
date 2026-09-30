@@ -106,12 +106,6 @@ namespace Momotaro.Editor.Phase5
         /// <summary>A の既定領域（どの部屋にも入らないときに使う。§11）。</summary>
         public static readonly StableId RegionADefault = new StableId("region_p5_a_default");
 
-        /// <summary>A の西の大部屋。</summary>
-        public static readonly StableId RegionAWest = new StableId("region_p5_a_west");
-
-        /// <summary>A の東の通路。横が入りきらないので中央固定になる（§11）。</summary>
-        public static readonly StableId RegionAEast = new StableId("region_p5_a_east");
-
         /// <summary>B の既定領域。</summary>
         public static readonly StableId RegionBDefault = new StableId("region_p5_b_default");
 

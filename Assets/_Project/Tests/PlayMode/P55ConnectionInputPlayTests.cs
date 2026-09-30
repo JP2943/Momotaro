@@ -227,23 +227,39 @@ namespace Momotaro.Tests.PlayMode
         // ---------------------------------------------------------------- カメラ軸（§7.1）
 
         /// <summary>
-        /// <b>通路の端から入っても、カメラは接続軸に乗ったまま</b>（§7.1。GPT レビュー R14 の指摘 2）。
+        /// <b>通路の端から入ると、カメラは主人公について接続軸の外へ出る。ただし帯の内側に留まる</b>
+        /// （§7.1 改定。工程 P55-14d。GPT 裁定 (a)）。
         ///
-        /// 出入口には幅がある。通路の中心（z=0）からしか入らない検査では、
-        /// 「たまたま両側が一致した」だけで通ってしまう——実際そうなっていた。
-        /// ここでは<b>端に寄って</b>入り、受理の瞬間まで実カメラの Z を毎フレーム見る。
+        /// <b>この検査は契約ごと書き換わった。</b> 以前は「近づく間ずっと軸に乗っている」を要求し、
+        /// それは<b>継ぎ目領域がカメラを軸へピン留めしていた</b>から成り立っていた。
+        /// 裁定 1 で同一 Area 内の領域を 1 つにしたので、
+        /// エリア内のカメラは<b>主人公へ連続追従する</b>——通路の端から入れば軸から外れる。
         ///
-        /// <b>受理の直前に Snap して帳尻を合わせていない</b>ことも、これで分かる。
-        /// 近づく間ずっと軸に乗っているなら、合わせているのは配置（境界寄せ領域）であって
-        /// 直前の強制配置ではない。
+        /// <b>「軸から外れてよい」だけでは受入にならない。</b> 見るのは 3 つ：
+        /// <list type="number">
+        /// <item><b>端から入っても遷移が成立する</b>。ここが試遊で壊れる場所である——
+        /// 軸外を許さない実装では、通路の端を歩いてきたプレイヤーは隣の Area へ行けない。</item>
+        /// <item>近づく間、カメラが<b>帯（通路の幅）の内側</b>に留まる。
+        /// 帯は接続 Data の <c>CorridorWidth</c> から求め、<b>実行時・Scene 検査と同じ関数</b>を通す。</item>
+        /// <item><b>実際に軸外へ出ている</b>（誤差許容より大きい）。
+        /// これを書かないと、こっそり軸へピン留めし直した実装でも緑になる——
+        /// 「連続追従している」ことを、この検査自身が言えなくなる。</item>
+        /// </list>
+        ///
+        /// 到着後は入口が軸上なので、カメラは軸へ戻る（裁定 5：到着位置は入口のまま）。
         /// </summary>
         [UnityTest]
-        public IEnumerator EnteringTheSeamOffCentre_KeepsTheCameraOnTheConnectionAxis(
+        public IEnumerator EnteringTheSeamOffCentre_KeepsTheCameraInsideTheConnectionBand(
             [Values(1f, -1f)] float offsetZ)
         {
             yield return EnterArea(P55AreaAScene);
 
             AreaTransitionService transitions = Transitions();
+            float corridorWidth = CorridorWidthOf(transitions, ConnectionAToB);
+            float band = AreaConnectionRules.SlideAcrossHalfWidth(corridorWidth);
+            Assert.Greater(band, 0f,
+                "前提：接続 Data が通路幅を持っている（幅=" + corridorWidth + "）。");
+
             AreaExitGate gate = FindExitGate(ExitAEast);
             yield return StandJustBefore(gate, Vector3.left, offsetZ);
 
@@ -264,17 +280,91 @@ namespace Momotaro.Tests.PlayMode
             yield return null;
 
             Assert.AreEqual(1, transitions.ConnectionTravelCount,
-                "通路の端から入っても受理される（進入位置 z ずらし=" + offsetZ + "）。");
-            Assert.Less(worst, 0.1f,
-                "近づく間ずっとカメラが接続軸に乗っている（最大のずれ=" + worst
-                + "。東西の接続で Z へ動かない。§7.1）。");
+                "<b>通路の端から入っても受理される</b>（進入位置 z ずらし=" + offsetZ
+                + "）。軸外を許さない実装では、ここで受理されない。失敗="
+                + transitions.Slide.LastFailure);
+            Assert.LessOrEqual(worst, band + AreaConnectionRules.AxisEpsilon,
+                "<b>カメラが帯の内側に留まっている</b>（最大のずれ=" + worst + "／"
+                + AreaConnectionRules.DescribeSlideBand(corridorWidth) + "）。§7.1 改定。");
+            Assert.Greater(worst, AreaConnectionRules.AxisEpsilon,
+                "<b>実際に軸外へ出ている</b>（最大のずれ=" + worst
+                + "／誤差許容 " + AreaConnectionRules.AxisEpsilon
+                + "）。出ていないなら、どこかがカメラを軸へ留めている——"
+                + "エリア内の連続追従（裁定 1）が効いていない。");
 
             yield return WaitForArrival(transitions, 1);
             yield return null;
 
             AreaCameraRig arrived = AreaCameraRigHost.Instance.Rig;
             Assert.Less(Mathf.Abs(arrived.transform.position.z - SeamAxisZ), 0.1f,
-                "到着後も接続軸の上に居る（z=" + arrived.transform.position.z + "）。");
+                "到着後は接続軸の上に居る（z=" + arrived.transform.position.z
+                + "）。到着位置は入口のままなので（裁定 5）。");
+        }
+
+        /// <summary>
+        /// <b>通路の中央・両端のどこから入っても、スライドは帯の内側で成立する</b>
+        /// （§7.1 改定。工程 P55-14d。GPT 受入表の 1 行目）。
+        ///
+        /// 上の検査が「近づく間のカメラ」を見るのに対し、こちらは
+        /// <b>スライドそのものの始点・終点</b>を見る——実行時の帯の検査が通っていること、
+        /// 軸方向へちゃんと動いていること、軸外成分が帯に収まっていることを、実測値で言う。
+        ///
+        /// <b>値を assert のメッセージへ埋める。</b> スライドの斜めがどれだけかは
+        /// 再試遊の判断材料になるので、失敗したときに数が読めるようにしておく。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FromTheCorridorCentreAndEdges_TheSlideStaysInsideTheBand(
+            [Values(0f, 1.5f, -1.5f)] float offsetZ)
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            float corridorWidth = CorridorWidthOf(transitions, ConnectionAToB);
+            float band = AreaConnectionRules.SlideAcrossHalfWidth(corridorWidth);
+
+            AreaExitGate gate = FindExitGate(ExitAEast);
+            yield return StandJustBefore(gate, Vector3.left, offsetZ);
+            yield return SettleCamera();
+
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 12f);
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "<b>スライドが成立した</b>（進入 z ずらし=" + offsetZ + "）。失敗="
+                + transitions.Slide.LastFailure);
+            Assert.AreEqual(0, transitions.Slide.RolledBackCount,
+                "戻していない（帯の検査で弾かれていない）。失敗=" + transitions.Slide.LastFailure);
+
+            Vector3 from = transitions.Slide.LastSlideFrom;
+            Vector3 to = transitions.Slide.LastSlideTo;
+            float along = Mathf.Abs(to.x - from.x);
+            float acrossFrom = Mathf.Abs(from.z - SeamAxisZ);
+            float acrossTo = Mathf.Abs(to.z - SeamAxisZ);
+
+            Assert.LessOrEqual(acrossFrom, band + AreaConnectionRules.AxisEpsilon,
+                "<b>始点が帯の内側</b>（軸外 " + acrossFrom + "／"
+                + AreaConnectionRules.DescribeSlideBand(corridorWidth)
+                + "）。始点=" + from + " 終点=" + to + "。");
+            Assert.LessOrEqual(acrossTo, AreaConnectionRules.AxisEpsilon,
+                "<b>終点は接続軸の上</b>（軸外 " + acrossTo + "／誤差許容 "
+                + AreaConnectionRules.AxisEpsilon + "）。到着位置は入口のまま（裁定 5）。"
+                + " 始点=" + from + " 終点=" + to + "。");
+            Assert.GreaterOrEqual(along, AreaConnectionRules.MinAlongMovement,
+                "<b>接続方向へ動いている</b>（x の移動 " + along + "／最低 "
+                + AreaConnectionRules.MinAlongMovement + "）。始点=" + from + " 終点=" + to + "。");
+        }
+
+        /// <summary>
+        /// その接続の通路幅（カメラの帯の正本。§7.1）。
+        ///
+        /// <b>受理側と同じ台帳から引く。</b> Data の Asset を直接読むと、
+        /// 実行時が見ている値と別のものを期待値にしてしまう。
+        /// </summary>
+        private static float CorridorWidthOf(AreaTransitionService transitions, StableId connectionId)
+        {
+            Assert.IsNotNull(transitions.Connections, "接続の台帳が差さっている。");
+            Assert.IsTrue(transitions.Connections.TryGet(connectionId, out AreaConnectionSnapshot c),
+                "接続 '" + connectionId.Value + "' が台帳にあります。");
+            return c.CorridorWidth;
         }
 
         /// <summary>置き直した直後の補間を終わらせる（配置の検査に補間の残りを混ぜない）。</summary>

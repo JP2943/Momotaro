@@ -3433,9 +3433,25 @@ namespace Momotaro.Tests.PlayMode
             AssertFocusIsClamped(rig, playerRoot.transform.position, "到着");
             Assert.GreaterOrEqual(rig.SnapCount, 1, "到着で即時配置している。");
 
+            // ---- 領域はエリアにつき 1 つ。エリア内では clamp が効かない ----
+            //
+            // <b>P5 の契約が置換された</b>（工程 P55-14d。P5.5 §7.1 改定／付録 C.40・C.36）。
+            // 旧契約は「部屋ごとに領域を置き、端では領域に収める（外＝仮背景を見せない）」だった。
+            // 背景の補完（P5.5 付録 C.33）が入ってエリアの外は覆われるようになり、
+            // 裁定 1 が「同一 Area 内は主人公へ連続追従する」と定めたので、
+            // 領域は<b>エリア全体＋見える範囲の半分</b>の 1 つになった——
+            // clamp の有効範囲がエリアを覆うので、エリア内のどこでも基準位置は主人公の位置そのものになる。
             Vector2 half = rig.HalfFootprint();
-            Assert.Greater(9f, half.y, "前提：奥行きは部屋（半分 9m）より見える範囲が狭い＝追従する軸。");
-            Assert.Greater(half.x, 3f, "前提：東の通路（半分 3m）は横が入りきらない＝中央固定になる軸。");
+            Assert.Greater(9f, half.y, "前提：奥行きは部屋（半分 9m）より見える範囲が狭い。");
+            Assert.Greater(half.x, 3f,
+                "前提：見える横幅の半分（" + half.x + "）は東の通路の半分（3m）より広い。"
+                + " 旧契約ではここが「中央固定になる軸」の根拠だった。");
+
+            var regionSet = Object.FindFirstObjectByType<AreaCameraRegionSet>();
+            Assert.IsNotNull(regionSet, "カメラ領域集合がある。");
+            Assert.AreEqual(0, regionSet.Regions.Count,
+                "<b>重ねる領域は 1 つも無い</b>（" + regionSet.Regions.Count
+                + " 個）。部屋ごとの領域は置かない（裁定 1）。");
 
             // 範囲の内側なら主人公の位置そのもの。
             yield return MovePlayerTo(new Vector3(-1f, 0f, 2f));
@@ -3444,55 +3460,68 @@ namespace Momotaro.Tests.PlayMode
                 "範囲の内側では主人公をそのまま追う。z=" + rig.transform.position.z);
             AssertFocusIsClamped(rig, playerRoot.transform.position, "西の部屋・中央");
 
-            // 端では領域に収める（外＝仮背景を見せない）。
+            // <b>端でも主人公の位置そのもの</b>（旧契約：ここで止まっていた）。
             yield return MovePlayerTo(new Vector3(-1f, 0f, -7f));
             rig.Tick(1f);
             float southZ = rig.transform.position.z;
-            Assert.Greater(southZ, -7f + 1f, "南の端は領域に収める（主人公より手前で止まる）。z=" + southZ);
+            Assert.AreEqual(-7f, southZ, 0.02f,
+                "<b>南の端でも clamp が効かない</b>（z=" + southZ
+                + "）。旧契約では主人公より手前（−6 より北）で止まっていた。"
+                + " 止まるなら領域が狭い＝エリア内で追従が切れる（裁定 1）。");
             AssertFocusIsClamped(rig, playerRoot.transform.position, "西の部屋・南");
 
             yield return MovePlayerTo(new Vector3(-1f, 0f, 7f));
             rig.Tick(1f);
             float northZ = rig.transform.position.z;
+            Assert.AreEqual(7f, northZ, 0.02f,
+                "北の端でも主人公の位置そのもの（z=" + northZ + "）。");
             Assert.Greater(northZ, southZ + 1f,
-                "入りきる軸は主人公を追う（止まったままにしない）。南=" + southZ + " 北=" + northZ);
+                "南北で違う位置になっている（南=" + southZ + " 北=" + northZ + "）。");
             AssertFocusIsClamped(rig, playerRoot.transform.position, "西の部屋・北");
 
-            // ---- 領域移動：切替は補間し、<b>途中のフレームも範囲内</b>（§11）----
+            // ---- 旧「部屋」を跨いでも、切替も補間も起きない（裁定 1。工程 P55-14d）----
             //
-            // 補間の途中を見る区間だけ切替時間を延ばす。実フレームの間隔は編集器の負荷で変わり、
-            // 0.15 秒の補間が 1 フレームで終わってしまうと「途中」が存在しなくなる。
+            // <b>ここも P5 の契約が置換された。</b> 旧契約は
+            // 「領域移動：切替は補間し、途中のフレームも範囲内」だった——
+            // 部屋ごとに領域があったので、仕切り（x=6）を跨ぐたびに 0.15 秒の補間が走っていた。
+            // 試遊で「エリア内での移動において画面が切り替わる場所が複数存在する」として
+            // 報告されたのがこれである。裁定 1 は<b>エリア内では補間演出を始めない</b>と定めた。
             var context = Object.FindFirstObjectByType<AreaContext>();
             Assert.IsNotNull(context);
-            SetPrivate(rig, "_blendSeconds", 2f);
 
             try
             {
-                Assert.AreEqual("region_p5_a_west", rig.CurrentRegion.RegionId.Value, "いまは西の大部屋。");
+                string regionBefore = rig.CurrentRegion.RegionId.Value;
                 int changesBefore = rig.Blend.RegionChangeCount;
 
+                // 旧「西の大部屋」→ 旧「東の通路」。仕切りの向こうへ移る。
                 yield return MovePlayerTo(new Vector3(9f, 0f, -6f));
                 rig.Tick(0.001f);
-                Assert.AreEqual("region_p5_a_east", rig.CurrentRegion.RegionId.Value, "東の通路へ移る。");
-                Assert.AreEqual(changesBefore + 1, rig.Blend.RegionChangeCount, "切替を 1 回数える。");
-                Assert.IsTrue(rig.Blend.IsBlending, "部屋の切替は補間する（§11）。");
+                Assert.AreEqual(regionBefore, rig.CurrentRegion.RegionId.Value,
+                    "<b>領域は同じまま</b>（" + rig.CurrentRegion.RegionId.Value
+                    + "）。旧契約ではここで region_p5_a_east へ移っていた。");
+                Assert.AreEqual(changesBefore, rig.Blend.RegionChangeCount,
+                    "<b>切替を数えていない</b>（" + rig.Blend.RegionChangeCount + "）。");
+                Assert.IsFalse(rig.Blend.IsBlending,
+                    "<b>補間が始まっていない</b>（裁定 1：門の通過・旧部屋境界では補間演出を始めない）。");
 
+                // 何フレーム進めても補間は立たない。
                 for (int i = 0; i < 20; i++)
                 {
                     rig.Tick(0.02f);
-
-                    // 補間の途中は「前の部屋の端」と「今の部屋の端」の間に居る。
-                    // 追従先と一致はしないが、<b>いまの領域の有効範囲からは出ない</b>（§11）。
-                    AssertFocusInsideRegion(rig, "補間の途中 " + i);
+                    Assert.IsFalse(rig.Blend.IsBlending, "補間は一度も立たない。i=" + i);
+                    AssertFocusIsClamped(rig, playerRoot.transform.position, "旧境界の向こう " + i);
                 }
 
-                Assert.IsTrue(rig.Blend.IsBlending, "前提：まだ補間の途中（途中が存在している）。");
-
-                rig.Tick(5f);
-                Assert.IsFalse(rig.Blend.IsBlending, "補間は終わる。");
-                Assert.AreEqual(9f, rig.transform.position.x, 0.02f,
-                    "入りきらない軸は中央固定（東の通路の中心 x=9）。x=" + rig.transform.position.x);
-                AssertFocusIsClamped(rig, playerRoot.transform.position, "東の通路");
+                // <b>旧「東の通路」でも中央固定にならない</b>（主人公の位置そのもの）。
+                // 通路の中心（x=9）ではない位置へ動かして見る——中心に立たせると、
+                // 旧契約の「中央固定」と同じ値になってしまい、どちらなのか言えない。
+                yield return MovePlayerTo(new Vector3(7f, 0f, -6f));
+                rig.Tick(1f);
+                Assert.AreEqual(7f, rig.transform.position.x, 0.02f,
+                    "<b>旧通路でも主人公の位置そのもの</b>（x=" + rig.transform.position.x
+                    + "）。旧契約では通路の中心 x=9 へ固定されていた。");
+                AssertFocusIsClamped(rig, playerRoot.transform.position, "旧通路");
 
                 // ---- 準備完了の報告では<b>実カメラへ触らない</b>（P5.5 付録 A.3／§7.1）----
                 //
@@ -3504,7 +3533,11 @@ namespace Momotaro.Tests.PlayMode
                 // <b>活動 Area が入れ替わったとき</b>に常駐 Rig が行う（下の B 到着で見る）。
                 yield return MovePlayerTo(new Vector3(-1f, 0f, 2f));
                 rig.Tick(0.001f);
-                Assert.IsTrue(rig.Blend.IsBlending, "前提：部屋を跨いだので補間が始まっている。");
+
+                // <b>「補間の最中に」という前提は置けなくなった</b>（裁定 1。工程 P55-14d）。
+                // エリア内では補間が走らないので、代わりに<b>補間が走っていないこと</b>を前提にする。
+                // 見たいのは「準備完了で実カメラへ触らない」ことなので、前提はどちらでも成り立つ。
+                Assert.IsFalse(rig.Blend.IsBlending, "前提：エリア内なので補間は走っていない。");
 
                 int snapsBefore = rig.SnapCount;
                 int appliesBefore = host.ApplyCount;
@@ -3522,6 +3555,7 @@ namespace Momotaro.Tests.PlayMode
             }
             finally
             {
+                // 切替時間はもう触らない（エリア内では補間が走らないので延ばす意味が無い）。
                 SetPrivate(rig, "_blendSeconds", CameraFocusBlend.DefaultBlendSeconds);
             }
 

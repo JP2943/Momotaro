@@ -74,6 +74,9 @@ namespace Momotaro.Data.World
         [Tooltip("先読みを始める出入口からの XZ 距離（world units）。初期値 6。")]
         [SerializeField] private float _preloadDistance = DefaultPreloadDistance;
 
+        [Tooltip("接続口（通路）の幅。スライドが接続軸の外へ動いてよい帯をここから求める。初期値 4。")]
+        [SerializeField] private float _corridorWidth = DefaultCorridorWidth;
+
         /// <summary>スライドの既定所要秒（§3.1）。</summary>
         public const float DefaultSlideDuration = 0.45f;
 
@@ -85,6 +88,18 @@ namespace Momotaro.Data.World
 
         /// <summary>先読み距離の既定（§3.1）。</summary>
         public const float DefaultPreloadDistance = 6f;
+
+        /// <summary>
+        /// 接続口（通路）の幅の既定（§7.1。工程 P55-14d）。
+        ///
+        /// <b>この値はカメラの許容帯を決めるためにある。</b> 通路の端から出口へ入った主人公に
+        /// カメラが連続追従していると、スライドの始点は接続軸から外れる——
+        /// どこまで外れてよいかは<b>その接続の通路の幅</b>で決まる（§7.1 改定）。
+        ///
+        /// <b>主人公が実際に通れる横位置とは別物である。</b> あちらは Collider の大きさにも依る。
+        /// ここは「カメラの基準位置がこの帯の内側にあること」だけを決める。
+        /// </summary>
+        public const float DefaultCorridorWidth = 4f;
 
         /// <summary>接続の安定 ID。</summary>
         public StableId ConnectionId => _connectionId;
@@ -116,6 +131,9 @@ namespace Momotaro.Data.World
         /// <summary>先読みを始める距離。</summary>
         public float PreloadDistance => _preloadDistance;
 
+        /// <summary>接続口（通路）の幅。カメラの許容帯の正本（§7.1）。</summary>
+        public float CorridorWidth => _corridorWidth;
+
         /// <summary>Builder・テストから組み立てる。</summary>
         public void Configure(
             StableId connectionId, StableId fromAreaId, StableId exitId,
@@ -123,7 +141,8 @@ namespace Momotaro.Data.World
             AreaTransitionStyle style, AreaConnectionDirection direction,
             StableId reverseConnectionId,
             float slideDuration = DefaultSlideDuration,
-            float preloadDistance = DefaultPreloadDistance)
+            float preloadDistance = DefaultPreloadDistance,
+            float corridorWidth = DefaultCorridorWidth)
         {
             _connectionId = connectionId;
             _fromAreaId = fromAreaId;
@@ -135,6 +154,7 @@ namespace Momotaro.Data.World
             _reverseConnectionId = reverseConnectionId;
             _slideDuration = slideDuration;
             _preloadDistance = preloadDistance;
+            _corridorWidth = corridorWidth;
         }
     }
 

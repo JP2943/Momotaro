@@ -60,12 +60,6 @@ namespace Momotaro.Editor.Phase55
         /// <summary>N の南の出入口（S へ）。</summary>
         public static readonly StableId ExitNSouth = new StableId("exit_p55_n_south");
 
-        /// <summary>S 側の境界寄せカメラ領域（§7.1）。</summary>
-        public static readonly StableId RegionSSeam = new StableId("region_p55_s_seam");
-
-        /// <summary>N 側の境界寄せカメラ領域。</summary>
-        public static readonly StableId RegionNSeam = new StableId("region_p55_n_seam");
-
         /// <summary>S → N（北へ）の接続。</summary>
         public static readonly StableId ConnectionSToN = new StableId("conn_p55_s_north_to_n");
 
@@ -114,30 +108,6 @@ namespace Momotaro.Editor.Phase55
         /// </summary>
         public static readonly Vector3 AreaNOrigin =
             new Vector3(SeamX, 0f, SeamZ + Phase5Layout.AreaBDepth * 0.5f);
-
-        /// <summary>境界寄せカメラ領域の奥行・幅の上限を決める見える広がり（§7.1 の説明は東西と同じ）。</summary>
-        public const float SeamCameraRegionDepth = 8f;
-
-        /// <summary>
-        /// S 側の境界寄せ領域の中心（Area ローカル）。境界の手前 4m に画面を止める。
-        /// 領域は Z に 8m（z 1〜9）で、北端が境界に接する。
-        /// </summary>
-        public static readonly Vector3 SeamCameraRegionSCenter =
-            new Vector3(SeamX, 0f, SeamZ - SeamCameraRegionDepth * 0.5f);
-
-        /// <summary>
-        /// 同・大きさ（X, Z）。<b>両軸とも見える広がりより狭い</b>
-        /// （幅 6 &lt; 17.8、奥行 8 &lt; 12.2）ので、カメラは 1 点に止まる。
-        /// </summary>
-        public static readonly Vector2 SeamCameraRegionSSize =
-            new Vector2(6f, SeamCameraRegionDepth);
-
-        /// <summary>N 側の境界寄せ領域の中心（Area ローカル）。南端から 10m を覆う。</summary>
-        public static readonly Vector3 SeamCameraRegionNCenter =
-            new Vector3(0f, 0f, -Phase5Layout.AreaBDepth * 0.5f + 5f);
-
-        /// <summary>同・大きさ（X, Z）。奥行 10 &lt; 12.2、幅 8 &lt; 17.8。</summary>
-        public static readonly Vector2 SeamCameraRegionNSize = new Vector2(8f, 10f);
 
         /// <summary>
         /// S の門の位置（レバーで開通する）。<b>部屋を端から端まで塞ぐ</b>。
@@ -222,12 +192,6 @@ namespace Momotaro.Editor.Phase55
             ExitBToA = Phase55NorthSouthIds.ExitNSouth,
             AreaAGatePosition = AreaSGatePosition,
             AreaAGateSize = AreaSGateSize,
-            SeamCameraRegionAId = Phase55NorthSouthIds.RegionSSeam,
-            SeamCameraRegionBId = Phase55NorthSouthIds.RegionNSeam,
-            SeamCameraRegionACenter = SeamCameraRegionSCenter,
-            SeamCameraRegionASize = SeamCameraRegionSSize,
-            SeamCameraRegionBCenter = SeamCameraRegionNCenter,
-            SeamCameraRegionBSize = SeamCameraRegionNSize,
             AreaAExitPosition = AreaSExitToN,
             AreaAExitDirection = Vector3.forward,
             AreaAEntryFromB = AreaSEntryFromN,
