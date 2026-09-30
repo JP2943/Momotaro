@@ -343,11 +343,34 @@ namespace Momotaro.Gameplay.Session
         /// <b>望みも一緒に落とす。</b> 残すと、直後の <see cref="Poll"/> が
         /// 「まだ欲しい」と解釈して読み直す——プレイヤーは Fade で別の場所へ移ったのに、
         /// 前の隣 Area が追いかけて載る。
+        ///
+        /// <b>解放に失敗して抱えている場合（<see cref="AreaPreloadPhase.ReleaseFailed"/>）も同じである</b>
+        /// （工程 P55-13a。GPT 受入①）。以前は <c>Staged</c> だけを見ていたので、
+        /// <b>解放に失敗したまま Single 読込で置き換えられた</b>とき——
+        /// つまり付録 C.34 が「通してよい」と定めたまさにその経路で——
+        /// 預かりの参照が<b>消えた Scene を指したまま残っていた</b>。
+        /// 台帳（<c>SyncResidencyToLoadedAreas</c>）だけが片付いて、こちらが残る。
+        ///
+        /// 残ると起きること。
+        /// <list type="bullet">
+        /// <item><description><c>HoldsStagedScene</c> が立ったままなので、
+        /// <b>次の出発 Area を二度と預けられない</b>（<see cref="TryAdoptRetained"/> が AtCapacity で断る）。</description></item>
+        /// <item><description><c>Phase</c> が <c>ReleaseFailed</c> のままなので
+        /// 「撤去し切れていない Scene がある」と言い続ける。</description></item>
+        /// <item><description>次の候補へ切り替えるとき、<b>存在しない Scene へ撤去を発行</b>する。</description></item>
+        /// </list>
+        ///
+        /// <b>ここで扱えるのは「操作が終端している」状態だけである。</b>
+        /// <c>Releasing</c>（走っている最中）は対象にしない——走っている操作を横から捨てると、
+        /// 終端したときに誰も引き取らない。<c>Staged</c> と <c>ReleaseFailed</c> は
+        /// どちらも操作が終端したあとの状態なので、実 Scene の生死だけで決められる。
         /// </summary>
         /// <returns>手放したら true。</returns>
         public bool DropStagedIfUnloaded()
         {
-            if (Phase != AreaPreloadPhase.Staged || !StagedArea.IsValid || StagedSceneHandle == 0)
+            bool terminatedHold = Phase == AreaPreloadPhase.Staged
+                                  || Phase == AreaPreloadPhase.ReleaseFailed;
+            if (!terminatedHold || !StagedArea.IsValid || StagedSceneHandle == 0)
             {
                 return false;
             }

@@ -3248,22 +3248,102 @@ namespace Momotaro.Tests.PlayMode
                 "見送った回数を数えている（黙って止まっているのではない）。");
 
             // ---- 5. 明示的な再試行で片付く ----
+            //
+            // <b>待つ相手を <c>HasUnreleasedScene</c> にしてはいけない</b>（GPT 指摘 2。工程 P55-13a）。
+            // あれは先読み側について <c>ReleaseFailed</c> だけを見ているので、
+            // 再試行が <c>Releasing</c> へ移った瞬間に false になる——
+            // **「再試行を始めた」までは言えるが「片付いた」は言えない**。
+            //
+            // <b>控えた handle の実 Scene が消えるまで待つ。</b> Scene の枚数や AreaId では言えない——
+            // §5 の距離による先読みが<b>同じ Area をすぐ読み直す</b>（到着した主人公は
+            // 逆向きの出入口のすぐ内側に居る）。読み直された Scene は別物なので、
+            // 枚数は 2 のままになり、AreaId も A のままになる。
+            int retainedSceneHandle = preloader.StagedSceneHandle;
+            AreaInstanceHandle retainedInstance = preloader.StagedArea;
+            Assert.AreNotEqual(0, retainedSceneHandle, "前提：預かっている実 Scene がある。");
+            Assert.IsTrue(host.IsLoaded(retainedSceneHandle), "前提：その Scene は載っている。");
+            Assert.AreNotEqual(AreaActivationPhase.Unloaded,
+                transitions.Slide.Residency.PhaseOf(retainedInstance),
+                "前提：旧実体は台帳に載っている。" + DumpResidency(transitions));
+
+            // ---- 5a. 解放を保留しているあいだは、完了扱いにならない ----
+            //
+            // 撤去を通すようにしてから<b>終端させない</b>。「始まったから片付いた」で
+            // 通ってしまわないことを、ここで塞ぐ。
             host.RefuseUnload = false;
+            host.HoldUnload = true;
+
             Assert.IsTrue(transitions.Slide.TryRetryRetiringDeparture(),
                 "再試行を始められる（抱えているのが預けた先でも、押す場所は 1 つ）。");
             Assert.AreEqual(1, transitions.Slide.RetryStartedCount, "再試行を数えている。");
+            yield return null;
+
+            Assert.AreEqual(2, host.UnloadCount, "解放を頼んだのは失敗した 1 回と再試行の 1 回だけ。");
+
+            for (int i = 0; i < 20; i++)
+            {
+                yield return null;
+                Assert.IsTrue(host.IsLoaded(retainedSceneHandle),
+                    "保留しているあいだ、控えた実 Scene は消えない（" + i + " フレーム目・先読み="
+                    + preloader.Phase + "）。");
+                Assert.IsTrue(transitions.Slide.HasLiveSceneOperation,
+                    "終端していない Scene 操作として数えている（" + i + " フレーム目）。"
+                    + " ここが false なら「片付いた」と誤認できる。");
+                Assert.AreNotEqual(AreaActivationPhase.Unloaded,
+                    transitions.Slide.Residency.PhaseOf(retainedInstance),
+                    "台帳からも落としていない（" + i + " フレーム目）。" + DumpResidency(transitions));
+                Assert.AreEqual(2, host.UnloadCount,
+                    "走っているあいだに撃ち直してもいない（" + i + " フレーム目）。");
+
+                // <b>これが GPT 指摘 2 の理由そのものである。</b> 実 Scene はまだ載っているのに
+                // <c>HasUnreleasedScene</c> は false になる——先読み側については
+                // <c>ReleaseFailed</c> だけを見ているので、<c>Releasing</c> へ移った瞬間に落ちる。
+                // **この値で「片付いた」を判定してはいけない**ことを、ここで固定しておく。
+                // 名前（撤去し切れていない Scene がある）より<b>測っている範囲が狭い</b>。
+                Assert.IsFalse(transitions.Slide.HasUnreleasedScene,
+                    "HasUnreleasedScene は解放中には false になる（" + i + " フレーム目）。"
+                    + " 実 Scene は載っているので、待つ相手はこの値ではなく控えた handle である。");
+            }
+
+            // ---- 5b. 終端させると、実 Scene も参照も片付く ----
+            host.ReleaseUnload();
 
             float cleared = Time.realtimeSinceStartup + 15f;
-            while (transitions.Slide.HasUnreleasedScene && Time.realtimeSinceStartup < cleared)
+            while (host.IsLoaded(retainedSceneHandle) && Time.realtimeSinceStartup < cleared)
             {
                 yield return null;
             }
 
+            Assert.IsFalse(host.IsLoaded(retainedSceneHandle),
+                "控えた handle の実 Scene が消えた（解放が<b>終端した</b>）。" + DumpWorld(transitions));
+
+            // 解放の<b>操作</b>が終端したことは、段階で言う——<c>HasLiveSceneOperation</c> では言えない。
+            // 解放が終わった直後に距離による先読みが A を読み直すので、あの値はまた true になりうる。
+            float settled = Time.realtimeSinceStartup + 10f;
+            while (transitions.Slide.Residency.PhaseOf(retainedInstance) != AreaActivationPhase.Unloaded
+                   && Time.realtimeSinceStartup < settled)
+            {
+                yield return null;
+            }
+
+            Assert.AreNotEqual(AreaPreloadPhase.Releasing, preloader.Phase,
+                "もう解放中ではない（操作が終端した）。いま=" + preloader.Phase);
+            Assert.AreNotEqual(AreaPreloadPhase.ReleaseFailed, preloader.Phase,
+                "失敗を抱えてもいない。いま=" + preloader.Phase);
+            Assert.AreEqual(AreaActivationPhase.Unloaded,
+                transitions.Slide.Residency.PhaseOf(retainedInstance),
+                "旧実体の台帳登録が消えた。" + DumpResidency(transitions));
+            Assert.AreNotEqual(retainedInstance, preloader.StagedArea,
+                "保持参照も、その実体を指していない（読み直したなら別世代である）。");
+            Assert.AreNotEqual(retainedSceneHandle, preloader.StagedSceneHandle,
+                "預かっている Scene も別物である。");
             Assert.IsFalse(transitions.Slide.HasUnreleasedScene, "抱え込みが解けた。");
             Assert.AreEqual(2, host.UnloadCount, "解放を頼んだのは失敗した 1 回と再試行の 1 回だけ。");
             Assert.AreEqual(1, transitions.SlideCommittedCount, "到着の成功は増減しない。");
             Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居たまま。");
             Assert.IsTrue(CurrentAreaProvider.Current.Context.IsAreaReady, "B で遊べたまま。");
+            Assert.LessOrEqual(transitions.Slide.Residency.ResidentCount, 2,
+                "台帳も上限の中。" + DumpResidency(transitions));
         }
 
         /// <summary>
@@ -3351,14 +3431,31 @@ namespace Momotaro.Tests.PlayMode
 
         /// <summary>
         /// <b>解放に失敗して抱えたままでも、Single 読込は止めない</b>
-        /// （付録 C.20 の「『失敗した』と『まだ掴んでいる』は別」。工程 P55-11b）。
+        /// （付録 C.20 の「『失敗した』と『まだ掴んでいる』は別」。工程 P55-11b。修正 P55-13a）。
         ///
-        /// <c>ReleaseFailed</c> は<b>操作が終端したあとの履歴</b>で、実 Scene が残っているだけである。
-        /// Single は載っている Scene を全部置き換えるので、ここで止めると
-        /// <b>一度解放に失敗しただけで死亡再開も扉移動も通らなくなる</b>。
+        /// <b>「解放が終端するまで」は「解放が成功するまで」ではない。</b> ここを取り違えると
+        /// 検査が空振りする。<c>ReleaseFailed</c> は**操作が終端したあとの状態**であり、
+        /// 終端しているのだから新しい Scene 操作を重ねてよい。残っているのは実 Scene だけで、
+        /// Single 読込は載っている Scene を<b>全部置き換える</b>。
+        /// 止めれば、一度解放に失敗しただけで<b>死亡再開も扉移動も通らなくなる</b>。
+        /// 止めるべきなのは<b>Unload が走っている最中</b>（<c>HasLiveSceneOperation</c>）だけである。
         ///
-        /// <b>置き換えたあとに抱え込みが解ける</b>ことまで見る——解けなければ、
-        /// 在留枠を食ったまま次のスライドが上限で断られる。
+        /// <b>最初この検査は、Single を頼む直前に撤去の拒否を解いていた</b>（GPT 指摘 1）。
+        /// そうすると <c>DiscardStagedForSingleLoad</c> の中の再試行が<b>成功してから</b>
+        /// Single へ進む経路でも合格してしまう——**見たかった経路を通らずに緑になる**。
+        /// いまは<b>拒否を最後まで維持する</b>。再試行も失敗し、
+        /// 実 Scene を抱えたまま Single が発行される。
+        ///
+        /// 発行の瞬間を 3 つで固定する。
+        /// <list type="number">
+        /// <item><description>控えた旧 Scene が<b>まだ載っている</b>（engine に聞く）。</description></item>
+        /// <item><description><b>終端していない Scene 操作は無い</b>。</description></item>
+        /// <item><description><c>SingleLoadOverRemainingSceneCount</c> が<b>1 つ増える</b>——
+        /// 実装自身が「載ったままの Scene を抱えて Single へ進んだ」と数える口。</description></item>
+        /// </list>
+        ///
+        /// 終わったあとは、抱えていた Scene が<b>消えて参照も片付く</b>ことまで見る。
+        /// 残ると、在留枠を食ったまま次のスライドが上限で断られる。
         /// </summary>
         [UnityTest]
         public IEnumerator EvenWhileHoldingAFailedRelease_TheSingleLoadStillGoesThrough()
@@ -3394,26 +3491,71 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsTrue(transitions.Slide.HasUnreleasedScene, "前提：抱え込みがある。");
             Assert.AreEqual(0, loader.LoadCount, "前提：Single 読込はまだ発行されていない。");
 
-            // 解放できるようになれば、<c>DiscardStagedForSingleLoad</c> の再試行が片付ける。
-            host.RefuseUnload = false;
+            // 判定に使う handle を控える。Scene の枚数では言えない——
+            // Single のあとも §5 の距離による先読みがすぐ隣を持つので、落ち着いた先はまた 2 枚になる。
+            int retainedSceneHandle = preloader.StagedSceneHandle;
+            AreaInstanceHandle retainedInstance = preloader.StagedArea;
+            Assert.AreNotEqual(0, retainedSceneHandle, "前提：預かっている実 Scene がある。");
+            Assert.IsTrue(host.IsLoaded(retainedSceneHandle), "前提：その Scene は載っている。");
+
+            int overRemainingBefore = transitions.Slide.SingleLoadOverRemainingSceneCount;
+            int unloadsBefore = host.UnloadCount;
+
+            // <b>撤去の拒否は解かない。</b> 抱えたまま Single へ進む経路だけを通す。
+            Assert.IsTrue(host.RefuseUnload, "前提：撤去はこのあとも断り続ける。");
 
             Assert.IsTrue(transitions.TryTravel(AreaA, AreaAFromBEntry).Accepted,
                 "Fade の要求は受理される。");
+
+            // 発行の瞬間（＝発行される前の最後のフレーム）の状態を控える。
+            bool stillLoadedAtIssue = false;
+            bool liveOperationAtIssue = true;
+            string phaseAtIssue = string.Empty;
 
             float deadline = Time.realtimeSinceStartup + 25f;
             while (transitions.CompletedCount == 0 && !transitions.HasTerminalFailure
                    && Time.realtimeSinceStartup < deadline)
             {
+                if (loader.LoadCount == 0)
+                {
+                    stillLoadedAtIssue = host.IsLoaded(retainedSceneHandle);
+                    liveOperationAtIssue = transitions.Slide.HasLiveSceneOperation;
+                    phaseAtIssue = preloader.Phase.ToString();
+                }
+
                 yield return null;
             }
 
             Assert.IsFalse(transitions.HasTerminalFailure,
                 "抱えていたからといって終端失敗にしない。理由=" + transitions.TerminalFailureReason);
+
+            // ---- 発行の瞬間 ----
+            Assert.IsTrue(stillLoadedAtIssue,
+                "Single を発行する時点で、控えた旧 Scene はまだ載っていた（先読み=" + phaseAtIssue + "）。"
+                + " ここが false なら、解放が成功してから発行した経路を見てしまっている。");
+            Assert.IsFalse(liveOperationAtIssue,
+                "発行の時点で、終端していない Scene 操作は無かった（先読み=" + phaseAtIssue + "）。"
+                + " 止めるのは走っている操作だけである（付録 C.20）。");
+            Assert.AreEqual(overRemainingBefore + 1, transitions.Slide.SingleLoadOverRemainingSceneCount,
+                "実装自身が「載ったままの Scene を抱えて Single へ進んだ」と数えている。");
             Assert.AreEqual(1, loader.LoadCount, "Single は一度だけ発行された。");
             Assert.AreEqual(1, transitions.CompletedCount, "その発行が着いた。");
+            Assert.AreEqual(unloadsBefore + 1, host.UnloadCount,
+                "撤去を頼んだのは、Single の前の再試行 1 回ぶんだけ（それも断られている）。");
 
             yield return null;
 
+            // ---- 置き換わったあと ----
+            Assert.IsFalse(host.IsLoaded(retainedSceneHandle),
+                "抱えていた旧 Scene は Single が置き換えて消えた（控えた handle で見ている）。"
+                + DumpWorld(transitions));
+            Assert.AreEqual(AreaActivationPhase.Unloaded,
+                transitions.Slide.Residency.PhaseOf(retainedInstance),
+                "旧実体の台帳登録も消えた。" + DumpResidency(transitions));
+            Assert.AreNotEqual(retainedInstance, preloader.StagedArea,
+                "保持参照もその実体を指していない。");
+            Assert.AreNotEqual(retainedSceneHandle, preloader.StagedSceneHandle,
+                "預かっている Scene も別物である。");
             Assert.IsFalse(transitions.Slide.HasUnreleasedScene,
                 "置き換えたので抱え込みが解けた（在留枠を食ったまま残さない）。");
             Assert.LessOrEqual(transitions.Slide.Residency.ResidentCount, 2,

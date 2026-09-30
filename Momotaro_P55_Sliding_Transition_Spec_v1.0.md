@@ -371,6 +371,7 @@ static対象はPerception／Threat／Investigation／Interact／Projectile等を
 | P55-10 | 裁定の反映。仕様本文の更新 → 再入場準備の分離 → 旧Areaの引き継ぎ → 穴0の描画検査 → 待機表示の通算 → 非フォーカス中の表示時計停止 |
 | P55-11 | 残件の穴埋めと受入表。背景の補完 → 保持有効時の解放失敗・再試行の受入 → 受入表の更新（P17の対応表・P19の受入区分） |
 | P55-12 | 完了判定。§13の終了条件との対照、再生成の実測、P5からの契約対応表、残件一覧、引き継ぎ書。**見た目受入だけは人間へ返す** |
+| P55-13a | GPT受入の穴埋め。抱えたままSingleへ進む経路を拒否維持で通す、再試行の完了を控えたhandleで待つ。`DropStagedIfUnloaded`を`ReleaseFailed`へ広げる |
 
 各工程でClaude自身がUnityを実行し、既存の常時許可とCLAUDE.mdに従って進める。機械検査可能な項目を人間へ都度返さない。新たな仕様矛盾が見つかった場合は、該当契約・影響・推奨裁定を具体的に示す。正常な実装選択は本書の範囲内で自律的に行う。
 
@@ -2518,13 +2519,63 @@ Single 読込は載っている Scene を**全部置き換える**ので、残�
 
 **落ちたのは実装ではなく、こちらの期待だった。** 付録 C.20 の表がすでにそう書いていた。
 
+### C.34.2.1 「解放が終端するまで」は「解放が成功するまで」ではない（工程 P55-13a）
+
+| 言い方 | 意味 | Single 読込を止めるか |
+|---|---|---|
+| 解放の操作が**終端していない**（`Releasing`） | Unload が走っている最中 | **止める** |
+| 解放が**失敗して終端した**（`ReleaseFailed`） | 操作は終わり、実 Scene だけが残っている | **止めない**（Single が置き換える） |
+| 解放が**成功した**（`Idle`） | 何も残っていない | 止めない |
+
+**2 行目を待ってはいけない。** 解放が成功するまで待つと、恒久的に撤去できない Scene を
+抱えたプレイヤーに<b>出口が無くなる</b>——死亡再開も扉移動も Launcher 退避も通らない。
+
+受入もこの区別で書く。「抱えたまま Single へ進む」検査は、
+**撤去の拒否を最後まで維持したまま** Single を要求する。
+途中で拒否を解くと、<b>再試行が成功してから発行した経路</b>でも合格してしまい、
+見たかった経路を通らずに緑になる（工程 P55-13a で実際にそう書いていた）。
+
+固定するのは 3 つ。発行の時点で**控えた旧 Scene がまだ載っている**こと、
+**終端していない Scene 操作が無い**こと、そして
+`SingleLoadOverRemainingSceneCount` が **1 つ増える**こと——
+実装自身が「載ったままの Scene を抱えて Single へ進んだ」と数える口である。
+
+### C.34.2.2 抱えたまま置き換えたら、**参照も片付ける**（工程 P55-13a）
+
+`AreaPreloader.DropStagedIfUnloaded()` は `Staged` だけを見ていた。
+`ReleaseFailed` で抱えたまま Single に置き換えられると、
+**台帳は片付くのに預かりの参照だけが消えた Scene を指して残る**。
+
+| 残ると起きること |
+|---|
+| `HoldsStagedScene` が立ったままなので、**次の出発 Area を二度と預けられない**（`TryAdoptRetained` が AtCapacity で断る） |
+| `Phase` が `ReleaseFailed` のままなので「撤去し切れていない Scene がある」と言い続ける |
+| 次の候補へ切り替えるとき、**存在しない Scene へ撤去を発行**する |
+
+`Staged` と `ReleaseFailed` は**どちらも操作が終端したあとの状態**なので、
+実 Scene の生死だけで手放せる。`Releasing`（走っている最中）は対象にしない——
+走っている操作を横から捨てると、終端したときに誰も引き取らない。
+
+### C.34.2.3 「片付いた」は `HasUnreleasedScene` では言えない（工程 P55-13a）
+
+`HasUnreleasedScene` は `HasPendingRetire || Preloader.Phase == ReleaseFailed` である。
+再試行が始まって `Releasing` へ移った瞬間に **false** になる——実 Scene はまだ載っているのに。
+
+**名前より測っている範囲が狭い。** 値そのものは危なくない
+（新しい操作を止めるのは `HasLiveSceneOperation` の仕事）が、
+**受入の待ち条件には使えない**——「再試行を始めた」までしか言えない。
+
+受入は**控えた Scene handle** で待つ。Scene の枚数や AreaId では言えない——
+§5 の距離による先読みが<b>同じ Area をすぐ読み直す</b>ので、枚数は 2 のまま、AreaId も同じままになる。
+片付いたことは、控えた handle の実 Scene が消え、**旧実体の台帳登録と預かりの参照も消えた**ことで言う。
+
 ### C.34.3 受入（PlayMode 3 件）
 
 | 検査 | 見るもの |
 |---|---|
-| `WhenTheRetainedAreaCannotBeReleased_TheArrivalStaysAndRetryClearsIt` | 保持の成立 → `ReleaseFailed` かつ `HasUnreleasedScene` → 到着済み B と進行値が巻き戻らない → **30 フレーム無操作で撃ち直さない** → 明示的再試行で片付く |
+| `WhenTheRetainedAreaCannotBeReleased_TheArrivalStaysAndRetryClearsIt` | 保持の成立 → `ReleaseFailed` かつ `HasUnreleasedScene` → 到着済み B と進行値が巻き戻らない → **30 フレーム無操作で撃ち直さない** → 再試行を**保留したあいだは完了扱いにならない** → 終端させると**控えた handle の実 Scene・台帳登録・預かりの参照**が消える（C.34.2.3） |
 | `WhileTheRetainedReleaseIsRunning_NoSingleLoadIsIssued` | 解放を**終端させない**窓を作り、その間 Single の**発行数が 0**。終端後にちょうど 1 回 |
-| `EvenWhileHoldingAFailedRelease_TheSingleLoadStillGoesThrough` | `ReleaseFailed` を抱えていても Single は通る。置き換えたあと抱え込みが解け、台帳も上限の中 |
+| `EvenWhileHoldingAFailedRelease_TheSingleLoadStillGoesThrough` | **撤去の拒否を維持したまま** Single が通る。発行の時点で旧 Scene が載っていて未終端の操作が無いこと、`SingleLoadOverRemainingSceneCount` が 1 増えること、発行が 1 回であること。置き換えたあと控えた handle の Scene が消え、台帳登録も預かりの参照も片付くこと（C.34.2.1／C.34.2.2） |
 
 **発行そのものを数える**（`CountingSceneLoader`）。「着いていない」では「まだ終わっていない」としか言えない。
 
