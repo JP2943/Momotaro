@@ -10,7 +10,8 @@
     "P55-04",
     "P55-05",
     "P55-06",
-    "P55-10"
+    "P55-10",
+    "P55-11"
   ],
   "requirements": [
     {
@@ -165,7 +166,7 @@
     },
     {
       "id": "P55-P13",
-      "summary": "同じ実プレイ導線で A↔B を 5 往復 → 遭遇戦 → 再訪 → 死亡再開 → 再戦（§11 の P13）。毎往復、Scene は 2 枚・在留台帳は 2 つ・先読みは隣を持っている（工程 P55-08b で §5 の距離による先読みが入り、到着直後は逆向きの出入口の内側に居るため。見たいのは「往復のたびに増えない」ことで、固定値であることが効いている）・進行の記録は増減しない。初回の徳は 22、往復と同一周期の再訪では増えない。死亡再開で周期が進むと遭遇戦は未クリアへ戻る（§9.1 の設計どおり）。東西・南北の両配置で通す（R13 指摘①）",
+      "summary": "同じ実プレイ導線で A↔B を 5 往復 → 遭遇戦 → 再訪 → 死亡再開 → 再戦（§11 の P13）。毎往復、Scene は 2 枚・在留台帳は 2 つ・先読みは隣を持っている（工程 P55-08b で §5 の距離による先読みが入り、到着直後は逆向きの出入口の内側に居るため。見たいのは「往復のたびに増えない」ことで、固定値であることが効いている）・進行の記録は増減しない。初回の徳は 22、往復と同一周期の再訪では増えない。死亡再開で周期が進むと遭遇戦は未クリアへ戻る（§9.1 の設計どおり）。東西・南北の両配置で通す（R13 指摘①）。**Scene 側の門も見る**（工程 P55-11c）——Session の記録は集合と数なので二度書いても値が変わらず、Scene の部品が二度動いたことは現れない。復路ごとに門の `AppliedCount` が 1 のまま（二重に開通しない）で、`ReappliedCount` が増える（入場ごとに押し直している。§6.2 手順 6）ことを見る",
       "stage": "P55-06"
     },
     {
@@ -200,7 +201,7 @@
     },
     {
       "id": "P55-P17",
-      "summary": "再入場準備の分離と旧 Area の引き継ぎ（仕様書 §11 の P17。§6.2 手順 5／11）。往復でのロード回数と Scene handle の再利用、B 側で HP を変えてから A へ戻っても初回入場の値へ戻らないこと、保持した Area では何も進まないこと、Single 読込の前に保持した Area も片付くこと。入場ごとの準備（入口配置・跳ね返り止め・準備完了の報告・途中動作の破棄）と、一度だけの構築（注入・カタログ・配線）を分けていること",
+      "summary": "再入場準備の分離と旧 Area の引き継ぎ（仕様書 §11 の P17。§6.2 手順 5／11）。往復でのロード回数と Scene handle の再利用、B 側で HP を変えてから A へ戻っても初回入場の値へ戻らないこと、保持した Area では何も進まないこと、Single 読込の前に保持した Area も片付くこと。入場ごとの準備（入口配置・跳ね返り止め・準備完了の報告・途中動作の破棄）と、一度だけの構築（注入・カタログ・配線）を分けていること。**どの要素をどのテストが担保しているかを受入表で名指しする**（工程 P55-11c）——HP を見た往復テストが CD まで保証したとは扱わない。保持した Area への再入場で復元されることは要素ごとに見る：HP は `ChangingTheHpInB_...`、全 CD とスタミナは `ChangingTheCooldownsInB_...`、犬丸の Down／Away は `WithTheCompanionDownOrAwayInB_...`。値を運ぶ経路そのもの（§6.3）は P05／P06 が見ているが、あちらの到着側は**新しく読んだ Area**（Actor が新品）なので、**保持した Area に古い Actor が居る**場合の復元は代替しない。進行記録（調査・門・徳・Encounter）の二重処理は P13 が実往復 5 回で見る——Session の記録に加えて、Scene 側の門の `AppliedCount`（1 のまま）と `ReappliedCount`（入場ごとに増える）も見る",
       "stage": "P55-10"
     },
     {
@@ -215,7 +216,7 @@
     },
     {
       "id": "P55-P19",
-      "summary": "非フォーカス中の表示時計停止（仕様書 §11 の P19。§7.1。工程 P55-10f）。アプリが背面に回っているあいだはスライドの表示時間を進めない——カメラも表示代理も動かず、コマも進まず、遷移は終わらない。前面へ戻ったら止めた続きから進む。復帰時に巨大 delta で飛ばさない（表示に使う 1 フレームぶんの秒数に上限を置く）。窓口が差さっていなければ前面とみなす（配線していない構成でスライドが止まらない）。ロード監視は別の時計で継続する",
+      "summary": "非フォーカス中の表示時計停止（仕様書 §11 の P19。§7.1。工程 P55-10f）。アプリが背面に回っているあいだはスライドの表示時間を進めない——カメラも表示代理も動かず、コマも進まず、遷移は終わらない。前面へ戻ったら止めた続きから進む。復帰時に巨大 delta で飛ばさない（表示に使う 1 フレームぶんの秒数に上限を置く）。窓口が差さっていなければ前面とみなす（配線していない構成でスライドが止まらない）。ロード監視は別の時計で継続する。**受入を 2 つに区分する**（工程 P55-11c）——(a) **規則そのもの**は注入と窓口の切替で決定的に見ている（EditMode 8 件＋ PlayMode 1 件）。(b) **Engine の実通知が届くこと**は Editor では一度も試していない——`AppFocusHost` が `UNITY_EDITOR` で `OnApplicationFocus`／`OnApplicationPause` をコンパイルごと外しているため（無人実行では Game View にフォーカスが無いのが普通で、聞くと PlayMode 全件が止まる）。その境目自体を `TheFocusHost_IsWiredButDoesNotListenToEngineNotificationsInTheEditor` が固定し、常駐が窓口へ差さっていること・Editor では通知を聞かないこと・規則を見るときに通る口がビルドで通知が呼ぶ口と同じであることを見る。**ビルド上での実通知の確認は手動確認事項として残る**（記録 047 §3）",
       "stage": "P55-10"
     }
   ],
@@ -846,7 +847,10 @@
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.ChangingTheHpInB_ThenReturningToA_KeepsTheDentedValue",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.BeforeASingleLoad_TheRetainedAreaIsReleasedToo",
-        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WalkingEastIntoTheSeam_SlidesRightAndArrivesInB"
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WalkingEastIntoTheSeam_SlidesRightAndArrivesInB",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.ChangingTheCooldownsInB_ThenReturningToA_RestoresThemInsteadOfTheStaleValues",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WithTheCompanionDownOrAwayInB_ReturningToTheRetainedArea_KeepsThatState(Down)",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WithTheCompanionDownOrAwayInB_ReturningToTheRetainedArea_KeepsThatState(Away)"
       ]
     },
     {
@@ -898,7 +902,9 @@
       "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhileTheAppIsNotFocused_TheSlideDoesNotAdvanceAndDoesNotJumpBack",
       "requirementIds": [],
       "implemented": true,
-      "supportingTests": []
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheFocusHost_IsWiredButDoesNotListenToEngineNotificationsInTheEditor"
+      ]
     },
     {
       "requirementId": "P55-P19",

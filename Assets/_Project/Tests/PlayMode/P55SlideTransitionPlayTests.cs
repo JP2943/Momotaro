@@ -2523,6 +2523,251 @@ namespace Momotaro.Tests.PlayMode
                 "台帳も上限の中。" + DumpResidency(transitions));
         }
 
+        // ------------------------------------------------- 再入場での復元の内訳（工程 P55-11c。§11 の P17）
+
+        /// <summary>
+        /// <b>B で立てた CD とスタミナは、保持した A へ戻っても復元される</b>
+        /// （§11 の P17。§6.2 手順 5。工程 P55-11c）。
+        ///
+        /// <b>なぜ別に要るのか。</b> 同じ往復で HP を見る検査
+        /// （<c>ChangingTheHpInB_ThenReturningToA_KeepsTheDentedValue</c>）は<b>HP だけ</b>を見ている。
+        /// P17 は「B 側で HP／CD を変えて A へ戻る」を求めているので、
+        /// <b>HP を見た検査が CD まで保証したとは扱わない</b>。
+        /// 値そのものを運ぶ経路（§6.3）は P05 が見ているが、そちらの到着側は<b>新しく読んだ Area</b>で、
+        /// Actor が新品なので Snapshot からの復元しか道が無い——
+        /// <b>保持した Area では古い Actor がそこに居る</b>ので、復元を呼ばなければ
+        /// <b>A を出たときの値</b>（どれも 0）がそのまま見える。これは 2 周目にしか出ない。
+        ///
+        /// <b>区別する相手は「A の古い値」である。</b> だから A を出るときの値を控えて、
+        /// 戻ったときにそれを上回っていることで言う。
+        ///
+        /// <b>秒数は Data から採る。</b> 構えと回避の CD は<b>設定値が上限</b>で、
+        /// 超えると復元そのものが拒否される（<c>EnemyGuardAbility.TryImportTransferSnapshot</c>）——
+        /// 実際 30 秒を書いて「防御 CD を立てられた」で落ちた。固定秒を書くと、
+        /// Data が変わった日に<b>復元の検査が値域の話で落ちる</b>（P05 と同じ理由）。
+        ///
+        /// <b>値を立てるのは出入口の手前に立ってから。</b> CD は実時計で減るので、
+        /// 立ててから歩き始めると「復元されたか」と「切れたか」が混ざる。
+        /// 残り秒数そのものは期待値にしない——歩く時間に寄りかかる検査になる。
+        /// 同じ理由で<b>被弾後無敵はここでは見ない</b>：上限が 0.5 秒なので往復より短くでき、
+        /// 切れたのか復元しなかったのかを分けられない（P05 が演出区間だけを見て確かめている）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ChangingTheCooldownsInB_ThenReturningToA_RestoresThemInsteadOfTheStaleValues()
+        {
+            // スタミナの回復待ち。値域の検査が無く、要るのは「歩いて戻るあいだに回復が始まらない」ことだけ。
+            const float NoRegenWhileWalking = 30f;
+
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            ActorValues leftA = ReadActorValues();
+            Assert.IsTrue(leftA.Found, "A 側の Actor 部品がそろっている。");
+            Assert.AreEqual(0f, leftA.AttackCooldown, 0.001f, "前提：A を出るとき攻撃 CD は 0。");
+            Assert.AreEqual(0f, leftA.GuardCooldown, 0.001f, "前提：構えの CD も 0。");
+            Assert.AreEqual(0f, leftA.EvadeCooldown, 0.001f, "前提：回避の CD も 0。");
+            Assert.AreEqual(0f, leftA.GuardianCooldown, 0.001f, "前提：守護の CD も 0。");
+            Assert.Greater(leftA.Stamina, 1f, "前提：スタミナを削れる構成である。");
+
+            // ---- A → B ----
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "前提：B に居る。");
+
+            // ---- 先に戻り口の手前へ立つ（値を立ててから歩かない）----
+            yield return StandJustBefore(FindExitGate(ExitBWest), Vector3.right);
+            yield return SettleCamera();
+
+            // ---- B 側で CD とスタミナを立てる（ゲーム自身の復元経路で作る）----
+            var vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            var actor = Object.FindFirstObjectByType<CompanionActor>();
+            var combat = Object.FindFirstObjectByType<CompanionCombatController>();
+            var defense = Object.FindFirstObjectByType<CompanionDefenseController>();
+            var guardian = Object.FindFirstObjectByType<CompanionGuardianController>();
+            Assert.IsNotNull(actor, "B 側に犬丸が居る。");
+            Assert.IsNotNull(combat, "B 側に犬丸の戦闘部品がある。");
+
+            // 上限は Data が決める（<c>CompanionDefenseController.Build</c> と同じ引き方）。
+            var data = actor.Data;
+            float guardCd = data != null ? data.GuardCooldownSeconds : 3f;
+            float evadeCd = data != null ? data.EvadeCooldownSeconds : 4f;
+            float guardianCd = data != null ? data.GuardianCooldownSeconds : 6f;
+
+            // 攻撃 CD には値域の検査が無いので、いちばん長いものに合わせる（新しい固定秒を作らない）。
+            float attackCd = Mathf.Max(guardianCd, Mathf.Max(guardCd, evadeCd));
+
+            // <b>前提として言っておく。</b> 設定が往復より短くなった日に、
+            // 「復元されなかった」ではなく「切れた」で落ちるのを防ぐ。
+            Assert.Greater(guardCd, 1f, "前提：構えの CD の設定が往復より長い（設定=" + guardCd + "）。");
+            Assert.Greater(evadeCd, 1f, "前提：回避の CD の設定が往復より長い（設定=" + evadeCd + "）。");
+            Assert.Greater(guardianCd, 1f, "前提：守護の CD の設定が往復より長い（設定=" + guardianCd + "）。");
+
+            ActorValues inB = ReadActorValues();
+            float dentedStamina = Mathf.Max(1f, inB.Stamina - 5f);
+
+            // <b>回復待ちも長くする。</b> そうしないと歩いているあいだにスタミナが満タンへ戻り、
+            // 「復元されたか」ではなく「回復したか」を見る検査になってしまう。
+            Assert.IsTrue(vitals.TryImportTransferSnapshot(new PlayerVitalsTransferSnapshot(
+                    new VitalTransferSnapshot(inB.Hp),
+                    new StaminaTransferSnapshot(dentedStamina, NoRegenWhileWalking, 0f))),
+                "B でスタミナを削れた。");
+            Assert.IsTrue(combat.TryImportTransferSnapshot(
+                    new CompanionCombatTransferSnapshot(attackCd)),
+                "攻撃 CD を立てられた（" + attackCd + " 秒）。");
+            Assert.IsTrue(defense.TryImportTransferSnapshot(new CompanionDefenseTransferSnapshot(
+                    new GuardAbilityTransferSnapshot(guardCd),
+                    new EvadeAbilityTransferSnapshot(evadeCd))),
+                "防御 CD を立てられた（構え " + guardCd + " 秒・回避 " + evadeCd + " 秒）。"
+                + " 設定値が上限である。");
+            Assert.IsTrue(guardian.TryImportTransferSnapshot(
+                    new CompanionGuardianTransferSnapshot(guardianCd)),
+                "守護 CD を立てられた（" + guardianCd + " 秒）。");
+
+            yield return null;
+
+            ActorValues dented = ReadActorValues();
+            Assert.Greater(dented.AttackCooldown, 0f, "前提：B 側で CD が立っている。");
+            Assert.Greater(dented.GuardCooldown, 0f, "前提：構えの CD も立っている。");
+            Assert.AreEqual(dentedStamina, dented.Stamina, 0.001f, "前提：B 側でスタミナが削れている。");
+
+            // ---- B → A（保持していた A へ戻る）----
+            yield return HoldUntil(Key.A, () => transitions.SlideCommittedCount > 1, 25f);
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value,
+                "A に戻っている。失敗=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(1, transitions.Slide.ReenteredCount,
+                "保持していた Area への再入場として通っている（読み直しではない）。");
+
+            ActorValues backInA = ReadActorValues();
+            Assert.IsTrue(backInA.Found, "A 側の Actor 部品がそろっている。");
+
+            string tail = "（A を出たときは 0。B で立てた値と設定=攻撃 " + attackCd + "・構え " + guardCd
+                + "・回避 " + evadeCd + "・守護 " + guardianCd
+                + "。再入場=" + transitions.Slide.ReenteredCount + "）";
+
+            Assert.Greater(backInA.AttackCooldown, leftA.AttackCooldown,
+                "攻撃 CD が B の値で復元されている。A の古い値へ戻っていない。いま="
+                + backInA.AttackCooldown + tail);
+            Assert.Greater(backInA.GuardCooldown, leftA.GuardCooldown,
+                "構えの CD も同じ。いま=" + backInA.GuardCooldown + tail);
+            Assert.Greater(backInA.EvadeCooldown, leftA.EvadeCooldown,
+                "回避の CD も同じ。いま=" + backInA.EvadeCooldown + tail);
+            Assert.Greater(backInA.GuardianCooldown, leftA.GuardianCooldown,
+                "守護の CD も同じ。いま=" + backInA.GuardianCooldown + tail);
+
+            Assert.LessOrEqual(backInA.AttackCooldown, attackCd + 0.001f,
+                "立てた値を超えていない（増えてはいない）。");
+
+            Assert.Less(backInA.Stamina, leftA.Stamina,
+                "スタミナも B で削った値のまま。A の満タンへ戻っていない（削り=" + dentedStamina
+                + " 戻り=" + backInA.Stamina + "）。");
+            Assert.AreEqual(dentedStamina, backInA.Stamina, 0.001f,
+                "削った値がそのまま（回復待ちを長くしてあるので回復もしていない）。");
+        }
+
+        /// <summary>
+        /// <b>B で Down／Away にした犬丸は、保持した A へ戻ってもその状態のまま</b>
+        /// （§4.6 の復元表。§11 の P17。工程 P55-11c）。
+        ///
+        /// <b>P06（<c>SlidingKeepsTheCompanionState</c>）とは見ている経路が違う。</b>
+        /// あちらは A で状態を作って<b>新しく読んだ B</b>へ運ぶ——到着側の犬丸は新品なので、
+        /// Snapshot からの復元しか道が無い。ここは<b>保持した A へ戻る</b>ので、
+        /// A に残っている犬丸は<b>Follow のまま</b>そこに立っている。
+        /// 復元を呼ばなければ、B で倒れた犬丸が<b>A に戻った瞬間に健常へ戻る</b>。
+        ///
+        /// <b>区別する相手は Follow である。</b> だから A 側が Follow であることを前提として確かめ、
+        /// 戻ったときに Follow でないことで言う。
+        ///
+        /// <b>復帰待ちの秒数は Data から採る。</b> 上限は
+        /// <c>CompanionData.LeaveRecoverySeconds</c> で、超えると復元が拒否される
+        /// （<c>CompanionVitals.TryImportTransferSnapshot</c>）——30 秒を書いて実際に落ちた。
+        /// 立てるのは戻り口の手前に立ってから（復帰待ちは実時計で減る）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator WithTheCompanionDownOrAwayInB_ReturningToTheRetainedArea_KeepsThatState(
+            [Values(CompanionState.Down, CompanionState.Away)] CompanionState wanted)
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            var inA = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.IsNotNull(inA, "A に犬丸が居る。");
+            Assert.AreEqual(CompanionState.Follow, inA.State,
+                "前提：A 側の犬丸は健常である（これが復元しなかったときに見える値）。");
+
+            // ---- A → B ----
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "前提：B に居る。");
+
+            // ---- 先に戻り口の手前へ立つ（状態を作ってから歩かない）----
+            yield return StandJustBefore(FindExitGate(ExitBWest), Vector3.right);
+            yield return SettleCamera();
+
+            // ---- B 側で Down／Away にする ----
+            var companionVitals = Object.FindFirstObjectByType<CompanionHitReceiver>();
+            var arbiter = Object.FindFirstObjectByType<CompanionStateArbiter>();
+            var actorInB = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.IsNotNull(companionVitals, "B 側に犬丸の生存値がある。");
+            Assert.IsNotNull(arbiter, "B 側に犬丸の状態調停役がある。");
+            Assert.IsNotNull(actorInB, "B 側に犬丸が居る。");
+
+            if (wanted == CompanionState.Down)
+            {
+                // 上限は Data（<c>CompanionVitals</c> の組み立てと同じ引き方）。
+                var data = actorInB.Data;
+                float recovery = data != null && data.LeaveRecoverySeconds > 0f
+                    ? data.LeaveRecoverySeconds
+                    : CompanionVitals.DefaultRecoverySeconds;
+                Assert.Greater(recovery, 1f,
+                    "前提：復帰待ちの設定が往復より長い（設定=" + recovery + "）。");
+
+                Assert.IsTrue(companionVitals.Vitals.TryImportTransferSnapshot(
+                        new CompanionVitalsTransferSnapshot(0, true, recovery, 0f,
+                            new FlinchTransferSnapshot(0f, 0f, 0f, 0f))),
+                    "B で Down ＋ 復帰待ちにできた（" + recovery + " 秒。設定値が上限である）。");
+            }
+
+            Assert.IsTrue(arbiter.TryRestoreState(wanted), "B で " + wanted + " へ置けた。");
+            yield return null;
+
+            Assert.AreEqual(wanted, actorInB.State, "前提：B 側が " + wanted + " になっている。");
+
+            // ---- B → A（保持していた A へ戻る）----
+            yield return HoldUntil(Key.A, () => transitions.SlideCommittedCount > 1, 25f);
+            yield return SettleWorld(transitions);
+
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value,
+                "A に戻っている。失敗=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(1, transitions.Slide.ReenteredCount,
+                "保持していた Area への再入場として通っている。");
+
+            var backInA = Object.FindFirstObjectByType<CompanionActor>();
+            Assert.IsNotNull(backInA, "A 側に犬丸が居る。");
+            Assert.AreNotEqual(CompanionState.Follow, backInA.State,
+                "A に残っていた健常な犬丸へ戻っていない（§4.6）。いま=" + backInA.State);
+            Assert.AreEqual(wanted, backInA.State,
+                "B で作った状態のまま復元されている。いま=" + backInA.State
+                + " 再入場=" + transitions.Slide.ReenteredCount);
+
+            if (wanted == CompanionState.Down)
+            {
+                ActorValues values = ReadActorValues();
+                Assert.IsTrue(values.CompanionDown, "Down の生存値も復元されている。");
+                Assert.Greater(values.CompanionRecovery, 0f,
+                    "復帰待ちも残っている（勝手に復帰していない）。残り=" + values.CompanionRecovery);
+            }
+        }
+
         // ---------------------------------------------------------------- P18（工程 P55-10e）
 
         /// <summary>
@@ -2839,6 +3084,64 @@ namespace Momotaro.Tests.PlayMode
                 "止めて戻しても、そのまま着く。失敗=" + transitions.Slide.LastFailure);
             Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
             Assert.IsFalse(rig.IsSliding, "演出は終わっている。");
+        }
+
+        /// <summary>
+        /// <b>Editor では Engine の通知を聞いていない——だから規則は窓口で見ている</b>
+        /// （§11 の P19 の受入区分。工程 P55-11c）。
+        ///
+        /// <b>この検査は境目そのものを固定する。</b> 非フォーカスの実装は Editor で
+        /// <c>OnApplicationFocus</c>／<c>OnApplicationPause</c> を<b>コンパイルごと外している</b>
+        /// （無人の自動実行では Game View にフォーカスが無いのが普通で、聞くと PlayMode 全件が止まる）。
+        /// つまり受入で言えているのは<b>規則のほう</b>だけで、
+        /// <b>実際の通知が届くこと</b>は Editor では一度も試していない。
+        /// それを散文で書くだけにすると、あとから読む人が「P19 は全部見てある」と受け取る。
+        ///
+        /// ここで固定するのは 3 つ。
+        /// <list type="number">
+        /// <item><description>常駐が実際に居て、窓口へ差さっている（配線は実 Scene で言える）。</description></item>
+        /// <item><description>Editor では Engine の通知を<b>聞いていない</b>
+        /// （<c>ListensToEngineNotifications</c>）。ビルドでは聞く。</description></item>
+        /// <item><description>規則を見るときに通る口（<c>Apply</c>）は、
+        /// ビルドで通知が呼ぶ口と<b>同じ</b>——検査だけの別経路ではない。</description></item>
+        /// </list>
+        ///
+        /// <b>ビルド上で実際の通知に従うことは、ここでは確かめられない</b>（記録 047 §3 に
+        /// 手動確認事項として残す）。この検査はその<b>欠けている一片を名指しする</b>ためにある。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheFocusHost_IsWiredButDoesNotListenToEngineNotificationsInTheEditor()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AppFocusHost host = AppFocusHost.Instance;
+            Assert.IsNotNull(host, "前面判定の常駐が居る（常駐 Rig が足している）。");
+            Assert.IsTrue(AppFocusProvider.HasOwner, "窓口へ差さっている。");
+            Assert.AreSame(host, AppFocusProvider.Current,
+                "差さっているのはこの常駐である（表示時計はここを読む）。");
+            Assert.IsTrue(AppFocusProvider.IsFocused, "既定は前面。");
+
+            // <b>ここが受入の境目である。</b> Editor は false、ビルドは true。
+            Assert.AreEqual(!Application.isEditor, AppFocusHost.ListensToEngineNotifications,
+                "Editor では Engine の通知を聞かない（ビルドでは聞く）。"
+                + " したがって P19 の受入で言えているのは<b>規則</b>のほうだけで、"
+                + "実通知が届くことは別に手で確かめる必要がある。");
+
+            // <b>規則を見るときに通る口は、ビルドで通知が呼ぶ口と同じ。</b>
+            int lostBefore = host.LostCount;
+            int regainedBefore = host.RegainedCount;
+
+            host.Apply(false);
+            Assert.IsFalse(AppFocusProvider.IsFocused, "窓口越しに非フォーカスへ落ちた。");
+            Assert.AreEqual(lostBefore + 1, host.LostCount, "前面を失った回数が 1 つ増える。");
+            Assert.AreEqual(0f, AreaSlideTransitionRunner.ResolveDisplayStep(1f / 60f, false), 0.0001f,
+                "非フォーカスでは表示時計が進まない（§7.1 の規則そのもの）。");
+
+            host.Apply(true);
+            Assert.IsTrue(AppFocusProvider.IsFocused, "前面へ戻った。");
+            Assert.AreEqual(regainedBefore + 1, host.RegainedCount, "戻った回数も 1 つ増える。");
+            Assert.Greater(AreaSlideTransitionRunner.ResolveDisplayStep(1f / 60f, true), 0f,
+                "前面では進む。");
         }
 
         // ---------------------------------------------------------------- 保持が有効なままの解放失敗（工程 P55-11b）

@@ -225,6 +225,9 @@ namespace Momotaro.Tests.PlayMode
             // ================================ 3. 5 往復（実キーだけ）================================
             yield return PlaceBeforeExit(_route.ExitFromA, _route.BackStep);
 
+            // 門を押し直した回数の控え（復路ごとに増えることで「入場ごとの復元」を言う）。
+            int reappliedBefore = lever.Door.ReappliedCount;
+
             for (int trip = 1; trip <= RoundTrips; trip++)
             {
                 yield return SlideAcross(_route.Forward, trip * 2 - 1, "往路 " + trip);
@@ -241,6 +244,34 @@ namespace Momotaro.Tests.PlayMode
                 Assert.IsTrue(session.TryGetArea(_route.AreaAId, out AreaRuntimeState againA));
                 Assert.AreEqual(1, againA.InvestigatedCount, "復路 " + trip + "：調査の記録は 1 のまま。");
                 Assert.IsTrue(againA.IsOpen(gateFlag), "復路 " + trip + "：門は開いたまま。");
+
+                // <b>Scene 側の門も、押し直されはするが二重には開かない</b>
+                // （工程 P55-11c。§6.2 手順 5・手順 6）。
+                //
+                // 上の 2 行は<b>Session の記録</b>を見ている。記録は集合と数なので、
+                // 二度書いても値は変わらない——<b>Scene の部品が二度動いたこと</b>は現れない。
+                // 旧 Area の引き継ぎ（手順 11）が入ってからは、戻り先の門は<b>壊されずに残っている</b>ので、
+                // 入場ごとの「門の復元」が毎回そこへ触る。
+                //
+                // <b>レバーの <c>OpenedCount</c> では言えない</b>——あれは
+                // <c>AreaRuntimeState.TryOpen</c> が通ったときだけ増えるので、記録が既に開通済みなら
+                // 復元がどう壊れていても増えない（最初そう書いて、空振りだと分かった）。
+                // 門側の 2 つの数で言う。
+                // <list type="bullet">
+                // <item><c>AppliedCount</c>（いま開通した回数）は<b>1 のまま</b>——二重に開通しない。</item>
+                // <item><c>ReappliedCount</c>（押し直した回数）は<b>入場ごとに増える</b>——
+                // 「入場ごとに押し直す」が実際に走っている。走っていなければ、留守のあいだに
+                // 記録が変わった門を反映できない。</item>
+                // </list>
+                AreaFlagDoor doorNow = Object.FindFirstObjectByType<AreaFlagLever>()?.Door;
+                Assert.IsNotNull(doorNow, "復路 " + trip + "：戻り先に門がある。");
+                Assert.IsTrue(doorNow.IsOpened, "復路 " + trip + "：門は Scene の上でも開いたまま。");
+                Assert.AreEqual(1, doorNow.AppliedCount,
+                    "復路 " + trip + "：開通そのものは 1 回だけ（復元が「いま開通した」を繰り返していない）。");
+                Assert.Greater(doorNow.ReappliedCount, reappliedBefore,
+                    "復路 " + trip + "：入場ごとに押し直している（前回=" + reappliedBefore
+                    + " いま=" + doorNow.ReappliedCount + "）。§6.2 手順 6。");
+                reappliedBefore = doorNow.ReappliedCount;
             }
 
             Assert.AreEqual(RoundTrips * 2, transitions.SlideCommittedCount,

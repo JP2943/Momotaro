@@ -341,9 +341,9 @@ NavMeshの到達性・Collider実接触・最終描画はPlayModeと録画で補
 | P14 | 全Area破棄後、Clear前に全対象Registry・Provider所有・表示代理・Scene残留を確認。旧Scene由来参照0 |
 | P15 | 出発・中間・到着の実描画確認。地形接続、主人公の重複／消失なし、通常Slideの全画面暗転なし |
 | P16 | 到着直後も穴0（§7.3／裁定1）。スライド中からCommit直後の連続フレーム、停止中、境界から離れる際の保持／解放の切替、即座の逆移動。暗転・黒帯で覆って合格にしない |
-| P17 | 再入場準備の分離（§6.2 手順5）。往復のロード回数とScene handleの再利用、BでHP／CDを変えてAへ戻る、Down／Awayの復元、門・調査・報酬の二重処理なし。キャッシュの有無でゲーム上の結果が変わらない |
+| P17 | 再入場準備の分離（§6.2 手順5）。往復のロード回数とScene handleの再利用、BでHP／CDを変えてAへ戻る、Down／Awayの復元、門・調査・報酬の二重処理なし。キャッシュの有無でゲーム上の結果が変わらない。**要素ごとにどのテストが担保しているかを受入表で名指しする**（付録 C.35）——HPを見た往復テストがCDまで保証したとは扱わない |
 | P18 | 待機表示の通算（§5）。ロード済みだが到着準備を遅延させる場合も表示する。0.3秒未満では出さない、段階が変わってもリセットしない、スライド開始／Rollback／終端失敗で消える、段階別タイムアウトは別管理 |
-| P19 | 非フォーカス中は表示時計を進めず、復帰時に巨大deltaで飛ばさない（§7.1）。ロード監視は別時計で継続する |
+| P19 | 非フォーカス中は表示時計を進めず、復帰時に巨大deltaで飛ばさない（§7.1）。ロード監視は別時計で継続する。**受入は2つに区分する**（付録 C.35.3）——規則そのものは注入と窓口の切替で決定的に見るが、Engineの実通知が届くことはEditorでは試せない（手動確認事項） |
 | V01 | 正規生成物がScene／Asset／Data検査通過、二度生成して共有原本非汚染 |
 | V02 | Gameplay初期Active、接続ズレ、NavMesh欠落、子のMissing Script、入口の戦闘Trigger重複を壊したFixtureで検出 |
 | V03 | Bridgeから検査・必須manifest検証が同じ経路へ接続、未実装／Skip／0件成功を失敗扱い |
@@ -2539,3 +2539,85 @@ Single 読込は載っている Scene を**全部置き換える**ので、残�
 | 101 | `TryRetryRetiringDeparture()` の `ReleaseFailed` 経路を常に false にする | **1 件失敗**（明示的再試行が効かない） |
 | 102 | `AreaPreloader.Poll` の `ReleaseFailed` 経路が `HasRetryPermission()` を見ない | **1 件失敗**（無操作で撃ち直す。`Expected: 1 But was: 2`） |
 | 103 | `HasUnreleasedScene` を `HasPendingRetire` だけにする | **2 件失敗**（保持経路の抱え込みが見えなくなる） |
+
+
+## 付録 C.35 受入の対応表（工程 P55-11c。§11 の P17／P19）
+
+**この付録は新しい規則を足さない。** すでにある受入について
+「**どのテストが何を担保しているか**」と「**担保していないもの**」を名指しする。
+
+### C.35.1 なぜ表が要るのか
+
+P17 は「B 側で HP／**CD** を変えて A へ戻る」を求めている。
+工程 P55-10c で足した実往復テストは**HP だけ**を見ていた
+（CD は実時計で減るので、値を立てて歩くと「復元されたか」と「切れたか」が混ざる、という理由で外していた）。
+
+**ここが危ない。** 実往復テストが 1 本あると、その要求は「実物で通してある」と読める。
+1 本のテストが要求の一部しか見ていないとき、**見ていない部分は誰も見ていない**。
+
+### C.35.2 P17 の内訳
+
+| P17 の要素 | 保持した Area への再入場で見ているか | どのテストが |
+|---|---|---|
+| 往復のロード回数・Scene handle の再利用 | **見ている**（実往復） | `ReturningImmediately_ReusesTheRetainedAreaWithoutLoading` |
+| HP | **見ている**（実往復） | `ChangingTheHpInB_ThenReturningToA_KeepsTheDentedValue` |
+| 全 CD（攻撃・構え・回避・守護）・スタミナ | **見ている**（実往復。工程 P55-11c で追加） | `ChangingTheCooldownsInB_ThenReturningToA_RestoresThemInsteadOfTheStaleValues` |
+| 犬丸の Down／Away の復元 | **見ている**（実往復。工程 P55-11c で追加） | `WithTheCompanionDownOrAwayInB_ReturningToTheRetainedArea_KeepsThatState` |
+| 門・調査・徳・Encounter の二重処理なし | **見ている**（実往復 5 回） | `TheWholeRoute_SurvivesFiveRoundTripsAFightAndARespawn`（P13） |
+| 入口配置・跳ね返り止め・準備完了の報告・途中動作の破棄 | **直接呼び出しで見ている** | `P55ReentryPreparationPlayTests.EachEntry_*` |
+| 被弾後無敵 | **再入場では見ていない**（下記） | `SlidingCarriesTheActorValues_WithoutAdvancingThem`（P05。新規到着側） |
+| Single 読込の前に保持した Area も片付く | **見ている** | `BeforeASingleLoad_TheRetainedAreaIsReleasedToo` |
+
+### C.35.2.1 P05／P06 は代替にならない
+
+| | P05／P06 | 再入場（P17） |
+|---|---|---|
+| 到着側の Area | **新しく読んだ**もの | **保持していた**もの |
+| 到着側の Actor | 新品 | **前に置いていったもの** |
+| 復元しなかったら見えるもの | 初期値（Data の既定） | **その Area を出たときの値** |
+
+**壊れ方が違う。** 新品の Actor は Snapshot から復元するしか道が無いので、
+呼び忘れれば必ず初期値になって必ず落ちる。
+保持した Area には**それらしい値がすでに入っている**ので、
+呼び忘れても「動いてはいる」——2 周目にだけ、B での変化が消える。
+
+### C.35.2.2 被弾後無敵を再入場で見ない理由
+
+上限が設定値（0.5 秒）で、**往復にかかる時間より短くできる**。
+残っていなかったとき「復元されなかった」と「切れた」を分けられないので、
+**分けられる値だけで言う**——CD は上限が 3〜6 秒あり、往復より長い。
+
+同じ理由で、**CD の残り秒数そのものは期待値にしない**。
+見るのは「A を出たときの値（0）を上回っていること」だけである。
+
+### C.35.2.3 Scene 側の門で見ていること
+
+Session の記録（`InvestigatedCount`・`IsOpen`）は**集合と数**なので、
+二度書いても値が変わらない——**Scene の部品が二度動いたことは現れない**。
+
+最初はレバーの `OpenedCount` で見ようとしたが、あれは
+`AreaRuntimeState.TryOpen` が通ったときだけ増えるので、記録が既に開通済みなら
+**復元がどう壊れていても増えない**。空振りだった。門側の 2 つで言う。
+
+| 数 | 期待 | 意味 |
+|---|---|---|
+| `AreaFlagDoor.AppliedCount` | **1 のまま** | 「いま開通した」を繰り返していない |
+| `AreaFlagDoor.ReappliedCount` | **入場ごとに増える** | 入場ごとに押し直している（§6.2 手順 6）。増えなければ、留守のあいだに記録が変わった門を反映できない |
+
+### C.35.3 P19 の受入区分
+
+非フォーカスの実装は Editor で `OnApplicationFocus`／`OnApplicationPause` を
+**コンパイルごと外している**（無人の自動実行では Game View にフォーカスが無いのが普通で、
+聞くと PlayMode 全件が一斉に止まる）。つまり自動受入で言えているのは**片方だけ**である。
+
+| 何 | どこで見ているか | 状態 |
+|---|---|---|
+| **規則**：非フォーカスでは表示時計を進めない／復帰時に飛ばさない | EditMode 8 件（値で決定的に）＋ PlayMode 1 件（実 Scene で窓口を切替） | **済** |
+| **配線**：常駐が居て窓口へ差さっている／規則を見る口がビルドで通知が呼ぶ口と同じ | PlayMode 1 件（工程 P55-11c で追加） | **済** |
+| **Engine の実通知が届くこと** | Editor では試せない | **手動確認事項**（記録 047 §3） |
+
+3 行目を散文だけで済ませると、あとから読む人が「P19 は全部見てある」と受け取る。
+だから**境目そのものを検査で固定した**——
+`TheFocusHost_IsWiredButDoesNotListenToEngineNotificationsInTheEditor` は
+`AppFocusHost.ListensToEngineNotifications` が Editor で false であることを assert する。
+ここを true に変えると落ちるので、**欠けている一片が名指しされたまま残る**。
