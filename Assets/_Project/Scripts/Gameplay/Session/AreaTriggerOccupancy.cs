@@ -36,28 +36,126 @@ namespace Momotaro.Gameplay.Session
         /// </summary>
         public static bool IsOverlappingPlayer(Collider trigger, PlayerRoot player)
         {
-            if (trigger == null || player == null)
+            if (trigger == null || player == null || !TryWorldBounds(trigger, out Bounds box))
             {
                 return false;
             }
 
-            Bounds box = trigger.bounds;
             Collider[] colliders = player.GetComponentsInChildren<Collider>(true);
             for (int i = 0; i < colliders.Length; i++)
             {
                 Collider c = colliders[i];
-                if (c == null || c.isTrigger || !c.enabled)
+                if (c == null || c.isTrigger)
                 {
                     continue;
                 }
 
-                if (box.Intersects(c.bounds))
+                if (!TryWorldBounds(c, out Bounds other))
+                {
+                    continue;
+                }
+
+                if (box.Intersects(other))
                 {
                     return true;
                 }
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// その Collider の世界 AABB を、<b>有効・無効に関わらず</b>求める（工程 P55-15b）。
+        ///
+        /// <b><c>Collider.bounds</c> に頼れない。</b> 測り直しが走るのは入場準備の最中で、
+        /// そのとき<b>活動ゲートはまだ開いていない</b>——Collider は無効である。
+        /// 無効な Collider の <c>bounds</c> は信頼できないので、
+        /// そこを鵜呑みにすると「いつも範囲外」になり、
+        /// <b>Trigger の中へ到着する配置で出られなくなる</b>（GPT 指摘 2）。
+        ///
+        /// <see cref="BoxCollider"/> は<b>形から自分で組む</b>（Trigger も主人公の当たりも Box）。
+        /// それ以外は <c>bounds</c> へ落とすが、無効なら測れないものとして扱う——
+        /// <b>測れないときに true を返さない</b>のがこの道具の約束である
+        /// （固まった true を別の固まった true へ置き換えるだけになる）。
+        /// </summary>
+        private static bool TryWorldBounds(Collider collider, out Bounds bounds)
+        {
+            bounds = default;
+            if (collider == null)
+            {
+                return false;
+            }
+
+            // <b>Capsule と Sphere も形から組む</b>（工程 P55-15b）。
+            //
+            // 主人公の当たりは <see cref="CapsuleCollider"/> で、入場準備の最中は
+            // <b>活動ゲートが主人公の根ごと止めている</b>。Trigger 側だけ形から測っても、
+            // 相手が測れなければ「重なっていない」になる——
+            // <b>Trigger の中へ到着する配置で出られない</b>のが直らない。
+            if (collider is CapsuleCollider capsule)
+            {
+                Transform ct = capsule.transform;
+                float r = capsule.radius;
+                float half = Mathf.Max(capsule.height * 0.5f, r);
+                Vector3 axis = capsule.direction == 0 ? Vector3.right
+                    : capsule.direction == 1 ? Vector3.up : Vector3.forward;
+                Vector3 a = ct.TransformPoint(capsule.center + (axis * (half - r)));
+                Vector3 b = ct.TransformPoint(capsule.center - (axis * (half - r)));
+
+                // 半径は最大の拡大率で見る（等倍でない Transform でも足りる側へ寄せる）。
+                Vector3 sc = ct.lossyScale;
+                float radius = r * Mathf.Max(Mathf.Abs(sc.x),
+                    Mathf.Max(Mathf.Abs(sc.y), Mathf.Abs(sc.z)));
+
+                bounds = new Bounds(a, Vector3.zero);
+                bounds.Encapsulate(b);
+                bounds.Expand(radius * 2f);
+                return true;
+            }
+
+            if (collider is SphereCollider sphere)
+            {
+                Transform st = sphere.transform;
+                Vector3 ss = st.lossyScale;
+                float radius = sphere.radius * Mathf.Max(Mathf.Abs(ss.x),
+                    Mathf.Max(Mathf.Abs(ss.y), Mathf.Abs(ss.z)));
+                bounds = new Bounds(st.TransformPoint(sphere.center), Vector3.one * (radius * 2f));
+                return true;
+            }
+
+            if (collider is BoxCollider box)
+            {
+                Transform t = box.transform;
+                Vector3 half = box.size * 0.5f;
+                bool first = true;
+                for (int i = 0; i < 8; i++)
+                {
+                    var corner = new Vector3(
+                        (i & 1) == 0 ? -half.x : half.x,
+                        (i & 2) == 0 ? -half.y : half.y,
+                        (i & 4) == 0 ? -half.z : half.z);
+                    Vector3 world = t.TransformPoint(box.center + corner);
+                    if (first)
+                    {
+                        bounds = new Bounds(world, Vector3.zero);
+                        first = false;
+                    }
+                    else
+                    {
+                        bounds.Encapsulate(world);
+                    }
+                }
+
+                return true;
+            }
+
+            if (!collider.enabled || !collider.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            bounds = collider.bounds;
+            return true;
         }
     }
 }

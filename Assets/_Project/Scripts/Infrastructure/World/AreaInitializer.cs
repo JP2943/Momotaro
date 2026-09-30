@@ -312,6 +312,21 @@ namespace Momotaro.Infrastructure.World
             //    取り出し口の配線は構築側（一度だけ）、記録の反映は<b>入場ごと</b>。
             _encounter?.RestoreFromRecord();
 
+            //    <b>遭遇 Trigger の「範囲内」も測り直す</b>（工程 P55-15b。付録 C.41）。
+            //
+            //    出入口と同じ理由である——<c>OnTriggerEnter</c>／<c>Exit</c> は
+            //    その MonoBehaviour が有効な間しか届かず、活動ゲートが止めている間の退出は届かない。
+            //    こちらの残留は逆向きに出る：true で固まると <c>OnTriggerEnter</c> が即 return するので、
+            //    <b>未クリアの遭遇戦が再入場後に二度と始まらない</b>。
+            //
+            //    <b>工程 P55-15a では繋ぎ忘れていた。</b> メソッドは足したのに、ここから呼んでいなかった
+            //    （記録 038 §1「API があることと、繋がっていることは別」）。
+            foreach (Momotaro.Gameplay.Encounter.AreaEncounterTrigger trigger
+                     in _areaRoot.EncounterTriggers)
+            {
+                trigger?.ResyncOccupancy();
+            }
+
             // 8. 到着直後の跳ね返りを止める（§6.1 末尾）。
             //    入口 Trigger の中に立った状態で到着するのが普通なので、
             //    一度出るまで出入口は要求を出さない。押しっぱなしを新しい押下と解釈しない。

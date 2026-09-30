@@ -243,7 +243,7 @@
     },
     {
       "id": "P55-OCCUPANCY",
-      "summary": "**Trigger の「範囲内」は、入場のたびに実際の重なりから測り直す**（工程 P55-15a。試遊報告①「エリア B の戦闘区域を歩き回っていると、突然エリア A の『B へ』の位置まで強制的に移動させられる」）。`OnTriggerEnter`／`OnTriggerExit` は**その MonoBehaviour が有効な間**しか届かない。`AreaActivityGate` は非活動 Area の出入口を止めるので、止まっている間に主人公が範囲から出ても**退出が一度も届かない**。さらに**到着入口は出入口の Trigger の外にある**（東西配置：Trigger −14.2〜−12.6／到着 −11.5）ので、再入場でも入退出が起きず、**去ったときの true が固まって残る**。残ると出口方向へ 0.15 秒入力するだけで**主人公がどこに居ても遷移が要求される**。受入は 3 つ：(1) 往復したあと出入口が「範囲内」と思っていない（かつ**固まった true を実際に落とした**ことを `StaleOccupancyClearedCount` で見る——0 なら残留が起きていないので何も守っていない）／(2) 境界から離れた場所で出口方向を押し続けても遷移しない（**結果**で見る）／(3) 活動していない Area の出入口は共有の移動入力を数えない（`Tick` は Unity の呼び出しではないので、止められていても呼べてしまう）。`AreaEncounterTrigger` も同じ形で、こちらの残留は**遭遇戦が二度と始まらない**という逆向きの壊れ方になる",
+      "summary": "**Trigger の「範囲内」は、入場のたびに実際の重なりから測り直す**（工程 P55-15a。試遊報告①「エリア B の戦闘区域を歩き回っていると、突然エリア A の『B へ』の位置まで強制的に移動させられる」）。`OnTriggerEnter`／`OnTriggerExit` は**その MonoBehaviour が有効な間**しか届かない。`AreaActivityGate` は非活動 Area の出入口を止めるので、止まっている間に主人公が範囲から出ても**退出が一度も届かない**。さらに**到着入口は出入口の Trigger の外にある**（東西配置：Trigger −14.2〜−12.6／到着 −11.5）ので、再入場でも入退出が起きず、**去ったときの true が固まって残る**。残ると出口方向へ 0.15 秒入力するだけで**主人公がどこに居ても遷移が要求される**。受入は 3 つ：(1) 往復したあと出入口が「範囲内」と思っていない（かつ**固まった true を実際に落とした**ことを `StaleOccupancyClearedCount` で見る——0 なら残留が起きていないので何も守っていない）／(2) 境界から離れた場所で出口方向を押し続けても遷移しない（**結果**で見る）／(3) 活動していない Area の出入口は共有の移動入力を数えない（`Tick` は Unity の呼び出しではないので、止められていても呼べてしまう）。`AreaEncounterTrigger` も同じ形で、こちらの残留は**遭遇戦が二度と始まらない**という逆向きの壊れ方になる **工程 P55-15b で 2 つ足した**（GPT 指摘 1・2）。(4) **遭遇 Trigger の測り直しを入場処理へ接続する**——P55-15a ではメソッドを足したのに `AreaInitializer.PrepareForEntry` から呼んでおらず、「同時に修正済み」という報告は誤りだった（記録 038 §1「API があることと、繋がっていることは別」）。`AreaRoot.EncounterTriggers` へ登録し、Scene 検査が登録漏れを名指しする。(5) **Trigger の中へ到着しても占有を正しく判定する**——測り直しが走るのは入場準備の最中で、活動ゲートはまだ開いていない。出入口の Collider も**主人公の Collider も無効**なので、`Collider.bounds` に頼ると「いつも範囲外」になり、**Trigger の中へ到着する配置で出られなくなる**。Box／Capsule／Sphere を**形から**測る形へ直した（注入 119＝主人公側を `bounds` に戻す、注入 120＝接続を外す、で落ちる）",
       "stage": "P55-15"
     }
   ],
@@ -1025,7 +1025,9 @@
       "implemented": true,
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AfterLeavingAndComingBack_TheExitGateNoLongerThinksTheHeroIsInside",
-        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhileTheAreaIsNotCurrent_ItsExitGatesDoNotCountInput"
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhileTheAreaIsNotCurrent_ItsExitGatesDoNotCountInput",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.ArrivingInsideTheGate_TheOccupancyIsTrueEvenWhileTheAreaIsClosed",
+        "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AnUnclearedEncounter_CanStillStartAfterComingBack"
       ]
     }
   ],

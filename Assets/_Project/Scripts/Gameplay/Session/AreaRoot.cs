@@ -39,6 +39,10 @@ namespace Momotaro.Gameplay.Session
         [Tooltip("接続口をふさぐ見えない境界（工程 P55-14b）。")]
         [SerializeField] private List<AreaSeamBarrier> _seamBarriers = new List<AreaSeamBarrier>();
 
+        [Tooltip("この Area の遭遇 Trigger（§8.2。入場のたびに範囲内を測り直す相手）。")]
+        [SerializeField] private List<Encounter.AreaEncounterTrigger> _encounterTriggers =
+            new List<Encounter.AreaEncounterTrigger>();
+
         /// <summary>このエリアの定義。</summary>
         public AreaDefinition Definition => _definition;
 
@@ -62,6 +66,16 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>接続口をふさぐ見えない境界（工程 P55-14b。§7.3）。</summary>
         public IReadOnlyList<AreaSeamBarrier> SeamBarriers => _seamBarriers;
+
+        /// <summary>
+        /// この Area の遭遇 Trigger（§8.2 手順 1。工程 P55-15b）。
+        ///
+        /// <b>出入口と同じ理由で明示参照を持つ。</b> 入場のたびに「範囲内」を測り直す相手なので、
+        /// 探して回るのではなく<b>登録されているもの</b>を回す——
+        /// 登録が抜けていれば Scene 検査が落ちる（探す形だと、抜けても静かに何もしない）。
+        /// 戦闘の無い Area では空でよい。
+        /// </summary>
+        public IReadOnlyList<Encounter.AreaEncounterTrigger> EncounterTriggers => _encounterTriggers;
 
         /// <summary>指定 ID の入口を Scene から引く。</summary>
         public bool TryGetEntryPoint(StableId entryId, out AreaEntryPoint point)
@@ -98,6 +112,17 @@ namespace Momotaro.Gameplay.Session
             _transitionDoors = transitionDoors ?? new List<Interaction.AreaTransitionDoor>();
             _levers = levers ?? new List<Interaction.AreaFlagLever>();
             _seamBarriers = seamBarriers ?? new List<AreaSeamBarrier>();
+        }
+
+        /// <summary>
+        /// 遭遇 Trigger を登録する（Editor 専用。工程 P55-15b）。
+        ///
+        /// <b>別の入口にしたのは、作られる時機が違うから。</b> 遭遇 Trigger は
+        /// <c>CreateAreaSystems</c> の中で作られるので、<see cref="EditorSet"/> を呼ぶ時点ではまだ居ない。
+        /// </summary>
+        public void EditorSetEncounterTriggers(List<Encounter.AreaEncounterTrigger> triggers)
+        {
+            _encounterTriggers = triggers ?? new List<Encounter.AreaEncounterTrigger>();
         }
 #endif
     }

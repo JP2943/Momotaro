@@ -2,6 +2,7 @@ using System.Collections;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
+using Momotaro.Gameplay.Encounter;
 using Momotaro.Data.World;
 using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Companion;
@@ -4083,6 +4084,143 @@ namespace Momotaro.Tests.PlayMode
 
             // 遭遇 Trigger が無い構成でも、Area の中心なら出入口から離れている。
             return root.Root != null ? root.Root.transform.position : Vector3.zero;
+        }
+
+        /// <summary>
+        /// <b>Trigger の中へ到着しても、占有を正しく判定する</b>
+        /// （工程 P55-15b。GPT 指摘 2）。
+        ///
+        /// <b>ここが危ない場所だった。</b> 測り直しが走るのは<b>入場準備の最中</b>で、
+        /// そのとき活動ゲートはまだ開いていない——出入口の Collider は<b>無効</b>である。
+        /// <c>Collider.bounds</c> は無効な Collider では信頼できないので、
+        /// そこを鵜呑みにすると「いつも範囲外」になり、
+        /// <b>Trigger の中へ到着する配置では出られなくなる</b>。
+        ///
+        /// いまの配置では到着入口が Trigger の外にあるので、この経路は自然には通らない。
+        /// だから<b>主人公を Trigger の中へ置いて</b>、
+        /// 活動ゲートを閉じた状態で測り直しを走らせる。
+        ///
+        /// <b>「外なら false」だけでは受入にならない。</b> 一律 false にする実装でも通ってしまい、
+        /// 「出られない」を防いでいることを言えなくなる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ArrivingInsideTheGate_TheOccupancyIsTrueEvenWhileTheAreaIsClosed()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaExitGate gate = FindExitGate(ExitAEast);
+            Collider trigger = gate.GetComponent<Collider>();
+            Assert.IsNotNull(trigger, "出入口は Trigger を持つ。");
+
+            var activity = Object.FindFirstObjectByType<AreaActivityGate>();
+            Assert.IsNotNull(activity, "活動ゲートがある。");
+
+            // ---- (1) Trigger の外：false になる ----
+            yield return PlaceHero(gate.transform.position + new Vector3(-6f, 0f, 0f));
+            gate.ResyncOccupancy();
+            Assert.IsFalse(gate.PlayerInside,
+                "Trigger から離れていれば範囲外（主人公 "
+                + Object.FindFirstObjectByType<PlayerRoot>().transform.position + "）。");
+
+            // ---- (2) Trigger の中：true になる ----
+            yield return PlaceHero(gate.transform.position);
+            gate.ResyncOccupancy();
+            Assert.IsTrue(gate.PlayerInside,
+                "<b>Trigger の中なら範囲内</b>（主人公 "
+                + Object.FindFirstObjectByType<PlayerRoot>().transform.position
+                + " / Trigger 中心 " + gate.transform.position + "）。"
+                + " 一律 false にする実装ならここで落ちる。");
+
+            // ---- (3) 活動ゲートを閉じた状態（＝入場準備の最中）でも同じ ----
+            //
+            // 実際の入場準備はこの状態で走る。Collider が無効なので、
+            // 形から測っていない実装はここで false になる。
+            activity.Close();
+            yield return null;
+            Assert.IsFalse(trigger.enabled,
+                "前提：活動ゲートが出入口の Collider を止めている。");
+
+            gate.ResyncOccupancy();
+            Assert.IsTrue(gate.PlayerInside,
+                "<b>止められている Collider でも、形から重なりを測れている</b>（Trigger 中心 "
+                + gate.transform.position + "）。"
+                + " Collider.bounds に頼る実装はここで落ちる——"
+                + "入場準備は必ずこの状態で走るので、Trigger の中へ到着する配置で出られなくなる。");
+
+            activity.Open();
+            yield return null;
+        }
+
+        /// <summary>
+        /// <b>未クリアの遭遇戦は、往復して戻っても始められる</b>
+        /// （工程 P55-15b。GPT 指摘 1）。
+        ///
+        /// <c>AreaEncounterTrigger</c> も「範囲内」を持つ。true で固まると
+        /// <c>OnTriggerEnter</c> が即 return するので、<b>遭遇戦が二度と始まらない</b>。
+        ///
+        /// <b>工程 P55-15a では、測り直しのメソッドを足したのに入場処理から呼んでいなかった</b>
+        /// （記録 038 §1「API があることと、繋がっていることは別」）。
+        /// この検査はその配線を見る——<c>ResyncCount</c> が増えていることと、
+        /// <b>実際に戦闘が始まること</b>の両方で。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AnUnclearedEncounter_CanStillStartAfterComingBack()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            // ---- A → B（戦わずに戻る）----
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 0, 25f);
+            yield return SettleWorld(transitions);
+
+            var encounter = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            Assert.IsNotNull(encounter, "B に遭遇戦がある。");
+            Assert.AreEqual(AreaEncounterState.Dormant, encounter.State,
+                "前提：まだ始まっていない（戦っていない）。");
+
+            var trigger = Object.FindFirstObjectByType<AreaEncounterTrigger>();
+            Assert.IsNotNull(trigger, "遭遇 Trigger がある。");
+            Assert.IsTrue(trigger.IsWired, "主人公が配線されている。");
+
+            // ---- B → A → B（往復する）----
+            yield return StandJustBefore(FindExitGate(ExitBWest), Vector3.right);
+            yield return HoldUntil(Key.A, () => transitions.SlideCommittedCount > 1, 25f);
+            yield return SettleWorld(transitions);
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return HoldUntil(Key.D, () => transitions.SlideCommittedCount > 2, 25f);
+            yield return SettleWorld(transitions);
+            Assert.AreEqual(AreaB.Value, CurrentAreaProvider.Current.AreaId.Value, "B に居る。");
+
+            AreaEncounterTrigger back = Object.FindFirstObjectByType<AreaEncounterTrigger>();
+            Assert.IsNotNull(back, "戻った B に遭遇 Trigger がある。");
+            Assert.Greater(back.ResyncCount, 0,
+                "<b>入場のたびに測り直している</b>（" + back.ResyncCount
+                + " 回）。0 なら入場処理から呼ばれていない——工程 P55-15a の繋ぎ忘れである。");
+            Assert.IsFalse(back.PlayerInside,
+                "到着した主人公は戦闘区域の中に居ない（入口に居る）。");
+
+            AreaEncounterRunner runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            Assert.IsNotNull(runner, "戻った B に遭遇戦がある。");
+            Assert.AreEqual(AreaEncounterState.Dormant, runner.State,
+                "まだ始まっていない（記録は未クリアのまま）。");
+
+            // ---- 戦闘区域へ入る：始まる ----
+            yield return PlaceHero(back.transform.position);
+
+            float deadline = Time.realtimeSinceStartup + 6f;
+            while (runner.State == AreaEncounterState.Dormant
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.AreNotEqual(AreaEncounterState.Dormant, runner.State,
+                "<b>往復して戻っても、戦闘区域へ入れば遭遇戦が始まる</b>（状態 " + runner.State
+                + " 要求数 " + back.RequestCount + " 範囲内 " + back.PlayerInside
+                + "）。始まらないなら「範囲内」が true で固まっている。");
         }
 
         // ------------------------------------------------- 到着後の追従（工程 P55-14d。裁定の注意点 3）

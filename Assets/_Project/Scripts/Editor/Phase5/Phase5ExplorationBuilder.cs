@@ -1448,6 +1448,13 @@ namespace Momotaro.Editor.Phase5
                 fixtures.EncounterTrigger.Bind(encounterRunner,
                     playerRoot != null ? playerRoot.GetComponent<PlayerRoot>() : null);
 
+                // <b>入場のたびに測り直す相手として登録する</b>（工程 P55-15b。GPT 指摘 1）。
+                // 登録しないと <c>AreaInitializer</c> が回す相手に入らず、
+                // 「範囲内」の残留が遭遇 Trigger 側にだけ残る。
+                areaRoot.EditorSetEncounterTriggers(
+                    new List<Momotaro.Gameplay.Encounter.AreaEncounterTrigger>
+                        { fixtures.EncounterTrigger });
+
                 // ---- 命中 Feedback（§8.2 手順 7「報酬と Feedback の購読を接続する」）----
                 //
                 // 既存の配信役・演出をそのまま組む（新しい Feedback 経路を作らない）。

@@ -881,6 +881,48 @@ namespace Momotaro.Editor.Phase5
             RequireWired<AreaEncounterSpawner>(scene, "敵の生成役", errors, x => x.IsWired);
             RequireOne<AreaEncounterTrigger>(scene, "戦闘開始 Trigger（AreaEncounterTrigger）", errors);
             RequireWired<AreaEncounterTrigger>(scene, "戦闘開始 Trigger", errors, x => x.IsWired);
+
+            // <b>AreaRoot へ登録されていること</b>（工程 P55-15b。付録 C.41）。
+            //
+            // 入場のたびに「範囲内」を測り直す相手は<b>登録されているもの</b>を回す。
+            // 登録が抜けると <c>AreaInitializer</c> が回す相手に入らず、
+            // 残留が遭遇 Trigger 側にだけ残って<b>遭遇戦が二度と始まらない</b>——
+            // 置いてあるのに誰も触っていない、という形の抜けなので、ここで名指しする。
+            foreach (AreaRoot root in Components<AreaRoot>(scene))
+            {
+                if (root == null)
+                {
+                    continue;
+                }
+
+                var triggers = new List<AreaEncounterTrigger>(
+                    Components<AreaEncounterTrigger>(scene));
+                for (int i = 0; i < triggers.Count; i++)
+                {
+                    AreaEncounterTrigger trigger = triggers[i];
+                    if (trigger == null)
+                    {
+                        continue;
+                    }
+
+                    bool registered = false;
+                    for (int j = 0; j < root.EncounterTriggers.Count; j++)
+                    {
+                        if (root.EncounterTriggers[j] == trigger)
+                        {
+                            registered = true;
+                            break;
+                        }
+                    }
+
+                    if (!registered)
+                    {
+                        errors.Add(scene.path + ": 戦闘開始 Trigger '" + trigger.name
+                            + "' が AreaRoot へ登録されていません（入場ごとの範囲内の測り直しが"
+                            + "この Trigger へ届きません。付録 C.41）。");
+                    }
+                }
+            }
             RequireOne<AreaArenaBoundary>(scene, "アリーナ境界（AreaArenaBoundary）", errors);
             RequireWired<AreaArenaBoundary>(scene, "アリーナ境界", errors, x => x.IsWired);
             // 撃破報酬の受け手（§12.1）。<b>これが居ないと徳が黙って入らなくなる。</b>
