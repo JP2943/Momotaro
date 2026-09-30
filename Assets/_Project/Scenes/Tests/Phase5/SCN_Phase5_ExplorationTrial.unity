@@ -119,7 +119,7 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &308422939
+--- !u!1 &133611798
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -127,9 +127,57 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 308422940}
-  - component: {fileID: 308422942}
-  - component: {fileID: 308422941}
+  - component: {fileID: 133611800}
+  - component: {fileID: 133611799}
+  m_Layer: 0
+  m_Name: Phase5TrialRoot
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &133611799
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 133611798}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e99ccbe931aebe6107ce275027019aca, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Momotaro.Infrastructure::Momotaro.Infrastructure.World.Phase5TrialLauncher
+  _catalog: {fileID: 11400000, guid: ed7588fa4855b7c4aad2df39484b7c2f, type: 2}
+  _travelOnStart: 1
+--- !u!4 &133611800
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 133611798}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1111655924}
+  - {fileID: 1359702361}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1111655923
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1111655924}
+  - component: {fileID: 1111655926}
+  - component: {fileID: 1111655925}
   m_Layer: 0
   m_Name: "Label_P5 \u63A2\u7D22\u8A66\u904A\uFF08\u8D77\u52D5\uFF09"
   m_TagString: Untagged
@@ -137,29 +185,29 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &308422940
+--- !u!4 &1111655924
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 308422939}
+  m_GameObject: {fileID: 1111655923}
   serializedVersion: 2
   m_LocalRotation: {x: 0.7071068, y: -0, z: -0, w: 0.7071068}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1557656528}
+  m_Father: {fileID: 133611800}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!102 &308422941
+--- !u!102 &1111655925
 TextMesh:
   serializedVersion: 3
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 308422939}
+  m_GameObject: {fileID: 1111655923}
   m_Text: "P5 \u63A2\u7D22\u8A66\u904A\uFF08\u8D77\u52D5\uFF09"
   m_OffsetZ: 0
   m_CharacterSize: 0.5
@@ -174,13 +222,13 @@ TextMesh:
   m_Color:
     serializedVersion: 2
     rgba: 4294967295
---- !u!23 &308422942
+--- !u!23 &1111655926
 MeshRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 308422939}
+  m_GameObject: {fileID: 1111655923}
   m_Enabled: 1
   m_CastShadows: 1
   m_ReceiveShadows: 1
@@ -223,7 +271,7 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!1 &1133946139
+--- !u!1 &1337695270
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -231,10 +279,10 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1133946143}
-  - component: {fileID: 1133946142}
-  - component: {fileID: 1133946141}
-  - component: {fileID: 1133946140}
+  - component: {fileID: 1337695274}
+  - component: {fileID: 1337695273}
+  - component: {fileID: 1337695272}
+  - component: {fileID: 1337695271}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -242,36 +290,36 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1133946140
+--- !u!114 &1337695271
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1133946139}
+  m_GameObject: {fileID: 1337695270}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5cf6f85021c0705c352a23b103f0b835, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Combat.CameraShakePresenter
-  _target: {fileID: 1133946143}
+  _target: {fileID: 1337695274}
   _maxMagnitude: 0.4
   _seed: 2463534242
---- !u!81 &1133946141
+--- !u!81 &1337695272
 AudioListener:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1133946139}
+  m_GameObject: {fileID: 1337695270}
   m_Enabled: 1
---- !u!20 &1133946142
+--- !u!20 &1337695273
 Camera:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1133946139}
+  m_GameObject: {fileID: 1337695270}
   m_Enabled: 1
   serializedVersion: 2
   m_ClearFlags: 1
@@ -316,13 +364,13 @@ Camera:
   m_OcclusionCulling: 1
   m_StereoConvergence: 10
   m_StereoSeparation: 0.022
---- !u!4 &1133946143
+--- !u!4 &1337695274
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1133946139}
+  m_GameObject: {fileID: 1337695270}
   serializedVersion: 2
   m_LocalRotation: {x: 0.46174863, y: 0, z: 0, w: 0.8870109}
   m_LocalPosition: {x: 0, y: 14, z: -9.802906}
@@ -331,7 +379,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1557656526
+--- !u!1 &1359702360
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -339,57 +387,9 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1557656528}
-  - component: {fileID: 1557656527}
-  m_Layer: 0
-  m_Name: Phase5TrialRoot
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1557656527
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1557656526}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e99ccbe931aebe6107ce275027019aca, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Momotaro.Infrastructure::Momotaro.Infrastructure.World.Phase5TrialLauncher
-  _catalog: {fileID: 11400000, guid: ed7588fa4855b7c4aad2df39484b7c2f, type: 2}
-  _travelOnStart: 1
---- !u!4 &1557656528
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1557656526}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 308422940}
-  - {fileID: 1688921833}
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1688921832
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1688921833}
-  - component: {fileID: 1688921835}
-  - component: {fileID: 1688921834}
+  - component: {fileID: 1359702361}
+  - component: {fileID: 1359702363}
+  - component: {fileID: 1359702362}
   m_Layer: 0
   m_Name: "Label_Play \u3059\u308B\u3068 \u30A8\u30EA\u30A2 A \u306E\u958B\u59CB\u70B9\u3078\u79FB\u52D5\u3057\u307E\u3059"
   m_TagString: Untagged
@@ -397,29 +397,29 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &1688921833
+--- !u!4 &1359702361
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1688921832}
+  m_GameObject: {fileID: 1359702360}
   serializedVersion: 2
   m_LocalRotation: {x: 0.7071068, y: -0, z: -0, w: 0.7071068}
   m_LocalPosition: {x: 0, y: 0, z: -1.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1557656528}
+  m_Father: {fileID: 133611800}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!102 &1688921834
+--- !u!102 &1359702362
 TextMesh:
   serializedVersion: 3
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1688921832}
+  m_GameObject: {fileID: 1359702360}
   m_Text: "Play \u3059\u308B\u3068 \u30A8\u30EA\u30A2 A \u306E\u958B\u59CB\u70B9\u3078\u79FB\u52D5\u3057\u307E\u3059"
   m_OffsetZ: 0
   m_CharacterSize: 0.2
@@ -434,13 +434,13 @@ TextMesh:
   m_Color:
     serializedVersion: 2
     rgba: 4294967295
---- !u!23 &1688921835
+--- !u!23 &1359702363
 MeshRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1688921832}
+  m_GameObject: {fileID: 1359702360}
   m_Enabled: 1
   m_CastShadows: 1
   m_ReceiveShadows: 1
@@ -483,7 +483,7 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!1 &2080091734
+--- !u!1 &1925134287
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -491,8 +491,8 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 2080091736}
-  - component: {fileID: 2080091735}
+  - component: {fileID: 1925134289}
+  - component: {fileID: 1925134288}
   m_Layer: 0
   m_Name: Directional Light
   m_TagString: Untagged
@@ -500,13 +500,13 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!108 &2080091735
+--- !u!108 &1925134288
 Light:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2080091734}
+  m_GameObject: {fileID: 1925134287}
   m_Enabled: 1
   serializedVersion: 12
   m_Type: 1
@@ -565,13 +565,13 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
---- !u!4 &2080091736
+--- !u!4 &1925134289
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2080091734}
+  m_GameObject: {fileID: 1925134287}
   serializedVersion: 2
   m_LocalRotation: {x: 0.40821794, y: -0.23456973, z: 0.10938166, w: 0.8754261}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -584,6 +584,6 @@ Transform:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 1557656528}
-  - {fileID: 2080091736}
-  - {fileID: 1133946143}
+  - {fileID: 133611800}
+  - {fileID: 1925134289}
+  - {fileID: 1337695274}
