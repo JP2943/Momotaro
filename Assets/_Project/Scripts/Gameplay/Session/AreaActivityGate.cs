@@ -42,6 +42,21 @@ namespace Momotaro.Gameplay.Session
         [Tooltip("先読みのときだけ無効にする表示系（Camera／AudioListener／Light）。<b>保存時は有効</b>。")]
         [SerializeField] private List<Behaviour> _stagedOnlyBehaviours = new List<Behaviour>();
 
+        [Tooltip("出荷時（閉じる直前）の有効状態。**初回 Open はこれを復元する**。工程 P55-14a。")]
+        [SerializeField] private List<bool> _initialRootState = new List<bool>();
+
+        [Tooltip("出荷時（閉じる直前）の Collider の有効状態。")]
+        [SerializeField] private List<bool> _initialColliderState = new List<bool>();
+
+        [Tooltip("出荷時（閉じる直前）の部品の有効状態。")]
+        [SerializeField] private List<bool> _initialBehaviourState = new List<bool>();
+
+        [Tooltip("出荷時（閉じる直前）の表示系の有効状態。")]
+        [SerializeField] private List<bool> _initialStagedOnlyState = new List<bool>();
+
+        [Tooltip("出荷時の有効状態を持っているか（持っていない古い Scene は一律有効化へ落ちる）。")]
+        [SerializeField] private bool _hasInitialState;
+
         private readonly List<bool> _rootState = new List<bool>();
         private readonly List<bool> _colliderState = new List<bool>();
         private readonly List<bool> _behaviourState = new List<bool>();
@@ -62,6 +77,18 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>読み込み時にその場で開けたか（診断・テスト用）。先読みなら false。</summary>
         public bool OpenedOnLoad { get; private set; }
+
+        /// <summary>出荷時の有効状態を持っているか（Validator・テスト用。工程 P55-14a）。</summary>
+        public bool HasInitialState => _hasInitialState;
+
+        /// <summary>
+        /// <b>復元すべき状態が無く、一律に有効化した回数</b>（診断・テスト用。工程 P55-14a）。
+        ///
+        /// 0 でない Scene は、<b>持ち主が別に居る Collider まで有効にしている</b>——
+        /// 戦闘中だけ有効なアリーナ封鎖や、開通して自分を無効にした門がそれに当たる。
+        /// 黙って落ちる代わりに数えるのは、**出荷状態の記録が抜けた Scene を外から見分ける**ため。
+        /// </summary>
+        public int UniformOpenCount { get; private set; }
 
         /// <summary>この Area の安定 ID（根が未配線なら空）。</summary>
         public StableId AreaId => _areaRoot != null ? _areaRoot.AreaId : default;
@@ -206,10 +233,27 @@ namespace Momotaro.Gameplay.Session
 
             if (_hasRestoreState)
             {
+                // 二度目以降：閉める直前の状態へ戻す。
                 Restore();
+            }
+            else if (_hasInitialState)
+            {
+                // <b>初回：出荷時の状態へ戻す</b>（工程 P55-14a。GPT 受入 2）。
+                //
+                // 以前はここで一律に有効化していた。「復元すべき前の状態がない」と考えたが、
+                // **出荷状態こそが復元すべき初期状態だった**。
+                // 一律に有効化すると、<b>わざと無効で出荷した Collider まで有効になる</b>——
+                // 実測で、到着した Area のアリーナ封鎖 4 枚が
+                // <c>IsEnabled=false</c>（封鎖していない）のまま
+                // <c>ActiveBlockerCount=4</c>（実体は壁）になっていた。
+                // 戦闘区域へ歩いて入れなくなる。
+                RestoreInitial();
             }
             else
             {
+                // 出荷状態の記録が無い（この工程より前に作られた Scene・手組み）。
+                // 黙って落ちないように数える。
+                UniformOpenCount++;
                 Apply(true);
             }
 
@@ -308,6 +352,46 @@ namespace Momotaro.Gameplay.Session
         /// <summary>いま検査のために当たりを戻している最中か（診断・テスト用）。</summary>
         public bool IsProbingObstacles => _probing;
 
+        /// <summary>
+        /// 出荷状態（閉じる直前の有効状態）を記録する（Editor 専用の入口から呼ばれる）。
+        ///
+        /// <b>閉じたあとに呼んではいけない。</b> 全部無効になった状態を出荷状態として覚えると、
+        /// 初回 Open で Area が永久に目覚めない（<see cref="Close"/> が
+        /// 同じ理由で「開いているときだけ覚える」と書いているのと同じ罠）。
+        /// </summary>
+        public void CaptureInitialState()
+        {
+            _initialRootState.Clear();
+            for (int i = 0; i < _gatedRoots.Count; i++)
+            {
+                _initialRootState.Add(_gatedRoots[i] != null && _gatedRoots[i].activeSelf);
+            }
+
+            _initialColliderState.Clear();
+            for (int i = 0; i < _gatedColliders.Count; i++)
+            {
+                _initialColliderState.Add(_gatedColliders[i] != null && _gatedColliders[i].enabled);
+            }
+
+            _initialBehaviourState.Clear();
+            for (int i = 0; i < _gatedBehaviours.Count; i++)
+            {
+                _initialBehaviourState.Add(_gatedBehaviours[i] != null && _gatedBehaviours[i].enabled);
+            }
+
+            _initialStagedOnlyState.Clear();
+            for (int i = 0; i < _stagedOnlyBehaviours.Count; i++)
+            {
+                _initialStagedOnlyState.Add(
+                    _stagedOnlyBehaviours[i] != null && _stagedOnlyBehaviours[i].enabled);
+            }
+
+            _hasInitialState = true;
+        }
+
+        /// <summary>出荷時の Collider の有効状態（Validator・テスト用）。</summary>
+        public IReadOnlyList<bool> InitialColliderState => _initialColliderState;
+
         private void CaptureRestoreState()
         {
             _rootState.Clear();
@@ -335,6 +419,52 @@ namespace Momotaro.Gameplay.Session
             }
 
             _hasRestoreState = true;
+        }
+
+        /// <summary>
+        /// <b>出荷時の有効状態へ戻す</b>（初回 Open。工程 P55-14a）。
+        ///
+        /// 順序は <see cref="Apply"/> と同じ規律（物理・NavMesh が先、Gameplay が後）。
+        /// 記録が足りない要素は<b>有効にする</b>——地形が通れない Area を作るより、
+        /// 記録の抜けを <see cref="UniformOpenCount"/> と Validator で捕まえるほうが軽い。
+        /// </summary>
+        private void RestoreInitial()
+        {
+            for (int i = 0; i < _gatedColliders.Count; i++)
+            {
+                Collider c = _gatedColliders[i];
+                if (c != null)
+                {
+                    c.enabled = i < _initialColliderState.Count ? _initialColliderState[i] : true;
+                }
+            }
+
+            for (int i = 0; i < _gatedBehaviours.Count; i++)
+            {
+                Behaviour b = _gatedBehaviours[i];
+                if (b != null)
+                {
+                    b.enabled = i < _initialBehaviourState.Count ? _initialBehaviourState[i] : true;
+                }
+            }
+
+            for (int i = 0; i < _stagedOnlyBehaviours.Count; i++)
+            {
+                Behaviour b = _stagedOnlyBehaviours[i];
+                if (b != null)
+                {
+                    b.enabled = i < _initialStagedOnlyState.Count ? _initialStagedOnlyState[i] : true;
+                }
+            }
+
+            for (int i = 0; i < _gatedRoots.Count; i++)
+            {
+                GameObject go = _gatedRoots[i];
+                if (go != null)
+                {
+                    go.SetActive(i < _initialRootState.Count ? _initialRootState[i] : true);
+                }
+            }
         }
 
         /// <summary>覚えている有効状態を戻す。順序は <see cref="Apply"/> と同じ規律。</summary>
@@ -471,6 +601,12 @@ namespace Momotaro.Gameplay.Session
         /// </summary>
         public void EditorCloseForShipping()
         {
+            // <b>閉じる前に、いまの有効状態を出荷状態として残す</b>（工程 P55-14a）。
+            //
+            // これが無いと初回 Open が一律に有効化するしかなくなり、
+            // **わざと無効で置いた Collider（アリーナ封鎖など）まで有効になる**。
+            CaptureInitialState();
+
             Apply(false);
 
             // <b>表示系は有効のまま出荷する。</b> 保存時に切ると

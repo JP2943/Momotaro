@@ -11,7 +11,8 @@
     "P55-05",
     "P55-06",
     "P55-10",
-    "P55-11"
+    "P55-11",
+    "P55-14"
   ],
   "requirements": [
     {
@@ -218,6 +219,11 @@
       "id": "P55-P19",
       "summary": "非フォーカス中の表示時計停止（仕様書 §11 の P19。§7.1。工程 P55-10f）。アプリが背面に回っているあいだはスライドの表示時間を進めない——カメラも表示代理も動かず、コマも進まず、遷移は終わらない。前面へ戻ったら止めた続きから進む。復帰時に巨大 delta で飛ばさない（表示に使う 1 フレームぶんの秒数に上限を置く）。窓口が差さっていなければ前面とみなす（配線していない構成でスライドが止まらない）。ロード監視は別の時計で継続する。**受入を 2 つに区分する**（工程 P55-11c）——(a) **規則そのもの**は注入と窓口の切替で決定的に見ている（EditMode 8 件＋ PlayMode 1 件）。(b) **Engine の実通知が届くこと**は Editor では一度も試していない——`AppFocusHost` が `UNITY_EDITOR` で `OnApplicationFocus`／`OnApplicationPause` をコンパイルごと外しているため（無人実行では Game View にフォーカスが無いのが普通で、聞くと PlayMode 全件が止まる）。その境目自体を `TheFocusHost_IsWiredButDoesNotListenToEngineNotificationsInTheEditor` が固定し、常駐が窓口へ差さっていること・Editor では通知を聞かないこと・規則を見るときに通る口がビルドで通知が呼ぶ口と同じであることを見る。**ビルド上での実通知の確認は手動確認事項として残る**（記録 047 §3）",
       "stage": "P55-10"
+    },
+    {
+      "id": "P55-SEC4-2B",
+      "summary": "活動ゲートの**出荷状態の復元**（仕様書 §4.2。工程 P55-14a。試遊報告「赤いラインが通過できず戦闘区域に入れない」）。初回の Open は一律に有効化せず、**閉じる直前に記録した出荷状態**を復元する。出荷状態とは Builder が閉じる前の有効状態で、地形・外周壁は有効、**戦闘中だけ有効なアリーナ封鎖は無効**、閉じた門は有効である。一律に有効化すると、わざと無効で出荷した Collider まで有効になり、意図（`AreaArenaBoundary.IsEnabled`）は「封鎖していない」のに実体（`ActiveBlockerCount`）は「4 枚とも壁」になる——**意図と実体の両方を見る**。記録が無い Scene は一律有効化へ落ちるので `UniformOpenCount` で数え、Scene 検査でも記録の有無を見る。非活動時はいずれも停止させる責任はゲートが持ち続ける（除外方式にはしない）",
+      "stage": "P55-14"
     }
   ],
   "tests": [
@@ -921,6 +927,18 @@
         "Momotaro.Tests.EditMode.P55AppFocusTests.AnotherOwner_CannotTakeOver",
         "Momotaro.Tests.EditMode.P55AppFocusTests.ReleasingIsOwnerMatched_AndFallsBackToFocused",
         "Momotaro.Tests.EditMode.P55AppFocusTests.NullsAreRefused"
+      ]
+    },
+    {
+      "requirementId": "P55-SEC4-2B",
+      "stage": "P55-14",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.OpeningTheGate_LeavesTheArenaBlockersDisabled",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.TheFirstOpen_RestoresTheShippedState(\"A\")",
+        "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.TheFirstOpen_RestoresTheShippedState(\"B\")"
       ]
     }
   ],

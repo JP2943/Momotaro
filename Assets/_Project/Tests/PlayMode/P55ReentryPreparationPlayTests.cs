@@ -1,6 +1,7 @@
 using System.Collections;
 using Momotaro.Core.Identification;
 using Momotaro.Gameplay.Companion.Investigation;
+using Momotaro.Gameplay.Encounter;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Interaction;
 using Momotaro.Gameplay.Modes;
@@ -37,6 +38,7 @@ namespace Momotaro.Tests.PlayMode
     public sealed class P55ReentryPreparationPlayTests
     {
         private const string P55AreaAScene = "Assets/_Project/Scenes/Tests/Phase55/SCN_Phase55_AreaA.unity";
+        private const string P55AreaBScene = "Assets/_Project/Scenes/Tests/Phase55/SCN_Phase55_AreaB.unity";
         private const string P55TrialScene =
             "Assets/_Project/Scenes/Tests/Phase55/SCN_Phase55_ConnectionTrial.unity";
 
@@ -323,7 +325,105 @@ namespace Momotaro.Tests.PlayMode
             return found;
         }
 
-        private IEnumerator OpenAreaA()
+        // ------------------------------------------------- 出荷状態の復元（工程 P55-14a。§4.2）
+
+        /// <summary>
+        /// <b>ゲートを開けても、戦闘外のアリーナ封鎖は 1 枚も立たない</b>
+        /// （§4.2。工程 P55-14a。試遊報告「赤いラインが通過できず戦闘区域に入れない」）。
+        ///
+        /// <b>試遊で最初に詰まったのがここである。</b> 活動ゲートの初回 <c>Open()</c> は
+        /// 「復元すべき前の状態がない」として<b>一律に有効化</b>していた。
+        /// Builder は封鎖 Collider を<b>わざと無効で出荷</b>している（戦闘中だけ有効にするもの）ので、
+        /// 到着した瞬間に 4 枚の壁が立ち、**戦闘区域へ歩いて入れなくなっていた**。
+        ///
+        /// 実測値（直す前）：<c>IsEnabled=False</c>・<c>ActiveBlockerCount=4</c>・<c>EnableCount=0</c>。
+        /// <b>意図は「封鎖していない」、実体は「4 枚とも壁」。</b>
+        /// <c>AreaArenaBoundary</c> 自身が
+        /// 「<c>IsEnabled</c> は意図で、こちらは実体。解放したつもりで壁が残る形を外から見分ける」
+        /// と書いていた口が、この経路では誰にも見られていなかった。
+        ///
+        /// <b>意図と実体を両方見る。</b> どちらか片方では、この壊れ方は素通りする。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator OpeningTheGate_LeavesTheArenaBlockersDisabled()
+        {
+            yield return OpenArea(P55AreaBScene);
+
+            var gate = Object.FindFirstObjectByType<AreaActivityGate>();
+            Assert.IsNotNull(gate, "活動ゲートが居る。");
+            Assert.IsTrue(gate.IsOpen, "直開きなので開いている。");
+            Assert.AreEqual(1, gate.OpenCount, "開けたのは 1 回。");
+            Assert.IsFalse(gate.HasRestoreState, "前提：閉める直前の記録は無い（初回である）。");
+
+            var arena = Object.FindFirstObjectByType<AreaArenaBoundary>();
+            Assert.IsNotNull(arena, "アリーナ境界が居る。");
+            Assert.IsTrue(arena.IsWired, "封鎖 Collider が配線されている。");
+            Assert.Greater(arena.BlockerCount, 0, "前提：封鎖する Collider がある。");
+
+            Assert.IsFalse(arena.IsEnabled, "意図：戦闘外なので封鎖していない。");
+            Assert.AreEqual(0, arena.EnableCount, "戦闘が封鎖した回数も 0。");
+            Assert.AreEqual(0, arena.ActiveBlockerCount,
+                "<b>実体でも 1 枚も立っていない</b>（" + arena.ActiveBlockerCount + " / "
+                + arena.BlockerCount + " 枚が有効）。ゲートの初回 Open が一律に有効化していない。");
+        }
+
+        /// <summary>
+        /// <b>初回の Open は出荷状態を復元する。一律に有効化しない</b>（工程 P55-14a。GPT 受入 2）。
+        ///
+        /// 「復元すべき前の状態がない」というのが誤りで、**出荷状態こそが初期状態**だった。
+        /// ここでは記録そのものを見る——地形は有効で、わざと無効にしたものは無効のまま。
+        ///
+        /// <b>一律有効化への落ちを数で見る。</b> <c>UniformOpenCount</c> が 0 でない Scene は
+        /// 出荷状態の記録が抜けている。黙って落ちると、この工程の修正が
+        /// Scene を作り直し忘れた日に静かに戻る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheFirstOpen_RestoresTheShippedState([Values("A", "B")] string which)
+        {
+            yield return OpenArea(which == "A" ? P55AreaAScene : P55AreaBScene);
+
+            var gate = Object.FindFirstObjectByType<AreaActivityGate>();
+            Assert.IsNotNull(gate, "活動ゲートが居る。");
+            Assert.IsTrue(gate.HasInitialState,
+                "出荷状態の記録を持っている（Scene を作り直してあるか）。");
+            Assert.AreEqual(0, gate.UniformOpenCount,
+                "一律有効化へ落ちていない（落ちた回数=" + gate.UniformOpenCount + "）。");
+            Assert.AreEqual(gate.GatedColliders.Count, gate.InitialColliderState.Count,
+                "記録の件数が対象と一致している。");
+
+            // <b>「全部有効」でも「全部無効」でもない</b>ことを見る。
+            // 全部有効なら一律有効化と区別が付かず、全部無効なら地形が通れない。
+            int enabledNow = 0;
+            int shippedEnabled = 0;
+            for (int i = 0; i < gate.GatedColliders.Count; i++)
+            {
+                if (gate.GatedColliders[i] != null && gate.GatedColliders[i].enabled)
+                {
+                    enabledNow++;
+                }
+
+                if (gate.InitialColliderState[i])
+                {
+                    shippedEnabled++;
+                }
+            }
+
+            Assert.AreEqual(shippedEnabled, enabledNow,
+                "いま有効な Collider の数が出荷状態と一致する（いま " + enabledNow
+                + " / 出荷 " + shippedEnabled + " / 対象 " + gate.GatedColliders.Count + "）。");
+            Assert.Greater(enabledNow, 0, "地形は通れる（1 枚も有効でないなら閉じたままである）。");
+
+            if (which == "B")
+            {
+                Assert.Less(enabledNow, gate.GatedColliders.Count,
+                    "B には<b>わざと無効で出荷したもの</b>がある（アリーナ封鎖）。"
+                    + "全部有効なら一律有効化と区別が付かない。");
+            }
+        }
+
+        private IEnumerator OpenAreaA() => OpenArea(P55AreaAScene);
+
+        private IEnumerator OpenArea(string scenePath)
         {
             DestroyLaunchers();
             if (BootstrapRoot.HasInstance)
@@ -338,7 +438,7 @@ namespace Momotaro.Tests.PlayMode
                 "常駐が立つ。理由=" + BootstrapRoot.Instance.BootstrapFailure);
             DestroyLaunchers();
 
-            yield return SceneManager.LoadSceneAsync(P55AreaAScene, LoadSceneMode.Single);
+            yield return SceneManager.LoadSceneAsync(scenePath, LoadSceneMode.Single);
             yield return null;
 
             AreaInitializer initializer = FindInitializer();

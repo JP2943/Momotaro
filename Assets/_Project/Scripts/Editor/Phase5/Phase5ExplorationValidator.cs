@@ -774,6 +774,25 @@ namespace Momotaro.Editor.Phase5
                     errors.Add("活動ゲートが開いたまま保存されています（§4.2）：" + reason);
                 }
 
+                // <b>出荷状態の記録があること</b>（工程 P55-14a）。
+                //
+                // これが無いと初回 Open が一律に有効化するしかなくなり、
+                // <b>わざと無効で出荷した Collider（戦闘中だけ有効なアリーナ封鎖など）まで
+                // 有効になる</b>。試遊で「赤いラインを越えられず戦闘区域に入れない」として出た。
+                // 保存された Scene からしか確かめられないので、ここで見る。
+                if (!gate.HasInitialState)
+                {
+                    errors.Add("活動ゲートに出荷状態の記録がありません（工程 P55-14a）。"
+                               + "Scene を作り直してください。"
+                               + "記録が無いと初回 Open が一律に有効化します。");
+                }
+                else if (gate.InitialColliderState.Count != gate.GatedColliders.Count)
+                {
+                    errors.Add("活動ゲートの出荷状態の件数が対象と合いません（記録 "
+                               + gate.InitialColliderState.Count + " / 対象 "
+                               + gate.GatedColliders.Count + "）。Scene を作り直してください。");
+                }
+
                 // 表示系（Camera・AudioListener・基準照明）は<b>ここでは見ない</b>。
                 // 常駐側の所有へ移したので、Area Scene には 0 個を要求する形へ置き換えた
                 // （ValidateForbidden。P5.5 付録 A.1／A.6）。出荷時に無効化して持たせるより、

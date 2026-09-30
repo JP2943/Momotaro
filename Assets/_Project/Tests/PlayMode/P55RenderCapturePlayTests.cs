@@ -361,12 +361,35 @@ namespace Momotaro.Tests.PlayMode
                 //
                 // §5 は「一度読み始めた先は、同じ Area で活動している間は境界から離れても保持する」と
                 // 定める。離れても来た方が載ったままであることを、<b>絵で</b>確かめる。
-                for (int i = 0; i < 60; i++)
+                //
+                // <b>フレーム数ではなく距離で切る</b>（工程 P55-14a）。
+                // 以前は 60 フレーム押し続けていて、実際には<b>アリーナの封鎖壁に止められて</b>
+                // そこで停まっていた。封鎖が戦闘外で立たなくなった（試遊報告の修正）とたんに
+                // 主人公は歩き続け、<b>戦闘区域へ入って遭遇戦が始まり</b>、
+                // 戦闘中は遷移が受理されないので下の「逆方向へ戻る」が成立しなくなった。
+                //
+                // **障害物に距離を決めさせていた。** 意図は「先読みの開始距離より外へ出る」なので、
+                // そう書く。この検査は絵を見るものなので、どこで止まるかは絵に関係ない。
+                const float AwayDistance = 7f; // 先読みの開始距離（6）より外へ出る
+                var playerRoot = Object.FindFirstObjectByType<PlayerRoot>();
+                Assert.IsNotNull(playerRoot, "主人公が居る。");
+                Vector3 arrivedAt = playerRoot.transform.position;
+
+                int awayFrames = 0;
+                while (awayFrames < 120
+                       && Vector3.Distance(playerRoot.transform.position, arrivedAt) < AwayDistance)
                 {
                     InputSystem.QueueStateEvent(_keyboard, new KeyboardState(_route.Forward));
                     yield return null;
                     watch.Observe("境界から離れる", reference);
+                    awayFrames++;
                 }
+
+                Assert.GreaterOrEqual(
+                    Vector3.Distance(playerRoot.transform.position, arrivedAt), AwayDistance,
+                    "境界から実際に離れた（" + awayFrames + " フレームで "
+                    + Vector3.Distance(playerRoot.transform.position, arrivedAt) + "）。"
+                    + " 離れていなければ、この区間は何も見ていない。");
 
                 InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
                 yield return null;
