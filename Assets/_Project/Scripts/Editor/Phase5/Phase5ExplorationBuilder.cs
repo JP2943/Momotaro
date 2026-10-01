@@ -897,6 +897,108 @@ namespace Momotaro.Editor.Phase5
                     Phase5Layout.BackdropThickness,
                     depth + (Phase5Layout.BackdropMargin * 2f)),
                 mat, solid: false);
+
+            CreateBackdropPatches(parent, center, width, depth, top);
+        }
+
+        /// <summary>遠景の濃淡：辺に沿った位置（辺の長さに対する割合）。</summary>
+        private static readonly float[] PatchAlong = { -0.58f, -0.02f, 0.55f };
+
+        /// <summary>同・辺に沿った大きさ（辺の長さに対する割合）。</summary>
+        private static readonly float[] PatchAlongSize = { 0.46f, 0.38f, 0.52f };
+
+        /// <summary>同・外へ出る距離（余白に対する割合。中心）。</summary>
+        private static readonly float[] PatchOut = { 0.22f, 0.56f, 0.80f };
+
+        /// <summary>同・外向きの大きさ（余白に対する割合）。</summary>
+        private static readonly float[] PatchOutSize = { 0.40f, 0.48f, 0.34f };
+
+        /// <summary>
+        /// <b>未ロード領域に遠景の濃淡を置く</b>（§7.3。工程 P55-15d。裁定 2 の作業項目 4）。
+        ///
+        /// 裁定は「現在の黒い背景は『描画の穴ではない』だけでは、見た目の受入として
+        /// 十分ではありません。まず仮背景でもよいので、未ロード領域が描画不良に
+        /// 見えない表現にします」と言っていた。
+        ///
+        /// <b>何が足りないのかを先に測った。</b> 外側の画素だけを切り出して明るさを採ると、
+        /// 実地形に対して <b>0.77</b>（東西）／<b>0.90</b>（南北）あり、
+        /// 暗い側 10% も最暗もほぼ同じだった——<b>暗幕でも影の帯でもない</b>。
+        /// 落ちていたのは<b>散らばり</b>で、標準偏差は <b>2.4e-05</b> だった。
+        /// つまり外側は<b>完全に均一な一枚板</b>で、
+        /// 試遊報告の「真っ暗」は明るさではなく<b>何も無いこと</b>を指していた。
+        ///
+        /// だから足すのは明るさではなく<b>濃淡</b>である。背景面を挟む 2 色の板を
+        /// 余白の輪へ並べる。平均の明るさは動かさず、散らばりだけを作る。
+        ///
+        /// <b>床の下に収める。</b> 板の上面は床の下面より下に居るので、
+        /// 隣 Area が読み込まれれば<b>その床が自然に隠す</b>（背景面と同じ考え方）。
+        /// 上へ出すと隣の床を突き抜ける。
+        ///
+        /// <b>Area ごとに高さをずらす。</b> Area の Scene はどれも原点のまわりへ作られ、
+        /// 位置は実行時に与えられるので、隣り合う Area の濃淡は<b>世界座標で重なりうる</b>。
+        /// 同じ高さに別の色の面が重なるとちらつくので、持ち上げ量を Area の大きさから決める
+        /// （いまの背景面どうしも重なっているが、同じ色なので見えていなかった）。
+        ///
+        /// <b>Collider は持たない。Area も増えない</b>（背景面と同じ。在留上限 2 のまま）。
+        /// 正式な遠景素材に差し替えるときは、この 1 か所と 2 つのマテリアルだけを変える。
+        /// </summary>
+        private static void CreateBackdropPatches(
+            Transform parent, Vector3 center, float width, float depth, float backdropTop)
+        {
+            Material light = Phase5Placeholder.EnsureMaterial(
+                "M_P5_BackdropPatchLight", Phase5Placeholder.BackdropPatchLightColor);
+            Material dark = Phase5Placeholder.EnsureMaterial(
+                "M_P5_BackdropPatchDark", Phase5Placeholder.BackdropPatchDarkColor);
+
+            float thickness = Phase5Layout.BackdropPatchThickness;
+            float areaLift = Mathf.Clamp(
+                (width + depth) * 0.001f, 0f, Phase5Layout.BackdropPatchLift);
+
+            float margin = Phase5Layout.BackdropMargin;
+            float halfWidth = width * 0.5f;
+            float halfDepth = depth * 0.5f;
+
+            for (int side = 0; side < 4; side++)
+            {
+                // <b>辺ごとに高さを刻む。</b> 板が大きいので東の板と北の板が重なる——
+                // 同じ高さで色が違うとちらつくので、辺で順序を決める。
+                float y = backdropTop + areaLift
+                          + (side * Phase5Layout.BackdropPatchSideStep)
+                          + (thickness * 0.5f);
+
+                for (int i = 0; i < PatchAlong.Length; i++)
+                {
+                    bool darkTone = ((side + i) % 2) == 0;
+                    float outAt = margin * PatchOut[i];
+                    float outSize = margin * PatchOutSize[i];
+
+                    Vector3 offset;
+                    Vector3 size;
+                    switch (side)
+                    {
+                        case 0: // 東（+X）
+                            offset = new Vector3(halfWidth + outAt, 0f, depth * PatchAlong[i]);
+                            size = new Vector3(outSize, thickness, depth * PatchAlongSize[i]);
+                            break;
+                        case 1: // 西（−X）
+                            offset = new Vector3(-(halfWidth + outAt), 0f, depth * PatchAlong[i]);
+                            size = new Vector3(outSize, thickness, depth * PatchAlongSize[i]);
+                            break;
+                        case 2: // 北（+Z）
+                            offset = new Vector3(width * PatchAlong[i], 0f, halfDepth + outAt);
+                            size = new Vector3(width * PatchAlongSize[i], thickness, outSize);
+                            break;
+                        default: // 南（−Z）
+                            offset = new Vector3(width * PatchAlong[i], 0f, -(halfDepth + outAt));
+                            size = new Vector3(width * PatchAlongSize[i], thickness, outSize);
+                            break;
+                    }
+
+                    Phase5Placeholder.CreateBox("BackdropPatch", parent,
+                        center + new Vector3(offset.x, y, offset.z),
+                        size, darkTone ? dark : light, solid: false);
+                }
+            }
         }
 
         private static void CreateFloor(Transform parent, Vector3 center, float width, float depth, Material mat)

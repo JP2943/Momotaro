@@ -1693,6 +1693,70 @@ namespace Momotaro.Tests.PlayMode
         }
 
         /// <summary>
+        /// <b>待機表示の計時は、ロードを始める前に始まっている</b>
+        /// （工程 P55-15d。読み込み方針の裁定の受入）。
+        ///
+        /// 裁定はこう書いている——
+        /// 「ロード開始前に待機表示を描画できるようにし、
+        /// <b>『壁に引っかかったように停止してから表示が出る』順序を避ける</b>ことも受入に含めます」。
+        ///
+        /// <b>実装はその順になっている</b>（<c>_waitNotice.Begin()</c> は
+        /// <c>NotifyPreparing</c> の直後、<c>preloader.Request</c> はそのあと）。
+        /// <b>しかし誰も見ていなかった</b>ので、逆順へ書き換えても何も落ちなかった。
+        ///
+        /// <b>フレームごとに覗く方法では言えない。</b> 2 つは同じフレームの中で続けて起きるので、
+        /// 次のフレームから見ると<b>どちらも済んでいる</b>。
+        /// だから<b>ロードを頼まれた瞬間に Scene 操作側で読む</b>——
+        /// <c>LoadAdditive</c> は <c>Request</c> から同じフレームの中で呼ばれるので、
+        /// そこで読んだ値は「ロード開始の直前」である。
+        ///
+        /// 見るのは <c>BegunCount</c>（計時を始めた回数）であって
+        /// 「字が出ているか」ではない。字は 0.3 秒の壁を越えてから出るので、
+        /// <b>出せる状態になっているか</b>が契約である。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator BeforeTheLoadStarts_TheWaitDisplayIsAlreadyCounting()
+        {
+            yield return EnterArea(P55AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+            var host = new DelayedRealSceneHost();
+            transitions.SlideSceneHost = host;
+
+            AreaTransitionWaitNoticeTimer timer = transitions.Slide.WaitNotice;
+            int begunBefore = timer.BegunCount;
+            host.ProbeAtLoad = () => timer.BegunCount;
+
+            yield return StandJustBefore(FindExitGate(ExitAEast), Vector3.left);
+            yield return SettleCamera();
+
+            Assert.AreEqual(0, host.LoadCount,
+                "前提：境界へ寄っただけでは読んでいない（工程 P55-15c）。");
+
+            yield return HoldUntil(Key.D, () => host.LoadCount > 0, 25f);
+
+            Assert.AreEqual(1, host.LoadCount,
+                "受理されてロードが始まった（" + host.LoadCount + " 回）。");
+            Assert.AreEqual(begunBefore + 1, host.ProbedAtLoad,
+                "<b>ロードを頼む前に待機表示の計時が始まっている</b>（頼まれた瞬間の計時開始回数="
+                + host.ProbedAtLoad + "／この遷移の前=" + begunBefore
+                + "）。逆順だと「操作できないまま止まってから字が出る」順になる（裁定 2）。");
+
+            // 待たせたまま終わらせない——出した字を片付けるところまで通す。
+            host.ReleaseLoad();
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.SlideCommittedCount == 0 && !transitions.HasTerminalFailure
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(1, transitions.SlideCommittedCount,
+                "そのまま着いた。理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(1, host.LoadCount, "読込は 1 回だけ（重複なし）。");
+        }
+
+        /// <summary>
         /// <b>隣がもう載っているなら、待ち表示は一度も出ない</b>（§5。工程 P55-09a）。
         ///
         /// §5 の「0.3 秒以上待つ場合<b>だけ</b>」の後半である。距離による先読みが間に合っている
@@ -1968,9 +2032,26 @@ namespace Momotaro.Tests.PlayMode
             /// <summary>読込を頼まれた回数（重複ロードを数える）。</summary>
             internal int LoadCount { get; private set; }
 
+            /// <summary>
+            /// <b>ロードを頼まれた瞬間</b>に読む値（工程 P55-15d）。
+            ///
+            /// <c>LoadAdditive</c> は <c>AreaPreloader.Request</c> から<b>同じフレームの中で</b>
+            /// 呼ばれるので、ここで読んだ値は「<b>ロード開始の直前</b>の状態」である。
+            /// フレームごとに外から覗く方法では、同一フレーム内の前後は決められない。
+            /// </summary>
+            internal System.Func<int> ProbeAtLoad { get; set; }
+
+            /// <summary>ロードを頼まれた瞬間の <see cref="ProbeAtLoad"/> の値（未測定なら −1）。</summary>
+            internal int ProbedAtLoad { get; private set; } = -1;
+
             public IAreaSceneOperation LoadAdditive(string scenePath)
             {
                 LoadCount++;
+                if (ProbeAtLoad != null)
+                {
+                    ProbedAtLoad = ProbeAtLoad();
+                }
+
                 _pending = new DelayedLoad(_real, scenePath);
                 return _pending;
             }

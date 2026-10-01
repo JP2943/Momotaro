@@ -443,9 +443,13 @@ namespace Momotaro.Infrastructure.World
 
             // ---- 手順 4：対応する StagedReady を取得する ----
             //
-            // <b>先読みを通す。</b> 距離による先読み（§5）が同じ先を望んでいれば読み直さず
-            // 引き取るだけになる（<c>AreaPreloader.Request</c> の同一先再利用）。
-            // ここで独自にロードを発行すると、先読みと二重に読むことになる。
+            // <b>先読みを通す。</b> すでに同じ先が載っていれば読み直さず引き取るだけになる
+            // （<c>AreaPreloader.Request</c> の同一先再利用）。
+            // ここで独自にロードを発行すると、二重に読むことになる。
+            //
+            // <b>「距離による先読み」はもう無い</b>（工程 P55-15c で撤去。付録 C.42）。
+            // 載っているのは<b>引き継いだ Area</b>（裁定 2。付録 C.29）か、
+            // <b>一度訪れて保持している Area</b> のどちらかである。
             AreaPreloader preloader = EnsurePreloader();
             preloader.ArmRetry(); // 新しい遷移操作は、抱えている失敗を 1 回だけ再試行できる（§5）。
 

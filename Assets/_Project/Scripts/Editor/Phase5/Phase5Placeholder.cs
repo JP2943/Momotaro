@@ -31,6 +31,23 @@ namespace Momotaro.Editor.Phase5
         /// </summary>
         public static readonly Color BackdropColor = new Color(0.44f, 0.43f, 0.40f);
 
+        /// <summary>
+        /// 遠景の濃淡・明るいほう（工程 P55-15d。裁定 2 の作業項目 4）。
+        ///
+        /// <b>背景面が暗かったのではない。</b> 実測で外側の明るさは実地形の
+        /// 0.77（東西）／0.90（南北）あり、暗い側 10% も最暗もほぼ同じだった。
+        /// 落ちていたのは<b>散らばり</b>で、標準偏差 2.4e-05 ——
+        /// つまり<b>完全に均一な一枚板</b>だった。試遊報告の「真っ暗」は
+        /// 明るさではなく<b>何も無いこと</b>を指していた。
+        ///
+        /// だから足すのは明るさではなく<b>濃淡</b>である。
+        /// <see cref="BackdropColor"/> を挟む 2 色にして、平均は動かさない。
+        /// </summary>
+        public static readonly Color BackdropPatchLightColor = new Color(0.50f, 0.49f, 0.45f);
+
+        /// <summary>遠景の濃淡・暗いほう（<see cref="BackdropPatchLightColor"/> と対）。</summary>
+        public static readonly Color BackdropPatchDarkColor = new Color(0.38f, 0.37f, 0.35f);
+
         /// <summary>水場（通行不可）。</summary>
         public static readonly Color WaterColor = new Color(0.25f, 0.45f, 0.70f);
 

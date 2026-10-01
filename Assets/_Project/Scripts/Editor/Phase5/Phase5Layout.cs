@@ -43,6 +43,41 @@ namespace Momotaro.Editor.Phase5
         /// </summary>
         public const float BackdropDropBelowFloor = 0.15f;
 
+        /// <summary>
+        /// 遠景の濃淡（<c>BackdropPatch</c>）の厚み（工程 P55-15d。裁定 2 の作業項目 4）。
+        ///
+        /// <b>床の下面より上へ出してはいけない。</b> 出すと、隣 Area が読み込まれたときに
+        /// <b>隣の床を突き抜けて</b>見える。背景面の上面は床の下面より
+        /// <see cref="BackdropDropBelowFloor"/> だけ下にあるので、
+        /// 厚み ＋ <see cref="BackdropPatchLift"/> がその余裕に収まっていなければならない。
+        /// Scene 検査がこれを数で見る。
+        /// </summary>
+        public const float BackdropPatchThickness = 0.05f;
+
+        /// <summary>
+        /// 遠景の濃淡を背景面から持ち上げる量の上限（工程 P55-15d）。
+        ///
+        /// <b>Area ごとに高さをずらすため</b>に要る。Area の Scene はどれも原点のまわりへ
+        /// 作られ、位置は実行時に与えられるので、<b>隣り合う Area の濃淡は世界座標で重なりうる</b>。
+        /// 同じ高さに別の色の面が重なると、どちらが手前かが決まらず<b>ちらつく</b>——
+        /// いまの背景面どうしも重なっているが、同じ色なので見えていなかった。
+        /// 持ち上げ量を Area の大きさから決めることで、重なっても高さが違うので順序が決まる。
+        /// </summary>
+        public const float BackdropPatchLift = 0.05f;
+
+        /// <summary>
+        /// 遠景の濃淡を<b>辺ごとに</b>刻む高さ（工程 P55-15d）。
+        ///
+        /// 板を大きくすると、東の板と北の板が<b>同じ Area の中で重なる</b>。
+        /// 同じ高さに色の違う面が重なると、どちらが手前かが決まらず<b>ちらつく</b>。
+        /// 辺ごとに 4 段ずらせば順序が決まる。
+        /// 4 段ぶん（0.016）と <see cref="BackdropPatchLift"/> と
+        /// <see cref="BackdropPatchThickness"/> の合計が
+        /// <see cref="BackdropDropBelowFloor"/> に収まっていなければならない——
+        /// 収まっているかは Scene 検査が数で見る。
+        /// </summary>
+        public const float BackdropPatchSideStep = 0.004f;
+
         /// <summary>壁の厚み。</summary>
         public const float WallThickness = 0.5f;
 

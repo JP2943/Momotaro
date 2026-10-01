@@ -70,6 +70,51 @@ namespace Momotaro.Tests.PlayMode
         /// </summary>
         private const int MinimumHeroPixels = 200;
 
+        /// <summary>
+        /// エリアの外側が画面に入っていると言える最小の画素数（工程 P55-15d）。
+        ///
+        /// 1280×720 の <b>5%</b>。境界の手前に立てば外側はこれよりはるかに広く映るので、
+        /// 下限は「映っていないのに合格した」を防ぐためだけに置く。
+        /// </summary>
+        private const int MinimumOutsidePixels = CaptureWidth * CaptureHeight / 20;
+
+        /// <summary>
+        /// エリアの外側の<b>平均</b>の明るさが、実地形に対して下回ってはいけない比
+        /// （工程 P55-15d。実測 0.7989（東西）／0.9123（南北））。
+        ///
+        /// 既存の全画面の比（0.5）とは別物である。全画面の平均は、
+        /// <b>画面の一部が真っ黒でもほとんど下がらない</b>ので、外側だけを見る必要があった。
+        /// 根拠は付録 C.43。
+        /// </summary>
+        private const float MinimumOutsideBrightnessRatio = 0.6f;
+
+        /// <summary>
+        /// 外側の<b>暗い側 10%</b>の明るさが、実地形に対して下回ってはいけない比
+        /// （工程 P55-15d。実測 0.7708（東西）／0.8665（南北））。
+        ///
+        /// <b>平均だけでは一部の暗さを拾えない。</b> 試遊報告の「真っ暗」は
+        /// 境界のすぐ向こうという狭い帯の話なので、外壁の影が落ちていれば
+        /// そこだけが暗くなって平均はほとんど動かない。
+        /// （実測では影の帯は<b>無かった</b>——暗い側 10% も平均とほぼ同じだった。
+        /// それでも、将来できた影に気付けるようにここを縛っておく。）
+        /// </summary>
+        private const float MinimumOutsideDarkestDecileRatio = 0.55f;
+
+        /// <summary>
+        /// 外側の明るさの<b>散らばり</b>（標準偏差）の下限（工程 P55-15d。
+        /// 実測 0.02486（東西）／0.02202（南北））。
+        ///
+        /// <b>ここが今回の本題である。</b> 測ってみると外側は暗くなかった——
+        /// 実地形の 0.77／0.90 の明るさがあり、暗い側 10% も最暗もほぼ同じだった。
+        /// 落ちていたのは散らばりで、<b>2.41e-05</b>（東西）／<b>5.80e-05</b>（南北）、
+        /// つまり<b>完全に均一な一枚板</b>だった。
+        /// 試遊報告の「真っ暗」は明るさではなく<b>何も無いこと</b>を指していた。
+        ///
+        /// だから受入は「暗くない」だけでは足りず、「<b>のっぺりしていない</b>」も要る。
+        /// 下限 0.01 は実測の半分以下で、濃淡を外すと <b>380 倍</b>下回って落ちる。
+        /// </summary>
+        private const float MinimumOutsideSpread = 0.01f;
+
         private sealed class Route
         {
             internal string Label;
@@ -708,6 +753,71 @@ namespace Momotaro.Tests.PlayMode
         }
 
         /// <summary>
+        /// <b>エリアの外側（未ロードの隣を含む）が「描画不良」に見えないこと</b>
+        /// （§7.3。工程 P55-15d。裁定 2 の受入条件）。
+        ///
+        /// <see cref="NearTheSeam_ShowsNoVoidWhileTheNeighbourIsMissing"/> は
+        /// <b>穴が無いこと</b>と<b>画面全体が暗転していないこと</b>しか見ていない。
+        /// 裁定 2 はそれでは足りないと言う——
+        /// 「現在の黒い背景は『描画の穴ではない』だけでは、見た目の受入として十分ではありません」。
+        ///
+        /// <b>画面全体の平均では隠れてしまう。</b> 境界の手前でもカメラの大半は自分の Area を
+        /// 映しているので、外側が真っ黒でも全体の平均はほとんど下がらない——
+        /// だから既存の「明るさ比 &gt; 0.5」は通ってしまう。
+        /// ここは<b>外側の画素だけ</b>を取り出して、実地形の画素と比べる。
+        ///
+        /// <b>外側の画素の見分け方。</b> 背景面（Backdrop）の Renderer を消して
+        /// 背景色を世界に無い色で描くと、<b>背景面しか覆っていなかった場所</b>だけがその色になる。
+        /// それが「エリアの外側」である——未ロードの隣も、Area の上下の外も同じ扱いで入る。
+        /// 隣が載っていない間に見えるのはここなので、<b>見かけの受入はこの領域に対して言う</b>。
+        ///
+        /// <b>読み込み方針が変わって重みが増えた。</b> 工程 P55-15c で距離の先読みをやめたので、
+        /// 隣は<b>初めて渡るまで載らない</b>。この領域が見えている時間は以前より長い（付録 C.42）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheOutsideOfTheArea_ReadsAsADistantView_NotADrawingDefect(
+            [Values("EastWest", "NorthSouth")] string arrangement)
+        {
+            _route = RouteOf(arrangement);
+            yield return EnterArea(_route.AreaAScene);
+
+            // 隣は永久に来ない。載ってしまうと「未ロードの見かけ」を測れない。
+            Transitions().SlideSceneHost = new NeverFinishingSceneHost();
+
+            yield return PlaceBeforeExit(_route.ExitFromA, _route.BackStep);
+            yield return SettleCamera();
+
+            Assert.AreEqual(1, SceneManager.sceneCount,
+                "前提：Scene は 1 枚だけ（隣は載っていない）。");
+
+            OutsideLook look = LookAtTheOutside(ResidentCamera());
+
+            Assert.Greater(look.OutsidePixels, MinimumOutsidePixels,
+                "前提：エリアの外側が画面に入っている（" + look + "／下限 "
+                + MinimumOutsidePixels + " 画素）。入っていなければこの検査は何も見ていない。");
+
+            Assert.Greater(look.Ratio, MinimumOutsideBrightnessRatio,
+                "エリアの外側は<b>遠景として読める明るさ</b>である（" + look + "／下限 "
+                + MinimumOutsideBrightnessRatio + "）。"
+                + " 黒い面で覆う対応は §7.3 が認めない（裁定 2）。");
+
+            Assert.Greater(look.DarkestDecileRatio, MinimumOutsideDarkestDecileRatio,
+                "<b>暗い側 10% も</b>遠景として読める明るさである（" + look + "／下限 "
+                + MinimumOutsideDarkestDecileRatio + "）。"
+                + " 平均だけでは「境界のすぐ向こうだけが暗い」を拾えない（付録 C.43）。");
+
+            Assert.Greater(look.Spread, MinimumOutsideSpread,
+                "エリアの外側は<b>のっぺりした一枚板ではない</b>（" + look + "／下限 "
+                + MinimumOutsideSpread + "）。"
+                + " 測ってみると外側は暗くなく（実地形の 0.77／0.90）、"
+                + " 落ちていたのは散らばりだった（2.41e-05／5.80e-05）——"
+                + " 試遊報告の「真っ暗」は明るさではなく<b>何も無いこと</b>を指していた"
+                + "（付録 C.43）。");
+
+            Debug.Log("外側の見かけ " + _route.Label + "：" + look);
+        }
+
+        /// <summary>
         /// <b>隣を手放しているあいだも、未描画の領域を出さない</b>（§7.3。工程 P55-11a）。
         ///
         /// 別候補への切替は「保持していたものを<b>解放してから</b>読む」（§6.2 手順 11 の契約表）。
@@ -971,6 +1081,195 @@ namespace Momotaro.Tests.PlayMode
             Object.DestroyImmediate(probe);
             Object.DestroyImmediate(without);
             return frame;
+        }
+
+        /// <summary>エリアの外側（背景面しか覆っていない場所）の見かけ（工程 P55-15d）。</summary>
+        private readonly struct OutsideLook
+        {
+            internal OutsideLook(int outsidePixels, float outsideLuminance, float terrainLuminance,
+                float darkestDecile, float darkest, float spread)
+            {
+                OutsidePixels = outsidePixels;
+                OutsideLuminance = outsideLuminance;
+                TerrainLuminance = terrainLuminance;
+                DarkestDecile = darkestDecile;
+                Darkest = darkest;
+                Spread = spread;
+            }
+
+            /// <summary>
+            /// 外側のうち<b>暗い側 10%</b>の平均輝度（工程 P55-15d）。
+            ///
+            /// <b>平均は一部の暗さを埋める。</b> 試遊報告の「真っ暗」は
+            /// <b>境界のすぐ向こう</b>という狭い帯の話なので、平均だけでは拾えない——
+            /// 外壁の影が落ちていれば、そこだけが暗くなって全体の平均はほとんど動かない。
+            /// </summary>
+            internal float DarkestDecile { get; }
+
+            /// <summary>外側のいちばん暗い画素の輝度。</summary>
+            internal float Darkest { get; }
+
+            /// <summary>
+            /// 外側の輝度の標準偏差（工程 P55-15d）。
+            ///
+            /// <b>「描画不良に見える」のは暗さだけが理由ではない。</b>
+            /// のっぺりした一枚板は、明るさが足りていても<b>何も無い</b>ように見える。
+            /// どちらなのかを分けるために、散らばりも採る。
+            /// </summary>
+            internal float Spread { get; }
+
+            /// <summary>背景面しか覆っていなかった画素数。</summary>
+            internal int OutsidePixels { get; }
+
+            /// <summary>その画素だけの平均輝度。</summary>
+            internal float OutsideLuminance { get; }
+
+            /// <summary>残り（実地形）の画素だけの平均輝度。</summary>
+            internal float TerrainLuminance { get; }
+
+            /// <summary>実地形に対する明るさの比。</summary>
+            internal float Ratio => TerrainLuminance > 0f ? OutsideLuminance / TerrainLuminance : 0f;
+
+            /// <summary>暗い側 10% の、実地形に対する明るさの比。</summary>
+            internal float DarkestDecileRatio =>
+                TerrainLuminance > 0f ? DarkestDecile / TerrainLuminance : 0f;
+
+            public override string ToString() =>
+                "外側 " + OutsidePixels + " 画素（"
+                + (OutsidePixels * 100f / (CaptureWidth * CaptureHeight))
+                + "%）・輝度 " + OutsideLuminance + "／実地形 " + TerrainLuminance
+                + "・比 " + Ratio + "・暗い側 10% " + DarkestDecile
+                + "（比 " + DarkestDecileRatio + "）・最暗 " + Darkest
+                + "・散らばり " + Spread;
+        }
+
+        /// <summary>
+        /// エリアの外側を<b>画素で切り出して</b>、実地形と明るさを比べる（工程 P55-15d）。
+        ///
+        /// 背景面を消して穴の色で 1 枚描くと、<b>背景面しか覆っていなかった場所</b>がその色になる。
+        /// その位置を使って、出荷時の設定で描いた 1 枚を「外側」と「実地形」に分ける。
+        /// </summary>
+        private static OutsideLook LookAtTheOutside(Camera camera)
+        {
+            // <b>背景面と遠景の濃淡の両方を消す。</b> 濃淡（<c>BackdropPatch</c>）は
+            // 背景面とは別の Renderer なので、背景面だけを消すと<b>濃淡は描かれ続け</b>、
+            // その画素が「外側」から外れて「実地形」に数えられてしまう——
+            // 実際そうなっていて、外側が 398705 → 338935 画素に減り、
+            // 散らばりも濃淡を入れる前とほとんど変わらなかった（工程 P55-15d の 1 回目）。
+            var backdrops = new List<Renderer>();
+            foreach (Renderer renderer in
+                Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+            {
+                if (renderer == null || !renderer.enabled)
+                {
+                    continue;
+                }
+
+                if (renderer.name == "Backdrop" || renderer.name == "BackdropPatch")
+                {
+                    backdrops.Add(renderer);
+                }
+            }
+
+            Assert.IsNotEmpty(backdrops, "前提：背景面（Backdrop）が居る（§7.3 の背景の補完）。");
+
+            CameraClearFlags flags = camera.clearFlags;
+            Color background = camera.backgroundColor;
+            RenderTexture previous = camera.targetTexture;
+            RenderTexture active = RenderTexture.active;
+
+            var rt = new RenderTexture(CaptureWidth, CaptureHeight, 24, RenderTextureFormat.ARGB32);
+            var shot = new Texture2D(CaptureWidth, CaptureHeight, TextureFormat.RGBA32, false);
+            var mask = new Texture2D(CaptureWidth, CaptureHeight, TextureFormat.RGBA32, false);
+
+            try
+            {
+                camera.targetTexture = rt;
+
+                // 1 枚目：出荷時の設定のまま（見かけを測る対象）。
+                camera.Render();
+                RenderTexture.active = rt;
+                shot.ReadPixels(new Rect(0, 0, CaptureWidth, CaptureHeight), 0, 0);
+                shot.Apply();
+
+                // 2 枚目：背景面を消し、背景色を世界に無い色へ（外側の位置を採る）。
+                camera.clearFlags = CameraClearFlags.SolidColor;
+                camera.backgroundColor = HoleColor;
+                for (int i = 0; i < backdrops.Count; i++) { backdrops[i].enabled = false; }
+                camera.Render();
+                for (int i = 0; i < backdrops.Count; i++) { backdrops[i].enabled = true; }
+                RenderTexture.active = rt;
+                mask.ReadPixels(new Rect(0, 0, CaptureWidth, CaptureHeight), 0, 0);
+                mask.Apply();
+            }
+            finally
+            {
+                camera.clearFlags = flags;
+                camera.backgroundColor = background;
+                camera.targetTexture = previous;
+                RenderTexture.active = active;
+                rt.Release();
+                Object.DestroyImmediate(rt);
+            }
+
+            Color32[] pixels = shot.GetPixels32();
+            Color32[] marks = mask.GetPixels32();
+            double outside = 0d;
+            double outsideSquares = 0d;
+            double terrain = 0d;
+            var outsideValues = new List<float>(pixels.Length / 4);
+
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                Color32 p = pixels[i];
+                double luminance = ((0.2126d * p.r) + (0.7152d * p.g) + (0.0722d * p.b)) / 255d;
+
+                Color32 m = marks[i];
+                if (Mathf.Abs(m.r - HoleColor.r) <= HoleTolerance
+                    && Mathf.Abs(m.g - HoleColor.g) <= HoleTolerance
+                    && Mathf.Abs(m.b - HoleColor.b) <= HoleTolerance)
+                {
+                    outside += luminance;
+                    outsideSquares += luminance * luminance;
+                    outsideValues.Add((float)luminance);
+                }
+                else
+                {
+                    terrain += luminance;
+                }
+            }
+
+            int outsideCount = outsideValues.Count;
+            int terrainCount = pixels.Length - outsideCount;
+            Object.DestroyImmediate(shot);
+            Object.DestroyImmediate(mask);
+
+            if (outsideCount == 0)
+            {
+                return new OutsideLook(0, 0f, terrainCount > 0 ? (float)(terrain / terrainCount) : 0f,
+                    0f, 0f, 0f);
+            }
+
+            // <b>暗い側 10% を採る。</b> 平均だけでは「一部だけ暗い」を拾えない
+            // （外壁の影が境界のすぐ向こうへ落ちていれば、そこだけが暗くなる）。
+            outsideValues.Sort();
+            int decile = Mathf.Max(1, outsideCount / 10);
+            double darkSum = 0d;
+            for (int i = 0; i < decile; i++)
+            {
+                darkSum += outsideValues[i];
+            }
+
+            double mean = outside / outsideCount;
+            double variance = System.Math.Max(0d, (outsideSquares / outsideCount) - (mean * mean));
+
+            return new OutsideLook(
+                outsideCount,
+                (float)mean,
+                terrainCount > 0 ? (float)(terrain / terrainCount) : 0f,
+                (float)(darkSum / decile),
+                outsideValues[0],
+                (float)System.Math.Sqrt(variance));
         }
 
         /// <summary>2 枚の違う画素の数（主人公が塗った面積）。</summary>

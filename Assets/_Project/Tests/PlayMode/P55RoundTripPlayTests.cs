@@ -99,6 +99,23 @@ namespace Momotaro.Tests.PlayMode
         /// <summary>§11 の P13 が数える往復。</summary>
         private const int RoundTrips = 5;
 
+        /// <summary>
+        /// 試遊報告①の経路で行き来する回数（工程 P55-15d。GPT 作業指示 5）。
+        ///
+        /// 報告は「何度も行き来したあと」だった。欠陥そのものは<b>1 往復で仕込まれる</b>
+        /// （付録 C.41.2）ので 1 回でも再現するが、報告された経路をそのまま通す。
+        /// </summary>
+        private const int ReportedRoundTrips = 3;
+
+        /// <summary>
+        /// 人が「一瞬止まった」と感じるフレーム時間の目安（ミリ秒。工程 P55-15d）。
+        ///
+        /// <b>ここで止まらないことは主張しない。</b> Editor の計測はほかの要因でも伸びる。
+        /// 主張するのは「<b>長いフレームがロード・解放と重なっていない</b>」であり、
+        /// 最長の値は記録へ残すために測る（GPT 作業指示 6）。
+        /// </summary>
+        private const float NoticeableFrameMilliseconds = 100f;
+
         private GameObject _bootstrap;
         private Keyboard _keyboard;
         private Route _route;
@@ -1180,6 +1197,128 @@ namespace Momotaro.Tests.PlayMode
                 + " / 境界の外面 x=" + outerX + "・回避 " + dodges + " 回）。");
         }
 
+        // ================================ 試遊報告①の経路（工程 P55-15d。GPT 作業指示 5）
+
+        /// <summary>
+        /// <b>報告された経路をそのまま通して、強制移動が起きないこと</b>
+        /// （工程 P55-15d。試遊報告①。GPT 作業指示 5）。
+        ///
+        /// 報告はこうだった——
+        /// 「エリア A から B へ移動し、<b>戦闘区域で勝利</b>したあと、また A に戻り、
+        /// <b>エリア間を何度も行き来</b>したあと、<b>エリア B の戦闘区域を歩き回っている</b>と、
+        /// 突然エリア A の『B へ』の位置まで強制的に移動させられる」。
+        ///
+        /// <b>原因と直しは工程 P55-15a・15b で入れた</b>（付録 C.41）。
+        /// <see cref="P55SlideTransitionPlayTests"/> 側の 3 本が
+        /// 残留・入力・占有をそれぞれ単独で見ている。
+        /// <b>ここで見たいのは経路そのもの</b>——勝利・往復・区域内の歩行が
+        /// この順で起きたときに再発しないことである。
+        /// 単独の検査が 3 本通っても、順番で壊れる組み合わせは残り得る。
+        ///
+        /// <b>区域内では出口方向も押す。</b> 欠陥は
+        /// 「出口方向を 0.15 秒押すだけで<b>主人公がどこに居ても</b>遷移が要求される」形だった
+        /// ので、押さなければ何も見ていないことになる。
+        /// 4 方向を順に押して周回するので、区域から大きく離れない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TheReportedRoute_WinningThenRoundTripsThenWalkingTheArena_NeverForcesATravel()
+        {
+            _route = RouteOf("EastWest");
+            yield return EnterArea(_route.AreaAScene);
+
+            AreaTransitionService transitions = Transitions();
+
+            // ---- 1. A → B ----
+            yield return PlaceBeforeExit(_route.ExitFromA, _route.BackStep);
+            yield return SlideAcross(_route.Forward, 1, "A → B");
+            AssertSettled(transitions, _route.AreaBId, "A → B");
+
+            // ---- 2. 戦闘区域で勝つ ----
+            var runner = Object.FindFirstObjectByType<AreaEncounterRunner>();
+            Assert.IsNotNull(runner, "B に遭遇の調停がある。");
+            yield return FightToVictory(runner);
+            yield return WaitUntilFreeToTravel();
+            Assert.AreEqual(AreaEncounterState.Cleared, runner.State, "勝利が記録された。");
+
+            // ---- 3. 何度も行き来する（B → A → B を繰り返す）----
+            for (int trip = 1; trip <= ReportedRoundTrips; trip++)
+            {
+                yield return WalkBackAndForthOnce(transitions);
+            }
+
+            Assert.AreEqual(_route.AreaBId.Value, CurrentAreaProvider.Current.AreaId.Value,
+                "行き来したあと B に居る。");
+
+            int commits = transitions.SlideCommittedCount;
+            Assert.AreEqual(1 + (ReportedRoundTrips * 2), commits,
+                "ここまでの遷移は数えたぶんだけ（" + commits + " 回）。");
+
+            // ---- 4. B の戦闘区域を歩き回る ----
+            var arena = Object.FindFirstObjectByType<AreaArenaBoundary>();
+            Assert.IsNotNull(arena, "B に戦闘区画がある。");
+            Assert.IsFalse(arena.IsEnabled, "前提：勝ったので封鎖は解けている。");
+
+            yield return PlaceAt(arena.SafeBounds.center);
+
+            AreaExitGate exitB = FindExitGate(_route.ExitFromB);
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, "主人公が居る。");
+
+            float nearestToExit = Flat(player.transform.position, exitB.transform.position);
+            int insideFrames = 0;
+
+            // 4 方向を 0.6 秒ずつ、3 周。<b>0.15 秒の連続入力はどの辺でも成立する</b>長さである。
+            Key[] lap = { _route.Forward, Key.W, _route.Back, Key.S };
+            for (int round = 0; round < 3; round++)
+            {
+                for (int i = 0; i < lap.Length; i++)
+                {
+                    float until = Time.realtimeSinceStartup + 0.6f;
+                    while (Time.realtimeSinceStartup < until)
+                    {
+                        InputSystem.QueueStateEvent(_keyboard, new KeyboardState(lap[i]));
+                        yield return null;
+
+                        Vector3 at = player.transform.position;
+                        nearestToExit = Mathf.Min(
+                            nearestToExit, Flat(at, exitB.transform.position));
+                        if (exitB.PlayerInside) { insideFrames++; }
+
+                        Assert.AreEqual(commits, transitions.SlideCommittedCount,
+                            "<b>戦闘区域を歩いている間に遷移が起きた</b>（"
+                            + commits + " → " + transitions.SlideCommittedCount
+                            + " 回・主人公=" + at + " 出入口=" + exitB.transform.position
+                            + " 距離=" + Flat(at, exitB.transform.position)
+                            + " 範囲内=" + exitB.PlayerInside
+                            + " 測り直し=" + exitB.ResyncCount
+                            + " 固まった true を落とした=" + exitB.StaleOccupancyClearedCount
+                            + "）。試遊報告①の強制移動である（付録 C.41）。");
+                    }
+                }
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+
+            // ---- 5. 何を見たかを数で残す ----
+            Assert.Greater(nearestToExit, 3f,
+                "前提：<b>出入口へ正当に届いてはいない</b>（最接近 " + nearestToExit
+                + " m）。届いていたら、遷移が無かったことは強制移動の否定にならない。");
+            Assert.AreEqual(0, insideFrames,
+                "出入口は一度も「範囲内」と思っていない（思っていたフレーム "
+                + insideFrames + "）。残留が直っていなければここが増える。");
+            Assert.AreEqual(_route.AreaBId.Value, CurrentAreaProvider.Current.AreaId.Value,
+                "歩き回ったあとも B に居る（飛ばされていない）。");
+            Assert.Greater(exitB.ResyncCount, 0,
+                "入場のたびに測り直している（" + exitB.ResyncCount + " 回）。"
+                + " 0 ならこの経路で測り直しが走っていない。");
+
+            Debug.Log("試遊経路：遷移 " + commits + " 回で止まり、区域内 "
+                + "の歩行で範囲内 0 フレーム・出入口への最接近 " + nearestToExit
+                + " m・測り直し " + exitB.ResyncCount + " 回（固まった true を落とした "
+                + exitB.StaleOccupancyClearedCount + " 回）");
+        }
+
         // ================================ 読み込みは遷移の受理だけ（工程 P55-15c。読み込み方針の裁定）
 
         /// <summary>
@@ -1217,6 +1356,14 @@ namespace Momotaro.Tests.PlayMode
             int releases0 = preloader.ReleaseStartedCount;
             int requests0 = transitions.Slide.PreloadRequestCount;
             int scenes0 = SceneManager.sceneCount;
+
+            // <b>フレーム時間を毎フレーム採る</b>（工程 P55-15d。GPT 作業指示 6）。
+            //
+            // 歩行は入れ子のコルーチンで進むので、計測は <c>Update</c> を持つ部品に任せる——
+            // そうすれば、どの区間を歩いている間のフレームも取りこぼさない。
+            FrameWatch watch = FrameWatch.Attach(
+                () => preloader.LoadStartedCount + preloader.ReleaseStartedCount
+                      + transitions.Slide.PreloadRequestCount);
 
             Assert.AreEqual(1, scenes0,
                 "前提：まだ隣は載っていない（初訪問の前）。" );
@@ -1285,6 +1432,20 @@ namespace Momotaro.Tests.PlayMode
                 + SceneManager.sceneCount + " 枚）。");
             Assert.AreEqual(AreaPreloadPhase.Idle, preloader.Phase,
                 "先読みは何も抱えないまま（" + preloader.Phase + "）。");
+
+            // ---- フレーム時間と照らす（GPT 作業指示 6）----
+            //
+            // 「ロード 0 回」と「一瞬も止まらない」は別のことである。
+            // ここで言えるのは<b>長いフレームがロード・解放と重なっていない</b>こと——
+            // つまり残る停止があれば、それはロード以外の原因だということである。
+            watch.Stop();
+            Assert.Greater(watch.Frames, 200,
+                "前提：フレームを実際に見ている（" + watch.Frames + " フレーム）。");
+            Assert.AreEqual(0, watch.LongFramesWithLoading,
+                "<b>長いフレームはロード・解放と重なっていない</b>（" + watch
+                + "）。重なっていれば、停止の原因はロードである。");
+
+            Debug.Log("エリア内の歩行：" + watch);
         }
 
         /// <summary>
@@ -1346,6 +1507,108 @@ namespace Momotaro.Tests.PlayMode
             yield return WalkToUntil(forward.transform.position, 0.4f, 30f, "A → B",
                 () => transitions.SlideCommittedCount > mid);
             yield return WaitUntilFreeToTravel();
+        }
+
+        // ---------------------------------------------------------------- フレーム時間を測る
+
+        /// <summary>
+        /// フレーム時間と、<b>そのフレームでロード・解放が動いたか</b>を毎フレーム採る
+        /// （工程 P55-15d。GPT 作業指示 6）。
+        ///
+        /// <b>なぜ部品にするのか。</b> 歩行は入れ子のコルーチンで進むので、
+        /// 検査本体から毎フレーム測ろうとすると、入れ子の内側のフレームを取りこぼす。
+        /// <c>Update</c> を持たせれば、どこを歩いている間のフレームも必ず通る。
+        ///
+        /// <b>最初の数フレームは捨てる。</b> 生成直後のフレームは準備の重さを拾ってしまう。
+        /// </summary>
+        private sealed class FrameWatch : MonoBehaviour
+        {
+            /// <summary>捨てる助走のフレーム数。</summary>
+            private const int WarmUpFrames = 3;
+
+            private System.Func<int> _loadSignal;
+            private int _lastSignal;
+            private int _seen;
+
+            /// <summary>測ったフレーム数（助走を除く）。</summary>
+            internal int Frames { get; private set; }
+
+            /// <summary>いちばん長かったフレーム（ミリ秒）。</summary>
+            internal float WorstMilliseconds { get; private set; }
+
+            /// <summary>目安を超えたフレーム数。</summary>
+            internal int LongFrames { get; private set; }
+
+            /// <summary>そのうち<b>ロード・解放と重なった</b>フレーム数。</summary>
+            internal int LongFramesWithLoading { get; private set; }
+
+            /// <summary>ロード・解放と重なっていないフレームの最長（ミリ秒）。</summary>
+            internal float WorstMillisecondsWithoutLoading { get; private set; }
+
+            /// <summary>
+            /// 計測を始める。<paramref name="loadSignal"/> は
+            /// 「ロード・解放・読込要求の合計回数」を返す——<b>値が変わったフレーム</b>を
+            /// 「ロードが動いた」と見る。
+            /// </summary>
+            internal static FrameWatch Attach(System.Func<int> loadSignal)
+            {
+                var host = new GameObject("P55FrameWatch");
+                FrameWatch watch = host.AddComponent<FrameWatch>();
+                watch._loadSignal = loadSignal;
+                watch._lastSignal = loadSignal();
+                return watch;
+            }
+
+            /// <summary>計測を終えて片付ける（数は読めるまま残る）。</summary>
+            internal void Stop()
+            {
+                enabled = false;
+                if (gameObject != null)
+                {
+                    DestroyImmediate(gameObject);
+                }
+            }
+
+            public override string ToString() =>
+                Frames + " フレーム・最長 " + WorstMilliseconds + " ms・"
+                + NoticeableFrameMilliseconds + " ms 超 " + LongFrames + " 件（うちロードと重なった "
+                + LongFramesWithLoading + " 件）・ロードと重ならないフレームの最長 "
+                + WorstMillisecondsWithoutLoading + " ms";
+
+            private void Update()
+            {
+                int signal = _loadSignal();
+                bool loading = signal != _lastSignal;
+                _lastSignal = signal;
+
+                _seen++;
+                if (_seen <= WarmUpFrames)
+                {
+                    return;
+                }
+
+                float milliseconds = Time.unscaledDeltaTime * 1000f;
+                Frames++;
+
+                if (milliseconds > WorstMilliseconds)
+                {
+                    WorstMilliseconds = milliseconds;
+                }
+
+                if (milliseconds > NoticeableFrameMilliseconds)
+                {
+                    LongFrames++;
+                    if (loading)
+                    {
+                        LongFramesWithLoading++;
+                    }
+                }
+
+                if (!loading && milliseconds > WorstMillisecondsWithoutLoading)
+                {
+                    WorstMillisecondsWithoutLoading = milliseconds;
+                }
+            }
         }
 
         // ---------------------------------------------------------------- 歩く（座標を変えない）

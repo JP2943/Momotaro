@@ -285,6 +285,46 @@ namespace Momotaro.Editor.Phase55
                     + "）。地形が読み込まれたら自然に隠れる構成にする（§7.3）。");
             }
 
+            // <b>遠景の濃淡</b>（工程 P55-15d。裁定 2 の作業項目 4）。
+            //
+            // 背景面は<b>暗くはなかった</b>（実測で実地形の 0.77／0.90）。足りなかったのは
+            // <b>散らばり</b>で、標準偏差 2.4e-05 ——完全に均一な一枚板だった。
+            // そこへ 2 色の板を並べて濃淡を作っている。
+            //
+            // ここで見るのは 2 つ。<b>消えたことに気付けること</b>と、
+            // <b>床の下に収まっていること</b>——上へ出ると、隣 Area が読み込まれたときに
+            // <b>隣の床を突き抜けて</b>見える。
+            int patchCount = 0;
+            float patchTop = float.MinValue;
+            foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null || renderer.name != "BackdropPatch")
+                {
+                    continue;
+                }
+
+                patchCount++;
+                patchTop = Mathf.Max(patchTop, renderer.bounds.max.y);
+                if (renderer.GetComponent<Collider>() != null)
+                {
+                    errors.Add(scenePath + ": 遠景の濃淡（BackdropPatch）が Collider を持っています"
+                        + "（背景面と同じく移動・NavMesh・AI に関与させない。§7.3）。");
+                }
+            }
+
+            if (patchCount == 0)
+            {
+                errors.Add(scenePath + ": 遠景の濃淡（BackdropPatch）が見つかりません"
+                    + "（§7.3 の背景の補完。均一な一枚板は「描画不良に見えない表現」の"
+                    + "受入を満たさない。付録 C.43）。");
+            }
+            else if (patchTop > collected.FloorBounds.min.y)
+            {
+                errors.Add(scenePath + ": 遠景の濃淡が床より上へ出ています（濃淡の上面 "
+                    + patchTop + " ／床の下面 " + collected.FloorBounds.min.y
+                    + "）。隣 Area の床を突き抜けて見える（付録 C.43）。");
+            }
+
             float marginX = backdrop.bounds.extents.x - collected.FloorBounds.extents.x;
             float marginZ = backdrop.bounds.extents.z - collected.FloorBounds.extents.z;
             float required = Phase5Layout.BackdropMargin - 0.5f;
