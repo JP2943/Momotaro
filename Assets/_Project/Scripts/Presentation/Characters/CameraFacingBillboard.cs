@@ -8,8 +8,14 @@ namespace Momotaro.Presentation.Characters
     ///
     /// 目的1（正対）：Orthographic かつ俯角のあるカメラでは、正対しない板ポリ Sprite が縦方向に cos(角度) 倍へ
     /// 圧縮されて見えるため、Sprite 面をカメラ面と平行に保ち元の縦横比を維持する。
-    /// 目的2（Depth 安定化）：45 度俯瞰では傾いた Sprite の上半分が壁 3D Mesh と描画深度で交差し、上半身だけ隠れる
+    /// 目的2（Depth 安定化）：俯瞰では傾いた Sprite の上半分が壁 3D Mesh と描画深度で交差し、上半身だけ隠れる
     /// ことがある。基準アンカーからカメラ側（-camera.forward）へ <see cref="DepthOffset"/> だけ移動させて解消する。
+    ///
+    /// <b>必要な量は俯角で決まる</b>（工程 P55-15e。試遊報告④）。正対させた Sprite は俯角 θ だけ奥へ傾くので、
+    /// アンカーから高さ H の点は<b>奥へ H·sin θ</b> 張り出す。打ち消すのに要るずらしは <b>H·tan θ</b> である。
+    /// 既定の 0.5 は<b>俯角 45 度のときに決めた値</b>で、P5.5 が 55 度へ変えたときに誰も見直していなかった——
+    /// 試遊で「上方向の壁に接触すると主人公の頭が壁にめり込んで見える」として報告された。
+    /// いまの既定 1.5 は 55 度・主人公の絵の高さで実測して決めてある（付録 C.44）。
     ///
     /// 回転と「基準位置からの表示位置」のみを自身の Transform に適用し、親・兄弟（Character Root / Physics /
     /// Collider / Shadow）や Scale には一切触れない。オフセットは毎回「基準アンカー」から再計算するため累積しない。
@@ -21,8 +27,20 @@ namespace Momotaro.Presentation.Characters
         [Tooltip("正対させる対象カメラ。未指定なら Main Camera を取得してキャッシュする。")]
         [SerializeField] private Camera _camera;
 
-        [Tooltip("カメラ視線方向へ手前（-camera.forward）へずらす描画専用オフセット（m）。壁際の部分遮蔽の解消用。")]
-        [SerializeField, Min(0f)] private float _depthOffset = 0.5f;
+        [Tooltip("カメラ視線方向へ手前（-camera.forward）へずらす描画専用オフセット（m）。壁際の部分遮蔽の解消用。"
+            + " 俯角 55 度での実測値は 1.5（1.0〜1.5 が、奥の壁の飲み込みを消しつつ手前の壁の隠れ方を変えない窓）。")]
+        [SerializeField, Min(0f)] private float _depthOffset = DefaultDepthOffset;
+
+        /// <summary>
+        /// 既定のずらし量（工程 P55-15e。俯角 55 度での実測）。
+        ///
+        /// <b>実測の窓は 1.0〜1.5</b>——奥（北）の壁際で主人公が塗る画素は
+        /// 0.5 で 61.0%／1.0 で 98.1%／1.5 で 99.95%（開けた場所を 100% として）、
+        /// 手前（南）の壁際は 1.5 まで<b>1 画素も変わらない</b>（40.7%）。
+        /// 2.0 にすると手前の壁で 70.0% まで透け始めるので、<b>上げすぎてもいけない</b>。
+        /// 窓の中で奥側に余裕のある 1.5 を採る。根拠は付録 C.44。
+        /// </summary>
+        public const float DefaultDepthOffset = 1.5f;
 
         private Camera _cached;
         private Vector3 _baseLocalPosition;

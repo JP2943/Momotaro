@@ -928,6 +928,215 @@ namespace Momotaro.Tests.PlayMode
             }
         }
 
+        // ================================ 壁際の主人公（工程 P55-15e。試遊報告④）
+
+        /// <summary>
+        /// <b>壁に押し付けても主人公の絵が壁に飲まれない</b>（工程 P55-15e。試遊報告④）。
+        ///
+        /// 報告は「<b>上方向の壁に接触すると主人公の頭が壁にめり込んで見える</b>」だった。
+        ///
+        /// <b>原因は分かっている形である。</b> <see cref="CameraFacingBillboard"/> は
+        /// カメラへ正対させるので、俯角 θ のカメラでは Sprite が<b>奥へ θ だけ傾く</b>。
+        /// 主人公の足元から上は<b>奥（北）へ sin θ ぶん張り出す</b>ので、
+        /// 奥の壁に寄ると上半身が壁の中へ入り、深度で負けて消える。
+        /// 部品はそのために <c>_depthOffset</c>（カメラ側へずらす量）を持っているが、
+        /// <b>その値 0.5 は俯角 45 度のときに決めたもの</b>で、P5.5 は 55 度である。
+        ///
+        /// <b>ここでは「隠れていない」を画素で言う。</b> 同じ主人公を
+        /// <b>壁際</b>と<b>そこから 3m 手前</b>で撮り、塗った画素を比べる。
+        /// 絵も明るさも同じなので、差はそのまま<b>隠れた量</b>である。
+        ///
+        /// <b>奥の壁と手前の壁の両方を見る。</b> 奥（北）は報告された不具合そのもの。
+        /// 手前（南）は<b>直しの代償</b>で、カメラ側へずらすほど
+        /// 「手前の壁に隠れるべき場面で透ける」。片方だけ見ると、
+        /// 片方を直して片方を壊したことに気付けない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AgainstTheWalls_TheHeroIsStillDrawn(
+            [Values("North", "South")] string side)
+        {
+            _route = RouteOf("EastWest");
+            yield return EnterArea(_route.AreaAScene);
+
+            Camera camera = ResidentCamera();
+            string folder = RecordingFolder("wall_" + side);
+            Key into = side == "North" ? Key.W : Key.S;
+            Vector3 away = side == "North" ? Vector3.back : Vector3.forward;
+
+            // ---- 外壁のそばへ置いてから、押し当てる ----
+            //
+            // <b>開始位置から歩かせない。</b> 最初そう書いたら、北側は<b>水場</b>（通行不可）に
+            // 止められて z=2.60 で「壁際」を名乗っていた（比 1.000 ＝ 何も隠れていない）。
+            // 床の実際の広がりから外壁の内側を割り出し、<b>そのすぐ手前へ置いてから</b>押す。
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, "主人公の根がある。");
+
+            Bounds floor = AreaFloorBounds();
+            float nearWall = side == "North" ? floor.max.z - 1.2f : floor.min.z + 1.2f;
+            yield return PlaceAt(new Vector3(player.transform.position.x, 0f, nearWall));
+
+            // <b>秒数で押さない。</b> 動かなくなるまで押す。
+            yield return WalkIntoWall(into);
+            yield return SettleCamera();
+
+            Vector3 atWall = player.transform.position;
+
+            int wall = HeroPixels(camera, folder, "01_at_wall");
+
+
+
+            // ---- 同じ主人公を 3m 手前で撮る（物差し）----
+            yield return PlaceAt(atWall + (away * 3f));
+            yield return SettleCamera();
+            int open = HeroPixels(camera, folder, "02_open");
+
+            Assert.Greater(open, MinimumHeroPixels,
+                "前提：開けた場所では主人公が描かれている（" + open + " 画素）。");
+
+            float kept = open > 0 ? wall / (float)open : 0f;
+            string measured = side + "：壁際 " + wall + " 画素／開けた場所 " + open
+                + " 画素＝<b>" + kept + "</b>・立ち位置 " + atWall;
+
+            if (side == "North")
+            {
+                // <b>奥の壁：飲まれてはいけない</b>（報告された不具合そのもの）。
+                Assert.Greater(kept, MinimumHeroPixelsKeptAtTheFarWall,
+                    "奥の壁際で主人公の絵が壁に飲まれている（" + measured + "・下限 "
+                    + MinimumHeroPixelsKeptAtTheFarWall + "）。"
+                    + " 正対した Sprite は俯角のぶん奥へ傾くので、"
+                    + " ずらし量が足りないと上半身が壁の中へ入る（付録 C.44）。");
+            }
+            else
+            {
+                // <b>手前の壁：透けてはいけない</b>（直しの代償を上から縛る）。
+                //
+                // ここが無いと「奥の壁を直す」はずらし量を上げ続けるだけで通ってしまい、
+                // <b>手前の壁に隠れるべき主人公が壁の上に浮く</b>（§7.3 の逃げ道と同じ形）。
+                Assert.Less(kept, MaximumHeroPixelsShowingThroughTheNearWall,
+                    "手前の壁を主人公が透けている（" + measured + "・上限 "
+                    + MaximumHeroPixelsShowingThroughTheNearWall + "）。"
+                    + " カメラ側へのずらしが大きすぎる（付録 C.44）。");
+            }
+
+            Debug.Log("壁際の主人公 " + measured);
+        }
+
+        /// <summary>
+        /// <b>奥</b>の壁際で保たれていなければならない主人公の絵の割合（工程 P55-15e）。
+        ///
+        /// ずらし量 1.5 での実測は <b>0.9995</b>。直す前（0.5）は <b>0.610</b> だったので、
+        /// 下限 0.9 は<b>直す前の状態をはっきり落とす</b>。根拠は付録 C.44。
+        /// </summary>
+        private const float MinimumHeroPixelsKeptAtTheFarWall = 0.9f;
+
+        /// <summary>
+        /// <b>手前</b>の壁際で主人公が透けてよい上限（工程 P55-15e）。
+        ///
+        /// 手前の壁は<b>カメラと主人公のあいだ</b>にあるので、主人公が隠れるのは正しい。
+        /// ずらし量 0.5／1.0／1.5 のどれでも実測は <b>0.407</b>（1 画素も変わらない）で、
+        /// 2.0 にすると <b>0.700</b> まで透け始める。上限 0.55 はその間に置いてある——
+        /// <b>奥の壁を直すためにずらし量を上げ続ける</b>逃げ道を塞ぐため。根拠は付録 C.44。
+        /// </summary>
+        private const float MaximumHeroPixelsShowingThroughTheNearWall = 0.55f;
+
+        /// <summary>いま載っている Area の床の広がり（外壁の位置を割り出すのに使う）。</summary>
+        private static Bounds AreaFloorBounds()
+        {
+            bool found = false;
+            Bounds floor = default;
+            foreach (Renderer renderer in
+                Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+            {
+                if (renderer == null || renderer.name != "Floor")
+                {
+                    continue;
+                }
+
+                if (!found)
+                {
+                    floor = renderer.bounds;
+                    found = true;
+                }
+                else
+                {
+                    floor.Encapsulate(renderer.bounds);
+                }
+            }
+
+            Assert.IsTrue(found, "前提：床がある（外壁の位置はここから割り出す）。");
+            return floor;
+        }
+
+        /// <summary>主人公が<b>実際に塗った</b>画素数を 1 枚撮って数える（工程 P55-15e）。</summary>
+        private static int HeroPixels(Camera camera, string folder, string name)
+        {
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, name + "：主人公の根がある。");
+            Assert.IsTrue(
+                TryFindVisibleSprite(player.transform, out SpriteRenderer hero, out string _),
+                name + "：主人公の絵が見えている。");
+            return Capture(camera, folder, name, hero).HeroPixels;
+        }
+
+        /// <summary>座標を書き換えて置く（物理も合わせる）。</summary>
+        private static IEnumerator PlaceAt(Vector3 position)
+        {
+            var root = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(root, "主人公の根がある。");
+            root.transform.position =
+                new Vector3(position.x, root.transform.position.y, position.z);
+            if (root.Body != null)
+            {
+                root.Body.position = root.transform.position;
+                root.Body.linearVelocity = Vector3.zero;
+            }
+
+            Physics.SyncTransforms();
+            yield return new WaitForFixedUpdate();
+            yield return null;
+        }
+
+        /// <summary>
+        /// <b>動かなくなるまで</b>その向きへ歩く（壁へ押し付ける。工程 P55-15e）。
+        ///
+        /// 秒数で押すと、歩く速さや開始位置が変わったときに<b>壁へ届かないまま</b>
+        /// 「壁際」を名乗ってしまう——実際そうなって、北側で比 1.000 を測っていた。
+        /// </summary>
+        private IEnumerator WalkIntoWall(Key key)
+        {
+            var player = Object.FindFirstObjectByType<PlayerRoot>();
+            Assert.IsNotNull(player, "主人公の根がある。");
+
+            Vector3 last = player.transform.position;
+            float still = 0f;
+            float deadline = Time.realtimeSinceStartup + 20f;
+
+            while (still < 0.5f && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(key));
+                yield return null;
+
+                Vector3 at = player.transform.position;
+                if (Vector3.Distance(at, last) < 0.01f)
+                {
+                    still += Time.unscaledDeltaTime;
+                }
+                else
+                {
+                    still = 0f;
+                    last = at;
+                }
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+            yield return null;
+
+            Assert.GreaterOrEqual(still, 0.5f,
+                "前提：壁に当たって止まった（止まっていた時間 " + still
+                + " 秒・位置 " + player.transform.position + "）。");
+        }
+
         // ---------------------------------------------------------------- 撮る
 
         /// <summary>1 フレームぶんの事実（判定用の数字と、録画に残した枚）。</summary>

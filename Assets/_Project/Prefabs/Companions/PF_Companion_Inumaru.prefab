@@ -685,7 +685,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Characters.CameraFacingBillboard
   _camera: {fileID: 0}
-  _depthOffset: 0.5
+  _depthOffset: 1.5
 --- !u!1 &6787738855347205754
 GameObject:
   m_ObjectHideFlags: 0
@@ -946,7 +946,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Momotaro.Presentation::Momotaro.Presentation.Characters.CameraFacingBillboard
   _camera: {fileID: 0}
-  _depthOffset: 0.5
+  _depthOffset: 1.5
 --- !u!1 &8399415981818001615
 GameObject:
   m_ObjectHideFlags: 0

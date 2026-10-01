@@ -260,6 +260,11 @@
       "id": "P55-FORCEDMOVE-ROUTE",
       "summary": "**報告された経路をそのまま通して、強制移動が再発しない**（工程 P55-15d。試遊報告①。GPT 作業指示 5）。`P55-OCCUPANCY` の 5 つの受入は、残留・入力・占有を**それぞれ単独で**見ている。ここで見るのは**順番**——「B で勝利 → 複数回往復 → B の戦闘区域を歩き回る」がこの順で起きたときに再発しないことである。単独の検査が通っても、順番で壊れる組み合わせは残り得る。**区域内では出口方向も押す**——欠陥は「出口方向を 0.15 秒押すだけで**主人公がどこに居ても**遷移が要求される」形だったので、押さなければ何も見ていない。4 方向を 0.6 秒ずつ 3 周するので、区域から大きく離れない。受入は 4 つ：(1) 歩いている全フレームで遷移回数が増えない／(2) 出入口が一度も「範囲内」と思っていない／(3) **出入口へ正当に届いてはいない**（最接近 > 3m。届いていたら、遷移が無かったことは強制移動の否定にならない）／(4) 歩き回ったあとも B に居る",
       "stage": "P55-15"
+    },
+    {
+      "id": "P55-WALLSPRITE",
+      "summary": "**壁に押し付けても主人公の絵が壁に飲まれない**（工程 P55-15e。試遊報告④「上方向の壁に接触すると主人公の頭が壁にめり込んで見える」）。`CameraFacingBillboard` はカメラへ正対させるので、俯角 θ の下では Sprite が**奥へ θ だけ傾く**。アンカーから高さ H の点は**奥へ H·sin θ** 張り出すので、奥の壁に寄ると上半身が壁の中へ入り、深度で負けて消える（壁の厚みを突き抜けた頭だけが向こう側に見えるので「頭がめり込む」形になる）。打ち消すのに要るずらしは **H·tan θ**。`_depthOffset` の 0.5 は**俯角 45 度のときに決めた値**で、P5.5 が 55 度へ変えたときに誰も見直していなかった。**受入は窓の両側で縛る**：(1) **奥**（北）の壁際で主人公が塗る画素が開けた場所の **0.9** 以上（実測 1.5 で 0.9995。直す前の 0.5 では 0.610）／(2) **手前**（南）の壁際では **0.55 未満**（実測 0.407。0.5／1.0／1.5 のどれでも 1 画素も変わらない）。(2) が無いと「奥の壁を直す」はずらし量を上げ続けるだけで通ってしまい、**手前の壁に隠れるべき主人公が壁の上に浮く**（2.0 で 0.700 まで透ける）。測り方は、同じ主人公を**壁際**と**そこから 3m 手前**で撮って塗った画素を比べる——絵も明るさも同じなので、差はそのまま隠れた量である。**壁まで歩かせるときは秒数で押さない**：最初 2.5 秒の決め打ちで書いたら北側は**水場**に止められてz=2.60 で「壁際」を名乗っていた（比 1.000 ＝ 何も隠れていない）。床の実際の広がりから外壁を割り出して**そのすぐ手前へ置き**、**動かなくなるまで**押す",
+      "stage": "P55-15"
     }
   ],
   "tests": [
@@ -1066,6 +1071,17 @@
       "supportingTests": [
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.FarFromTheSeam_HoldingTheExitDirection_DoesNotTravel",
         "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AfterLeavingAndComingBack_TheExitGateNoLongerThinksTheHeroIsInside"
+      ]
+    },
+    {
+      "requirementId": "P55-WALLSPRITE",
+      "stage": "P55-15",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.AgainstTheWalls_TheHeroIsStillDrawn(\"North\")",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.AgainstTheWalls_TheHeroIsStillDrawn(\"South\")"
       ]
     }
   ],
