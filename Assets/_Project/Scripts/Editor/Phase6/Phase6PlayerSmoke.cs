@@ -115,6 +115,16 @@ namespace Momotaro.Editor.Phase6
             Directory.CreateDirectory(playSaves);
             ok &= RunPlayer(exe, "play", playSaves, work, 0, batch: false, outputs, out _);
 
+            // 切り分け：同じ実プレイを保存の採取なしで（休息の停止が保存によるものかを分ける）。
+            string playNoSave = Path.Combine(work, "play_nosave_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss"));
+            Directory.CreateDirectory(playNoSave);
+            ok &= RunPlayer(exe, "play", playNoSave, work, 0, batch: false, outputs, out _, tag: "play_nosave", extraArgs: " -p6a-no-save 1");
+
+            // 切り分け：GC・一時停止・メニューの文字の描画を、計測の前に段階を分けて先に起こす。
+            string playProbe = Path.Combine(work, "play_probe_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss"));
+            Directory.CreateDirectory(playProbe);
+            ok &= RunPlayer(exe, "play", playProbe, work, 0, batch: false, outputs, out _, tag: "play_probe", extraArgs: " -p6a-play-probe 1");
+
             // ---- 3. 性能（通常 I/O・遅い I/O）。画面ありで 60fps 目標 ----
             string perfSaves = Path.Combine(work, "perf_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss"));
             Directory.CreateDirectory(perfSaves);
@@ -148,7 +158,7 @@ namespace Momotaro.Editor.Phase6
         }
 
         private static bool RunPlayer(string exe, string mode, string saveDir, string work, int slowIo, bool batch,
-            List<string> outputs, out Dictionary<string, string> result, string tag = null)
+            List<string> outputs, out Dictionary<string, string> result, string tag = null, string extraArgs = "")
         {
             result = null;
             tag ??= mode + (slowIo > 0 ? "_slow" + slowIo : string.Empty);
@@ -161,6 +171,7 @@ namespace Momotaro.Editor.Phase6
 
             string args = "-p6a-smoke " + mode + " -p6a-save-dir \"" + saveDir + "\" -p6a-out \"" + outPath + "\""
                 + (slowIo > 0 ? " -p6a-slow-io " + slowIo : string.Empty)
+                + extraArgs
                 + " -logFile \"" + logPath + "\""
                 + (batch ? " -batchmode -nographics" : " -screen-fullscreen 0 -screen-width 1280 -screen-height 720");
 

@@ -168,6 +168,31 @@ namespace Momotaro.Infrastructure.World
             return clicked;
         }
 
+        /// <summary>
+        /// 仮 UI に出る文字（各メニュー・保存表示・案内の文字と、ひらがな・カタカナ・英数字）。<b>初回描画の停止を先に済ませる</b>ために使う。
+        /// </summary>
+        /// <remarks>
+        /// 実ビルドの計測で、起動して最初にお地蔵様のメニューを開いたフレームが 300ms ほど止まった。保存・GC・入力の切り替えを外しても止まり、
+        /// 同じ文字を IMGUI で先に描くとそちらへ停止が移った（<c>P6A_性能測定記録.md</c> §6）。日本語の文字を初めて描くときの準備が原因なので、
+        /// 操作の無いタイトルで先に描いておく（<see cref="DrawPrewarm"/>）。
+        /// </remarks>
+        public const string PrewarmCharacters = "×…↑↓▶○　、。ー・（）／：？一世中主了人代休位作保倒側備元充先全公内再冒初別動十取合回在地場壊太失始字存定居帰常度後得復徳息態成戦戻所手操敗敵断方旅時最期桃構様残決混済準点片状理用由着移立築終置蔵行補解試読起退進遊違選避郎長閉開間闘険食駐ぁあぃいぅうぇえぉおかがきぎくぐけげこごさざしじすずせぜそぞただちぢっつづてでとどなにぬねのはばぱひびぴふぶぷへべぺほぼぽまみむめもゃやゅゆょよらりるれろゎわゐゑをんゔゕゖァアィイゥウェエォオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッツヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモャヤュユョヨラリルレロヮワヰヱヲンヴヵヶヷヸヹヺ!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+
+        /// <summary>
+        /// <see cref="PrewarmCharacters"/> を<b>見えない色で</b>描く（タイトルの OnGUI から。拡大した座標系の中で呼ぶ）。
+        /// ラベル・ボタン・枠の 3 つの様式で描く（様式ごとに文字の大きさが違うことがある）。
+        /// </summary>
+        public static void DrawPrewarm()
+        {
+            Color previous = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, 0f);
+            var rect = new Rect(0f, 0f, 4000f, 40f);
+            GUI.Label(rect, PrewarmCharacters);
+            GUI.Button(rect, PrewarmCharacters);
+            GUI.Box(rect, PrewarmCharacters);
+            GUI.color = previous;
+        }
+
         /// <summary>操作の案内（パッドとキーボード）。</summary>
         public const string Hint = "↑↓／十字キー：選ぶ　決定：A（×）／Enter　戻る：B（○）／Esc";
     }

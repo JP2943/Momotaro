@@ -198,6 +198,11 @@ namespace Momotaro.Infrastructure.World
             _menu.Reset(0);
         }
 
+        private int _prewarmFrames;
+
+        /// <summary>仮 UI の文字の先描きが済んだか（実ビルド確認が待つ）。</summary>
+        public bool PrewarmDone => _prewarmFrames >= 3;
+
         private void OnGUI()
         {
             if (_started)
@@ -206,6 +211,17 @@ namespace Momotaro.Infrastructure.World
             }
 
             _menu.BeginScaled();
+
+            // 仮 UI の文字を先に描いておく（ゲーム中の初回メニューで止まらないように。PadMenuNavigator.PrewarmCharacters）。
+            if (_prewarmFrames < 3)
+            {
+                PadMenuNavigator.DrawPrewarm();
+                if (Event.current.type == EventType.Repaint)
+                {
+                    _prewarmFrames++;
+                }
+            }
+
             const float width = 520f;
             var area = new Rect((PadMenuNavigator.VirtualWidth - width) * 0.5f, 60f, width, 270f);
             GUI.Box(area, "桃太郎 P6A 進行・保存試遊");

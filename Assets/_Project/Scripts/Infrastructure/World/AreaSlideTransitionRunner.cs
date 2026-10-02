@@ -658,6 +658,150 @@ namespace Momotaro.Infrastructure.World
             _retiring = false;
         }
 
+        /// <summary>
+        /// 同じ Area の中の旅立ち（レビュー 720161d 指摘 1。仕様 §6「同じ Area の別のお地蔵様」）。同じ Scene を 2 枚は載せないので、
+        /// <b>いま載っている Area の中で到着を準備・検証してから</b>置き直す。準備（入口・配置の窓口・注入した故障）が通らなければ
+        /// 何も動かさず出発位置のまま戻す。成功したときだけ置き直し、確定を通知する（休息・登録・周期・保存は通知の購読側）。
+        /// 排他と世代はスライド・別 Area の旅立ちと共有する。
+        /// </summary>
+        public AreaTransitionDecision TryFastTravelWithinArea(StableId areaId, StableId entryId)
+        {
+            AreaCatalog catalog = _owner.Catalog;
+            if (catalog == null)
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
+            }
+
+            if (!catalog.TryGetEntry(areaId, entryId, out _))
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.UnknownDestination);
+            }
+
+            if (_owner.Coordinator != null && _owner.Coordinator.IsTransitioning)
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.AlreadyTransitioning);
+            }
+
+            if (!TryResolveDeparture(out AreaRuntimeBundle area) || !area.AreaId.Equals(areaId))
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
+            }
+
+            var connection = AreaConnectionSnapshot.ForFastTravel(areaId, areaId, entryId);
+            AreaTransitionDecision decision = _slide.TryRequest(connection, _owner.Conditions);
+            if (!decision.Accepted)
+            {
+                return decision;
+            }
+
+            LastFailure = string.Empty;
+            _owner.Clock.Freeze();
+            GameModeProvider.Current?.ChangeMode(GameMode.Loading);
+            _owner.StartSlideRoutine(FastTravelWithinAreaRoutine(connection, decision.TransitionId, area));
+            return decision;
+        }
+
+        /// <summary>同じ Area の中の旅立ちが成立した回数（診断・テスト用）。</summary>
+        public int FastTravelWithinAreaCount { get; private set; }
+
+        private IEnumerator FastTravelWithinAreaRoutine(
+            AreaConnectionSnapshot connection, int transitionId, AreaRuntimeBundle area)
+        {
+            _slidingConnection = connection.ConnectionId;
+            if (!_slide.NotifyPreparing(transitionId))
+            {
+                yield break;
+            }
+
+            // 受理を返してから進める（呼び出し側が世代を控えてから確定の通知を受け取れるように）。
+            yield return null;
+
+            string failure = null;
+            if (area == null || area.Context == null || !area.TryResolve(out AreaInitializer initializer))
+            {
+                failure = "Area の初期化担当を引けません。";
+                initializer = null;
+            }
+            else if (!initializer.CanPlaceWithinArea(connection.EntryId, out string placeFailure))
+            {
+                failure = placeFailure;
+            }
+            else
+            {
+                failure = FastTravelPrepareFault?.Invoke(area);
+            }
+
+            if (!string.IsNullOrEmpty(failure))
+            {
+                yield return WithinAreaRollback(transitionId, "同じ Area の中の旅立ちの準備に失敗しました: " + failure);
+                yield break;
+            }
+
+            if (!_slide.NotifyPrepared(transitionId) || !_slide.NotifySlideStarted(transitionId))
+            {
+                yield break;
+            }
+
+            // ---- 確定の同期区間（置き直しと確定を同じフレームで。ここに yield を挟まない）----
+            if (!initializer.TryPlaceWithinArea(connection.EntryId, out string placeError))
+            {
+                // 準備の確認は通ったので通常は来ない。来たら動かしていない（窓口の検証で止まる）ので出発位置のまま戻す。
+                yield return WithinAreaRollback(transitionId, "置き直しに失敗しました: " + placeError);
+                yield break;
+            }
+
+            if (!_slide.TryCommit(transitionId))
+            {
+                yield break;
+            }
+
+            _owner.NoteArrival(connection.ToAreaId, connection.EntryId);
+            IAreaCameraOwner camera = AreaCameraOwnerProvider.Current;
+            if (camera != null && camera.TryBindActiveArea())
+            {
+                camera.ApplyArrival();
+            }
+
+            GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
+            _owner.Clock.Thaw();
+            CommittedCount++;
+            FastTravelCommittedCount++;
+            FastTravelWithinAreaCount++;
+            LastFailure = string.Empty;
+            // ---- 同期区間ここまで ----
+
+            if (_slide.TryConsumeArrivalAnnouncement(transitionId) && _slide.Release(transitionId))
+            {
+                _owner.CompleteFastTravelJump(transitionId);
+                _owner.RaiseArrivalCompleted(connection.ToAreaId);
+            }
+        }
+
+        private IEnumerator WithinAreaRollback(int transitionId, string reason)
+        {
+            LastFailure = reason;
+            GameLog.Warning(LogCategory.Scene, "Fast travel within the area rolled back: " + reason);
+            if (!_slide.TryBeginRollback(transitionId))
+            {
+                yield break;
+            }
+
+            // 何も動かしていない。入力と時計を戻すだけ。
+            GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
+            _owner.Clock.Thaw();
+            if (_slide.NotifyRolledBack(transitionId))
+            {
+                RolledBackCount++;
+            }
+            else
+            {
+                FailedCount++;
+            }
+
+            FastTravelRolledBackCount++;
+            _owner.FailFastTravelJump(transitionId);
+        }
+
         private IEnumerator FastTravelRollback(
             int transitionId, AreaRuntimeBundle departure, AreaInstanceHandle departureHandle,
             string reason, AreaRuntimeBundle destination = null, bool waitForPreloadRelease = true)

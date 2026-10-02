@@ -1684,6 +1684,24 @@ namespace Momotaro.Editor.Phase5
             //
             // 1 遭遇戦 1 物体で、P5 の単一遭遇戦と同じ部品を組む。受付条件・Interact・仲間の活動 Context は
             // <b>まとめ（AreaEncounterGroup）</b>を見る——どれか 1 つでも戦闘中なら戦闘中。
+            // ---- 遭遇戦の無い Area の命中 Feedback（P6A 27。レビュー 720161d 指摘 2 で発覚）----
+            //
+            // 配信役（CombatFeedbackDispatcher）は遭遇戦の部品と一緒にしか置いていなかった。遭遇戦が無く普通敵だけが居る Area
+            // （P6A の A）では、ジャストガードの閃光・ヒットストップ・点滅の表示役が<b>購読する相手を持たず</b>、実際に JG が成立しても
+            // 何も出なかった（実攻撃の検査で JG 10 回成立・閃光 0 回）。戦闘 VFX を置く構成（IncludeCombatVfx）で、遭遇戦が無いときだけ同じ部品を置く。
+            // P5／P5.5 の試遊 Scene は IncludeCombatVfx が false なので出力は変わらない。
+            if (!hasEncounter && !hasP6Encounters && t != null && t.IncludeCombatVfx)
+            {
+                var fieldFeedbackGo = new GameObject("CombatFeedback");
+                fieldFeedbackGo.transform.SetParent(systems.transform, false);
+                fieldFeedbackGo.AddComponent<CombatFeedbackDispatcher>();
+                HitStopController fieldHitStop = fieldFeedbackGo.AddComponent<HitStopController>();
+                HitFlashPresenter fieldFlash = fieldFeedbackGo.AddComponent<HitFlashPresenter>();
+                CombatFeedbackPresenter fieldFeedback = fieldFeedbackGo.AddComponent<CombatFeedbackPresenter>();
+                fieldFeedback.HitStop = fieldHitStop;
+                fieldFeedback.Flash = fieldFlash;
+            }
+
             AreaEncounterGroup encounterGroup = null;
             if (hasP6Encounters)
             {

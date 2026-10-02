@@ -115,6 +115,7 @@ namespace Momotaro.Editor.Phase6
                 {
                     (Phase6WorldIds.EntryCFromB, CardinalDirection.East),
                     (Phase6WorldIds.EntryCShrine, CardinalDirection.North),
+                    (Phase6WorldIds.EntryCShrine2, CardinalDirection.North),
                 },
                 Phase6WorldIds.EntryCFromB);
             AssetDatabase.SaveAssets();
@@ -331,11 +332,13 @@ namespace Momotaro.Editor.Phase6
             shrineA.EditorSet(Phase6WorldIds.ShrineA, Phase6WorldIds.AreaA, Phase6WorldIds.EntryAShrine, "A のお地蔵様");
             var shrineC = new ShrineDefinition();
             shrineC.EditorSet(Phase6WorldIds.ShrineC, Phase6WorldIds.AreaC, Phase6WorldIds.EntryCShrine, "C のお地蔵様（ボス前）");
+            var shrineC2 = new ShrineDefinition();
+            shrineC2.EditorSet(Phase6WorldIds.ShrineC2, Phase6WorldIds.AreaC, Phase6WorldIds.EntryCShrine2, "C のお地蔵様（2）");
             var tonic = new ItemDefinition();
             tonic.EditorSet(Phase6WorldIds.ItemTonic, Phase6WorldIds.TonicMaxStack, "強壮薬（検証用）");
 
             asset.EditorSetCampaign(EncounterClearPolicy.Permanent, 1,
-                new List<ShrineDefinition> { shrineA, shrineC }, Phase6WorldIds.ShrineA,
+                new List<ShrineDefinition> { shrineA, shrineC, shrineC2 }, Phase6WorldIds.ShrineA,
                 Phase6TrialValues.KibidangoCapacity, new List<ItemDefinition> { tonic },
                 new List<SkillNodeData> { data.Growth });
             asset.EditorSetKnownIds(
@@ -493,6 +496,9 @@ namespace Momotaro.Editor.Phase6
             AreaEntryPoint shrineEntry = Phase5ExplorationBuilder.CreateEntryPoint(entries.transform,
                 Phase6WorldIds.EntryCShrine, Phase6WorldLayout.EntryCShrine, Phase6WorldLayout.EntryCShrineAlternates,
                 "お地蔵様の前");
+            AreaEntryPoint shrine2Entry = Phase5ExplorationBuilder.CreateEntryPoint(entries.transform,
+                Phase6WorldIds.EntryCShrine2, Phase6WorldLayout.EntryCShrine2, Phase6WorldLayout.EntryCShrine2Alternates,
+                "2 つ目のお地蔵様の前");
 
             AreaExitGate toB = Phase5ExplorationBuilder.CreateExitGate(root, "ExitGate_ToB", Phase6WorldLayout.ExitCToB,
                 Phase5SeamAxis.X, Phase6WorldIds.AreaB, Phase6WorldIds.EntryBFromC, Vector3.left);
@@ -506,12 +512,14 @@ namespace Momotaro.Editor.Phase6
 
             AddShrine(fixtureRoot.transform, Phase6WorldIds.ShrineC, Phase6WorldIds.AreaC, Phase6WorldLayout.ShrineC,
                 "お地蔵様（ボス前）");
+            AddShrine(fixtureRoot.transform, Phase6WorldIds.ShrineC2, Phase6WorldIds.AreaC, Phase6WorldLayout.ShrineC2,
+                "お地蔵様（C の 2）");
             fixtures.Points.Add(Phase5ExplorationBuilder.CreateInvestigationPoint(fixtureRoot.transform, "Investigation",
                 Phase6WorldIds.PointCOpen, Phase6WorldIds.DiscoveryCOpen, Phase6WorldLayout.PointC));
 
             var ext = new Phase5AreaExtension(root, env.transform, fixtureRoot.transform, markers.transform,
                 entries.transform, definition, t, fixtures,
-                new List<AreaEntryPoint> { fromB, shrineEntry }, new List<AreaExitGate> { toB }, null, null, null);
+                new List<AreaEntryPoint> { fromB, shrineEntry, shrine2Entry }, new List<AreaExitGate> { toB }, null, null, null);
             AddEncounter(ext, data.EncounterCBoss, Phase6WorldLayout.CBossArenaCenter, Phase6WorldLayout.CBossArenaSize,
                 Phase6WorldLayout.CBossTrigger, Phase6WorldLayout.CBossSpawns, data.Kill);
 

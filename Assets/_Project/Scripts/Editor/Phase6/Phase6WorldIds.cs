@@ -52,6 +52,9 @@ namespace Momotaro.Editor.Phase6
         public static readonly StableId EntryCFromB = new StableId("entry_p6_c_from_b");
         public static readonly StableId EntryCShrine = new StableId("entry_p6_c_shrine");
 
+        /// <summary>C の 2 つ目のお地蔵様の入口（同じ Area の中の旅立ちの fixture。レビュー 720161d 指摘 1）。</summary>
+        public static readonly StableId EntryCShrine2 = new StableId("entry_p6_c_shrine_2");
+
         // ---- 出入口と接続 ----
         public static readonly StableId ExitAEast = new StableId("exit_p6_a_east");
         public static readonly StableId ExitBWest = new StableId("exit_p6_b_west");
@@ -65,6 +68,9 @@ namespace Momotaro.Editor.Phase6
         // ---- お地蔵様 ----
         public static readonly StableId ShrineA = new StableId("shrine_p6_a");
         public static readonly StableId ShrineC = new StableId("shrine_p6_c");
+
+        /// <summary>C の 2 つ目のお地蔵様（同じ Area の中の旅立ちの fixture）。</summary>
+        public static readonly StableId ShrineC2 = new StableId("shrine_p6_c_2");
 
         // ---- 遭遇戦・普通敵・配置物・仕掛け・調査 ----
         public static readonly StableId EncounterBNorth = new StableId("encounter_p6_b_north");
@@ -160,6 +166,9 @@ namespace Momotaro.Editor.Phase6
         public static readonly Vector3 ShrineC = new Vector3(-6f, 0f, -7.6f);
         public static readonly Vector3 EntryCShrine = new Vector3(-6f, 0f, -6f);
         public static readonly Vector3[] EntryCShrineAlternates = { new Vector3(-4.8f, 0f, -6f), new Vector3(-7.2f, 0f, -6f) };
+        public static readonly Vector3 ShrineC2 = new Vector3(-4f, 0f, 2.6f);
+        public static readonly Vector3 EntryCShrine2 = new Vector3(-4f, 0f, 4.2f);
+        public static readonly Vector3[] EntryCShrine2Alternates = { new Vector3(-2.8f, 0f, 4.2f), new Vector3(-5.2f, 0f, 4.2f) };
         public static readonly Vector3 CBossArenaCenter = new Vector3(5f, 0f, 0f);
         public static readonly Vector2 CBossArenaSize = new Vector2(12f, 12f);
         public static readonly Vector3 CBossTrigger = new Vector3(4f, 0f, 0f);

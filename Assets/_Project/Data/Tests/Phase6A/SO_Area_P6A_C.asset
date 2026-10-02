@@ -27,6 +27,9 @@ MonoBehaviour:
   - _entryId:
       _value: entry_p6_c_shrine
     _facing: 0
+  - _entryId:
+      _value: entry_p6_c_shrine_2
+    _facing: 0
   _defaultEntryId:
     _value: entry_p6_c_from_b
   _arrivalReward: {fileID: 11400000, guid: 944f35a2382d4e1418bb5393fd78dc7d, type: 2}

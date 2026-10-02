@@ -598,6 +598,61 @@ namespace Momotaro.Infrastructure.World
                 definitionFacing);
         }
 
+        /// <summary>
+        /// 同じ Area の中の旅立ち（レビュー 720161d 指摘 1）で、<b>動かす前に</b>到着できるかを確かめる。
+        /// Scene を読み直さないので、入口が Scene にあること・Actor を置く窓口があることだけを見る。何も変えない。
+        /// </summary>
+        public bool CanPlaceWithinArea(StableId entryId, out string failure)
+        {
+            if (!Initialized || _areaRoot == null || _transferPort == null)
+            {
+                failure = "Area が準備できていないか、Actor を置く窓口が未配線です。";
+                return false;
+            }
+
+            if (entryId.IsEmpty || !_areaRoot.TryGetEntryPoint(entryId, out _))
+            {
+                failure = "入口 '" + entryId.Value + "' が Scene にありません。";
+                return false;
+            }
+
+            failure = string.Empty;
+            return true;
+        }
+
+        /// <summary>
+        /// 同じ Area の中の旅立ちで主人公と犬丸を入口へ置き直す。<b>Actor の値（HP 等）には触らない</b>——回復は
+        /// 呼び出し側の休息が行う。進行中の行動は中立化し、入口・遭遇 Trigger の「範囲内」を測り直す（入口の跳ね返り防止も入場と同じ）。
+        /// </summary>
+        public bool TryPlaceWithinArea(StableId entryId, out string failure)
+        {
+            if (!CanPlaceWithinArea(entryId, out failure))
+            {
+                return false;
+            }
+
+            _areaRoot.TryGetEntryPoint(entryId, out AreaEntryPoint entryPoint);
+            _transferPort.ResetForAreaEntry();
+            PlaceArrivals(entryPoint, ResolveFacing(entryId));
+            Physics.SyncTransforms();
+            foreach (Momotaro.Gameplay.Encounter.AreaEncounterTrigger trigger in _areaRoot.EncounterTriggers)
+            {
+                trigger?.ResyncOccupancy();
+            }
+
+            foreach (AreaExitGate gate in _areaRoot.ExitGates)
+            {
+                if (gate != null)
+                {
+                    gate.ResyncOccupancy();
+                    gate.DisarmOnArrival();
+                }
+            }
+
+            failure = string.Empty;
+            return true;
+        }
+
         /// <summary>入口定義の 4 方向を XZ のベクトルへ直す。</summary>
         private Vector3 ResolveFacing(StableId entryId)
         {

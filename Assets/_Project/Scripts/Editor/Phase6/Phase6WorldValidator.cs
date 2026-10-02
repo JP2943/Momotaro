@@ -446,6 +446,9 @@ namespace Momotaro.Editor.Phase6
             RequireExactlyOne<Momotaro.Presentation.Combat.EnemySlashVfxPresenter>(scene, "敵の剣閃", errors);
             RequireExactlyOne<Momotaro.Presentation.Combat.EnemyUnblockableWarningPresenter>(scene, "ガード不能の警告", errors);
             RequireExactlyOne<Momotaro.Presentation.Combat.JustGuardVfxPresenter>(scene, "ジャストガードの閃光", errors);
+
+            // 表示役は配信役を購読して初めて出る。配信役が無い Area では JG 閃光・手応えが一切出ない（A で実際に起きた）。
+            RequireExactlyOne<Momotaro.Presentation.Diagnostics.CombatFeedbackDispatcher>(scene, "命中 Feedback の配信役", errors);
         }
 
         private static void CheckSet(Scene scene, string label,

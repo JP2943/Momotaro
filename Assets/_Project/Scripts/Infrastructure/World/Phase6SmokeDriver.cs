@@ -44,6 +44,12 @@ namespace Momotaro.Infrastructure.World
         /// <summary>遅い I/O の遅延（ミリ秒。0 で無し）。</summary>
         public static int SlowIoMilliseconds { get; private set; }
 
+        /// <summary>保存の採取を止める（性能の切り分け用。<c>-p6a-no-save</c>）。</summary>
+        public static bool NoSave { get; private set; }
+
+        /// <summary>計測の前に切り分けの下準備を段階ごとに行う（<c>-p6a-play-probe</c>）。</summary>
+        public static bool Probe { get; private set; }
+
         /// <summary>引数を読み、保存先の差し替えを<b>保存サービスが調停役を作る前に</b>当てる。有効なら true。</summary>
         public static bool TryApply()
         {
@@ -62,6 +68,12 @@ namespace Momotaro.Infrastructure.World
                     case "-p6a-save-dir":
                         saveDir = args[i + 1];
                         break;
+                    case "-p6a-play-probe":
+                        Probe = args[i + 1] == "1";
+                        break;
+                    case "-p6a-no-save":
+                        NoSave = args[i + 1] == "1";
+                        break;
                     case "-p6a-slow-io":
                         int.TryParse(args[i + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int ms);
                         SlowIoMilliseconds = ms;
@@ -77,6 +89,10 @@ namespace Momotaro.Infrastructure.World
 
             // 窓が前面に無くても止めない（自動確認の窓は Editor の後ろで開くことがある。止まると計測が終わらない）。
             Application.runInBackground = true;
+
+            // 窓が前面に無いと、Input System は既定で（背景の扱いが「リセットして無効」なら）キーボードを止める。自動操作の仮想キーボードが
+            // 効かず、実攻撃・歩行が起きないまま計測が進んでいた（2026-10-02、前面の窓によって撃破 0 になる回があった）。自動確認のときだけ前面を問わない。
+            InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
             CampaignSaveService.TestDirectoryOverride = saveDir;
             CampaignSaveService saves = BootstrapServices.Get<CampaignSaveService>();
             if (saves != null && SlowIoMilliseconds > 0)
@@ -170,6 +186,14 @@ namespace Momotaro.Infrastructure.World
 
         private IEnumerator StartNewGame()
         {
+            // 人がタイトルを見ている間に済む文字の先描きを待つ（画面の無い batchmode では描かれないので上限つき）。
+            float prewarmDeadline = Time.realtimeSinceStartup + 3f;
+            while (!_launcher.PrewarmDone && Time.realtimeSinceStartup < prewarmDeadline)
+            {
+                yield return null;
+            }
+
+            _result["titlePrewarmDone"] = _launcher.PrewarmDone ? "true" : "false";
             if (!_launcher.PressNewGame(confirmed: true))
             {
                 _result["error"] = "new game refused: " + _launcher.Status;
@@ -366,6 +390,7 @@ namespace Momotaro.Infrastructure.World
 
         private Keyboard _keyboard;
         private readonly List<double> _restMs = new List<double>();
+        private readonly List<double> _menuMs = new List<double>();
 
         private IEnumerator PerfPlay()
         {
@@ -379,6 +404,13 @@ namespace Momotaro.Infrastructure.World
             _keyboard = InputSystem.AddDevice<Keyboard>("P6ASmokeKeyboard");
             yield return null;
             SaveCoordinator c = Saves.Coordinator;
+            if (Phase6SmokeArgs.NoSave)
+            {
+                // 切り分け：保存の採取（と書込）を一切起こさない。ほかの処理（休息・敵の作り直し・UI）は同じ。
+                c.CanCapture = () => false;
+            }
+
+            _result["noSave"] = Phase6SmokeArgs.NoSave ? "true" : "false";
             CampaignShrineService shrines = BootstrapServices.Get<CampaignShrineService>();
             int captureStart = c.CaptureMilliseconds.Count;
             int successStart = c.SuccessCount;
@@ -393,6 +425,7 @@ namespace Momotaro.Infrastructure.World
             string phase = "start";
             var spikes = new List<string>();
             int lastCaptures = c.CaptureMilliseconds.Count;
+            int lastGc = GC.CollectionCount(0);
 
             // 33ms を超えたフレームは、そのとき何をしていたか（歩行・撃破・休息）と、そのフレームに保存の採取があったかを残す。
             IEnumerator FrameSampler()
@@ -408,17 +441,65 @@ namespace Momotaro.Infrastructure.World
                     }
 
                     int captures = c.CaptureMilliseconds.Count;
+                    int gc = GC.CollectionCount(0);
                     if (ms > 33.4)
                     {
                         spikes.Add(phase + "=" + ms.ToString("0.0", CultureInfo.InvariantCulture) + "ms(capture="
-                            + (captures > lastCaptures ? "yes" : "no") + ",writing=" + (c.IsWriting ? "yes" : "no") + ")");
+                            + (captures > lastCaptures ? "yes" : "no") + ",writing=" + (c.IsWriting ? "yes" : "no")
+                            + ",gc=" + (gc - lastGc) + ")");
                     }
 
                     lastCaptures = captures;
+                    lastGc = gc;
                 }
             }
 
             Coroutine sampler = StartCoroutine(FrameSampler());
+            if (Phase6SmokeArgs.Probe)
+            {
+                // 切り分けの下準備を段階に分けて行い、どの段階で止まるかを見る。
+                // 1. GC：明示の全回収にかかる時間。2. 一時停止（入力の切り替え）だけ。3. メニューと同じ文字の IMGUI 描画だけ。
+                phase = "probe/gc";
+                Stopwatch gcWatch = Stopwatch.StartNew();
+                GC.Collect();
+                gcWatch.Stop();
+                _result["probeGcMs"] = gcWatch.Elapsed.TotalMilliseconds.ToString("0.0", CultureInfo.InvariantCulture);
+                for (int i = 0; i < 15; i++)
+                {
+                    yield return null;
+                }
+
+                phase = "probe/pause";
+                Momotaro.Gameplay.Modes.IGameModeService modes = Momotaro.Gameplay.Modes.GameModeProvider.Current;
+                modes?.ChangeMode(Momotaro.Gameplay.Modes.GameMode.Paused);
+                for (int i = 0; i < 15; i++)
+                {
+                    yield return null;
+                }
+
+                modes?.ChangeMode(Momotaro.Gameplay.Modes.GameMode.Exploration);
+                for (int i = 0; i < 15; i++)
+                {
+                    yield return null;
+                }
+
+                phase = "probe/gui";
+                var probeGo = new GameObject("Phase6SmokeGuiProbe");
+                Phase6SmokeGuiProbe probe = probeGo.AddComponent<Phase6SmokeGuiProbe>();
+                for (int i = 0; i < 15; i++)
+                {
+                    yield return null;
+                }
+
+                _result["probeGuiFrames"] = probe.DrawnFrames.ToString(CultureInfo.InvariantCulture);
+                Destroy(probeGo);
+                for (int i = 0; i < 15; i++)
+                {
+                    yield return null;
+                }
+            }
+
+            _result["probe"] = Phase6SmokeArgs.Probe ? "true" : "false";
             float started = Time.realtimeSinceStartup;
             for (int cycle = 0; cycle < 8 && Time.realtimeSinceStartup - started < 100f; cycle++)
             {
@@ -467,9 +548,9 @@ namespace Momotaro.Infrastructure.World
                 }
 
                 // お地蔵様で休息する（実キー E で調べ、休息。普通敵が戻り、保存要求が立つ）。
-                phase = "c" + cycle + "/rest";
                 bool rested = false;
-                yield return RestAtShrine(shrines, ok => rested = ok);
+                int restCycle = cycle;
+                yield return RestAtShrine(shrines, ok => rested = ok, p => phase = "c" + restCycle + "/" + p);
                 if (rested)
                 {
                     rests++;
@@ -512,8 +593,9 @@ namespace Momotaro.Infrastructure.World
             _result["walkFrameMaxMs"] = Percentile(walkFrames, 1.0);
             _result["over33ms"] = CountOver(frames, 33.4).ToString(CultureInfo.InvariantCulture);
             _result["spikes"] = string.Join(" ", spikes);
+            _result["menuCallMs"] = string.Join(" ", _menuMs.ConvertAll(v => v.ToString("0.0", CultureInfo.InvariantCulture)));
             _result["restCallMs"] = string.Join(" ", _restMs.ConvertAll(v => v.ToString("0.0", CultureInfo.InvariantCulture)));
-            if (kills == 0 || rests == 0 || c.Status == SaveStatus.Failed)
+            if (kills == 0 || failedKills > 0 || rests == 0 || c.Status == SaveStatus.Failed || (!Phase6SmokeArgs.NoSave && c.SuccessCount == successStart))
             {
                 _result["error"] = "play did not exercise saves (kills=" + kills + " rests=" + rests + " status=" + c.Status + ")";
             }
@@ -578,10 +660,22 @@ namespace Momotaro.Infrastructure.World
 
             InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
             yield return null;
-            done(enemy == null || enemy.IsDefeated);
+            bool killed = enemy == null || enemy.IsDefeated;
+            if (!killed && !_result.ContainsKey("firstKillFailure"))
+            {
+                var state = root.GetComponentInChildren<Momotaro.Gameplay.Player.PlayerStateController>();
+                _result["firstKillFailure"] = "enemyHp=" + enemy.CurrentHp + " player=" + (state != null ? state.Current.ToString() : "?")
+                    + " mode=" + (Momotaro.Gameplay.Modes.GameModeProvider.Current != null
+                        ? Momotaro.Gameplay.Modes.GameModeProvider.Current.Current.ToString() : "null")
+                    + " timeScale=" + Time.timeScale.ToString("0.###", CultureInfo.InvariantCulture)
+                    + " clockFrozen=" + Momotaro.Gameplay.Session.GameplayClockProvider.IsFrozen
+                    + " enemyActive=" + enemy.isActiveAndEnabled;
+            }
+
+            done(killed);
         }
 
-        private IEnumerator RestAtShrine(CampaignShrineService shrines, Action<bool> done)
+        private IEnumerator RestAtShrine(CampaignShrineService shrines, Action<bool> done, Action<string> setPhase)
         {
             AreaRuntimeBundle bundle = CurrentAreaProvider.Current;
             if (shrines == null || bundle == null
@@ -606,7 +700,18 @@ namespace Momotaro.Infrastructure.World
             yield return null;
 
             // 調べる（お地蔵様の Interact が呼ぶのと同じ窓口）。計測の対象は保存なので、選択の入力は経由しない。
+            // 段階を分けて数フレーム空ける：メニューを開く（登録・保存要求・メニューの初回描画）／休息（回復・敵の作り直し・保存要求）。
+            setPhase("menu");
+            Stopwatch menuWatch = Stopwatch.StartNew();
             shrines.OnShrineInteracted(point.ShrineId);
+            menuWatch.Stop();
+            _menuMs.Add(menuWatch.Elapsed.TotalMilliseconds);
+            for (int i = 0; i < 10; i++)
+            {
+                yield return null;
+            }
+
+            setPhase("rest");
             if (!shrines.IsMenuOpen)
             {
                 done(false);
@@ -620,6 +725,12 @@ namespace Momotaro.Infrastructure.World
             bool ok = shrines.Rest() == ShrineMenuResult.Rested;
             restWatch.Stop();
             _restMs.Add(restWatch.Elapsed.TotalMilliseconds);
+            for (int i = 0; i < 10; i++)
+            {
+                yield return null;
+            }
+
+            setPhase("close");
             shrines.Close();
             yield return null;
             done(ok);

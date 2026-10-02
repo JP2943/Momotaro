@@ -7,7 +7,9 @@ using Momotaro.Gameplay.Combat;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Encounter;
+using Momotaro.Data.Combat;
 using Momotaro.Gameplay.Enemy;
+using Momotaro.Gameplay.Enemy.Combat;
 using Momotaro.Gameplay.Enemy.Perception;
 using Momotaro.Gameplay.Interaction;
 using Momotaro.Gameplay.Modes;
@@ -55,6 +57,8 @@ namespace Momotaro.Tests.PlayMode
         private static readonly StableId AreaC = new StableId("area_p6_c");
         private static readonly StableId ShrineA = new StableId("shrine_p6_a");
         private static readonly StableId ShrineC = new StableId("shrine_p6_c");
+        private static readonly StableId ShrineC2 = new StableId("shrine_p6_c_2");
+        private static readonly StableId EntryCShrine2 = new StableId("entry_p6_c_shrine_2");
         private static readonly StableId EntryAShrine = new StableId("entry_p6_a_shrine");
         private static readonly StableId EntryCShrine = new StableId("entry_p6_c_shrine");
         private static readonly StableId ExitAEast = new StableId("exit_p6_a_east");
@@ -669,6 +673,93 @@ namespace Momotaro.Tests.PlayMode
             yield return WaitSaved("再試行の旅立ち");
         }
 
+        /// <summary>
+        /// P6A 11／12（レビュー 720161d 指摘 1）：<b>同じ Area の別のお地蔵様</b>への旅立ち（C → C の 2 つ目）。
+        /// 準備（到着先の検証）に失敗したら、出発位置・Actor 値・進行・保存を何も変えない。成功したら Scene を読まずに置き直し、
+        /// 休息・登録・周期・保存をそれぞれ 1 回だけ確定する。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FastTravel_WithinTheSameArea_FailureKeepsEverything_SuccessCommitsOnce()
+        {
+            yield return NewGame();
+            QuietFieldEnemies();
+            yield return WaitSaved("New Game");
+            yield return SlideTo(ExitAEast, Key.D, Vector3.left, "A→B");
+            QuietFieldEnemies();
+            yield return SlideTo(ExitBEast, Key.D, Vector3.left, "B→C");
+            yield return WaitAreaReady(AreaC);
+            GameSessionState session = Session();
+            AreaTransitionService transitions = Transitions();
+            CampaignShrineService shrines = BootstrapServices.Get<CampaignShrineService>();
+            Assert.IsTrue(transitions.Catalog.Campaign.TryGetShrine(ShrineC2, out ShrineInfo c2), "前提：C に 2 つ目のお地蔵様がある。");
+            Assert.AreEqual(AreaC.Value, c2.AreaId.Value, "前提：同じ Area。");
+            session.RegisterShrine(c2); // 行き先の前提（登録そのものは別の検査で見る）。
+            yield return WaitSaved("前提の登録");
+
+            PlayerVitalsHolder vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            int hp = vitals.Vitals.Health.Max - 5;
+            vitals.Vitals.Health.SetCurrent(hp);
+            Assert.IsTrue(session.TryConsumeKibidango(1));
+            int scenes = SceneManager.sceneCount;
+
+            // ---- 1. 準備の失敗：何も変えない ----
+            yield return InteractShrine(ShrineC);
+            yield return WaitSaved("調べた保存");
+            PlayerRoot player = Object.FindFirstObjectByType<PlayerRoot>();
+            Vector3 before = player.transform.position;
+            long revision = session.Changes.Revision;
+            int cycle = session.RespawnCycle;
+            int kibidango = session.Kibidango;
+            int successes = Saves().Coordinator.SuccessCount;
+            int completedLoads = transitions.CompletedCount;
+            transitions.Slide.FastTravelPrepareFault = area => "test: arrival placement check failed";
+            Assert.AreEqual(ShrineMenuResult.FastTravelStarted, shrines.FastTravel(ShrineC2),
+                "旅立ちを受理する。拒否=" + shrines.LastTravelRejection + " " + shrines.Message);
+            yield return WaitUntilOrTimeout(() => shrines.FastTravelFailedCount > 0 || shrines.FastTravelCompletedCount > 0, 10f);
+            transitions.Slide.FastTravelPrepareFault = null;
+            Assert.AreEqual(1, shrines.FastTravelFailedCount, "準備の失敗を数える。");
+            Assert.AreEqual(0, shrines.FastTravelCompletedCount, "着いたことにしない。");
+            Assert.AreSame(player, Object.FindFirstObjectByType<PlayerRoot>(), "同じ主人公の実体。");
+            Assert.Less(Flat(player.transform.position, before), 0.05f, "出発位置のまま。");
+            Assert.AreEqual(hp, vitals.Vitals.Health.Current, "Actor 値（HP）はそのまま。");
+            Assert.AreEqual(cycle, session.RespawnCycle, "周期は進まない。");
+            Assert.AreEqual(kibidango, session.Kibidango, "補充しない。");
+            Assert.AreEqual(ShrineC.Value, session.Checkpoint.Value, "死亡再開点は変わらない。");
+            Assert.AreEqual(revision, session.Changes.Revision, "進行は 1 つも変わらない。");
+            yield return null;
+            Assert.AreEqual(successes, Saves().Coordinator.SuccessCount, "保存も起きない。");
+            Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current, "操作に戻る。");
+            Assert.AreEqual(scenes, SceneManager.sceneCount, "Scene を読まない。");
+
+            // ---- 2. 成功：読まずに置き直し、休息・登録・周期・保存を 1 回だけ ----
+            yield return InteractShrine(ShrineC);
+            yield return WaitSaved("調べた保存（2）");
+            cycle = session.RespawnCycle;
+            Assert.AreEqual(ShrineMenuResult.FastTravelStarted, shrines.FastTravel(ShrineC2), shrines.Message);
+            Assert.AreEqual(cycle, session.RespawnCycle, "受理しただけでは周期は進まない。");
+            yield return WaitUntilOrTimeout(() => shrines.FastTravelCompletedCount > 0 || shrines.FastTravelFailedCount > 1, 10f);
+            Assert.AreEqual(1, shrines.FastTravelCompletedCount, "着く。失敗=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(1, transitions.Slide.FastTravelWithinAreaCount, "同じ Area の中の経路で運んだ。");
+            Assert.AreEqual(completedLoads, transitions.CompletedCount, "Single 読込を使わない。");
+            Assert.AreEqual(scenes, SceneManager.sceneCount, "Scene を読まない。");
+            yield return WaitAreaReady(AreaC);
+            Assert.AreEqual(cycle + 1, session.RespawnCycle, "周期は 1 つだけ進む。");
+            yield return null;
+            yield return null;
+            Assert.AreEqual(cycle + 1, session.RespawnCycle, "あとから二度目は起きない。");
+            Assert.AreEqual(3, session.Kibidango, "補充した。");
+            vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            Assert.AreEqual(vitals.Vitals.Health.Max, vitals.Vitals.Health.Current, "全回復した。");
+            Assert.AreEqual(ShrineC2.Value, session.Checkpoint.Value, "死亡再開点は着いたお地蔵様。");
+            Assert.Less(Flat(Object.FindFirstObjectByType<PlayerRoot>().transform.position, FindEntry(EntryCShrine2).ArrivalPosition), 2.5f,
+                "2 つ目のお地蔵様の前に居る。");
+            yield return WaitSaved("同じ Area の旅立ち");
+            Assert.IsTrue(SaveJsonCodec.TryDeserialize(Saves().Coordinator.Store.DecideLoad().Chosen.Json, out _, out SaveSnapshot snap, out string err), err);
+            Assert.AreEqual(cycle + 1, snap.RespawnCycle, "周期が保存に載る。");
+            Assert.AreEqual(ShrineC2.Value, snap.Checkpoint, "死亡再開点が保存に載る。");
+            Assert.AreEqual(AreaC.Value, snap.ResumeAreaId, "再開位置は C。");
+        }
+
         private static bool IsSceneLoaded(string sceneName)
         {
             for (int i = 0; i < SceneManager.sceneCount; i++)
@@ -864,9 +955,8 @@ namespace Momotaro.Tests.PlayMode
 
         /// <summary>
         /// P6A 27：<b>実際に表示された</b>剣閃の段・方向を記録する（素材の有無の検査とは分けて残す）。
-        /// 4 方向それぞれで 1 段目を実キー J で出し、続けて押して 2・3 段目を狙う。観測したものを
-        /// <c>_bridge/p6a27_vfx_observed.json</c> へ書く。必須は「1 段目が 4 方向とも出る」こと。
-        /// 特殊攻撃は実入力の経路がこの検証 campaign に無いので、素材の検査（validate-phase6-world）だけで見る。
+        /// 4 方向それぞれで実キー J を押し直して 1〜3 段を出し、実キー L を溜めて離して必殺技を出す。観測したものを
+        /// <c>_bridge/p6a27_vfx_observed.json</c> へ書く。<b>必須は 4 段（1〜3 段・必殺技）× 4 方向の 16 通りすべて</b>（レビュー 720161d 指摘 2）。
         /// </summary>
         [UnityTest]
         public IEnumerator AttackVfx_RecordsShownTiersAndDirections()
@@ -886,6 +976,7 @@ namespace Momotaro.Tests.PlayMode
             var facing = Object.FindFirstObjectByType<PlayerRoot>().GetComponentInChildren<PlayerFacing>();
             var observed = new SortedSet<string>();
             var dirs = new[] { ("down", Vector2.down), ("up", Vector2.up), ("left", Vector2.left), ("right", Vector2.right) };
+            Assert.IsNotNull(presenter.SpecialFrames, "前提：必殺技の剣閃の素材がある。");
             foreach ((string name, Vector2 dir) in dirs)
             {
                 yield return new WaitForSeconds(0.8f); // 前の攻撃と剣閃が終わってから。
@@ -921,15 +1012,312 @@ namespace Momotaro.Tests.PlayMode
                 }
 
                 InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+
+                // 必殺技：実キー L を溜まるまで押し続けて離す（入力定義 SpecialAttack。溜め → 発動）。
+                yield return new WaitForSeconds(0.8f);
+                facing.ConfirmFromInput(dir);
+                yield return SpecialAttack(presenter, facing, dir, observed);
             }
 
-            string path = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "_bridge", "p6a27_vfx_observed.json");
-            File.WriteAllText(path, "{ \"observed\": [\"" + string.Join("\", \"", observed) + "\"] }\n");
-            Debug.Log("P6A 27 observed slash: " + string.Join(", ", observed));
+            WriteObserved("p6a27_vfx_observed.json", observed);
+            var missing = new List<string>();
             foreach ((string name, Vector2 _) in dirs)
             {
-                Assert.IsTrue(observed.Contains("stage1/" + name), "1 段目の剣閃が " + name + " 向きで実際に出た（観測=" + string.Join(", ", observed) + "）。");
+                foreach (string tier in new[] { "stage1", "stage2", "stage3", "special" })
+                {
+                    if (!observed.Contains(tier + "/" + name))
+                    {
+                        missing.Add(tier + "/" + name);
+                    }
+                }
             }
+
+            Assert.IsEmpty(missing, "実入力で出なかった剣閃がある（観測=" + string.Join(", ", observed) + "）。");
+        }
+
+        /// <summary>L を溜まるまで押し続けて離し、必殺技の剣閃が出たら観測へ足す。</summary>
+        private IEnumerator SpecialAttack(PlayerSlashVfxPresenter presenter, PlayerFacing facing, Vector2 dir, SortedSet<string> observed)
+        {
+            var player = Object.FindFirstObjectByType<PlayerStateController>();
+
+            // 溜めは被弾で取り消され、離すまで溜め直せない（必殺技の仕様）。人と同じく、離して押し直す。
+            for (int attempt = 0; attempt < 4 && !player.IsSpecialCharged; attempt++)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                for (int i = 0; i < 5; i++)
+                {
+                    yield return null;
+                }
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.L));
+                float deadline = Time.realtimeSinceStartup + 3f;
+                while (!player.IsSpecialCharged && Time.realtimeSinceStartup < deadline)
+                {
+                    facing.ConfirmFromInput(dir);
+                    yield return null;
+                }
+            }
+
+            Assert.IsTrue(player.IsSpecialCharged, "L を押し続けると必殺技が溜まる（状態=" + player.Current + "）。");
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            float until = Time.realtimeSinceStartup + 2f;
+            while (Time.realtimeSinceStartup < until)
+            {
+                yield return null;
+                foreach (SlashVfxInstance i in presenter.Pool.Instances)
+                {
+                    if (i != null && i.IsPlaying && i.CurrentSprite != null)
+                    {
+                        string what = Classify(presenter, i.CurrentSprite);
+                        if (what != null)
+                        {
+                            observed.Add(what);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void WriteObserved(string fileName, IEnumerable<string> observed)
+        {
+            string path = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "_bridge", fileName);
+            File.WriteAllText(path, "{ \"observed\": [\"" + string.Join("\", \"", observed) + "\"] }\n");
+            Debug.Log("P6A 27 observed (" + fileName + "): " + string.Join(", ", observed));
+        }
+
+        /// <summary>
+        /// P6A 27（レビュー 720161d 指摘 2）：敵側の VFX を<b>実際の攻撃・実際の防御から</b>出し、画面に出ることを記録する。
+        /// A（普通敵）で敵の剣閃とジャストガードの閃光、スライドで B を経て C（遷移後）で仮ボスの剣閃・ガード不能の頭上警告・ジャストガードの閃光と
+        /// 主人公の剣閃。ジャストガードは実キー K を敵の判定が出る直前に押す（受付の窓の中）。
+        /// 敵の攻撃力だけ下げる（表示の検査で主人公を倒さないため。判定・演出の経路は変えない）。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator EnemySideVfx_ShowFromRealAttacks_InAAndAfterTransitionInC()
+        {
+            yield return NewGame();
+            var observed = new SortedSet<string>();
+
+            // ---- A：普通敵の剣閃・JG 閃光 ----
+            AreaFieldEnemyDirector field = Object.FindFirstObjectByType<AreaFieldEnemyDirector>();
+            EnemyActor enemy = field.Spawned[0].GetComponentInChildren<EnemyActor>();
+            yield return FightForVfx(enemy, "A", observed, needWarning: false);
+
+            // ---- 遷移後：A → B → C、仮ボス ----
+            yield return SlideTo(ExitAEast, Key.D, Vector3.left, "A→B");
+            QuietFieldEnemies();
+            yield return SlideTo(ExitBEast, Key.D, Vector3.left, "B→C");
+            yield return WaitAreaReady(AreaC);
+
+            // 遷移後の主人公の必殺技の剣閃（戦闘の前に。被弾で溜めが取り消されないように）。
+            PlayerSlashVfxPresenter slash = PresenterInCurrentScene<PlayerSlashVfxPresenter>();
+            var facing = Object.FindFirstObjectByType<PlayerRoot>().GetComponentInChildren<PlayerFacing>();
+            var mine = new SortedSet<string>();
+            yield return SpecialAttack(slash, facing, Vector2.up, mine);
+            foreach (string m in mine)
+            {
+                observed.Add("C/player_" + m);
+            }
+
+            AreaEncounterRunner boss = FindRunner(new StableId("encounter_p6_c_boss"));
+            yield return StartEncounter(boss);
+            EnemyActor elite = null;
+            float deadline = Time.realtimeSinceStartup + 5f;
+            while (elite == null && Time.realtimeSinceStartup < deadline)
+            {
+                EnemyActor[] enemies = EnemiesOf(boss);
+                elite = enemies.Length > 0 ? enemies[0] : null;
+                yield return null;
+            }
+
+            Assert.IsNotNull(elite, "前提：仮ボスが出た。");
+            yield return FightForVfx(elite, "C", observed, needWarning: true);
+
+            WriteObserved("p6a27_enemy_vfx_observed.json", observed);
+            foreach (string need in new[] { "A/enemy_slash", "A/just_guard", "C/enemy_slash", "C/unblockable_warning", "C/just_guard" })
+            {
+                Assert.IsTrue(observed.Contains(need), need + " が実際に表示されなかった（観測=" + string.Join(", ", observed) + "）。");
+            }
+
+            Assert.IsTrue(observed.Contains("C/player_special/up"), "遷移後の C で必殺技の剣閃が出た（観測=" + string.Join(", ", observed) + "）。");
+        }
+
+        private static T PresenterInCurrentScene<T>() where T : Component
+        {
+            foreach (T p in Object.FindObjectsByType<T>(FindObjectsSortMode.None))
+            {
+                if (p.gameObject.scene == CurrentScene())
+                {
+                    return p;
+                }
+            }
+
+            Assert.Fail(typeof(T).Name + " が活動中のエリアにない。");
+            return null;
+        }
+
+        /// <summary>
+        /// 敵の正面に立ち、実キー J で気付かせてから敵の攻撃を待つ。敵の剣閃が出たら記録し、通常の攻撃の判定が出る直前に
+        /// 実キー K を押してジャストガードを狙う。必要ならガード不能の頭上警告も待つ。HP は保つ。
+        /// </summary>
+        private IEnumerator FightForVfx(EnemyActor enemy, string area, SortedSet<string> observed, bool needWarning)
+        {
+            EnemySlashVfxPresenter enemySlash = PresenterInCurrentScene<EnemySlashVfxPresenter>();
+            JustGuardVfxPresenter jg = PresenterInCurrentScene<JustGuardVfxPresenter>();
+            EnemyUnblockableWarningPresenter warning = PresenterInCurrentScene<EnemyUnblockableWarningPresenter>();
+            var root = Object.FindFirstObjectByType<PlayerRoot>();
+            var facing = root.GetComponentInChildren<PlayerFacing>();
+            var vitals = root.GetComponentInChildren<PlayerVitalsHolder>();
+            EnemyAttackController attack = enemy.GetComponentInChildren<EnemyAttackController>();
+            System.Reflection.FieldInfo machineField = typeof(EnemyAttackController).GetField("_machine",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.IsNotNull(attack, "前提：敵に攻撃の制御がある。");
+            Assert.IsNotNull(machineField, "前提：攻撃の段階を読める。");
+
+            float deadline = Time.realtimeSinceStartup + 45f;
+            float nextTap = 0f;
+            bool guardHeld = false;
+            bool sawSlash = false, sawJg = false, sawWarning = !needWarning;
+            int guardPresses = 0;
+            var hitKinds = new HitKindCounter();
+            vitals.Results.AddListener(hitKinds);
+            CompanionHitReceiver dog = null;
+            foreach (CompanionHitReceiver d in Object.FindObjectsByType<CompanionHitReceiver>(FindObjectsSortMode.None))
+            {
+                if (d.gameObject.scene == CurrentScene())
+                {
+                    dog = d;
+                }
+            }
+
+            while (Time.realtimeSinceStartup < deadline && !(sawSlash && sawJg && sawWarning) && enemy != null && !enemy.IsDefeated)
+            {
+                // 犬丸は Down させておく（敵を先に倒したり、敵の狙いを引き受けたりして主人公への攻撃が来ないため）。
+                if (dog != null && !dog.Vitals.IsDown && !guardHeld)
+                {
+                    yield return KnockDown(dog);
+                }
+
+                enemy.SetAttackPowerScale(0.01f);
+                if (vitals.Vitals.Health.Current < vitals.Vitals.Health.Max)
+                {
+                    vitals.Vitals.Health.SetCurrent(vitals.Vitals.Health.Max);
+                }
+
+                // 敵の正面 1m 弱（近接の届く距離）に立ち、敵の方を向く。
+                Vector3 toPlayer = root.transform.position - enemy.transform.position;
+                toPlayer.y = 0f;
+                if (toPlayer.sqrMagnitude < 0.01f || toPlayer.magnitude > 1.4f || toPlayer.magnitude < 0.6f)
+                {
+                    Vector3 stand = enemy.transform.position + (toPlayer.sqrMagnitude > 0.01f ? toPlayer.normalized : Vector3.back) * 0.95f;
+                    if (root.Body != null)
+                    {
+                        root.Body.position = new Vector3(stand.x, root.Body.position.y, stand.z);
+                        root.Body.linearVelocity = Vector3.zero;
+                    }
+
+                    root.transform.position = new Vector3(stand.x, root.transform.position.y, stand.z);
+                }
+
+                Vector3 look = enemy.transform.position - root.transform.position;
+                facing.ConfirmFromInput(Mathf.Abs(look.x) > Mathf.Abs(look.z)
+                    ? new Vector2(Mathf.Sign(look.x), 0f) : new Vector2(0f, Mathf.Sign(look.z)));
+
+                var machine = (EnemyAttackMachine)machineField.GetValue(attack);
+                bool attacking = machine != null && machine.IsAttacking;
+                bool guardable = attacking && machine.Snapshot.AttackClass != EnemyAttackClass.Unblockable;
+                float remaining = machine != null && machine.Current == EnemyAttackMachine.Phase.Prepare
+                    ? machine.Snapshot.PrepareSeconds - machine.Elapsed : float.MaxValue;
+
+                if (!attacking && Time.realtimeSinceStartup >= nextTap && !guardHeld && !sawSlash)
+                {
+                    // 気付かせる（攻撃の音）。攻撃中でないときだけ。<b>敵に背を向けて振る</b>——当てて倒してしまうと検査が続かない。
+                    facing.ConfirmFromInput(Mathf.Abs(look.x) > Mathf.Abs(look.z)
+                        ? new Vector2(-Mathf.Sign(look.x), 0f) : new Vector2(0f, -Mathf.Sign(look.z)));
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.J));
+                    nextTap = Time.realtimeSinceStartup + 3f;
+                }
+                else if (guardable && remaining < 0.09f && !guardHeld && !sawJg)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.K)); // 判定の直前にガード（JG の窓）。
+                    guardHeld = true;
+                    guardPresses++;
+                }
+                else if (guardHeld && (!attacking || machine.Current == EnemyAttackMachine.Phase.Recovery))
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                    guardHeld = false;
+                }
+                else if (!guardHeld)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                }
+
+                yield return null;
+                foreach (SlashVfxInstance i in enemySlash.Pool.Instances)
+                {
+                    if (i != null && i.IsPlaying && i.CurrentSprite != null && IsOnScreen(i))
+                    {
+                        sawSlash = true;
+                        observed.Add(area + "/enemy_slash");
+                    }
+                }
+
+                if (jg.ActiveCount > 0)
+                {
+                    sawJg = true;
+                    observed.Add(area + "/just_guard");
+                }
+
+                if (warning.ActiveCount > 0)
+                {
+                    sawWarning = true;
+                    observed.Add(area + "/unblockable_warning");
+                }
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            vitals.Results.RemoveListener(hitKinds);
+            observed.Add(area + "/guardPresses=" + guardPresses);
+            observed.Add(area + "/playerHits=" + hitKinds.Describe());
+            observed.Add(area + "/end:" + (enemy == null ? "gone" : enemy.IsDefeated ? "defeated" : "alive")
+                + "/t=" + (45f - (deadline - Time.realtimeSinceStartup)).ToString("0.0"));
+            yield return new WaitForSeconds(0.5f);
+        }
+
+        /// <summary>主人公への命中結果の種類を数える（診断用）。</summary>
+        private sealed class HitKindCounter : IHitResultListener
+        {
+            private readonly SortedDictionary<string, int> _counts = new SortedDictionary<string, int>();
+
+            public void OnHitResult(in HitResult result)
+            {
+                string key = result.Kind.ToString();
+                _counts[key] = _counts.TryGetValue(key, out int n) ? n + 1 : 1;
+            }
+
+            public string Describe()
+            {
+                var parts = new List<string>();
+                foreach (KeyValuePair<string, int> kv in _counts)
+                {
+                    parts.Add(kv.Key + ":" + kv.Value);
+                }
+
+                return parts.Count == 0 ? "none" : string.Join(",", parts);
+            }
+        }
+
+        private static bool IsOnScreen(SlashVfxInstance instance)
+        {
+            var renderer = instance.GetComponent<SpriteRenderer>();
+            Camera cam = Camera.main;
+            if (renderer == null || cam == null || !renderer.enabled)
+            {
+                return false;
+            }
+
+            Vector3 vp = cam.WorldToViewportPoint(renderer.bounds.center);
+            return vp.z > 0f && vp.x > 0f && vp.x < 1f && vp.y > 0f && vp.y < 1f;
         }
 
         /// <summary>表示中の絵がどの段・どの方向の素材か（どれでもなければ null）。</summary>

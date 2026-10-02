@@ -272,6 +272,18 @@
       "supportingTests": []
     },
     {
+      "requirementId": "P6A11",
+      "stage": "P6A-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.FastTravel_WithinTheSameArea_FailureKeepsEverything_SuccessCommitsOnce",
+      "requirementIds": [
+        "P6A03",
+        "P6A12"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
       "requirementId": "P6A10",
       "stage": "P6A-03",
       "mode": "EditMode",
@@ -480,6 +492,15 @@
       "stage": "P6A-06",
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.AttackVfx_RecordsShownTiersAndDirections",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6A27",
+      "stage": "P6A-06",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.EnemySideVfx_ShowFromRealAttacks_InAAndAfterTransitionInC",
       "requirementIds": [],
       "implemented": true,
       "supportingTests": []

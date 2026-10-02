@@ -43,6 +43,13 @@ MonoBehaviour:
     _entryId:
       _value: entry_p6_c_shrine
     _displayName: "C \u306E\u304A\u5730\u8535\u69D8\uFF08\u30DC\u30B9\u524D\uFF09"
+  - _shrineId:
+      _value: shrine_p6_c_2
+    _areaId:
+      _value: area_p6_c
+    _entryId:
+      _value: entry_p6_c_shrine_2
+    _displayName: "C \u306E\u304A\u5730\u8535\u69D8\uFF082\uFF09"
   _initialShrineId:
     _value: shrine_p6_a
   _kibidangoBaseCapacity: 3

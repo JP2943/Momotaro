@@ -41,7 +41,8 @@ namespace Momotaro.Infrastructure.World
         // 保存からの再開（P6A-02。Continue）。Actor 値は運ばず、到着側が保存値を適用する。
         private int _loadTransitionId;
 
-        // 旅立ち（P6A-04）のうち同じ Area の中のもの（Single 経路）。別 Area へは出発保持の経路（_fastTravelJumpId。レビュー D1）。
+        // 旅立ち（P6A-04）。旧 Single 経路の世代（いまは使わない。死亡再開・Load の失敗処理と共有の通知口を残す）。
+        // 旅立ちは出発保持の経路（_fastTravelJumpId。レビュー D1・720161d 指摘 1）。
         private int _fastTravelTransitionId;
         private Momotaro.Gameplay.Save.PartySaveValues _pendingLoadParty;
 
@@ -692,38 +693,29 @@ namespace Momotaro.Infrastructure.World
         /// <b>到着の配置と進行適用が成功した後</b>に <see cref="FastTravelCompleted"/> が出るので、
         /// 登録・回復・周期・保存はそこで一括確定する。失敗は <see cref="FastTravelFailed"/>。
         ///
-        /// 同じ Area の中の旅立ちだけは、同じ Scene を 2 枚載せられないので従来の Single 経路で運ぶ
-        /// （P6A の検証 campaign には無い。<c>P6A_後続課題.md</c>）。
+        /// 同じ Area の中の旅立ちは、同じ Scene を 2 枚載せないので、いま載っている Area の中で到着を準備・検証してから置き直す
+        /// （<see cref="AreaSlideTransitionRunner.TryFastTravelWithinArea"/>。準備に失敗したら何も動かさない）。
         /// </summary>
         public AreaTransitionDecision TryFastTravel(StableId areaId, StableId entryId)
         {
+            if (_coordinator == null)
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
+            }
+
             AreaRuntimeBundle current = CurrentBundle();
             bool sameArea = current != null && current.AreaId.Equals(areaId);
-            if (!sameArea)
+            AreaTransitionDecision jump = sameArea
+                ? Slide.TryFastTravelWithinArea(areaId, entryId)
+                : Slide.TryFastTravel(areaId, entryId);
+            if (jump.Accepted)
             {
-                if (_coordinator == null)
-                {
-                    return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
-                }
-
-                AreaTransitionDecision jump = Slide.TryFastTravel(areaId, entryId);
-                if (jump.Accepted)
-                {
-                    _fastTravelJumpId = jump.TransitionId;
-                    HasTerminalFailure = false;
-                    TerminalFailureReason = null;
-                }
-
-                return jump;
+                _fastTravelJumpId = jump.TransitionId;
+                HasTerminalFailure = false;
+                TerminalFailureReason = null;
             }
 
-            AreaTransitionDecision decision = TryTravel(areaId, entryId);
-            if (decision.Accepted)
-            {
-                _fastTravelTransitionId = decision.TransitionId;
-            }
-
-            return decision;
+            return jump;
         }
 
         private int _fastTravelJumpId;
