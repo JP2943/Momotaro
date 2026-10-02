@@ -72,7 +72,14 @@ namespace Momotaro.Gameplay.Session
         {
             ReadyCount++;
             IsAreaReady = true;
+            Activated?.Invoke();
         }
+
+        /// <summary>
+        /// 所有者が活動を許可した（<see cref="Activate"/>／<see cref="ReopenAfterFailedTransition"/>）。P6A-01。
+        /// 準備の段で非活動のまま作った普通敵を、ここで起こす。
+        /// </summary>
+        public event System.Action Activated;
 
         /// <summary>準備が整ったか（活動許可とは別）。</summary>
         public bool IsPrepared { get; private set; }
@@ -96,6 +103,7 @@ namespace Momotaro.Gameplay.Session
         {
             ReopenCount++;
             IsAreaReady = true;
+            Activated?.Invoke();
         }
 
         /// <summary>失敗から活動を戻した回数（診断・テスト用）。</summary>

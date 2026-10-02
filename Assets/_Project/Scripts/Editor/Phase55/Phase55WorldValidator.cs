@@ -834,17 +834,30 @@ namespace Momotaro.Editor.Phase55
                 return;
             }
 
-            if (data.Connections.Count != 2)
-            {
-                errors.Add("往復は 2 レコードで表します（いまは " + data.Connections.Count + " 件。§3.1）。");
-            }
-
+            // 共有の接続一覧（P6A）では、この 2 エリア間のレコードだけを見る。
+            var pair = new List<AreaConnectionDefinition>();
             foreach (AreaConnectionDefinition c in data.Connections)
             {
                 if (c == null)
                 {
                     continue;
                 }
+
+                bool inPair = (c.FromAreaId.Equals(r.AreaAId) && c.ToAreaId.Equals(r.AreaBId))
+                    || (c.FromAreaId.Equals(r.AreaBId) && c.ToAreaId.Equals(r.AreaAId));
+                if (!r.SharedConnectionList || inPair)
+                {
+                    pair.Add(c);
+                }
+            }
+
+            if (pair.Count != 2)
+            {
+                errors.Add("往復は 2 レコードで表します（いまは " + pair.Count + " 件。§3.1）。");
+            }
+
+            foreach (AreaConnectionDefinition c in pair)
+            {
 
                 if (c.Style != AreaTransitionStyle.Slide)
                 {

@@ -56,6 +56,18 @@ namespace Momotaro.EditorBridge
                     ? TestMode.PlayMode
                     : TestMode.EditMode;
 
+                // <b>未保存の Scene が開いたまま PlayMode を始めない</b>（P6A で実際に踏んだ）。Test Runner は再生前に
+                // 「Scene を保存しますか」のモーダルを出し、ブリッジも Editor も人が押すまで止まる（約 8 時間止まった）。
+                // テストランナー自身が残した InitTestScene（中断で残る一時 Scene）だけは捨ててよい。それ以外は断って理由を返す。
+                if (testMode == TestMode.PlayMode)
+                {
+                    string refusal = PrepareScenesForPlayMode();
+                    if (refusal != null)
+                    {
+                        return refusal;
+                    }
+                }
+
                 var testFilter = new Filter { testMode = testMode };
                 if (!string.IsNullOrEmpty(filter))
                 {
@@ -71,6 +83,44 @@ namespace Momotaro.EditorBridge
                 return e.Message;
             }
         }
+
+        /// <summary>
+        /// PlayMode を始める前に、開いている Scene を確かめる。未保存の InitTestScene（Test Runner の一時 Scene）は破棄し、
+        /// それ以外の未保存 Scene があれば開始せず理由を返す（手で加えた変更を黙って消さない）。
+        /// </summary>
+        internal static string PrepareScenesForPlayMode()
+        {
+            bool anyDirty = false;
+            for (int i = 0; i < UnityEditor.SceneManagement.EditorSceneManager.sceneCount; i++)
+            {
+                UnityEngine.SceneManagement.Scene scene = UnityEditor.SceneManagement.EditorSceneManager.GetSceneAt(i);
+                if (!scene.isDirty)
+                {
+                    continue;
+                }
+
+                anyDirty = true;
+                if (!IsTestRunnerScene(scene))
+                {
+                    return "未保存の変更がある Scene が開いているため PlayMode を開始しません（"
+                        + (string.IsNullOrEmpty(scene.path) ? "(無題 Scene)" : scene.path)
+                        + "）。開始すると保存確認のモーダルで Editor が止まります。保存するか破棄してから再実行してください。";
+                }
+            }
+
+            if (anyDirty)
+            {
+                UnityEditor.SceneManagement.EditorSceneManager.NewScene(
+                    UnityEditor.SceneManagement.NewSceneSetup.EmptyScene,
+                    UnityEditor.SceneManagement.NewSceneMode.Single);
+            }
+
+            return null;
+        }
+
+        /// <summary>Test Runner が作る一時 Scene か（名前が InitTestScene で始まる）。</summary>
+        internal static bool IsTestRunnerScene(UnityEngine.SceneManagement.Scene scene) =>
+            scene.name != null && scene.name.StartsWith("InitTestScene", StringComparison.Ordinal);
 
         /// <summary>
         /// 全体結果の <c>ResultState</c> から終わり方を判定する。

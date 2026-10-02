@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
+using Momotaro.Data.Progression;
 using UnityEngine;
 
 namespace Momotaro.Data.World
@@ -20,6 +21,28 @@ namespace Momotaro.Data.World
         [SerializeField] private StableId _respawnAreaId;
         [SerializeField] private StableId _respawnEntryId;
 
+        [Header("P6 campaign（P6A。P5／P5.5 の Data は既定のまま）")]
+        [Tooltip("遭遇戦のクリア規則。P5 既定は再出現周期つき、P6 は恒久。")]
+        [SerializeField] private EncounterClearPolicy _encounterClearPolicy = EncounterClearPolicy.PerRespawnCycle;
+
+        [Tooltip("保存の内容版。Data の互換を壊す変更で上げる（保存 Envelope の contentVersion）。")]
+        [SerializeField] private int _contentVersion = 1;
+
+        [Tooltip("お地蔵様（死亡再開点・旅立ち先・中断の復帰点）。")]
+        [SerializeField] private List<ShrineDefinition> _shrines = new List<ShrineDefinition>();
+
+        [Tooltip("New Game の初期お地蔵様（開始時の技術用初期値。P6 仕様 §5 末尾）。")]
+        [SerializeField] private StableId _initialShrineId;
+
+        [Tooltip("きびだんごの基本補充上限（仮値。成長で増える分は別）。")]
+        [SerializeField] private int _kibidangoBaseCapacity = 3;
+
+        [Tooltip("一般消耗品の定義（保存の検証で未知 ID を拒否する）。")]
+        [SerializeField] private List<ItemDefinition> _items = new List<ItemDefinition>();
+
+        [Tooltip("成長項目（P6A は検証用の仮項目だけ）。")]
+        [SerializeField] private List<SkillNodeData> _growthNodes = new List<SkillNodeData>();
+
         /// <summary>登録エリア（読み取り専用）。</summary>
         public IReadOnlyList<AreaDefinition> Areas => _areas;
 
@@ -28,6 +51,30 @@ namespace Momotaro.Data.World
 
         /// <summary>死亡再開する入口の ID。</summary>
         public StableId RespawnEntryId => _respawnEntryId;
+
+        /// <summary>遭遇戦のクリア規則（P6A）。</summary>
+        public EncounterClearPolicy EncounterClearPolicy => _encounterClearPolicy;
+
+        /// <summary>保存の内容版（P6A）。</summary>
+        public int ContentVersion => _contentVersion;
+
+        /// <summary>お地蔵様（P6A）。</summary>
+        public IReadOnlyList<ShrineDefinition> Shrines => _shrines;
+
+        /// <summary>New Game の初期お地蔵様（P6A）。</summary>
+        public StableId InitialShrineId => _initialShrineId;
+
+        /// <summary>きびだんごの基本補充上限（P6A の仮値）。</summary>
+        public int KibidangoBaseCapacity => _kibidangoBaseCapacity;
+
+        /// <summary>一般消耗品の定義（P6A）。</summary>
+        public IReadOnlyList<ItemDefinition> Items => _items;
+
+        /// <summary>成長項目（P6A の仮項目）。</summary>
+        public IReadOnlyList<SkillNodeData> GrowthNodes => _growthNodes;
+
+        /// <summary>保存・お地蔵様を持つ P6 campaign か（恒久クリア規則で判定する）。</summary>
+        public bool IsP6Campaign => _encounterClearPolicy == EncounterClearPolicy.Permanent;
 
         /// <inheritdoc />
         public override void Validate(DataValidationReport report)
@@ -95,6 +142,125 @@ namespace Momotaro.Data.World
                 report.Error(name + ": Respawn entry '" + _respawnEntryId.Value
                     + "' is not an entry of area '" + _respawnAreaId.Value + "'.");
             }
+
+            if (IsP6Campaign)
+            {
+                ValidateCampaign(report);
+            }
+        }
+
+        /// <summary>
+        /// P6 campaign の検査（P6A）。お地蔵様の入口が実在すること、初期お地蔵様が一覧にあること、
+        /// ID の一意、アイテム上限・成長項目の健全さ。<b>Gameplay の <c>AreaCatalog.TryBuild</c> と同じ条件</b>。
+        /// </summary>
+        private void ValidateCampaign(DataValidationReport report)
+        {
+            if (!Id.IsValid)
+            {
+                report.Error(name + ": P6 campaign needs a valid catalog Stable ID (it is the campaign id of saves).");
+            }
+
+            if (_contentVersion < 1)
+            {
+                report.Error(name + ": ContentVersion must be >= 1.");
+            }
+
+            if (_kibidangoBaseCapacity < 0)
+            {
+                report.Error(name + ": KibidangoBaseCapacity must be >= 0.");
+            }
+
+            var shrineIds = new HashSet<string>();
+            bool initialFound = false;
+            for (int i = 0; i < _shrines.Count; i++)
+            {
+                ShrineDefinition shrine = _shrines[i];
+                if (shrine == null || !shrine.ShrineId.IsValid)
+                {
+                    report.Error(name + ": Shrines[" + i + "] has an invalid Stable ID.");
+                    continue;
+                }
+
+                if (!shrineIds.Add(shrine.ShrineId.Value))
+                {
+                    report.Error(name + ": Duplicate shrine id '" + shrine.ShrineId.Value + "'.");
+                }
+
+                if (shrine.ShrineId.Equals(_initialShrineId))
+                {
+                    initialFound = true;
+                }
+
+                if (!HasEntry(shrine.AreaId, shrine.EntryId))
+                {
+                    report.Error(name + ": Shrine '" + shrine.ShrineId.Value + "' entry '"
+                        + shrine.AreaId.Value + "/" + shrine.EntryId.Value + "' is not an entry in the catalog.");
+                }
+            }
+
+            if (!initialFound)
+            {
+                report.Error(name + ": Initial shrine '" + _initialShrineId.Value + "' is not among the shrines.");
+            }
+
+            var itemIds = new HashSet<string>();
+            for (int i = 0; i < _items.Count; i++)
+            {
+                ItemDefinition item = _items[i];
+                if (item == null || !item.ItemId.IsValid)
+                {
+                    report.Error(name + ": Items[" + i + "] has an invalid Stable ID.");
+                    continue;
+                }
+
+                if (!itemIds.Add(item.ItemId.Value))
+                {
+                    report.Error(name + ": Duplicate item id '" + item.ItemId.Value + "'.");
+                }
+
+                if (item.MaxStack < 1)
+                {
+                    report.Error(name + ": Item '" + item.ItemId.Value + "' MaxStack must be >= 1.");
+                }
+            }
+
+            var growthIds = new HashSet<string>();
+            for (int i = 0; i < _growthNodes.Count; i++)
+            {
+                SkillNodeData node = _growthNodes[i];
+                if (node == null || !node.Id.IsValid)
+                {
+                    report.Error(name + ": GrowthNodes[" + i + "] is null or has an invalid Stable ID.");
+                    continue;
+                }
+
+                if (!growthIds.Add(node.Id.Value))
+                {
+                    report.Error(name + ": Duplicate growth id '" + node.Id.Value + "'.");
+                }
+            }
+        }
+
+        private bool HasEntry(StableId areaId, StableId entryId)
+        {
+            for (int i = 0; i < _areas.Count; i++)
+            {
+                AreaDefinition area = _areas[i];
+                if (area == null || !area.Id.Equals(areaId))
+                {
+                    continue;
+                }
+
+                foreach (AreaEntryDefinition e in area.Entries)
+                {
+                    if (e != null && e.EntryId.Equals(entryId))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
 #if UNITY_EDITOR
@@ -104,6 +270,20 @@ namespace Momotaro.Data.World
             _areas = areas ?? new List<AreaDefinition>();
             _respawnAreaId = respawnAreaId;
             _respawnEntryId = respawnEntryId;
+        }
+
+        /// <summary>P6 campaign の設定入口（Editor 専用。P6A の Builder）。</summary>
+        public void EditorSetCampaign(
+            EncounterClearPolicy policy, int contentVersion, List<ShrineDefinition> shrines, StableId initialShrineId,
+            int kibidangoBaseCapacity, List<ItemDefinition> items, List<SkillNodeData> growthNodes)
+        {
+            _encounterClearPolicy = policy;
+            _contentVersion = contentVersion;
+            _shrines = shrines ?? new List<ShrineDefinition>();
+            _initialShrineId = initialShrineId;
+            _kibidangoBaseCapacity = kibidangoBaseCapacity;
+            _items = items ?? new List<ItemDefinition>();
+            _growthNodes = growthNodes ?? new List<SkillNodeData>();
         }
 #endif
     }

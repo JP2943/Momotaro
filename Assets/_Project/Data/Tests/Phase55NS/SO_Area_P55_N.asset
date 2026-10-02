@@ -26,3 +26,11 @@ MonoBehaviour:
     _facing: 0
   _defaultEntryId:
     _value: area_p5_b_from_a
+  _arrivalReward: {fileID: 0}
+  _content:
+    _encounters: []
+    _bosses: []
+    _fieldPlacements: []
+    _pickups: []
+    _flags: []
+    _investigationPoints: []

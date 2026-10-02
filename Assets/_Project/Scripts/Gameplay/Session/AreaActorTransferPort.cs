@@ -1,6 +1,7 @@
 using Momotaro.Core.Identification;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Player;
+using Momotaro.Gameplay.Save;
 using Momotaro.Gameplay.Transfer;
 using UnityEngine;
 
@@ -19,7 +20,7 @@ namespace Momotaro.Gameplay.Session
     /// 生存値を入れたあと、配置状態を <see cref="CompanionStateArbiter.TryRestoreState"/> で反映する。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class AreaActorTransferPort : MonoBehaviour
+    public sealed class AreaActorTransferPort : MonoBehaviour, ISaveActorSource, IRestTarget
     {
         [Header("配置（到着時に入口へ置換する対象の根）")]
         [Tooltip("主人公の Prefab 根。Rigidbody を持つので transform だけ動かしても戻される。")]
@@ -382,6 +383,97 @@ namespace Momotaro.Gameplay.Session
             {
                 _companionActor?.ResetState(CompanionState.Follow);
             }
+        }
+
+        // ---- 保存（P6A-02。仕様 §8）----
+
+        /// <inheritdoc />
+        public bool CanExportForSave => _playerVitals != null && !_playerVitals.IsDefeated;
+
+        /// <summary>保存のための採取を行った回数（診断・テスト用）。</summary>
+        public int SaveExportCount { get; private set; }
+
+        /// <summary>
+        /// 保存値を<b>非破壊で</b>採る（仕様 §8／受入 P6A 14）。<see cref="Capture"/> と違って行動を止めない——
+        /// 攻撃中断・回復・付与・入力消費を起こさない。値は<b>中断用に投影</b>する（<c>P6_SaveInventory.md</c> §2）：
+        /// Break・Hurt 硬直・ひるみは一時動作として 0、HP・スタミナ・各 CD・Down と復帰待ちはそのまま。
+        /// </summary>
+        public PartySaveValues ExportForSave()
+        {
+            SaveExportCount++;
+
+            PlayerVitalsTransferSnapshot vitals = _playerVitals != null
+                ? _playerVitals.ExportTransferSnapshot()
+                : default;
+            HitReactionTransferSnapshot hit = _playerHitReaction != null
+                ? _playerHitReaction.ExportTransferSnapshot()
+                : default;
+            var player = new PlayerSaveValues(
+                vitals.Health.Current,
+                vitals.Stamina.Current,
+                vitals.Stamina.RegenDelayRemaining,
+                hit.InvincibleRemaining);
+
+            bool hasCompanion = _companionActor != null && _companionVitals != null && _companionVitals.Vitals != null;
+            if (!hasCompanion)
+            {
+                return new PartySaveValues(player, false, default);
+            }
+
+            CompanionVitalsTransferSnapshot cv = _companionVitals.Vitals.ExportTransferSnapshot();
+            float attackCd = _companionCombat != null ? _companionCombat.ExportTransferSnapshot().CooldownRemaining : 0f;
+            CompanionDefenseTransferSnapshot defense = _companionDefense != null
+                ? _companionDefense.ExportTransferSnapshot()
+                : default;
+            float guardianCd = _companionGuardian != null
+                ? _companionGuardian.ExportTransferSnapshot().CooldownRemaining
+                : 0f;
+
+            var companion = new CompanionSaveValues(
+                CompanionIds.Inumaru, cv.Hp, cv.IsDown, cv.RecoveryRemaining, cv.PostHitInvincibleRemaining,
+                attackCd, defense.Guard.CooldownRemaining, defense.Evade.CooldownRemaining, guardianCd);
+            return new PartySaveValues(player, true, companion);
+        }
+
+        /// <summary>
+        /// 保存値を適用する（Continue。仕様 §10 の手順 6）。<b>遷移の復元と同じ検証付きの窓口</b>（<see cref="TryApply"/>）を通す——
+        /// 値域が不正なら部分適用せずに false。生存なら Follow、Down なら Down で置く（安全な追従姿勢。仕様 §8）。
+        /// 回復・通知・報酬は起こさない。
+        /// </summary>
+        public bool TryApplySaveValues(in PartySaveValues party)
+        {
+            PlayerSaveValues p = party.Player;
+            var playerVitals = new PlayerVitalsTransferSnapshot(
+                new VitalTransferSnapshot(p.Hp),
+                new StaminaTransferSnapshot(p.Stamina, p.StaminaRegenDelay, 0f));
+            var playerHit = new HitReactionTransferSnapshot(0f, p.InvincibleRemaining);
+
+            CompanionSaveValues c = party.Companion;
+            var companionVitals = new CompanionVitalsTransferSnapshot(
+                c.Hp, c.IsDown, c.RecoveryRemaining, c.InvincibleRemaining, new FlinchTransferSnapshot(0f, 0f, 0f, 0f));
+            var snapshot = new AreaTransferSnapshot(
+                true, playerVitals, playerHit,
+                party.HasCompanion, c.CompanionId, companionVitals,
+                new CompanionCombatTransferSnapshot(c.AttackCooldown),
+                new CompanionDefenseTransferSnapshot(
+                    new GuardAbilityTransferSnapshot(c.GuardCooldown), new EvadeAbilityTransferSnapshot(c.EvadeCooldown)),
+                new CompanionGuardianTransferSnapshot(c.GuardianCooldown),
+                party.HasCompanion && c.IsDown ? CompanionState.Down : CompanionState.Follow,
+                default, default);
+            return TryApply(snapshot);
+        }
+
+        /// <summary>
+        /// 休息の全回復（P6A-03。仕様 §5）。<b>死亡再開と同じ中身</b>を使う——主人公の HP・スタミナ最大、
+        /// 犬丸の HP 回復と Down からの復帰、ひるみ等の解消、攻撃・防御・守護の CD 解除。
+        /// 場所は変えない。
+        /// </summary>
+        public void RestoreForRest() => RestoreForCampaignRespawn();
+
+        /// <summary>成長による最大 HP の加算を主人公へ置き直す（P6A。何度呼んでも同じ結果）。</summary>
+        public void ApplyMaxHpBonus(int bonus)
+        {
+            _playerVitals?.ApplyMaxHpBonus(bonus);
         }
 
         private PlayerFacing _playerFacing;

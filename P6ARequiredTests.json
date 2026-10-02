@@ -1,0 +1,400 @@
+{
+  "version": 1,
+  "phase": "P6A",
+  "note": "P6A（進行・休息・保存基盤）の必須テスト一覧。P6 先行実装仕様 §13 の ID を実際の完全修飾テスト名へ対応させる。テストランナーの外で確認する要求（P6A23 実ビルドの別プロセス確認、P6A25 性能計測、P6A26 既存必須一覧の再照合）は requirements に載せず、P6A_受入条件対応表.md に証跡（ブリッジ op p6a-player-smoke の結果・既存 manifest の照合結果）を記録する。Builder／Validator の検査（validate-phase6-world）は P6A24 の補助で、テストではない。",
+  "stages": [
+    "P6A-01",
+    "P6A-02",
+    "P6A-03",
+    "P6A-04",
+    "P6A-05",
+    "P6A-06"
+  ],
+  "requirements": [
+    {
+      "id": "P6A01",
+      "summary": "初到達は Commit で一度。失敗遷移と Load で徳を得ない",
+      "stage": "P6A-01"
+    },
+    {
+      "id": "P6A02",
+      "summary": "普通敵二体の個別報酬、同一撃破通知の重複排除、通常移動で非復活",
+      "stage": "P6A-01"
+    },
+    {
+      "id": "P6A03",
+      "summary": "休息・成長・死亡・旅立ちが各一周期だけ更新。過去章と未ロード地域へ反映",
+      "stage": "P6A-03"
+    },
+    {
+      "id": "P6A04",
+      "summary": "遭遇戦撤退で徳保持、再挑戦は Wave1、再撃破報酬可。移動失敗では撤退未確定",
+      "stage": "P6A-04"
+    },
+    {
+      "id": "P6A05",
+      "summary": "複数遭遇戦を独立記録。最終撃破・ボーナス・開通を同時保存",
+      "stage": "P6A-01"
+    },
+    {
+      "id": "P6A06",
+      "summary": "遭遇戦・中ボス・章ボス・配置物が死亡と休息後も復活しない",
+      "stage": "P6A-01"
+    },
+    {
+      "id": "P6A07",
+      "summary": "調べるだけで登録と保存、回復なし。休息では補充し一般消耗品は戻さない",
+      "stage": "P6A-03"
+    },
+    {
+      "id": "P6A08",
+      "summary": "死亡時に徳・成長・開通を保持し、登録地点へ全回復復帰",
+      "stage": "P6A-03"
+    },
+    {
+      "id": "P6A09",
+      "summary": "Checkpoint と ResumeAnchor の分離。報酬取得が復帰位置を上書きしない",
+      "stage": "P6A-03"
+    },
+    {
+      "id": "P6A10",
+      "summary": "成長成功時の支出・取得・休息・保存。不成立時無変更。再適用非累積",
+      "stage": "P6A-03"
+    },
+    {
+      "id": "P6A11",
+      "summary": "未登録・操作場所外・同一地点の旅立ち拒否。到着成功後のみ登録と休息",
+      "stage": "P6A-04"
+    },
+    {
+      "id": "P6A12",
+      "summary": "A B C 往復、遠隔旅立ち、旧 Area 解放失敗・遅延ロードで二重活動と多重 Scene 操作なし",
+      "stage": "P6A-04"
+    },
+    {
+      "id": "P6A13",
+      "summary": "全保存項目を非初期値で RoundTrip。Snapshot と Runtime の可変参照非共有",
+      "stage": "P6A-02"
+    },
+    {
+      "id": "P6A14",
+      "summary": "Snapshot 採取で攻撃中断・回復・付与・入力消費が起きない",
+      "stage": "P6A-02"
+    },
+    {
+      "id": "P6A15",
+      "summary": "戦闘中報酬の保存から安全入口へ再開、資源保持、遭遇戦のみ未クリア再開",
+      "stage": "P6A-05"
+    },
+    {
+      "id": "P6A16",
+      "summary": "犬丸 Down と残時間保持、Load で無料回復・通知・入力暴発なし",
+      "stage": "P6A-05"
+    },
+    {
+      "id": "P6A17",
+      "summary": "同フレーム致死と報酬、死亡復帰失敗、終了要求の競合で HP0 通常保存や報酬不整合なし",
+      "stage": "P6A-05"
+    },
+    {
+      "id": "P6A18",
+      "summary": "書込中の新要求を後続保存、古い Revision 完了で dirty を消さない",
+      "stage": "P6A-02"
+    },
+    {
+      "id": "P6A19",
+      "summary": "書込・flush・検証・置換失敗で前有効世代保持。再試行は最新 Snapshot",
+      "stage": "P6A-02"
+    },
+    {
+      "id": "P6A20",
+      "summary": "破損・未知 ID・重複・版違い・欠損・無効復帰点を拒否し、黙って New Game にしない",
+      "stage": "P6A-02"
+    },
+    {
+      "id": "P6A21",
+      "summary": "New Game 確認と退避失敗、旧冒険混在、複数プロセス競合の処理",
+      "stage": "P6A-02"
+    },
+    {
+      "id": "P6A22",
+      "summary": "正常終了とタイトル復帰で最新資源保存。保存失敗時の選択と未保存表示",
+      "stage": "P6A-05"
+    },
+    {
+      "id": "P6A24",
+      "summary": "Builder 再生成、ID 一意性、安全復帰点、catalog、入力と Camera 単一性",
+      "stage": "P6A-06"
+    },
+    {
+      "id": "P6A27",
+      "summary": "既存攻撃 VFX の必須参照・Builder 再生成・実攻撃からの生成と表示・遷移後の表示",
+      "stage": "P6A-06"
+    }
+  ],
+  "tests": [
+    {
+      "requirementId": "P6A01",
+      "stage": "P6A-01",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.NewGame_Progress_Restart_Continue_RestoresEverything",
+      "requirementIds": [
+        "P6A02",
+        "P6A07",
+        "P6A09",
+        "P6A13",
+        "P6A16"
+      ],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6AProgressionTests.Arrival_FirstVisitGrantsOnce_RevisitOnlySaves",
+        "Momotaro.Tests.EditMode.P6AProgressionTests.Arrival_RewardKeyedByRewardId_NotByVisitOrder",
+        "Momotaro.Tests.EditMode.P6ASaveTests.Restore_DoesNotGrantOrRequestSaves"
+      ]
+    },
+    {
+      "requirementId": "P6A01",
+      "stage": "P6A-01",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.FailedTravelAndFastTravel_CommitNothing",
+      "requirementIds": [
+        "P6A11",
+        "P6A12"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6A02",
+      "stage": "P6A-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6AProgressionTests.FieldEnemy_PerPlacementRewards_DuplicateIgnored_NoRevivalOnMove",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6AProgressionTests.FieldDirector_SpawnsUndefeatedOnly_RecordsByPlacement_RebuildsOnCycle"
+      ]
+    },
+    {
+      "requirementId": "P6A03",
+      "stage": "P6A-03",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ABC_FastTravel_Death_EachAdvancesCycleOnce",
+      "requirementIds": [
+        "P6A08",
+        "P6A11",
+        "P6A12"
+      ],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6AProgressionTests.RespawnCycle_RevivesFieldEnemiesOnly_PermanentRecordsKept",
+        "Momotaro.Tests.EditMode.P6AShrineTests.Rest_AdvancesOnce_RestoresOnce_RefillsKibidango_NotItems"
+      ]
+    },
+    {
+      "requirementId": "P6A04",
+      "stage": "P6A-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.Encounter_SaveMidFight_Continue_Retreat_Rechallenge_ClearCommitsAtomically",
+      "requirementIds": [
+        "P6A05",
+        "P6A15"
+      ],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6AShrineTests.Retreat_AllowedInP6_ChallengeAbandonedOnReentry_KillVirtueKept",
+        "Momotaro.Tests.EditMode.P6AShrineTests.Retreat_NotAllowedInP5",
+        "Momotaro.Tests.EditMode.P6AProgressionTests.RealRunner_RetryAfterDefeat_GrantsKillVirtueAgain"
+      ]
+    },
+    {
+      "requirementId": "P6A05",
+      "stage": "P6A-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6AProgressionTests.EncounterClear_RecordBonusAndFlagAtomically",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6AProgressionTests.EncounterClear_MultipleEncountersAreIndependent",
+        "Momotaro.Tests.EditMode.P6AProgressionTests.RealRunner_FinalKillCommitsClearBonusAndFlag",
+        "Momotaro.Tests.EditMode.P6AShrineTests.Group_TwoEncountersIndependent"
+      ]
+    },
+    {
+      "requirementId": "P6A06",
+      "stage": "P6A-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6AProgressionTests.RespawnCycle_RevivesFieldEnemiesOnly_PermanentRecordsKept",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6AProgressionTests.PlacementPick_OverCapacityRejectsWhole_ThenRetrySucceeds",
+        "Momotaro.Tests.EditMode.P6AProgressionTests.LegacyPolicy_EncounterClearStillResetsByCycle"
+      ]
+    },
+    {
+      "requirementId": "P6A07",
+      "stage": "P6A-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6AShrineTests.Register_OnlyRecordsAndSaves_NoRecovery",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6AShrineTests.Rest_AdvancesOnce_RestoresOnce_RefillsKibidango_NotItems",
+        "Momotaro.Tests.EditMode.P6AProgressionTests.Inventory_RejectsInvalidChanges"
+      ]
+    },
+    {
+      "requirementId": "P6A08",
+      "stage": "P6A-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6AShrineTests.RespawnPoint_IsLastRegisteredShrine_RewardsDoNotMoveAnchors",
+      "requirementIds": [
+        "P6A09"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6A10",
+      "stage": "P6A-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6AShrineTests.Growth_Success_SpendsAppliesThenRestsOnce",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6AShrineTests.Growth_FailuresChangeNothingAndDoNotRest",
+        "Momotaro.Tests.EditMode.P6AShrineTests.MaxHpBonus_ReappliedIsNotCumulative",
+        "Momotaro.Tests.EditMode.P6AProgressionTests.GrowthPurchase_FailuresChangeNothing",
+        "Momotaro.Tests.EditMode.P6AProgressionTests.Virtue_AvailableIsTotalMinusSpent"
+      ]
+    },
+    {
+      "requirementId": "P6A11",
+      "stage": "P6A-04",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6AShrineTests.FastTravel_RejectsSameUnregisteredAndOutsideShrine",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6A13",
+      "stage": "P6A-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6ASaveTests.RoundTrip_AllFieldsNonDefault_ProduceIdenticalSnapshot",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6ASaveTests.Snapshot_DoesNotShareMutableStateWithRuntime",
+        "Momotaro.Tests.EditMode.P6AProgressionTests.Revision_AdvancesOnEveryLogicalChange"
+      ]
+    },
+    {
+      "requirementId": "P6A14",
+      "stage": "P6A-02",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.Capture_DuringAttack_DoesNotDisturbThePlayer",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6A17",
+      "stage": "P6A-05",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ReturnToTitle_WhileDead_ResolvesRespawnBeforeSaving",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6ASaveTests.Coordinator_DefersCaptureWhenUnsettled"
+      ]
+    },
+    {
+      "requirementId": "P6A18",
+      "stage": "P6A-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6ASaveTests.Coordinator_RequestDuringWrite_IsSavedAfterwards_OldCompletionKeepsDirty",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6ASaveTests.Coordinator_CompletionFromOldSessionIsIgnored",
+        "Momotaro.Tests.EditMode.P6ASaveTests.Coordinator_UntakenCompletion_IsStillWriting"
+      ]
+    },
+    {
+      "requirementId": "P6A19",
+      "stage": "P6A-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6ASaveTests.Coordinator_FailureKeepsDirty_NoAutoRetry_RetryUsesLatest",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6ASaveTests.Store_FaultAtAnyStage_KeepsPreviousValidGeneration(Write)",
+        "Momotaro.Tests.EditMode.P6ASaveTests.Store_FaultAtAnyStage_KeepsPreviousValidGeneration(CorruptOnWrite)",
+        "Momotaro.Tests.EditMode.P6ASaveTests.Store_FaultAtAnyStage_KeepsPreviousValidGeneration(Replace)",
+        "Momotaro.Tests.EditMode.P6ASaveTests.Store_FaultAtAnyStage_KeepsPreviousValidGeneration(CorruptAfterReplace)",
+        "Momotaro.Tests.EditMode.P6ASaveTests.Store_TempFileIsNeverACandidate",
+        "Momotaro.Tests.EditMode.P6ASaveTests.TransientIo_RetriesSharingViolations_ThenGivesUp",
+        "Momotaro.Tests.EditMode.P6ASaveTests.Store_AlternatesSides_ChoosesNewest_RecoversFromOneCorruptSide"
+      ]
+    },
+    {
+      "requirementId": "P6A20",
+      "stage": "P6A-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6ASaveTests.Codec_RejectsMissingDuplicateUnknownWrongTypeAndTamper",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6ASaveTests.Validator_RejectsUnknownIdsRangesAndContradictions"
+      ]
+    },
+    {
+      "requirementId": "P6A21",
+      "stage": "P6A-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6ASaveTests.Store_ArchiveBeforeNewGame",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6ASaveTests.Store_RefusesMixedAdventuresAndSameGenerationConflict",
+        "Momotaro.Tests.EditMode.P6ASaveTests.Store_SecondWriterCannotTakeTheLock"
+      ]
+    },
+    {
+      "requirementId": "P6A22",
+      "stage": "P6A-05",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ReturnToTitle_FromMenu_SavesLatestThenLoadsTitle",
+      "requirementIds": [
+        "P6A19"
+      ],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ReturnToTitle_SaveFails_OffersChoices_RetryWritesLatest"
+      ]
+    },
+    {
+      "requirementId": "P6A24",
+      "stage": "P6A-06",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EditorBridgeOperationTargetsTests.Phase6World_TargetsExist",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.Phase5ValidatorCoverageTests.EveryComponentTheBuilderPlaces_IsCheckedOrExemptedWithAReason"
+      ]
+    },
+    {
+      "requirementId": "P6A27",
+      "stage": "P6A-06",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.AttackVfx_ShowsInA_AndAfterSlideInB",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    }
+  ],
+  "allowedSkips": []
+}

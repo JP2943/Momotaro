@@ -82,6 +82,12 @@ namespace Momotaro.Infrastructure.World
         [Tooltip("本編型死亡再開の実行役（P5-08。§9.1）。")]
         [SerializeField] private CampaignRespawnRunner _respawn;
 
+        [Tooltip("普通敵の生成と撃破記録（P6A。普通敵の居ない区画は未割当でよい）。")]
+        [SerializeField] private AreaFieldEnemyDirector _fieldEnemies;
+
+        [Tooltip("1 エリアに複数の遭遇戦があるときのまとめ（P6A。無ければ未割当）。")]
+        [SerializeField] private AreaEncounterGroup _encounterGroup;
+
         [Header("カタログ")]
         [Tooltip("P5 のエリアカタログ。遷移サービスへ渡す。")]
         [SerializeField] private AreaCatalogData _catalog;
@@ -94,6 +100,24 @@ namespace Momotaro.Infrastructure.World
 
         /// <summary>この Area が渡す接続一覧（Validator・テスト用。無ければ null）。</summary>
         public AreaConnectionData Connections => _connections;
+
+        /// <summary>普通敵の生成役（P6A。未割当なら null）。</summary>
+        public AreaFieldEnemyDirector FieldEnemies => _fieldEnemies;
+
+        /// <summary>配線する（Builder が呼ぶ。P6A）。</summary>
+        public void BindFieldEnemies(AreaFieldEnemyDirector director)
+        {
+            _fieldEnemies = director;
+        }
+
+        /// <summary>複数遭遇戦のまとめを配線する（Builder が呼ぶ。P6A）。</summary>
+        public void BindEncounterGroup(AreaEncounterGroup group)
+        {
+            _encounterGroup = group;
+        }
+
+        /// <summary>複数遭遇戦のまとめ（P6A。未割当なら null）。</summary>
+        public AreaEncounterGroup EncounterGroup => _encounterGroup;
 
         /// <summary>初期化が成功したか（診断・テスト用）。</summary>
         public bool Initialized { get; private set; }
@@ -257,6 +281,14 @@ namespace Momotaro.Infrastructure.World
             //    値には触らない（下の復元が正本）。順は 中立化 → 配置 → 復元 で固定する。
             _transferPort?.ResetForAreaEntry();
 
+            //    成長の効果を<b>基礎値と取得 ID から</b>置き直す（P6A。加算を繰り返さない）。値の復元より前——
+            //    最大値が古いままだと、運ばれてきた HP が上限超過で拒否される。
+            CampaignCatalog campaign = _transitions.Catalog != null ? _transitions.Catalog.Campaign : null;
+            if (campaign != null)
+            {
+                _transferPort?.ApplyMaxHpBonus(campaign.MaxHpBonusOf(session.Progress));
+            }
+
             // 5. 入口へ配置し、運ばれてきた Actor 値を復元する（§4.4〜§4.6）。
             //    値の復元は AreaReady より前。1 つでも失敗したら Ready を確定しない。
             PlaceArrivals(entryPoint, definitionFacing: ResolveFacing(entryId));
@@ -275,6 +307,20 @@ namespace Momotaro.Infrastructure.World
 
                 // <b>ここで完了扱いにしない</b>（GPT レビュー R6 の指摘 1）。
                 // 完了の確定は AreaTransitionService が活動を許可したあとに行う（§9.1 手順 7）。
+            }
+            else if (_transitions.TryPeekPendingLoad(out Momotaro.Gameplay.Save.PartySaveValues saved))
+            {
+                // 保存からの再開（P6A-02）。保存値を<b>遷移の復元と同じ検証付きの窓口</b>で適用する。
+                // 失敗したら Ready を確定しない——候補 Session は採用されず、ファイルも変わらない。
+                if (_transferPort == null)
+                {
+                    return Fail("保存から再開しましたが、Actor を復元する窓口が未配線です。");
+                }
+
+                if (!_transferPort.TryApplySaveValues(saved))
+                {
+                    return Fail("保存値を復元できませんでした: " + _transferPort.LastApplyFailure);
+                }
             }
             else if (_transitions.TryPeekPendingTransfer(out AreaTransferSnapshot transfer))
             {
@@ -310,7 +356,20 @@ namespace Momotaro.Infrastructure.World
 
             // 7. Encounter のクリア済みを復元する（§4.3／§8.4 末尾）。
             //    取り出し口の配線は構築側（一度だけ）、記録の反映は<b>入場ごと</b>。
+            //    撤退の確定（P6A-04）：挑戦途中のまま出て行った遭遇戦は、戻ってきたら最初の Wave から。
+            //    <b>退出が成功したからここへ来ている</b>——移動に失敗した場合は出発側の挑戦がそのまま続く。
+            if (_encounter != null && _encounter.AllowRetreat)
+            {
+                _encounter.AbandonChallenge();
+            }
+
+            _encounterGroup?.AbandonUnfinished();
             _encounter?.RestoreFromRecord();
+            _encounterGroup?.RestoreAllFromRecord();
+
+            //    普通敵（P6A）：現在周期で撃破済みでない配置だけを、<b>起こさずに</b>用意する。
+            //    留守のあいだに周期が進んでいれば（休息）ここで作り直す。起こすのは活動許可のとき。
+            _fieldEnemies?.PrepareForEntry();
 
             //    <b>遭遇 Trigger の「範囲内」も測り直す</b>（工程 P55-15b。付録 C.41）。
             //
@@ -398,7 +457,7 @@ namespace Momotaro.Infrastructure.World
                 // Session が入れ替わっていたら、注入済みの参照はもう正本ではない。
                 // New Game は Single 読込を伴うのでこの Scene ごと消えるため、通常は起こらない。
                 // 起こったときに<b>静かに古い State を使い続けない</b>ために見ておく。
-                GameSessionState current = _sessions != null ? _sessions.EnsureSession() : null;
+                GameSessionState current = _sessions != null ? _sessions.EnsureSession(_catalog.EncounterClearPolicy) : null;
                 if (current == null || !ReferenceEquals(current, _session))
                 {
                     return Fail("Session が入れ替わっています（この Scene の注入はもう正本ではありません）。");
@@ -416,7 +475,7 @@ namespace Momotaro.Infrastructure.World
                 return Fail("Session サービスが見つかりません（Bootstrap 未起動）。");
             }
 
-            GameSessionState session = sessions.EnsureSession();
+            GameSessionState session = sessions.EnsureSession(_catalog.EncounterClearPolicy);
 
             // 注入（Actor の活動開始より前。§4.2／§4.3）。
             AreaRuntimeState area = session.GetOrCreateArea(areaId);
@@ -465,7 +524,17 @@ namespace Momotaro.Infrastructure.World
             // Encounter へ Session の世界状態の<b>取り出し口</b>を渡す（§4.3／§8.4 末尾）。
             // 常駐 Session は Scene へ serialize できないので、参照ではなく取り出し口を渡す。
             // 記録の<b>反映</b>（RestoreFromRecord）は入場ごとなので、ここには置かない。
-            _encounter?.BindSession(() => area, () => session.RespawnCycle);
+            _encounter?.BindSession(() => area, () => session.RespawnCycle, () => session);
+            _encounter?.BindAreaRoot(_areaRoot);
+            if (_encounterGroup != null)
+            {
+                foreach (AreaEncounterRunner runner in _encounterGroup.Runners)
+                {
+                    runner?.BindSession(() => area, () => session.RespawnCycle, () => session);
+                    runner?.BindAreaRoot(_areaRoot);
+                }
+            }
+            _fieldEnemies?.BindSession(() => session);
 
             _sessions = sessions;
             _session = session;

@@ -24,3 +24,6 @@ MonoBehaviour:
   _spawnPointId:
     _value: spawn_p5_b_road
   _isBossEncounter: 0
+  _clearReward: {fileID: 0}
+  _unlockFlagId:
+    _value: 

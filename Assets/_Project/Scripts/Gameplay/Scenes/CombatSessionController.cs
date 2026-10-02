@@ -160,6 +160,15 @@ namespace Momotaro.Gameplay.Scenes
         }
 
         /// <summary>全敵の登録・購読・生存数を初期化する（Wave 遷移・Cleanup・Disable。二重呼び出し安全）。</summary>
+        /// <summary>
+        /// 挑戦をやり直す（P6A-04）：登録した敵を外し、状態を Preparing へ戻す。Scene を作り直さない再挑戦用。
+        /// </summary>
+        public void ResetForRetry()
+        {
+            ClearEnemies();
+            Apply(_machine.ResetForRetry());
+        }
+
         public void ClearEnemies()
         {
             for (int i = 0; i < _enemies.Count; i++)

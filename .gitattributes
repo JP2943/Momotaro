@@ -95,3 +95,7 @@
 *.dll        filter=lfs diff=lfs merge=lfs -text
 *.so         filter=lfs diff=lfs merge=lfs -text
 *.unitypackage filter=lfs diff=lfs merge=lfs -text
+
+# Unity が焼く NavMesh はバイナリ（*.asset text の対象外にする）。text のままだと Windows の checkout で
+# LF→CRLF 変換され "Invalid serialized file header" になる（P6A-01 で発覚。main 統合後の作業ツリーが壊れていた）。
+NavMesh_*.asset binary

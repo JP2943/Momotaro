@@ -217,6 +217,33 @@ namespace Momotaro.Gameplay.Player
         }
 
         /// <summary>
+        /// 成長による最大 HP の加算を適用する（P6A-03。仕様 §7「既存 Max へ加算を繰り返さない。基礎値と取得 ID から再計算」）。
+        ///
+        /// <b>何度呼んでも同じ結果</b>——最大値は「Data の基礎値 ＋ 加算」で置き直す。現在 HP は回復しない
+        /// （上限を超える分だけ切り詰める）。回復は休息が行う。
+        /// </summary>
+        public void ApplyMaxHpBonus(int bonus)
+        {
+            EnsureVitals();
+            if (_vitals == null || _data == null)
+            {
+                return;
+            }
+
+            int baseMax = _data.MaxHp;
+            int target = baseMax + (bonus < 0 ? 0 : bonus);
+            if (_vitals.Health.Max != target)
+            {
+                _vitals.Health.SetMax(target);
+            }
+
+            MaxHpBonus = bonus < 0 ? 0 : bonus;
+        }
+
+        /// <summary>適用中の最大 HP 加算（診断・テスト用）。</summary>
+        public int MaxHpBonus { get; private set; }
+
+        /// <summary>
         /// 条件付きスタミナ消費（Phase2 P2-09。ステップ等）。残量が <paramref name="amount"/> 以上でブレイク中でないときだけ消費し
         /// true を返す。不足時は消費せず false（ステップ不発）。ステップ消費はガードブレイクを誘発しない（<c>canTriggerBreak:false</c>）。
         /// </summary>

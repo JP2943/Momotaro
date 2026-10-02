@@ -861,7 +861,7 @@ namespace Momotaro.Infrastructure.World
             _owner.RebindConditions(destination.Conditions);
 
             // <b>ここで初めて訪問済みを記録する</b>（手順 9／§4.1「Commit 時に行う」）。
-            _owner.NoteArrival(connection.ToAreaId);
+            _owner.NoteArrival(connection.ToAreaId, connection.EntryId);
 
             destination.Context.Activate();
             GameModeProvider.Current?.ChangeMode(GameMode.Exploration);

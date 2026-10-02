@@ -38,6 +38,13 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         private int _respawnRequestId;
 
+        // 保存からの再開（P6A-02。Continue）。Actor 値は運ばず、到着側が保存値を適用する。
+        private int _loadTransitionId;
+
+        // 旅立ち（P6A-04）。通常の Single／Fade 経路で運び、成功の確定後に呼び出し側が休息・登録・保存を行う。
+        private int _fastTravelTransitionId;
+        private Momotaro.Gameplay.Save.PartySaveValues _pendingLoadParty;
+
         private AreaCatalog _catalog;
 
         /// <summary>接続一覧（P5.5 §3.1）。P5 の構成では null のまま。</summary>
@@ -288,10 +295,41 @@ namespace Momotaro.Infrastructure.World
         /// 初期化の時点で記録すると、隔離された Prepared や、タイムアウト後に遅れて着いた Scene が
         /// 「訪問済み」を残してしまう（§11 の E06）。
         /// </summary>
-        internal void NoteArrival(StableId areaId)
+        internal void NoteArrival(StableId areaId, StableId entryId)
         {
-            GameSessionProvider.Current?.MarkVisited(areaId);
+            GameSessionState session = GameSessionProvider.Current;
+            if (session == null)
+            {
+                return;
+            }
+
+            // P6 campaign（P6A）：訪問と初到達報酬を<b>同時に</b>確定し、到着の保存を要求する（P6 仕様 §4／§8）。
+            // P5／P5.5 のカタログ（Campaign が無い）は従来どおり訪問の記録だけ。
+            CampaignCatalog campaign = _catalog != null ? _catalog.Campaign : null;
+            if (campaign == null)
+            {
+                session.MarkVisited(areaId);
+                return;
+            }
+
+            // 中断用の復帰位置を到着した入口へ（仕様 §6 の表。死亡用の Checkpoint は変えない）。
+            // 到着の確定（保存要求を含む）より<b>前</b>に置く——要求で採られる Snapshot に新しい復帰位置が載るように。
+            if (!entryId.IsEmpty)
+            {
+                session.SetResumeAnchor(ResumeAnchor.AtEntry(areaId, entryId));
+            }
+
+            LastArrivalCommit = session.CommitArrival(areaId, campaign.ArrivalRewardOf(areaId));
+            ArrivalCommitted?.Invoke(areaId, LastArrivalCommit);
         }
+
+        /// <summary>直近の到着確定（P6A。診断・テスト用）。</summary>
+        public ArrivalCommit LastArrivalCommit { get; private set; }
+
+        /// <summary>
+        /// 到着を進行へ確定した（P6A）。<b>活動許可の直前</b>に出る。復帰位置の更新・保存の要求はここを購読する。
+        /// </summary>
+        public event System.Action<StableId, ArrivalCommit> ArrivalCommitted;
 
         /// <summary>
         /// 受付条件の窓口を差し直す（スライド経路の Commit／Rollback から呼ぶ）。
@@ -442,6 +480,13 @@ namespace Momotaro.Infrastructure.World
         /// <returns>死亡再開として処理したら true（呼び出し側は復旧へ進まない）。</returns>
         private bool FailRespawnInsteadOfRecovery(int transitionId)
         {
+            if (IsLoadTransition(transitionId))
+            {
+                // 保存からの再開に戻る先は無い（Launcher から来た）。復旧へ流さず、候補を捨てさせて Launcher へ戻す。
+                FailTerminal(transitionId, "保存からの再開に失敗しました（目的地を準備できませんでした）。");
+                return true;
+            }
+
             if (!IsRespawnTransition(transitionId))
             {
                 return false;
@@ -464,13 +509,8 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         public bool TryGetRespawnEntry(out AreaEntryInfo entry)
         {
-            if (_catalog != null)
-            {
-                return _catalog.TryGetRespawnEntry(out entry);
-            }
-
-            entry = default;
-            return false;
+            // P6 campaign は最後に登録したお地蔵様（P6A-03）。P5／P5.5 はカタログの固定点。
+            return CampaignRespawnPoint.TryResolve(_catalog, GameSessionProvider.Current, out entry);
         }
 
         /// <summary>この遷移が死亡再開のものか（世代一致で見る）。</summary>
@@ -487,6 +527,16 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         private bool HandleRespawnFailure(int transitionId)
         {
+            NotifyFastTravelFailed(transitionId);
+
+            if (IsLoadTransition(transitionId))
+            {
+                _loadTransitionId = 0;
+                _pendingLoadParty = default;
+                LoadTravelFailed?.Invoke(transitionId);
+                return true;
+            }
+
             if (!IsRespawnTransition(transitionId))
             {
                 return false;
@@ -528,11 +578,155 @@ namespace Momotaro.Infrastructure.World
             _respawnTransitionId = 0;
             _respawnRequestId = 0;
 
-            CampaignRespawnCoordinator respawn = GameSessionProvider.Current?.Respawn;
+            GameSessionState session = GameSessionProvider.Current;
+            CampaignRespawnCoordinator respawn = session?.Respawn;
             if (respawn != null && requestId != 0)
             {
                 respawn.NotifyArrived(requestId);
             }
+
+            // P6 campaign（P6A-03）：死亡の復帰は「最後に登録したお地蔵様へ戻り、全回復・きびだんご補充・
+            // 全普通敵復活後に保存」（コアループ）。全回復は到着側、周期は要求の受理で 1 回だけ進めてある。
+            // ここでは補充・中断位置（そのお地蔵様）・保存を足す。死亡は保存時点への巻き戻しではない。
+            CampaignCatalog campaign = _catalog != null ? _catalog.Campaign : null;
+            if (session != null && campaign != null && campaign.TryGetShrine(session.Checkpoint, out ShrineInfo shrine))
+            {
+                session.Changes.BeginBatch("respawned");
+                try
+                {
+                    session.RefillKibidango(campaign.KibidangoCapacityOf(session.Progress));
+                    session.SetResumeAnchor(ResumeAnchor.AtShrine(shrine.AreaId, shrine.ShrineId));
+                    session.Changes.RequestAutosave("respawned");
+                }
+                finally
+                {
+                    session.Changes.EndBatch();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 保存から再開する遷移（P6A-02。仕様 §10 の手順 4）。Launcher から呼ぶ。
+        ///
+        /// 死亡再開と同じく<b>Actor 値を運ばない</b>——到着側（<c>AreaInitializer</c>）が
+        /// <see cref="TryPeekPendingLoad"/> で保存値を取り、最大値の再計算のあとに適用する。
+        /// 失敗は<b>復旧へ流さない</b>（戻る Area が無い）。終端失敗として Launcher へ戻り、
+        /// <see cref="LoadTravelFailed"/> で呼び出し側に候補を捨てさせる。
+        /// </summary>
+        public AreaTransitionDecision TryLoadTravel(StableId areaId, StableId entryId,
+            in Momotaro.Gameplay.Save.PartySaveValues party)
+        {
+            if (_coordinator == null)
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
+            }
+
+            if (_slideRunner != null && _slideRunner.IsTransitioning)
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.AlreadyTransitioning);
+            }
+
+            var request = new AreaTransitionRequest(areaId, entryId);
+            AreaTransitionDecision decision = _coordinator.TryRequest(request);
+            if (!decision.Accepted)
+            {
+                return decision;
+            }
+
+            HasTerminalFailure = false;
+            TerminalFailureReason = null;
+            _loadTransitionId = decision.TransitionId;
+            _pendingLoadParty = party;
+
+            CloseCurrentArea();
+            GameModeProvider.Current?.ChangeMode(GameMode.Loading);
+            ClearPendingTransfer();
+
+            _running = StartCoroutine(TravelRoutine(request, decision.TransitionId));
+            return decision;
+        }
+
+        /// <summary>
+        /// 到着側が保存値を読む（消費しない）。保存からの再開の到着でなければ false。
+        /// </summary>
+        public bool TryPeekPendingLoad(out Momotaro.Gameplay.Save.PartySaveValues party)
+        {
+            if (_loadTransitionId != 0 && AreaPendingArrival.HasPending
+                && AreaPendingArrival.TransitionId == _loadTransitionId)
+            {
+                party = _pendingLoadParty;
+                return true;
+            }
+
+            party = default;
+            return false;
+        }
+
+        /// <summary>保存からの再開が活動許可まで済んだ（引数は遷移の世代）。候補 Session の採用はここを購読する。</summary>
+        public event System.Action<int> LoadTravelCompleted;
+
+        /// <summary>保存からの再開が失敗した（引数は遷移の世代）。候補 Session を捨てる。</summary>
+        public event System.Action<int> LoadTravelFailed;
+
+        private bool IsLoadTransition(int transitionId) =>
+            _loadTransitionId != 0 && transitionId == _loadTransitionId;
+
+        private void CompleteLoad(int transitionId)
+        {
+            if (!IsLoadTransition(transitionId))
+            {
+                return;
+            }
+
+            _loadTransitionId = 0;
+            _pendingLoadParty = default;
+            LoadTravelCompleted?.Invoke(transitionId);
+        }
+
+        /// <summary>
+        /// 旅立ち（P6A-04。仕様 §6）。<b>既存の Fade／Single 経路</b>で運ぶ（Camera・SceneFlow の第二系統を作らない）。
+        /// Single 読込は載っている Area を全部置き換えるので、在留は 1 枚から始まる（最大 2 を超えない）。
+        ///
+        /// 失敗時は通常の移動と同じく出発 Area へ復旧する（運んだ Actor 値で）。<b>到着の配置と進行適用が成功した後</b>に
+        /// <see cref="FastTravelCompleted"/> が出るので、登録・回復・周期・保存はそこで一括確定する。
+        /// </summary>
+        public AreaTransitionDecision TryFastTravel(StableId areaId, StableId entryId)
+        {
+            AreaTransitionDecision decision = TryTravel(areaId, entryId);
+            if (decision.Accepted)
+            {
+                _fastTravelTransitionId = decision.TransitionId;
+            }
+
+            return decision;
+        }
+
+        /// <summary>旅立ちが活動許可まで済んだ（引数は遷移の世代）。</summary>
+        public event System.Action<int> FastTravelCompleted;
+
+        /// <summary>旅立ちが失敗した（引数は遷移の世代）。到着先を登録しない・回復しない。</summary>
+        public event System.Action<int> FastTravelFailed;
+
+        private void CompleteFastTravel(int transitionId)
+        {
+            if (_fastTravelTransitionId == 0 || transitionId != _fastTravelTransitionId)
+            {
+                return;
+            }
+
+            _fastTravelTransitionId = 0;
+            FastTravelCompleted?.Invoke(transitionId);
+        }
+
+        private void NotifyFastTravelFailed(int transitionId)
+        {
+            if (_fastTravelTransitionId == 0 || transitionId != _fastTravelTransitionId)
+            {
+                return;
+            }
+
+            _fastTravelTransitionId = 0;
+            FastTravelFailed?.Invoke(transitionId);
         }
 
         /// <summary>死亡再開が失敗して再開画面へ戻った回数（診断・テスト用）。</summary>
@@ -696,7 +890,12 @@ namespace Momotaro.Infrastructure.World
             // Single 読込で載っている Scene は置き換わった。台帳をその場で合わせ直す。
             _slideRunner?.NotifySingleLoadCompleted();
 
-            NoteArrival(request.AreaId);
+            // 保存からの再開では到着を「進行」として確定しない（Load は報酬・回復・周期更新を起こさない。P6 仕様 §10）。
+            if (!IsLoadTransition(transitionId))
+            {
+                NoteArrival(request.AreaId, request.EntryId);
+            }
+
             arrived.Activate();
             GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
 
@@ -712,6 +911,8 @@ namespace Momotaro.Infrastructure.World
                 // 死亡再開の完了は<b>ここ</b>で確定する（§9.1 手順 7）。
                 // 活動許可より前に確定すると、そのあとの失敗で再試行できなくなる。
                 CompleteRespawn(transitionId);
+                CompleteLoad(transitionId);
+                CompleteFastTravel(transitionId);
             }
 
             // 完了を通知する。<b>後始末をすべて終えてから出す</b>（§6.2 末尾）。
@@ -809,7 +1010,7 @@ namespace Momotaro.Infrastructure.World
 
             _slideRunner?.NotifySingleLoadCompleted();
 
-            NoteArrival(_pendingTransfer.OriginAreaId);
+            NoteArrival(_pendingTransfer.OriginAreaId, _pendingTransfer.OriginEntryId);
             recovered.Activate();
             _coordinator.NotifyFailed(transitionId, oldSceneUsable: true);
             GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
@@ -817,6 +1018,9 @@ namespace Momotaro.Infrastructure.World
             AreaPendingArrival.Clear();
             RecoveredCount++;
             _running = null;
+
+            // 旅立ちが失敗して出発 Area へ戻った（P6A-04）。到着先を登録しない・回復しない。
+            NotifyFastTravelFailed(transitionId);
         }
 
         /// <summary>
@@ -937,6 +1141,34 @@ namespace Momotaro.Infrastructure.World
         public bool TryBeginReturnToLauncher()
         {
             if (!CanReturnToLauncher)
+            {
+                return false;
+            }
+
+            _returning = true;
+            GameModeProvider.Current?.ChangeMode(GameMode.Loading);
+            StartCoroutine(ReturnToLauncherRoutine());
+            return true;
+        }
+
+        /// <summary>
+        /// <b>通常のタイトル復帰</b>を始められるか（P6A-05。仕様 §9）。終端失敗からの退避（<see cref="CanReturnToLauncher"/>）と違い、
+        /// 失敗を前提にしない。遷移が確定していない間・ロード操作が生きている間は始めない。
+        /// </summary>
+        public bool CanReturnToTitle =>
+            !IsReturningToLauncher
+            && !string.IsNullOrEmpty(LauncherScenePath)
+            && (_liveOperation == null || _liveOperation.IsDone)
+            && !(_slideRunner != null && _slideRunner.HasLiveSceneOperation)
+            && !IsTransitionUnsettled;
+
+        /// <summary>
+        /// 通常のタイトル復帰を<b>始める</b>（P6A-05。保存は呼び出し側が先に終えている）。
+        /// 手順は退避と同じ（先読みの破棄 → Single 読込 → 完了後に片付け）。
+        /// </summary>
+        public bool TryBeginReturnToTitle()
+        {
+            if (!CanReturnToTitle)
             {
                 return false;
             }
@@ -1114,6 +1346,37 @@ namespace Momotaro.Infrastructure.World
             }
 
             return FallbackSearch<AreaContext>();
+        }
+
+        /// <summary>
+        /// 遷移（Single／スライド／Launcher 退避）が<b>確定していない</b>か（P6A-02。保存の採取を見送る判断に使う）。
+        /// 遷移の前後をまたぐ Snapshot を作らない（仕様 §6）——成功なら到着後、失敗なら出発側の確定状態から保存する。
+        /// </summary>
+        public bool IsTransitionUnsettled =>
+            (_coordinator != null && _coordinator.IsTransitioning)
+            || (_slideRunner != null && _slideRunner.IsTransitioning)
+            || _returning
+            || AreaPendingArrival.HasPending;
+
+        /// <summary>
+        /// 活動中の Area の Actor 採取口（P6A-02。保存用）。<b>現行の束から引く</b>——全 Scene 検索へは落とさない
+        /// （2 つの Area が載っているとき、非活動 Area の主人公を採らない）。
+        /// </summary>
+        public bool TryGetActiveTransferPort(out AreaActorTransferPort port)
+        {
+            AreaRuntimeBundle bundle = CurrentBundle();
+            port = bundle != null ? bundle.TransferPort : null;
+            return port != null;
+        }
+
+        /// <summary>活動中の Area の初期化状態（P6A。保存・お地蔵様の判断に使う）。</summary>
+        public AreaContext ActiveContext
+        {
+            get
+            {
+                AreaRuntimeBundle bundle = CurrentBundle();
+                return bundle != null ? bundle.Context : null;
+            }
         }
 
         /// <summary>出発側の Actor 採取口を引く（P5.5 §4.3）。</summary>

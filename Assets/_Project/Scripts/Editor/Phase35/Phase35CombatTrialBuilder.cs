@@ -513,7 +513,11 @@ namespace Momotaro.Editor.Phase35
             }
         }
 
-        private static void BuildVfx(Transform systems, PlayerStateController playerController, Camera camera)
+        /// <summary>
+        /// 戦闘 VFX・スイング SE を組む。P6A の Area Scene からも呼ぶ（工程 P6A-06。P6A 27：P5 系の Builder が
+        /// この配線を持ち越していなかったため、試遊で剣閃が出なかった）。<paramref name="camera"/> が null なら Main Camera を使う。
+        /// </summary>
+        internal static void BuildVfx(Transform systems, PlayerStateController playerController, Camera camera)
         {
             var go = new GameObject("CombatVFX");
             go.transform.SetParent(systems, false);
@@ -642,7 +646,7 @@ namespace Momotaro.Editor.Phase35
         /// 完成済み VFX の受入検証（P3.5-06。GPT 指摘対応）。方向別セットは各方向の期待枚数、警告は無方向フラットの期待枚数を検査し、
         /// 不足・過多・フォルダ不在を <paramref name="errors"/> へ具体パス＋実枚数で積む。呼び出し側は空でなければ Scene を保存せず失敗する。
         /// </summary>
-        private static void ValidateVfx(List<string> errors)
+        internal static void ValidateVfx(List<string> errors)
         {
             for (int i = 0; i < PlayerVfxSpec.Length; i++)
             {

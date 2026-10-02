@@ -35,6 +35,9 @@ namespace Momotaro.Gameplay.Companion
         [Tooltip("P5 の区画 Encounter（§8.4 末尾。開始前・解放後は「活動中 Session なし」を供給する）。")]
         [SerializeField] private AreaEncounterRunner _areaEncounter;
 
+        [Tooltip("P6A：1 エリアに複数の遭遇戦があるときのまとめ（設定されていれば区画 Encounter より優先）。")]
+        [SerializeField] private AreaEncounterGroup _areaEncounterGroup;
+
         private IEncounterStartGate _startGateOverride;
 
         private IEncounterStartGate StartGateSource => _startGateOverride ?? (_stage != null ? _stage : null);
@@ -49,6 +52,11 @@ namespace Momotaro.Gameplay.Companion
                 {
                     // モードの正本が居ない＝まだ何も初期化されていない。安全側に止める。
                     return CompanionActivity.Stopped;
+                }
+
+                if (_areaEncounterGroup != null)
+                {
+                    return CompanionActivityResolver.Resolve(modes.Current, _areaEncounterGroup.ActivitySession);
                 }
 
                 if (_areaEncounter == null && _session == null && !_noEncounterInThisArea)
@@ -95,7 +103,7 @@ namespace Momotaro.Gameplay.Companion
         /// 供給元として成立しているか（セッションが繋がっている、または「無い区画」と宣言されている）。
         /// どちらでもない場合、この Context は常に停止を返す＝仲間が一切動かない。
         /// </summary>
-        public bool IsWired => _areaEncounter != null || _session != null || _noEncounterInThisArea;
+        public bool IsWired => _areaEncounter != null || _areaEncounterGroup != null || _session != null || _noEncounterInThisArea;
 
         /// <summary>戦闘セッションを注入する（Scene 構築・テスト）。</summary>
         public void Bind(CombatSessionController session)
@@ -147,6 +155,18 @@ namespace Momotaro.Gameplay.Companion
 
         /// <summary>配線された区画 Encounter（Scene 検査・診断用）。</summary>
         public AreaEncounterRunner AreaEncounter => _areaEncounter;
+
+        /// <summary>複数遭遇戦のまとめを配線する（P6A）。</summary>
+        public void BindAreaEncounterGroup(AreaEncounterGroup group)
+        {
+            if (group != null)
+            {
+                _areaEncounterGroup = group;
+            }
+        }
+
+        /// <summary>複数遭遇戦のまとめ（P6A。未配線なら null）。</summary>
+        public AreaEncounterGroup AreaEncounterGroup => _areaEncounterGroup;
 
         private void OnEnable()
         {

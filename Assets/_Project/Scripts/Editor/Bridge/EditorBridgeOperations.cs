@@ -62,12 +62,25 @@ namespace Momotaro.EditorBridge
         /// </summary>
         public const string ValidatePhase55World = "validate-phase55-world";
 
+        /// <summary>P6A の検証 campaign（A–B–C・タイトル・Data）を再生成する（P6A-06。P6 仕様 §11）。</summary>
+        public const string BuildPhase6World = "build-phase6-world";
+
+        /// <summary>P6A の検証 campaign を検査する（配置は P5.5 と同じ基準、加えて campaign の整合）。</summary>
+        public const string ValidatePhase6World = "validate-phase6-world";
+
+        /// <summary>
+        /// P6A の Windows 実ビルドを作り、別プロセスで New Game／正常終了／Continue と保存性能の計測を走らせる（P6A 23／25）。
+        /// Scene は開かない（ビルドは保存済みの Scene から作る）。数分かかる。
+        /// </summary>
+        public const string P6APlayerSmoke = "p6a-player-smoke";
+
         /// <summary>実行できる操作の一覧（エラーメッセージにそのまま出す）。</summary>
         public static readonly string[] All =
         {
             BuildInumaru, ValidateProjectData, VerifyRequiredTests,
             BuildCompanionField, BuildCompanionTrial, BuildExplorationTrial,
             ValidateExplorationTrial, BuildPhase55World, ValidatePhase55World,
+            BuildPhase6World, ValidatePhase6World, P6APlayerSmoke,
         };
 
         /// <summary>実行結果。</summary>
@@ -96,7 +109,8 @@ namespace Momotaro.EditorBridge
             return op == BuildInumaru || op == ValidateProjectData || op == VerifyRequiredTests
                 || op == BuildCompanionField || op == BuildCompanionTrial || op == BuildExplorationTrial
                 || op == ValidateExplorationTrial || op == BuildPhase55World
-                || op == ValidatePhase55World;
+                || op == ValidatePhase55World || op == BuildPhase6World || op == ValidatePhase6World
+                || op == P6APlayerSmoke;
         }
 
         /// <summary>操作を実行する。未知の操作・呼び出し失敗は <see cref="OperationResult.Success"/> false で返す。</summary>
@@ -106,6 +120,12 @@ namespace Momotaro.EditorBridge
 
             try
             {
+                // Test Runner が残した未保存の一時 Scene（InitTestScene）は捨てる。これが開いたままだと
+                // 「未保存の変更がある Scene」として Scene 操作が全部断られる（中断した PlayMode のあとに起きる）。
+                // それ以外の未保存 Scene は従来どおり各操作が断る。
+                // 戻り値（他の未保存 Scene があるという理由）はここでは使わない——その場合は何も捨てておらず、
+                // Scene を触る各操作が自分で断る。
+                EditorBridgeTestRun.PrepareScenesForPlayMode();
                 switch (op)
                 {
                     case BuildInumaru:
@@ -128,6 +148,15 @@ namespace Momotaro.EditorBridge
 
                     case ValidatePhase55World:
                         return RunPhase55WorldValidation();
+
+                    case BuildPhase6World:
+                        return RunBuilder(Phase6WorldBuilderType);
+
+                    case ValidatePhase6World:
+                        return RunWorldValidation(Phase6WorldValidatorType, "P6A 検証ワールド");
+
+                    case P6APlayerSmoke:
+                        return RunBuilder(Phase6PlayerSmokeType);
 
                     case BuildCompanionField:
                         return RunBuildCompanionField();
@@ -310,6 +339,9 @@ namespace Momotaro.EditorBridge
         private const string ExplorationAssetValidatorType = "Momotaro.Editor.Phase5.Phase5AssetValidator";
         private const string Phase55WorldBuilderType = "Momotaro.Editor.Phase55.Phase55WorldBuilder";
         private const string Phase55WorldValidatorType = "Momotaro.Editor.Phase55.Phase55WorldValidator";
+        private const string Phase6WorldBuilderType = "Momotaro.Editor.Phase6.Phase6WorldBuilder";
+        private const string Phase6WorldValidatorType = "Momotaro.Editor.Phase6.Phase6WorldValidator";
+        private const string Phase6PlayerSmokeType = "Momotaro.Editor.Phase6.Phase6PlayerSmoke";
 
         private static OperationResult RunBuildInumaru()
         {
@@ -554,7 +586,14 @@ namespace Momotaro.EditorBridge
         ///
         /// <b>Scene を開く操作なので、未保存の変更があれば断る</b>（生成と同じ扱い）。
         /// </summary>
-        private static OperationResult RunPhase55WorldValidation()
+        private static OperationResult RunPhase55WorldValidation() =>
+            RunWorldValidation(Phase55WorldValidatorType, "P5.5 実ワールド配置");
+
+        /// <summary>
+        /// <c>Validate(List&lt;string&gt;, List&lt;string&gt;)</c> を持つワールド検査を呼ぶ（P5.5／P6A で同じ形）。
+        /// <b>Scene を開く操作なので、未保存の変更があれば断る</b>（生成と同じ扱い）。
+        /// </summary>
+        private static OperationResult RunWorldValidation(string validatorTypeName, string label)
         {
             for (int i = 0; i < UnityEditor.SceneManagement.EditorSceneManager.sceneCount; i++)
             {
@@ -569,10 +608,10 @@ namespace Momotaro.EditorBridge
                 }
             }
 
-            Type validator = FindType(Phase55WorldValidatorType);
+            Type validator = FindType(validatorTypeName);
             if (validator == null)
             {
-                return new OperationResult(false, "型が見つかりません: " + Phase55WorldValidatorType);
+                return new OperationResult(false, "型が見つかりません: " + validatorTypeName);
             }
 
             MethodInfo validate = validator.GetMethod(
@@ -581,7 +620,7 @@ namespace Momotaro.EditorBridge
             if (validate == null)
             {
                 return new OperationResult(false,
-                    Phase55WorldValidatorType + ".Validate(List<string>, List<string>) が見つかりません。");
+                    validatorTypeName + ".Validate(List<string>, List<string>) が見つかりません。");
             }
 
             var errors = new List<string>();
@@ -602,12 +641,12 @@ namespace Momotaro.EditorBridge
             if (errors.Count > 0)
             {
                 return new OperationResult(false,
-                    "P5.5 実ワールド配置の検査でエラー " + errors.Count + " 件（警告 "
+                    label + "の検査でエラー " + errors.Count + " 件（警告 "
                     + warnings.Count + " 件）。", details);
             }
 
             return new OperationResult(true,
-                "P5.5 実ワールド配置の検査を通りました（警告 " + warnings.Count + " 件）。", details);
+                label + "の検査を通りました（警告 " + warnings.Count + " 件）。", details);
         }
 
         /// <summary>
