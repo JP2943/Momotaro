@@ -422,6 +422,8 @@ namespace Momotaro.Tests.EditMode
             catalog.EditorSetCampaign(EncounterClearPolicy.Permanent, 1,
                 new List<ShrineDefinition> { shrineA, shrineB }, ShrineA, 3,
                 new List<ItemDefinition>(), new List<SkillNodeData> { hp });
+            catalog.EditorSetKnownIds(new List<StableId> { new StableId("reward_p6_find") },
+                new List<StableId> { new StableId("companion_inumaru") });
             Assert.IsTrue(AreaCatalog.TryBuild(catalog, out AreaCatalog built, out IReadOnlyList<string> errors),
                 string.Join("\n", errors));
             return built;

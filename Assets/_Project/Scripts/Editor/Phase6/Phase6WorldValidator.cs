@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
 using Momotaro.Data.Events;
+using Momotaro.Data.Progression;
 using Momotaro.Data.World;
 using Momotaro.Editor.Phase5;
 using Momotaro.Editor.Phase55;
@@ -208,6 +209,8 @@ namespace Momotaro.Editor.Phase6
                 errors.Add("初期お地蔵様 '" + catalog.Campaign.InitialShrineId.Value + "' がお地蔵様一覧にありません。");
             }
 
+            ValidateKnownIds(data, catalog.Campaign, errors);
+
             if (catalog.Campaign.GrowthNodes.Count == 0)
             {
                 warnings.Add("成長ノードが 0 件です（P6A の休息・成長の検証ができない）。");
@@ -215,6 +218,43 @@ namespace Momotaro.Editor.Phase6
         }
 
         /// <summary>タイトルの起動役がこの campaign のカタログを指していること（実ビルドで null だった）。</summary>
+        /// <summary>
+        /// 保存の検証が使う既知 ID（レビュー R4）。この campaign の Data にある一度きり報酬は<b>すべて</b>既知であること
+        /// （漏れると、その報酬を得た冒険の Continue が「未知 ID」で拒否される）。一覧に Data の無い ID が残っていないこと。
+        /// 同行する犬丸が既知の仲間であること。
+        /// </summary>
+        private static void ValidateKnownIds(AreaCatalogData data, CampaignCatalog campaign, List<string> errors)
+        {
+            var grantOnce = new HashSet<string>();
+            foreach (string guid in AssetDatabase.FindAssets("t:RewardData", new[] { Phase6WorldIds.DataFolder }))
+            {
+                var reward = AssetDatabase.LoadAssetAtPath<RewardData>(AssetDatabase.GUIDToAssetPath(guid));
+                if (reward == null || !reward.GrantOnce)
+                {
+                    continue;
+                }
+
+                grantOnce.Add(reward.Id.Value);
+                if (!campaign.IsKnownGrantOnceReward(reward.Id))
+                {
+                    errors.Add("一度きり報酬 '" + reward.Id.Value + "' が campaign の既知報酬一覧にありません（保存を Continue できなくなる。R4）。");
+                }
+            }
+
+            foreach (StableId id in data.GrantOnceRewardIds)
+            {
+                if (!grantOnce.Contains(id.Value))
+                {
+                    errors.Add("既知報酬一覧の '" + id.Value + "' に対応する一度きり報酬の Data がありません。");
+                }
+            }
+
+            if (!campaign.IsKnownCompanion(CompanionIds.Inumaru))
+            {
+                errors.Add("同行する犬丸 '" + CompanionIds.Inumaru.Value + "' が campaign の既知仲間一覧にありません。");
+            }
+        }
+
         private static void ValidateTitle(List<string> errors)
         {
             if (AssetDatabase.LoadAssetAtPath<Object>(Phase6WorldIds.TitleScenePath) == null)

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "phase": "P6A",
-  "note": "P6A（進行・休息・保存基盤）の必須テスト一覧。P6 先行実装仕様 §13 の ID を実際の完全修飾テスト名へ対応させる。テストランナーの外で確認する要求（P6A23 実ビルドの別プロセス確認、P6A25 性能計測、P6A26 既存必須一覧の再照合）は requirements に載せず、P6A_受入条件対応表.md に証跡（ブリッジ op p6a-player-smoke の結果・既存 manifest の照合結果）を記録する。Builder／Validator の検査（validate-phase6-world）は P6A24 の補助で、テストではない。",
+  "note": "P6A（進行・休息・保存基盤）の必須テスト一覧。P6 先行実装仕様 §13 の ID を実際の完全修飾テスト名へ対応させる。テストランナーの外で確認する要求（P6A23 実ビルドの別プロセス確認（通常の終了要求 → 別プロセス Continue を含む）、P6A25 性能計測（実プレイ中を含む）、P6A26 既存必須一覧の再照合）は requirements に載せず、P6A_受入条件対応表.md に証跡（ブリッジ op p6a-player-smoke の結果・既存 manifest の照合結果）を記録する。Builder／Validator の検査（validate-phase6-world）は P6A24 の補助で、テストではない。",
   "stages": [
     "P6A-01",
     "P6A-02",
@@ -48,7 +48,7 @@
     },
     {
       "id": "P6A08",
-      "summary": "死亡時に徳・成長・開通を保持し、登録地点へ全回復復帰",
+      "summary": "死亡時に徳・成長・クエスト接続 fixture・開通を保持し、登録地点へ全回復復帰",
       "stage": "P6A-03"
     },
     {
@@ -260,6 +260,18 @@
       ]
     },
     {
+      "requirementId": "P6A12",
+      "stage": "P6A-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.FastTravel_KeepsDeparture_UntilPrepared_FailuresStayAndRetry",
+      "requirementIds": [
+        "P6A11",
+        "P6A19"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
       "requirementId": "P6A10",
       "stage": "P6A-03",
       "mode": "EditMode",
@@ -315,6 +327,17 @@
       ]
     },
     {
+      "requirementId": "P6A17",
+      "stage": "P6A-05",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.SameFrameKillAndDeath_RespawnFailsDuringExit_NoHpZeroSave_ThenRecovers",
+      "requirementIds": [
+        "P6A22"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
       "requirementId": "P6A18",
       "stage": "P6A-02",
       "mode": "EditMode",
@@ -325,6 +348,15 @@
         "Momotaro.Tests.EditMode.P6ASaveTests.Coordinator_CompletionFromOldSessionIsIgnored",
         "Momotaro.Tests.EditMode.P6ASaveTests.Coordinator_UntakenCompletion_IsStillWriting"
       ]
+    },
+    {
+      "requirementId": "P6A19",
+      "stage": "P6A-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6ASaveTests.Coordinator_FailedSaveWithUnchangedRevision_StaysDirtyUntilNextSuccess",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
     },
     {
       "requirementId": "P6A19",
@@ -355,6 +387,28 @@
       ]
     },
     {
+      "requirementId": "P6A20",
+      "stage": "P6A-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6ASaveTests.Validator_RejectsWellFormedUnknownRewardAndCompanionIds",
+      "requirementIds": [
+        "P6A08"
+      ],
+      "implemented": true,
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6ASaveTests.Codec_ReadsSchemaVersion1_AsNoQuestStages"
+      ]
+    },
+    {
+      "requirementId": "P6A21",
+      "stage": "P6A-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6ASaveTests.Store_ArchivePartialFailure_KeepsLatestLoadable_AcrossRestart",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
       "requirementId": "P6A21",
       "stage": "P6A-02",
       "mode": "EditMode",
@@ -382,6 +436,26 @@
       ]
     },
     {
+      "requirementId": "P6A22",
+      "stage": "P6A-05",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.WindowClose_HpOnlyChange_IsNotPassedThrough_FailureStaysUnsaved",
+      "requirementIds": [
+        "P6A19"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6A22",
+      "stage": "P6A-05",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ExitChoice_RetryByDecideInput_KeepsTheTitleDestination",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
       "requirementId": "P6A24",
       "stage": "P6A-06",
       "mode": "EditMode",
@@ -397,6 +471,24 @@
       "stage": "P6A-06",
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.AttackVfx_ShowsInA_AndAfterSlideInB",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6A27",
+      "stage": "P6A-06",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.AttackVfx_RecordsShownTiersAndDirections",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6A27",
+      "stage": "P6A-06",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.FeedbackPresenters_BindTheirOwnScenesDispatcher_WithTwoAreasLoaded",
       "requirementIds": [],
       "implemented": true,
       "supportingTests": []

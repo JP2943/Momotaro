@@ -70,10 +70,13 @@ namespace Momotaro.Infrastructure.Save
 
         public void Delete(string path)
         {
-            if (File.Exists(path))
+            TransientIo.Retry(() =>
             {
-                File.Delete(path);
-            }
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            });
         }
 
         public void CreateDirectory(string path) => Directory.CreateDirectory(path);
@@ -423,6 +426,21 @@ namespace Momotaro.Infrastructure.Save
         /// New Game の前に、いまの冒険を退避する（仕様 §10）。<b>退避に失敗したら上書きしない</b>（呼び出し側が New Game を止める）。
         /// 退避先は <c>archive/&lt;日時&gt;</c>。旧冒険を新冒険の破損復旧候補にしない（スロットからは消える）。
         /// </summary>
+        /// <remarks>
+        /// <b>途中で失敗しても、スロットに「読める旧冒険」か「空」のどちらかしか残さない</b>（レビュー R2）。
+        /// 以前は A・B を順に退避先へ移動していたため、2 つ目の移動に失敗すると、スロットに古い片側だけが残り、
+        /// 最新の世代は退避先にしか無い状態になった。手順を次のように改めた。
+        /// <list type="number">
+        /// <item><b>写す</b>：両側を退避先へ書き、読み直して元と一致することを確かめる。ここで失敗してもスロットは無傷
+        /// （書きかけの写しは片付ける）。</item>
+        /// <item><b>消す</b>：写しが揃ってからスロットを消す。<b>古い世代を先に、最新の世代を最後に</b>。
+        /// 最新を消せずに止まっても、スロットには最新の世代が残り、Continue はそれを読む。</item>
+        /// <item><b>戻す</b>：最新を消せなかったら、先に消した古い側を写しから戻して二世代へ復旧を試みる
+        /// （戻せなくても最新の片側は読める）。</item>
+        /// </list>
+        /// どの段で失敗しても false を返し、New Game は始まらない——スロットに旧冒険が残ったまま新しい冒険を書いて
+        /// 「別の冒険の混在」にしない。
+        /// </remarks>
         public bool TryArchiveCurrent(string stamp, out string archivedTo, out string error)
         {
             archivedTo = null;
@@ -434,29 +452,95 @@ namespace Momotaro.Infrastructure.Save
                 return true;
             }
 
+            // 古い世代を先に消す順（有効でない側は「古い」とみなす）。
+            SaveSideScan scanA = hasA ? ScanSide(PathA) : default;
+            SaveSideScan scanB = hasB ? ScanSide(PathB) : default;
+            long ga = hasA && scanA.State == SaveSideState.Valid ? scanA.Info.Generation : 0;
+            long gb = hasB && scanB.State == SaveSideState.Valid ? scanB.Info.Generation : 0;
+            var order = new System.Collections.Generic.List<string>(2);
+            if (hasA && hasB)
+            {
+                order.Add(ga <= gb ? PathA : PathB);
+                order.Add(ga <= gb ? PathB : PathA);
+            }
+            else
+            {
+                order.Add(hasA ? PathA : PathB);
+            }
+
+            string dir = Path.Combine(Directory, "archive", stamp);
+            var copies = new System.Collections.Generic.Dictionary<string, string>(2);
+            var contents = new System.Collections.Generic.Dictionary<string, string>(2);
+
+            // 1. 写す（スロットには触れない）。
             try
             {
-                string dir = Path.Combine(Directory, "archive", stamp);
                 _fs.CreateDirectory(dir);
-                if (hasA)
+                foreach (string source in order)
                 {
-                    _fs.Move(PathA, Path.Combine(dir, Path.GetFileName(PathA)));
-                }
+                    string text = _fs.ReadAllText(source);
+                    string copy = Path.Combine(dir, Path.GetFileName(source));
+                    _fs.WriteAllTextDurable(copy, text);
+                    copies[source] = copy;
+                    if (!string.Equals(_fs.ReadAllText(copy), text, StringComparison.Ordinal))
+                    {
+                        throw new IOException("退避先の写しが元と一致しません: " + copy);
+                    }
 
-                if (hasB)
-                {
-                    _fs.Move(PathB, Path.Combine(dir, Path.GetFileName(PathB)));
+                    contents[source] = text;
                 }
-
-                archivedTo = dir;
-                error = null;
-                return true;
             }
             catch (Exception e)
             {
-                error = "前の冒険を退避できませんでした: " + e.Message;
+                foreach (string copy in copies.Values)
+                {
+                    TryDelete(copy);
+                }
+
+                error = "前の冒険を退避できませんでした（スロットはそのままです）: " + e.Message;
                 return false;
             }
+
+            // 2. 消す（古い世代 → 最新の順）。
+            var removed = new System.Collections.Generic.List<string>(2);
+            foreach (string source in order)
+            {
+                try
+                {
+                    _fs.Delete(source);
+                    removed.Add(source);
+                }
+                catch (Exception e)
+                {
+                    // 3. 戻す。消した古い側を写しから戻す（最新はまだスロットにある）。
+                    string restoreNote = string.Empty;
+                    foreach (string done in removed)
+                    {
+                        try
+                        {
+                            _fs.WriteAllTextDurable(done, contents[done]);
+                            if (!string.Equals(_fs.ReadAllText(done), contents[done], StringComparison.Ordinal))
+                            {
+                                throw new IOException("戻した内容が一致しません。");
+                            }
+                        }
+                        catch (Exception restore)
+                        {
+                            TryDelete(done); // 壊れた戻しを読込候補に残さない。最新の側は残っている。
+                            restoreNote = "（古い側は戻せませんでした: " + restore.Message + "。最新の側は残っています）";
+                        }
+                    }
+
+                    archivedTo = null;
+                    error = "前の冒険をスロットから外せませんでした。New Game は始めません。写しは " + dir
+                        + " にあります: " + e.Message + restoreNote;
+                    return false;
+                }
+            }
+
+            archivedTo = dir;
+            error = null;
+            return true;
         }
 
         private bool VerifyFile(string path, long expectedGeneration, out string error)

@@ -21,6 +21,7 @@ using Momotaro.Infrastructure.Input;
 using Momotaro.Infrastructure.Save;
 using Momotaro.Infrastructure.World;
 using Momotaro.Presentation.Combat;
+using Momotaro.Presentation.Diagnostics;
 using Momotaro.Presentation.Hud;
 using NUnit.Framework;
 using UnityEngine;
@@ -65,6 +66,7 @@ namespace Momotaro.Tests.PlayMode
         private static readonly StableId FlagBCache = new StableId("flag_p6_b_cache");
         private static readonly StableId FieldA1 = new StableId("field_p6_a_01");
         private static readonly StableId FieldA2 = new StableId("field_p6_a_02");
+        private static readonly StableId QuestFixture = new StableId("quest_p6a_fixture");
 
         // 検証用の数値（Phase6TrialValues と同じ。Data が正本だが、期待値は仕様 §11 の仮報酬例から採る）。
         private const int ArrivalB = 10;
@@ -380,29 +382,54 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(1, AliveFieldEnemies(field));
 
             // ---- 旅立ち A → C（P6A 11／12）----
+            int completedBeforeTravel = transitions.CompletedCount;
             int cycle = session.RespawnCycle;
             int virtue = session.Progress.Virtue;
             PlayerVitalsHolder vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
             vitals.Vitals.Health.SetCurrent(vitals.Vitals.Health.Max - 9);
             Assert.IsTrue(session.TryConsumeKibidango(1), "前提：きびだんごを 1 つ使う。");
             yield return InteractShrine(ShrineA);
+            PlayerRoot departurePlayer = Object.FindFirstObjectByType<PlayerRoot>();
+            Scene departureScene = departurePlayer.gameObject.scene;
             Assert.AreEqual(ShrineMenuResult.FastTravelStarted, shrines.FastTravel(ShrineC),
                 "旅立ちを受理する。拒否=" + shrines.LastTravelRejection + " " + shrines.Message);
             Assert.AreEqual(cycle, session.RespawnCycle, "受理しただけでは周期は進まない（到着の確定後）。");
-            yield return WaitUntilOrTimeout(() => shrines.FastTravelCompletedCount >= 1 || shrines.FastTravelFailedCount > 0, 30f);
-            Assert.AreEqual(1, shrines.FastTravelCompletedCount, "旅立ちが着く。失敗=" + shrines.FastTravelFailedCount);
+
+            // レビュー D1：到着先の準備が済むまで、出発 Area（A）は載ったまま。両方が載る瞬間があり、在留は 2 を超えない。
+            bool departureHeldWhileBothLoaded = false;
+            float travelDeadline = Time.realtimeSinceStartup + 30f;
+            while (shrines.FastTravelCompletedCount < 1 && shrines.FastTravelFailedCount == 0
+                   && Time.realtimeSinceStartup < travelDeadline)
+            {
+                sample();
+                if (departureScene.isLoaded && IsSceneLoaded("SCN_Phase6A_AreaC") && transitions.Slide.FastTravelCommittedCount == 0)
+                {
+                    departureHeldWhileBothLoaded = true;
+                }
+
+                yield return null;
+            }
+
+            Assert.AreEqual(1, shrines.FastTravelCompletedCount, "旅立ちが着く。失敗=" + shrines.FastTravelFailedCount
+                + " 理由=" + transitions.Slide.LastFailure);
+            Assert.IsTrue(departureHeldWhileBothLoaded, "到着先（C）が載った時点で出発 Area（A）もまだ載っていた（先に捨てない）。");
             yield return WaitAreaReady(AreaC);
             Assert.AreEqual(cycle + 1, session.RespawnCycle, "旅立ちで周期が 1 つだけ進む。");
             Assert.AreEqual(3, session.Kibidango, "きびだんごを補充。");
             vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
             Assert.AreEqual(vitals.Vitals.Health.Max, vitals.Vitals.Health.Current, "到着後に全回復。");
             Assert.AreEqual(virtue, session.Progress.Virtue, "徳は変わらない。");
-            Assert.AreEqual(1, SceneManager.sceneCount, "旅立ちは Single（多重 Scene 操作なし）。");
+            Assert.LessOrEqual(maxScenes, 2, "旅立ちでも Scene は 2 枚まで。");
+            Assert.LessOrEqual(maxResident, 2, "旅立ちでも在留は 2 まで。");
+            Assert.AreEqual(1, transitions.Slide.FastTravelCommittedCount, "旅立ちは出発保持の経路で確定した。");
+            Assert.AreEqual(0, transitions.CompletedCount - completedBeforeTravel, "旅立ちは Single 読込を使わない。");
             Assert.Less(Flat(Object.FindFirstObjectByType<PlayerRoot>().transform.position,
                 FindEntry(EntryCShrine).ArrivalPosition), 2.5f, "C のお地蔵様の前に着く。");
             yield return WaitSaved("旅立ち");
 
-            // ---- 死亡（P6A 08）：最後に登録したお地蔵様へ全回復で ----
+            // ---- 死亡（P6A 08）：最後に登録したお地蔵様へ全回復で。クエスト接続 fixture の段階も保持する ----
+            Assert.IsTrue(session.TrySetQuestStage(QuestFixture, 3), "クエスト段階の接続口へ書ける（P7 の進行確定の代わり）。");
+            yield return WaitSaved("クエスト段階");
             int cycleBeforeDeath = session.RespawnCycle;
             int completedBefore = transitions.CompletedCount;
             yield return KillPlayerWithRealHits();
@@ -418,7 +445,14 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(vitals.Vitals.Health.Max, vitals.Vitals.Health.Current, "全回復で戻る。");
             Assert.Less(Flat(Object.FindFirstObjectByType<PlayerRoot>().transform.position,
                 FindEntry(EntryCShrine).ArrivalPosition), 2.5f, "C のお地蔵様へ戻る。");
+            Assert.AreEqual(3, session.QuestStageOf(QuestFixture), "クエスト段階は死んでも戻らない。");
             yield return WaitSaved("死亡再開");
+            SaveLoadDecision afterDeath = Saves().Coordinator.Store.DecideLoad();
+            Assert.IsTrue(SaveJsonCodec.TryDeserialize(afterDeath.Chosen.Json, out _, out SaveSnapshot deathSnap, out string deathErr), deathErr);
+            Assert.AreEqual(cycleBeforeDeath + 1, deathSnap.RespawnCycle, "死亡後の保存に周期が載る。");
+            Assert.AreEqual(1, deathSnap.QuestStages.Count, "死亡後の保存にクエスト段階が残る。");
+            Assert.AreEqual(QuestFixture.Value, deathSnap.QuestStages[0].Key);
+            Assert.AreEqual(3, deathSnap.QuestStages[0].Value);
 
             // ---- 過去エリアへの反映：A の普通敵は周期で戻る ----
             yield return InteractShrine(ShrineC);
@@ -490,43 +524,313 @@ namespace Momotaro.Tests.PlayMode
             Assert.IsFalse(session.HasVisited(AreaB), "訪問済みにもならない。");
             Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A に留まる。");
 
-            // ---- 旅立ち（Fade）が失敗：休息も登録も起きない ----
+            // ---- 旅立ちが読込の開始に失敗：休息も登録も起きず、出発 Area（A）にそのまま居る（レビュー D1）----
             transitions.Loader = new UnitySceneLoader();
             yield return WaitUntilOrTimeout(() => GameModeProvider.Current.Current == GameMode.Exploration, 5f);
-            Assert.IsTrue(Transitions().Catalog.Campaign.TryGetShrine(ShrineC, out ShrineInfo shrineC));
-            session.RegisterShrine(shrineC); // 行き先の前提（登録そのものは別の検査で見る）。
-            session.RegisterShrine(Transitions().Catalog.Campaign.TryGetShrine(ShrineA, out ShrineInfo shrineA) ? shrineA : default);
-            yield return WaitSaved("前提の登録");
+            yield return RegisterBothShrines(session);
 
+            var host = new FaultySceneHost();
+            transitions.SlideSceneHost = host;
             PlayerVitalsHolder vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
             int hp = vitals.Vitals.Health.Max - 6;
             vitals.Vitals.Health.SetCurrent(hp);
             Assert.IsTrue(session.TryConsumeKibidango(1));
-            int kibidango = session.Kibidango;
-            int cycle = session.RespawnCycle;
-            StableId checkpoint = session.Checkpoint;
-            long revision = session.Changes.Revision;
-
-            yield return InteractShrine(ShrineA);
-            revision = session.Changes.Revision; // 調べた登録のぶん（調べること自体は保存してよい）。
-            checkpoint = session.Checkpoint;
+            PlayerRoot departurePlayer = Object.FindFirstObjectByType<PlayerRoot>();
             CampaignShrineService shrines = BootstrapServices.Get<CampaignShrineService>();
-            transitions.Loader = new FailingLoader();
-            Assert.AreEqual(ShrineMenuResult.FastTravelStarted, shrines.FastTravel(ShrineC),
-                "旅立ちを受理する。拒否=" + shrines.LastTravelRejection + " " + shrines.Message);
-            yield return WaitUntilOrTimeout(() => shrines.FastTravelFailedCount > 0 || shrines.FastTravelCompletedCount > 0, 15f);
-            transitions.Loader = new UnitySceneLoader();
 
-            Assert.AreEqual(1, shrines.FastTravelFailedCount, "旅立ちの失敗を数える。");
-            Assert.AreEqual(0, shrines.FastTravelCompletedCount, "着いたことにしない。");
-            Assert.AreEqual(cycle, session.RespawnCycle, "周期は進まない（休息していない）。");
-            Assert.AreEqual(kibidango, session.Kibidango, "きびだんごは補充されない。");
-            Assert.AreEqual(hp, Object.FindFirstObjectByType<PlayerVitalsHolder>().Vitals.Health.Current, "回復しない。");
-            Assert.AreEqual(checkpoint.Value, session.Checkpoint.Value, "死亡再開点は変わらない（行き先を登録しない）。");
-            Assert.AreEqual(revision, session.Changes.Revision, "進行は 1 つも変わらない。");
-            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "元の場所に居る。");
-            yield return WaitUntilOrTimeout(() => GameModeProvider.Current.Current == GameMode.Exploration, 5f);
-            Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current, "操作に戻る。");
+            host.FailLoadStart = true;
+            yield return FastTravelExpectingFailure(shrines, session, departurePlayer, hp, "読込の開始に失敗", 1);
+            Assert.GreaterOrEqual(host.FailedLoadCount, 1, "前提：読込の開始を失敗させた。");
+            host.FailLoadStart = false;
+        }
+
+        /// <summary>
+        /// P6A 11／12（レビュー D1）：旅立ちは<b>到着先の準備・配置が成功するまで出発 Area を保持する</b>。
+        /// <list type="number">
+        /// <item>読み終えたあとの準備・配置の失敗 → 出発側に留まる（主人公は同じ実体のまま）。休息・登録・保存は起きない。到着先は手放す。</item>
+        /// <item>遅いロード → 待つ間は出発側が載ったまま、保存の採取は見送られる。着いてから 1 回だけ休息し、その状態を保存する。</item>
+        /// <item>預かっていた旧 Area の解放失敗と重なる → 出発側に留まる。直れば同じ操作で旅立てる。</item>
+        /// </list>
+        /// どの場面でも Scene・在留は 2 枚まで。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FastTravel_KeepsDeparture_UntilPrepared_FailuresStayAndRetry()
+        {
+            yield return NewGame();
+            QuietFieldEnemies();
+            yield return WaitSaved("New Game");
+            GameSessionState session = Session();
+            AreaTransitionService transitions = Transitions();
+            CampaignShrineService shrines = BootstrapServices.Get<CampaignShrineService>();
+            yield return RegisterBothShrines(session);
+            var host = new FaultySceneHost();
+            transitions.SlideSceneHost = host;
+
+            PlayerVitalsHolder vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            int hp = vitals.Vitals.Health.Max - 7;
+            vitals.Vitals.Health.SetCurrent(hp);
+            Assert.IsTrue(session.TryConsumeKibidango(1));
+            PlayerRoot departurePlayer = Object.FindFirstObjectByType<PlayerRoot>();
+
+            // ---- 1. 読み終えたあとの準備・配置の失敗 ----
+            transitions.Slide.FastTravelPrepareFault = destination => "test: arrival placement failed";
+            yield return FastTravelExpectingFailure(shrines, session, departurePlayer, hp, "準備・配置の失敗", 1,
+                expectDestinationLoaded: true);
+            transitions.Slide.FastTravelPrepareFault = null;
+            yield return WaitUntilOrTimeout(() => SceneManager.sceneCount == 1, 10f);
+            Assert.AreEqual(1, SceneManager.sceneCount, "読みかけの到着先は手放す。");
+
+            // ---- 2. 遅いロード：待つ間は出発側のまま、保存は見送り、着いてから 1 回だけ休息して保存 ----
+            int cycle = session.RespawnCycle;
+            host.HoldLoads = true;
+            yield return InteractShrine(ShrineA);
+            Assert.AreEqual(ShrineMenuResult.FastTravelStarted, shrines.FastTravel(ShrineC), shrines.Message);
+            for (int i = 0; i < 20; i++)
+            {
+                yield return null;
+            }
+
+            Assert.IsTrue(transitions.Slide.IsTransitioning, "前提：まだ読込を待っている。");
+            Assert.IsTrue(departurePlayer != null && departurePlayer.gameObject.scene.isLoaded, "待つ間も出発 Area は載っている。");
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "活動中のエリアは A のまま。");
+            int submits = Saves().Coordinator.SubmitCount;
+            session.Changes.RequestAutosave("test_during_travel");
+            for (int i = 0; i < 5; i++)
+            {
+                yield return null;
+            }
+
+            Assert.AreEqual(submits, Saves().Coordinator.SubmitCount, "遷移の途中は保存を採らない（前後をまたがない）。");
+            int maxScenes = 0;
+            int maxResident = 0;
+            host.ReleaseLoads();
+            float deadline = Time.realtimeSinceStartup + 30f;
+            while (shrines.FastTravelCompletedCount < 1 && shrines.FastTravelFailedCount < 2 && Time.realtimeSinceStartup < deadline)
+            {
+                maxScenes = Mathf.Max(maxScenes, SceneManager.sceneCount);
+                maxResident = Mathf.Max(maxResident, transitions.Slide.Residency.ResidentCount);
+                yield return null;
+            }
+
+            Assert.AreEqual(1, shrines.FastTravelCompletedCount, "遅れても着く。理由=" + transitions.Slide.LastFailure);
+            yield return WaitAreaReady(AreaC);
+            Assert.LessOrEqual(maxScenes, 2, "Scene は 2 枚まで。");
+            Assert.LessOrEqual(maxResident, 2, "在留は 2 まで。");
+            Assert.AreEqual(cycle + 1, session.RespawnCycle, "着いてから 1 回だけ休息した。");
+            Assert.AreEqual(3, session.Kibidango, "補充した。");
+            yield return WaitSaved("遅いロードの旅立ち");
+            SaveLoadDecision decision = Saves().Coordinator.Store.DecideLoad();
+            Assert.IsTrue(SaveJsonCodec.TryDeserialize(decision.Chosen.Json, out _, out SaveSnapshot snap, out string err), err);
+            Assert.AreEqual(cycle + 1, snap.RespawnCycle, "休息の周期が保存されている。");
+            Assert.AreEqual(AreaC.Value, snap.ResumeAreaId, "再開位置は着いた C。");
+            Assert.AreEqual(ShrineC.Value, snap.Checkpoint, "死亡再開点は着いた C のお地蔵様。");
+
+            // ---- 3. 預かっていた旧 Area の解放失敗と重なる ----
+            // C → B へスライドし（C は預かりへ）、B から A へ旅立つ：A を読むには預かっている C を手放す必要がある。
+            yield return SlideTo(ExitCWest, Key.A, Vector3.right, "C→B");
+            yield return WaitAreaReady(AreaB);
+            QuietFieldEnemies();
+            PlayerRoot bPlayer = Object.FindFirstObjectByType<PlayerRoot>();
+            long revision = session.Changes.Revision;
+            int rolledBack = transitions.Slide.FastTravelRolledBackCount;
+            host.RefuseUnload = true;
+            AreaTransitionDecision travel = transitions.TryFastTravel(AreaA, EntryAShrine);
+            Assert.IsTrue(travel.Accepted, "受理する。拒否=" + travel.Rejection);
+            maxScenes = 0;
+            deadline = Time.realtimeSinceStartup + 20f;
+            while (transitions.Slide.FastTravelRolledBackCount == rolledBack
+                   && transitions.Slide.FastTravelCommittedCount < 2 && Time.realtimeSinceStartup < deadline)
+            {
+                maxScenes = Mathf.Max(maxScenes, SceneManager.sceneCount);
+                yield return null;
+            }
+
+            Assert.AreEqual(rolledBack + 1, transitions.Slide.FastTravelRolledBackCount,
+                "解放できないなら旅立たない（出発側へ戻す）。失敗=" + transitions.Slide.LastFailure);
+            Assert.GreaterOrEqual(host.RefusedUnloadCount, 1, "前提：解放を断った。");
+            Assert.LessOrEqual(maxScenes, 2, "解放失敗と重なっても Scene は 2 枚まで（3 枚目を読まない）。");
+            yield return WaitAreaReady(AreaB);
+            Assert.IsTrue(bPlayer != null && bPlayer.isActiveAndEnabled, "出発側（B）の主人公がそのまま居る。");
+            Assert.AreEqual(revision, session.Changes.Revision, "進行は変わらない。");
+
+            host.RefuseUnload = false;
+            travel = transitions.TryFastTravel(AreaA, EntryAShrine);
+            Assert.IsTrue(travel.Accepted, "直れば同じ操作で旅立てる。拒否=" + travel.Rejection);
+            deadline = Time.realtimeSinceStartup + 30f;
+            while (transitions.Slide.FastTravelCommittedCount < 2 && Time.realtimeSinceStartup < deadline)
+            {
+                maxScenes = Mathf.Max(maxScenes, SceneManager.sceneCount);
+                yield return null;
+            }
+
+            Assert.AreEqual(2, transitions.Slide.FastTravelCommittedCount, "再試行で着く。失敗=" + transitions.Slide.LastFailure);
+            yield return WaitAreaReady(AreaA);
+            Assert.LessOrEqual(maxScenes, 2, "再試行でも Scene は 2 枚まで。");
+            yield return WaitSaved("再試行の旅立ち");
+        }
+
+        private static bool IsSceneLoaded(string sceneName)
+        {
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                Scene scene = SceneManager.GetSceneAt(i);
+                if (scene.isLoaded && scene.name == sceneName)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static IEnumerator RegisterBothShrines(GameSessionState session)
+        {
+            CampaignCatalog campaign = Transitions().Catalog.Campaign;
+            Assert.IsTrue(campaign.TryGetShrine(ShrineC, out ShrineInfo shrineC));
+            Assert.IsTrue(campaign.TryGetShrine(ShrineA, out ShrineInfo shrineA));
+            session.RegisterShrine(shrineC); // 行き先の前提（登録そのものは別の検査で見る）。
+            session.RegisterShrine(shrineA);
+            yield return WaitSaved("前提の登録");
+        }
+
+        /// <summary>
+        /// お地蔵様 A から C へ旅立ち、失敗して<b>出発側に留まる</b>ことを確かめる共通部分。
+        /// 休息（周期・回復・補充）・登録・進行の変化・保存が無く、出発側の主人公が<b>同じ実体のまま</b>操作に戻る。
+        /// </summary>
+        private IEnumerator FastTravelExpectingFailure(CampaignShrineService shrines, GameSessionState session,
+            PlayerRoot departurePlayer, int hp, string label, int expectedFailures, bool expectDestinationLoaded = false)
+        {
+            AreaTransitionService transitions = Transitions();
+            yield return InteractShrine(ShrineA);
+            long revision = session.Changes.Revision; // 調べた登録のぶん（調べること自体は保存してよい）。
+            yield return WaitSaved(label + "：調べた保存");
+            int successes = Saves().Coordinator.SuccessCount;
+            StableId checkpoint = session.Checkpoint;
+            int cycle = session.RespawnCycle;
+            int kibidango = session.Kibidango;
+            int failuresBefore = shrines.FastTravelFailedCount;
+            int maxScenes = 0;
+            int maxResident = 0;
+            bool departureLost = false;
+            bool bothLoaded = false;
+
+            Assert.AreEqual(ShrineMenuResult.FastTravelStarted, shrines.FastTravel(ShrineC),
+                label + "：旅立ちを受理する。拒否=" + shrines.LastTravelRejection + " " + shrines.Message);
+            float deadline = Time.realtimeSinceStartup + 20f;
+            while (shrines.FastTravelFailedCount == failuresBefore && shrines.FastTravelCompletedCount == 0
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                maxScenes = Mathf.Max(maxScenes, SceneManager.sceneCount);
+                maxResident = Mathf.Max(maxResident, transitions.Slide.Residency.ResidentCount);
+                departureLost |= departurePlayer == null || !departurePlayer.gameObject.scene.isLoaded;
+                bothLoaded |= IsSceneLoaded("SCN_Phase6A_AreaC") && departurePlayer != null && departurePlayer.gameObject.scene.isLoaded;
+                yield return null;
+            }
+
+            Assert.AreEqual(failuresBefore + 1, shrines.FastTravelFailedCount, label + "：旅立ちの失敗を数える。");
+            Assert.AreEqual(0, shrines.FastTravelCompletedCount, label + "：着いたことにしない。");
+            Assert.AreEqual(expectedFailures, transitions.Slide.FastTravelRolledBackCount, label + "：出発側へ戻した。");
+            Assert.IsFalse(departureLost, label + "：出発 Area は一度も捨てていない（到着準備の成功まで保持）。");
+            if (expectDestinationLoaded)
+            {
+                Assert.IsTrue(bothLoaded, label + "：到着先を読み終えて準備に入っても、出発 Area は載ったまま。");
+            }
+
+            Assert.LessOrEqual(maxScenes, 2, label + "：Scene は 2 枚まで。");
+            Assert.LessOrEqual(maxResident, 2, label + "：在留は 2 まで。");
+            yield return WaitAreaReady(AreaA);
+            Assert.AreSame(departurePlayer, Object.FindFirstObjectByType<PlayerRoot>(), label + "：同じ主人公の実体で操作に戻る。");
+            Assert.AreEqual(cycle, session.RespawnCycle, label + "：周期は進まない（休息していない）。");
+            Assert.AreEqual(kibidango, session.Kibidango, label + "：きびだんごは補充されない。");
+            Assert.AreEqual(hp, Object.FindFirstObjectByType<PlayerVitalsHolder>().Vitals.Health.Current, label + "：回復しない。");
+            Assert.AreEqual(checkpoint.Value, session.Checkpoint.Value, label + "：死亡再開点は変わらない（行き先を登録しない）。");
+            Assert.AreEqual(revision, session.Changes.Revision, label + "：進行は 1 つも変わらない。");
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, label + "：元の場所に居る。");
+            Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current, label + "：操作に戻る。");
+            Assert.AreEqual(successes, Saves().Coordinator.SuccessCount, label + "：保存も起きない（確定していない）。");
+        }
+
+        /// <summary>
+        /// 旅立ちの読込に故障を入れる Scene 操作（本物へ委ねる）。読込の開始失敗・読込の保留・解放の拒否。
+        /// </summary>
+        private sealed class FaultySceneHost : IAreaSceneHost
+        {
+            private readonly UnityAreaSceneHost _real = new UnityAreaSceneHost();
+            private readonly List<HeldLoad> _held = new List<HeldLoad>();
+
+            public bool FailLoadStart;
+            public bool RefuseUnload;
+            public bool HoldLoads;
+            public int FailedLoadCount;
+            public int RefusedUnloadCount;
+
+            public IAreaSceneOperation LoadAdditive(string scenePath)
+            {
+                if (FailLoadStart)
+                {
+                    FailedLoadCount++;
+                    return new Failed();
+                }
+
+                if (HoldLoads)
+                {
+                    var held = new HeldLoad(_real, scenePath);
+                    _held.Add(held);
+                    return held;
+                }
+
+                return _real.LoadAdditive(scenePath);
+            }
+
+            public void ReleaseLoads()
+            {
+                HoldLoads = false;
+                foreach (HeldLoad h in _held)
+                {
+                    h.Start();
+                }
+
+                _held.Clear();
+            }
+
+            public IAreaSceneOperation Unload(int sceneHandle)
+            {
+                if (RefuseUnload)
+                {
+                    RefusedUnloadCount++;
+                    return new Failed();
+                }
+
+                return _real.Unload(sceneHandle);
+            }
+
+            public bool IsLoaded(int sceneHandle) => _real.IsLoaded(sceneHandle);
+
+            private sealed class Failed : IAreaSceneOperation
+            {
+                public bool IsDone => true;
+                public bool HasError => true;
+                public int SceneHandle => 0;
+            }
+
+            private sealed class HeldLoad : IAreaSceneOperation
+            {
+                private readonly UnityAreaSceneHost _real;
+                private readonly string _path;
+                private IAreaSceneOperation _inner;
+
+                public HeldLoad(UnityAreaSceneHost real, string path)
+                {
+                    _real = real;
+                    _path = path;
+                }
+
+                public void Start() => _inner ??= _real.LoadAdditive(_path);
+
+                public bool IsDone => _inner != null && _inner.IsDone;
+                public bool HasError => _inner != null && _inner.HasError;
+                public int SceneHandle => _inner != null ? _inner.SceneHandle : 0;
+            }
         }
 
         /// <summary>読込を開始できない Loader（P5 の検査と同じ契約）。</summary>
@@ -556,6 +860,162 @@ namespace Momotaro.Tests.PlayMode
 
             yield return SlideTo(ExitAEast, Key.D, Vector3.left, "A→B");
             yield return AttackAndExpectSlash("B（スライド後）");
+        }
+
+        /// <summary>
+        /// P6A 27：<b>実際に表示された</b>剣閃の段・方向を記録する（素材の有無の検査とは分けて残す）。
+        /// 4 方向それぞれで 1 段目を実キー J で出し、続けて押して 2・3 段目を狙う。観測したものを
+        /// <c>_bridge/p6a27_vfx_observed.json</c> へ書く。必須は「1 段目が 4 方向とも出る」こと。
+        /// 特殊攻撃は実入力の経路がこの検証 campaign に無いので、素材の検査（validate-phase6-world）だけで見る。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator AttackVfx_RecordsShownTiersAndDirections()
+        {
+            yield return NewGame();
+            QuietFieldEnemies();
+            PlayerSlashVfxPresenter presenter = null;
+            foreach (PlayerSlashVfxPresenter p in Object.FindObjectsByType<PlayerSlashVfxPresenter>(FindObjectsSortMode.None))
+            {
+                if (p.gameObject.scene == CurrentScene())
+                {
+                    presenter = p;
+                }
+            }
+
+            Assert.IsNotNull(presenter, "剣閃の表示役がある。");
+            var facing = Object.FindFirstObjectByType<PlayerRoot>().GetComponentInChildren<PlayerFacing>();
+            var observed = new SortedSet<string>();
+            var dirs = new[] { ("down", Vector2.down), ("up", Vector2.up), ("left", Vector2.left), ("right", Vector2.right) };
+            foreach ((string name, Vector2 dir) in dirs)
+            {
+                yield return new WaitForSeconds(0.8f); // 前の攻撃と剣閃が終わってから。
+                facing.ConfirmFromInput(dir);
+                yield return null;
+
+                // 0.12 秒ごとに押し直して連撃を狙い、出た剣閃の段・方向を全部記録する。
+                float until = Time.realtimeSinceStartup + 1.6f;
+                bool pressed = false;
+                float nextPress = 0f;
+                while (Time.realtimeSinceStartup < until)
+                {
+                    facing.ConfirmFromInput(dir);
+                    if (Time.realtimeSinceStartup >= nextPress)
+                    {
+                        pressed = !pressed;
+                        InputSystem.QueueStateEvent(_keyboard, pressed ? new KeyboardState(Key.J) : new KeyboardState());
+                        nextPress = Time.realtimeSinceStartup + 0.12f;
+                    }
+
+                    yield return null;
+                    foreach (SlashVfxInstance i in presenter.Pool.Instances)
+                    {
+                        if (i != null && i.IsPlaying && i.CurrentSprite != null)
+                        {
+                            string what = Classify(presenter, i.CurrentSprite);
+                            if (what != null)
+                            {
+                                observed.Add(what);
+                            }
+                        }
+                    }
+                }
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            }
+
+            string path = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "_bridge", "p6a27_vfx_observed.json");
+            File.WriteAllText(path, "{ \"observed\": [\"" + string.Join("\", \"", observed) + "\"] }\n");
+            Debug.Log("P6A 27 observed slash: " + string.Join(", ", observed));
+            foreach ((string name, Vector2 _) in dirs)
+            {
+                Assert.IsTrue(observed.Contains("stage1/" + name), "1 段目の剣閃が " + name + " 向きで実際に出た（観測=" + string.Join(", ", observed) + "）。");
+            }
+        }
+
+        /// <summary>表示中の絵がどの段・どの方向の素材か（どれでもなければ null）。</summary>
+        private static string Classify(PlayerSlashVfxPresenter presenter, Sprite sprite)
+        {
+            var sets = new (string, PlayerSlashVfxPresenter.SlashFrameSet)[]
+            {
+                ("stage1", presenter.Stage1Frames), ("stage2", presenter.Stage2Frames),
+                ("stage3", presenter.Stage3Frames), ("special", presenter.SpecialFrames),
+            };
+            foreach ((string tier, PlayerSlashVfxPresenter.SlashFrameSet set) in sets)
+            {
+                if (set == null)
+                {
+                    continue;
+                }
+
+                if (System.Array.IndexOf(set.down ?? new Sprite[0], sprite) >= 0) return tier + "/down";
+                if (System.Array.IndexOf(set.up ?? new Sprite[0], sprite) >= 0) return tier + "/up";
+                if (System.Array.IndexOf(set.left ?? new Sprite[0], sprite) >= 0) return tier + "/left";
+                if (System.Array.IndexOf(set.right ?? new Sprite[0], sprite) >= 0) return tier + "/right";
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// F06：2 つの Scene に配信元（<see cref="CombatFeedbackDispatcher"/>）が同時に有効でも、
+        /// JG 閃光・手応えの表示役は<b>自分と同じ Scene の配信元</b>を購読する（載っている順・探索順に依らない）。
+        /// あわせて実 Area で、スライド後（A を預かったまま B が活動）に B の表示役が B の配信元を見ていること。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator FeedbackPresenters_BindTheirOwnScenesDispatcher_WithTwoAreasLoaded()
+        {
+            Scene first = SceneManager.CreateScene("P6A_F06_First");
+            Scene second = SceneManager.CreateScene("P6A_F06_Second");
+            CombatFeedbackDispatcher d1 = MakeIn<CombatFeedbackDispatcher>(first, "Dispatcher1");
+            CombatFeedbackDispatcher d2 = MakeIn<CombatFeedbackDispatcher>(second, "Dispatcher2");
+            JustGuardVfxPresenter jg1 = MakeIn<JustGuardVfxPresenter>(first, "JG1");
+            JustGuardVfxPresenter jg2 = MakeIn<JustGuardVfxPresenter>(second, "JG2");
+            yield return null;
+            Assert.AreSame(d1.Feedback, jg1.BoundChannel, "1 つ目の Scene の表示役は 1 つ目の配信元を見る。");
+            Assert.AreSame(d2.Feedback, jg2.BoundChannel, "2 つ目の Scene の表示役は 2 つ目の配信元を見る。");
+            jg2.Rescan();
+            jg1.Rescan();
+            Assert.AreSame(d2.Feedback, jg2.BoundChannel, "探し直しても変わらない。");
+            Assert.AreSame(d1.Feedback, jg1.BoundChannel, "探し直しても変わらない。");
+            yield return SceneManager.UnloadSceneAsync(first);
+            yield return SceneManager.UnloadSceneAsync(second);
+
+            // 実 Area：A → B のスライド後、A は預かり（非活動）で載ったまま。
+            yield return NewGame();
+            QuietFieldEnemies();
+            yield return SlideTo(ExitAEast, Key.D, Vector3.left, "A→B");
+            Assert.AreEqual(2, SceneManager.sceneCount, "前提：A を預かったまま B が活動（2 Area が載っている）。");
+            JustGuardVfxPresenter jgB = null;
+            CombatFeedbackDispatcher dispatcherB = null;
+            foreach (JustGuardVfxPresenter p in Object.FindObjectsByType<JustGuardVfxPresenter>(FindObjectsSortMode.None))
+            {
+                if (p.gameObject.scene == CurrentScene())
+                {
+                    jgB = p;
+                }
+            }
+
+            foreach (CombatFeedbackDispatcher d in Object.FindObjectsByType<CombatFeedbackDispatcher>(FindObjectsSortMode.None))
+            {
+                if (d.gameObject.scene == CurrentScene())
+                {
+                    dispatcherB = d;
+                }
+            }
+
+            Assert.IsNotNull(jgB, "B に JG 閃光の表示役がある。");
+            Assert.IsNotNull(dispatcherB, "B に配信元がある。");
+            Assert.AreSame(dispatcherB.Feedback, jgB.BoundChannel, "B の表示役は B の配信元を購読している。");
+        }
+
+        private static T MakeIn<T>(Scene scene, string name) where T : Component
+        {
+            var go = new GameObject(name);
+            go.SetActive(false);
+            SceneManager.MoveGameObjectToScene(go, scene);
+            T c = go.AddComponent<T>();
+            go.SetActive(true);
+            return c;
         }
 
         private IEnumerator AttackAndExpectSlash(string label)
@@ -721,6 +1181,148 @@ namespace Momotaro.Tests.PlayMode
         }
 
         /// <summary>
+        /// P6A 22（レビュー R1）：通常のウィンドウ終了要求は、<b>版の変わらない変化（HP だけ）しか無くても</b>素通しせず、
+        /// 最新を採って保存してから終える。保存が失敗したら「終了」へ向けた選択肢を出し、未保存のまま扱う
+        /// （版の差が無くても保存済みと読まない）。もう一度閉じても素通ししない。
+        /// </summary>
+        /// <remarks>
+        /// 成功した場合はアプリが終了する（Editor では再生が止まる）ので、ここでは失敗側だけを通す。
+        /// 成功側（終了 → 別プロセスで Continue して HP・犬丸の Down 残時間が戻る）は実ビルドの確認（p6a-player-smoke の quit）で見る。
+        /// </remarks>
+        [UnityTest]
+        public IEnumerator WindowClose_HpOnlyChange_IsNotPassedThrough_FailureStaysUnsaved()
+        {
+            var fs = new SwitchableFileSystem();
+            yield return NewGameWithFileSystem(fs);
+            QuietFieldEnemies();
+            CampaignSaveService saves = Saves();
+            PlayerVitalsHolder vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            int hp = vitals.Vitals.Health.Max - 4;
+            vitals.Vitals.Health.SetCurrent(hp);
+            Assert.IsFalse(saves.Coordinator.IsDirty, "前提：HP だけの変化は版を進めない（以前はここで素通しした）。");
+
+            fs.FailReplace = true;
+            int failures = saves.Coordinator.FailureCount;
+            int submits = saves.Coordinator.SubmitCount;
+            Assert.IsFalse(InvokeWantsToQuit(saves), "冒険中の終了要求はいったん断る（未保存に見えなくても）。");
+            Assert.AreEqual(ExitDestination.Quit, saves.PendingExitDestination, "行き先は終了。");
+            yield return WaitUntilOrTimeout(() => saves.AwaitingExitChoice, 20f);
+            Assert.IsTrue(saves.AwaitingExitChoice, "保存に失敗したら選択を待つ（結果=" + saves.LastExitOutcome + "）。");
+            Assert.Greater(saves.Coordinator.SubmitCount, submits, "最新を採って書こうとした。");
+            Assert.Greater(saves.Coordinator.FailureCount, failures, "前提：書込は失敗した。");
+            Assert.AreEqual(SaveExitOutcome.Failed, saves.LastExitOutcome);
+            Assert.IsTrue(saves.Coordinator.IsDirty, "版の差が無くても、失敗した保存のあとは未保存。");
+
+            saves.ChooseBackToGame();
+            yield return null;
+            Assert.IsFalse(InvokeWantsToQuit(saves), "失敗のあとにもう一度閉じても素通ししない。");
+            yield return WaitUntilOrTimeout(() => saves.AwaitingExitChoice, 20f);
+            Assert.IsTrue(saves.AwaitingExitChoice, "もう一度保存を試みて、また選択を待つ。");
+            saves.ChooseBackToGame();
+            yield return null;
+
+            fs.FailReplace = false;
+            int retrySubmits = saves.Coordinator.SubmitCount;
+            saves.Coordinator.RetryNow();
+            yield return WaitUntilOrTimeout(() => saves.Coordinator.SubmitCount > retrySubmits, 3f);
+            yield return WaitSaved("再試行");
+            SaveLoadDecision decision = saves.Coordinator.Store.DecideLoad();
+            Assert.IsTrue(SaveJsonCodec.TryDeserialize(decision.Chosen.Json, out _, out SaveSnapshot snap, out string err), err);
+            Assert.AreEqual(hp, snap.Party.Player.Hp, "HP だけの変化が保存されている。");
+        }
+
+        /// <summary>
+        /// P6A 22（レビュー R3）：タイトルへ戻る保存が失敗したときの「もう一度保存」を<b>実入力の決定</b>で選ぶと、
+        /// <b>タイトルへ</b>向かう（以前は終了へ向かっていた）。まだ失敗しているなら同じ行き先で選択が出直す。
+        /// Enter と パッドの決定（South）の両方で通す。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ExitChoice_RetryByDecideInput_KeepsTheTitleDestination()
+        {
+            var fs = new SwitchableFileSystem();
+            yield return NewGameWithFileSystem(fs);
+            QuietFieldEnemies();
+            Transitions().LauncherScenePath = TitleScene;
+            CampaignSaveService saves = Saves();
+            PlayerVitalsHolder vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            int hp = vitals.Vitals.Health.Max - 2;
+            vitals.Vitals.Health.SetCurrent(hp);
+
+            fs.FailReplace = true;
+            int returned = Transitions().ReturnedToLauncherCount;
+            saves.RequestReturnToTitle();
+            yield return WaitUntilOrTimeout(() => saves.AwaitingExitChoice, 20f);
+            Assert.IsTrue(saves.AwaitingExitChoice, "前提：失敗して選択を待つ。");
+            Assert.AreEqual(ExitDestination.Title, saves.PendingExitDestination, "行き先はタイトル。");
+            for (int i = 0; i < 3; i++)
+            {
+                yield return null; // 選択肢を開いたフレームの入力は見ない。
+            }
+
+            // まだ失敗する状態で Enter（先頭の「もう一度保存してタイトルへ」）。
+            int failures = saves.Coordinator.FailureCount;
+            yield return PressKeyUntil(Key.Enter, () => saves.Coordinator.FailureCount > failures, 20f);
+            Assert.Greater(saves.Coordinator.FailureCount, failures, "Enter の決定でもう一度保存した。");
+            yield return WaitUntilOrTimeout(() => saves.AwaitingExitChoice, 20f);
+            Assert.IsTrue(saves.AwaitingExitChoice, "まだ失敗するので選択が出直す。");
+            Assert.AreEqual(ExitDestination.Title, saves.PendingExitDestination, "行き先はタイトルのまま（終了へ変わらない）。");
+            Assert.AreEqual(returned, Transitions().ReturnedToLauncherCount, "まだ戻っていない。");
+            for (int i = 0; i < 3; i++)
+            {
+                yield return null;
+            }
+
+            // 直してから、パッドの決定で「もう一度」。
+            fs.FailReplace = false;
+            Gamepad pad = AddPad();
+            yield return null;
+            Assert.IsTrue(saves.AwaitingExitChoice, "前提：選択を待っている。");
+            int successes = saves.Coordinator.SuccessCount;
+            int submitsBeforePad = saves.Coordinator.SubmitCount;
+            float padDeadline = Time.realtimeSinceStartup + 6f;
+            while (saves.AwaitingExitChoice && Time.realtimeSinceStartup < padDeadline)
+            {
+                yield return TapPad(pad, GamepadButton.South); // 人と同じく、効くまで押し直す（入力の処理と同じフレームに当たらないことがある）。
+            }
+
+            Assert.IsFalse(saves.AwaitingExitChoice && saves.Coordinator.SubmitCount == submitsBeforePad, "パッドの決定で選べた。");
+            yield return WaitUntilOrTimeout(() => Transitions().ReturnedToLauncherCount > returned, 20f);
+            Assert.Greater(saves.Coordinator.SuccessCount, successes, "パッドの決定でもう一度保存した（状態=" + saves.Coordinator.Status
+                + " 理由=" + saves.Coordinator.LastError + " 選択待ち=" + saves.AwaitingExitChoice + " 結果=" + saves.LastExitOutcome + "）。");
+            Assert.IsFalse(saves.AwaitingExitChoice, "保存できた: " + saves.Coordinator.LastError + "（結果=" + saves.LastExitOutcome
+                + " 状態=" + saves.Coordinator.Status + " 未保存=" + saves.Coordinator.IsDirty + " 書込中=" + saves.Coordinator.IsWriting
+                + " 版=" + Session().Changes.Revision + " 保存済み=" + saves.Coordinator.SavedRevision
+                + " 失敗印=" + saves.Coordinator.HasUnsavedFailure + " 見送り=" + saves.Coordinator.DeferredCaptureCount
+                + " 終了中=" + saves.IsExiting + " 遷移中=" + Transitions().IsTransitionUnsettled + "）。");
+            Assert.AreEqual(returned + 1, Transitions().ReturnedToLauncherCount, "タイトルへ戻った（終了ではない）。");
+            Assert.AreEqual(TitleScene, SceneManager.GetActiveScene().path, "タイトル Scene が載っている。");
+            SaveLoadDecision decision = saves.Coordinator.Store.DecideLoad();
+            Assert.IsTrue(SaveJsonCodec.TryDeserialize(decision.Chosen.Json, out _, out SaveSnapshot snap, out string err), err);
+            Assert.AreEqual(hp, snap.Party.Player.Hp, "再試行は最新の HP を書いた。");
+        }
+
+        private IEnumerator NewGameWithFileSystem(ISaveFileSystem fs)
+        {
+            yield return StartBootstrap();
+            Assert.IsNull(Saves().Coordinator, "前提：保存の調停役はまだ作られていない（差し替えが効く）。");
+            Saves().FileSystemOverride = fs;
+            Assert.IsTrue(Saves().Flow.TryNewGame(Catalog(), out string error), error);
+            yield return WaitAreaReady(AreaA);
+            _keyboard = InputSystem.AddDevice<Keyboard>("P55Keyboard");
+            yield return null;
+            yield return WaitSaved("New Game");
+        }
+
+        /// <summary>通常のウィンドウ終了要求と同じ入口を呼ぶ（Editor の再生では <c>wantsToQuit</c> が来ないため）。</summary>
+        private static bool InvokeWantsToQuit(CampaignSaveService saves)
+        {
+            System.Reflection.MethodInfo m = typeof(CampaignSaveService).GetMethod("OnWantsToQuit",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.IsNotNull(m, "終了要求の入口がある。");
+            return (bool)m.Invoke(saves, null);
+        }
+
+        /// <summary>
         /// P6A 17：同じフレームで報酬が確定し主人公が倒れた状態から、終了（タイトル復帰）を求めても
         /// <b>HP 0 の通常保存を作らない</b>。死亡再開を先に進め（周期 +1・全回復・お地蔵様へ）、その状態を報酬込みで保存してから戻る。
         /// </summary>
@@ -780,6 +1382,104 @@ namespace Momotaro.Tests.PlayMode
             Assert.Greater(snap.Party.Player.Hp, 0, "保存の HP は 0 ではない（再開後の全回復）。");
             Assert.AreEqual(virtue, snap.TotalVirtue - snap.SpentVirtue, "同じフレームの報酬は保存に載っている。");
             Assert.AreEqual(cycle + 1, snap.RespawnCycle, "周期の進みも同じ保存に載っている。");
+        }
+
+        /// <summary>
+        /// P6A 17（実経路）：同じフレームで<b>普通敵が実際の被弾窓口から倒れて報酬が確定し</b>、主人公も倒れる。
+        /// 倒れている間にタイトル復帰を求め、<b>死亡再開の遷移が失敗する</b>。それでも HP 0 の通常保存は作らず、
+        /// 失敗表示（時間切れ）でゲームへ戻せる。再開が直れば、報酬と周期と全回復を<b>同じ保存</b>に載せる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator SameFrameKillAndDeath_RespawnFailsDuringExit_NoHpZeroSave_ThenRecovers()
+        {
+            yield return NewGame();
+            yield return WaitSaved("New Game");
+            Transitions().LauncherScenePath = TitleScene;
+            GameSessionState session = Session();
+            CampaignSaveService saves = Saves();
+            AreaTransitionService transitions = Transitions();
+            AreaFieldEnemyDirector field = Object.FindFirstObjectByType<AreaFieldEnemyDirector>();
+            EnemyActor enemy = field.Spawned[0].GetComponentInChildren<EnemyActor>();
+            Assert.IsFalse(enemy.IsDefeated, "前提：普通敵が居る。");
+            int virtue = session.Progress.Virtue;
+            int cycle = session.RespawnCycle;
+            long generation = saves.Coordinator.Store.DecideLoad().Chosen.Info.Generation;
+
+            // ---- 同じフレーム：主人公の一撃で普通敵が倒れ（実の被弾窓口 → 撃破 → 報酬）、主人公も致死の一撃を受ける ----
+            PlayerVitalsHolder vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            var heroGo = new GameObject("P6APlayerSideAttacker");
+            heroGo.AddComponent<PlayerSideAttacker>();
+            var foeGo = new GameObject("P6ASameFrameAttacker");
+            foeGo.AddComponent<LethalAttacker>();
+            // 主人公は被弾直後の無敵があるので、倒れるまで毎フレーム致死の一撃を当て、<b>倒れたそのフレーム</b>で普通敵を倒す。
+            int hits = 0;
+            float deadline = Time.realtimeSinceStartup + 10f;
+            int frame = -1;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                hits++;
+                vitals.ReceiveHit(new HitInfo(foeGo.GetComponent<LethalAttacker>(), vitals, Vector3.back, vitals.transform.position,
+                    new HitDamage(9999, 0f, 0f), guardable: false, justGuardable: false, hitId: HitId.Single(9700 + hits)));
+                if (vitals.IsDefeated)
+                {
+                    frame = Time.frameCount;
+                    enemy.ReceiveHit(new HitInfo(heroGo.GetComponent<PlayerSideAttacker>(), enemy, Vector3.forward,
+                        enemy.transform.position, new HitDamage(9999, 0f, 0f), guardable: false, justGuardable: false,
+                        hitId: HitId.Single(9800)));
+                    break;
+                }
+
+                yield return null;
+            }
+
+            Assert.AreEqual(frame, Time.frameCount, "前提：同じフレーム。");
+            Assert.IsTrue(vitals.IsDefeated, "前提：主人公も倒れた。");
+            Assert.IsTrue(enemy.IsDefeated, "前提：普通敵は倒れた。");
+            Object.DestroyImmediate(heroGo);
+            Object.DestroyImmediate(foeGo);
+            yield return null;
+            Assert.AreEqual(virtue + Kill, session.Progress.Virtue, "撃破の報酬は実経路で確定した。");
+            int submits = saves.Coordinator.SubmitCount;
+
+            // ---- 倒れている間に終了要求。死亡再開の遷移は失敗させる ----
+            transitions.Loader = new FailingLoader();
+            saves.ExitTimeoutSeconds = 3f;
+            int returned = transitions.ReturnedToLauncherCount;
+            saves.RequestReturnToTitle();
+            yield return WaitUntilOrTimeout(() => saves.AwaitingExitChoice || transitions.ReturnedToLauncherCount > returned, 15f);
+            Assert.IsTrue(saves.AwaitingExitChoice, "再開できないので成功表示をせず選択を待つ（結果=" + saves.LastExitOutcome + "）。");
+            Assert.AreEqual(SaveExitOutcome.TimedOut, saves.LastExitOutcome, "保存は時間切れ（採れなかった）。");
+            Assert.AreEqual(returned, transitions.ReturnedToLauncherCount, "タイトルへは戻らない。");
+            Assert.Greater(transitions.RespawnFailureCount, 0, "前提：死亡再開の遷移が失敗した。");
+            Assert.AreEqual(submits, saves.Coordinator.SubmitCount, "倒れている間は 1 度も採取していない（HP 0 の通常保存なし）。");
+            SaveSideScan latest = saves.Coordinator.Store.DecideLoad().Chosen;
+            Assert.AreEqual(generation, latest.Info.Generation, "ファイルは倒れる前の世代のまま。");
+            Assert.IsTrue(SaveJsonCodec.TryDeserialize(latest.Json, out _, out SaveSnapshot kept, out string keptErr), keptErr);
+            Assert.Greater(kept.Party.Player.Hp, 0, "残っている保存の HP は 0 ではない。");
+            Assert.AreEqual(virtue, kept.TotalVirtue - kept.SpentVirtue, "残っている保存は報酬の前の一貫した状態（報酬だけ・死亡だけを載せていない）。");
+
+            // ---- ゲームへ戻り、再開を直して再試行 ----
+            saves.ChooseBackToGame();
+            transitions.Loader = new UnitySceneLoader();
+            yield return WaitForRespawnPrompt();
+            int completed = transitions.CompletedCount;
+            yield return PressKeyUntil(Key.Enter, () => transitions.CompletedCount > completed || transitions.HasTerminalFailure, 25f);
+            Assert.IsFalse(transitions.HasTerminalFailure, "終端失敗しない: " + transitions.TerminalFailureReason);
+            yield return WaitAreaReady(AreaA);
+            yield return WaitSaved("再開");
+            Assert.IsTrue(SaveJsonCodec.TryDeserialize(saves.Coordinator.Store.DecideLoad().Chosen.Json, out _, out SaveSnapshot after, out string afterErr), afterErr);
+            Assert.Greater(after.Party.Player.Hp, 0, "再開後の保存は全回復。");
+            Assert.AreEqual(virtue + Kill, after.TotalVirtue - after.SpentVirtue, "同じフレームの報酬が載っている。");
+            Assert.AreEqual(cycle + 1, after.RespawnCycle, "周期は 1 つだけ進んだ（失敗した再開で二度進めない）。");
+        }
+
+        private sealed class PlayerSideAttacker : MonoBehaviour, ICombatActor
+        {
+            public CombatFaction Faction => CombatFaction.Player;
+            public int FloorId => 0;
+            public int ActorId => GetInstanceID();
+            public Vector3 WorldPosition => transform.position;
+            public Vector3 Forward => transform.forward;
         }
 
         /// <summary>置換だけを失敗させられるファイル操作（実ファイルへ委ねる）。</summary>

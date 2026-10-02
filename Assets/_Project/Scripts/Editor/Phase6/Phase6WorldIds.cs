@@ -35,6 +35,12 @@ namespace Momotaro.Editor.Phase6
         public static readonly StableId Campaign = new StableId("campaign_p6a");
         public static readonly StableId Connections = new StableId("area_connections_p6a");
 
+        /// <summary>
+        /// クエスト段階の接続 fixture（受入 P6A 08）。P7 のクエスト状態を保存・死亡・休息へ通す境界を確かめるだけの ID で、
+        /// クエストの中身・ランナーは無い。
+        /// </summary>
+        public static readonly StableId QuestFixture = new StableId("quest_p6a_fixture");
+
         // ---- Area ----
         public static readonly StableId AreaA = new StableId("area_p6_a");
         public static readonly StableId AreaB = new StableId("area_p6_b");

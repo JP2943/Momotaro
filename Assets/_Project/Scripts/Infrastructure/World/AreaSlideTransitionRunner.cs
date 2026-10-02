@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
@@ -361,6 +362,313 @@ namespace Momotaro.Infrastructure.World
 
             _owner.StartSlideRoutine(SlideRoutine(connection, decision.TransitionId, departure, entry));
             return decision;
+        }
+
+        // ================================================================ 旅立ち（P6A。レビュー D1）
+
+        /// <summary>旅立ちが成立した回数（診断・テスト用）。</summary>
+        public int FastTravelCommittedCount { get; private set; }
+
+        /// <summary>旅立ちが出発側へ戻った回数（診断・テスト用）。</summary>
+        public int FastTravelRolledBackCount { get; private set; }
+
+        /// <summary>
+        /// 到着側の準備が済んだあと、Commit の前に呼ぶ故障注入（テスト用。null で無効）。
+        /// 理由の文字列を返すと「準備・配置の失敗」として出発側へ戻す。
+        /// </summary>
+        public Func<AreaRuntimeBundle, string> FastTravelPrepareFault { get; set; }
+
+        /// <summary>
+        /// 旅立ち（P6 仕様 §6。レビュー D1）。<b>出発 Area を到着準備の成功まで保持する</b>——
+        /// 到着先を Additive で読み、隔離したまま配置と復元を済ませ、成功を確定してから出発側を手放す。
+        /// 読込の開始・読込・準備・配置のどこで失敗しても、出発側を開け直してその場に留まる（再試行できる）。
+        ///
+        /// 排他・世代・在留台帳・先読みの預かりは<b>スライドと同じもの</b>を使う（第二系統を作らない）。
+        /// 違うのは見せ方だけ：接続を渡らないのでカメラを送らず、境界帯・表示経路の検査もしない。
+        /// 在留は「出発＋到着」の 2 枚まで（預かっていた別の Area は切り替えで手放す）。
+        /// </summary>
+        public AreaTransitionDecision TryFastTravel(StableId areaId, StableId entryId)
+        {
+            AreaCatalog catalog = _owner.Catalog;
+            if (catalog == null)
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
+            }
+
+            if (!catalog.TryGetEntry(areaId, entryId, out AreaEntryInfo entry) || string.IsNullOrEmpty(entry.ScenePath))
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.UnknownDestination);
+            }
+
+            if (_owner.Coordinator != null && _owner.Coordinator.IsTransitioning)
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.AlreadyTransitioning);
+            }
+
+            SyncResidencyToLoadedAreas();
+            if (HasPendingRetire)
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
+            }
+
+            if (!TryResolveDeparture(out AreaRuntimeBundle departure))
+            {
+                return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
+            }
+
+            var connection = AreaConnectionSnapshot.ForFastTravel(departure.AreaId, areaId, entryId);
+            AreaTransitionDecision decision = _slide.TryRequest(connection, _owner.Conditions);
+            if (!decision.Accepted)
+            {
+                return decision;
+            }
+
+            LastFailure = string.Empty;
+            departure.Context.CloseForTransition();
+            _owner.Clock.Freeze();
+            GameModeProvider.Current?.ChangeMode(GameMode.Loading);
+            _owner.CaptureActorsForTransition();
+
+            _owner.StartSlideRoutine(FastTravelRoutine(connection, decision.TransitionId, departure, entry));
+            return decision;
+        }
+
+        private IEnumerator FastTravelRoutine(
+            AreaConnectionSnapshot connection, int transitionId, AreaRuntimeBundle departure, AreaEntryInfo entry)
+        {
+            int departureSceneHandle = departure.SceneHandle;
+            _slidingConnection = connection.ConnectionId;
+
+            if (!_slide.NotifyPreparing(transitionId))
+            {
+                yield break;
+            }
+
+            _waitNotice.Begin();
+
+            if (IsRetireInFlight)
+            {
+                RetireWaitCount++;
+                float retireWaited = 0f;
+                while (IsRetireInFlight && retireWaited < _owner.TimeoutSeconds)
+                {
+                    retireWaited += Time.unscaledDeltaTime;
+                    PumpWaitNotice();
+                    yield return null;
+                }
+
+                if (IsRetireInFlight)
+                {
+                    yield return FastTravelRollback(transitionId, departure, AreaInstanceHandle.None,
+                        "旧 Area の撤去が終わらないため、旅立ちを始められませんでした。");
+                    yield break;
+                }
+            }
+
+            AreaInstanceHandle departureHandle = EnsureResidency(departure);
+            if (!departureHandle.IsValid)
+            {
+                yield return FastTravelRollback(transitionId, departure, departureHandle,
+                    "出発 Area を在留台帳へ登録できませんでした。");
+                yield break;
+            }
+
+            _residency.TrySetPhase(departureHandle, AreaActivationPhase.Suspended);
+            AreaPendingArrival.Set(transitionId, connection.ToAreaId, connection.EntryId);
+
+            // 到着先を Additive で読む（先読みの口を通す。預かっていた別の Area はここで手放す）。
+            AreaPreloader preloader = EnsurePreloader();
+            preloader.ArmRetry();
+            if (preloader.Request(connection.ToAreaId, entry.ScenePath))
+            {
+                PreloadRequestCount++;
+            }
+
+            bool timedOut = false;
+            float loadWaited = 0f;
+            while (preloader.Phase == AreaPreloadPhase.Loading || preloader.Phase == AreaPreloadPhase.Releasing)
+            {
+                preloader.Request(connection.ToAreaId, entry.ScenePath);
+                preloader.Poll();
+                if (loadWaited >= _owner.TimeoutSeconds)
+                {
+                    timedOut = true;
+                    break;
+                }
+
+                loadWaited += Time.unscaledDeltaTime;
+                PumpWaitNotice();
+                yield return null;
+            }
+
+            preloader.Poll();
+            if (timedOut)
+            {
+                TimedOutCount++;
+                DeferredReleaseCount++;
+                yield return FastTravelRollback(transitionId, departure, departureHandle,
+                    "旅立ち先のロードが " + _owner.TimeoutSeconds.ToString("0.##")
+                    + " 秒以内に完了しませんでした（操作は保持し、終端後に撤去します）。",
+                    waitForPreloadRelease: false);
+                yield break;
+            }
+
+            if (preloader.Phase != AreaPreloadPhase.Staged || !preloader.StagedArea.AreaId.Equals(connection.ToAreaId))
+            {
+                yield return FastTravelRollback(transitionId, departure, departureHandle,
+                    "旅立ち先のロードが完了しませんでした（" + preloader.Phase + " / " + preloader.FailureReason + "）。");
+                yield break;
+            }
+
+            AreaInstanceHandle destinationHandle = preloader.StagedArea;
+            int destinationSceneHandle = preloader.StagedSceneHandle;
+            if (!AreaBundleDirectory.TryGetByScene(destinationSceneHandle, out AreaRuntimeBundle destination)
+                || destination == null || destination.Context == null || destination.Root == null
+                || destination.ActivityGate == null)
+            {
+                yield return FastTravelRollback(transitionId, departure, departureHandle,
+                    "旅立ち先の参照集合を引けませんでした（束・活動ゲートの配線漏れ）。");
+                yield break;
+            }
+
+            destination.BindInstance(destinationHandle);
+
+            // 出発側の代理を立てて（一瞬の欠落を作らない）から閉じ、到着側を隔離したまま準備させる。
+            IAreaTransitionDisplay display = AreaTransitionDisplayProvider.Current;
+            display?.TryBegin(departure);
+            departure.ActivityGate?.Close();
+            destination.ActivityGate.Open();
+            _residency.TrySetPhase(destinationHandle, AreaActivationPhase.Prepared);
+
+            if (destination.TryResolve(out AreaInitializer arrivalInitializer) && arrivalInitializer.SceneBuilt)
+            {
+                ReenteredCount++;
+                if (!arrivalInitializer.PrepareForEntry())
+                {
+                    yield return FastTravelRollback(transitionId, departure, departureHandle,
+                        "保持していた Area の入場準備に失敗しました: " + arrivalInitializer.FailureReason, destination);
+                    yield break;
+                }
+            }
+
+            display?.HideArrivals(destination);
+            float bindWaited = 0f;
+            while (!AreaPendingArrival.IsPreparedFor(transitionId) && bindWaited < _owner.BindTimeoutSeconds)
+            {
+                bindWaited += Time.unscaledDeltaTime;
+                PumpWaitNotice();
+                yield return null;
+                display?.HideArrivals(destination);
+            }
+
+            if (!AreaPendingArrival.IsPreparedFor(transitionId))
+            {
+                yield return FastTravelRollback(transitionId, departure, departureHandle,
+                    "旅立ち先の準備が " + _owner.BindTimeoutSeconds.ToString("0.##") + " 秒以内に完了しませんでした。",
+                    destination);
+                yield break;
+            }
+
+            yield return null;
+            display?.HideArrivals(destination);
+
+            if (!_slide.NotifyPrepared(transitionId))
+            {
+                yield break;
+            }
+
+            string fault = FastTravelPrepareFault?.Invoke(destination);
+            if (!string.IsNullOrEmpty(fault))
+            {
+                yield return FastTravelRollback(transitionId, departure, departureHandle,
+                    "旅立ち先の準備・配置に失敗しました: " + fault, destination);
+                yield break;
+            }
+
+            if (!IsDestinationHealthy(destination, destinationSceneHandle, out string arrivalReason)
+                || !destination.Root.TryGetEntryPoint(connection.EntryId, out _))
+            {
+                yield return FastTravelRollback(transitionId, departure, departureHandle,
+                    "旅立ち先の再確認に失敗しました: " + arrivalReason, destination);
+                yield break;
+            }
+
+            EndWaitNotice();
+
+            // 接続を渡らないので送る絵は無い。状態機の段階だけ「送った」へ進め、同じ Commit 契約に乗せる。
+            if (!_slide.NotifySlideStarted(transitionId))
+            {
+                yield break;
+            }
+
+            // ---- 成功確定の同期区間（スライドと同じ）。ここに yield を挟まない ----
+            if (!_slide.TryCommit(transitionId))
+            {
+                display?.Release();
+                yield break;
+            }
+
+            preloader.TryHandOffStaged(connection.ToAreaId, out _, out _);
+            _residency.TrySetPhase(destinationHandle, AreaActivationPhase.Active);
+
+            bool retained = TryRetainDeparture(preloader, departureHandle, departureSceneHandle, departure);
+            if (!retained)
+            {
+                _residency.TrySetPhase(departureHandle, AreaActivationPhase.Retiring);
+            }
+
+            CurrentAreaProvider.TrySetCurrent(_owner, destination);
+            TrySetActiveScene(destinationSceneHandle);
+            _owner.RebindConditions(destination.Conditions);
+            _owner.NoteArrival(connection.ToAreaId, connection.EntryId);
+
+            destination.Context.Activate();
+            GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
+            display?.Release();
+
+            // 遠くへ移ったので、カメラは到着 Area へ結び直して即時に合わせる（送らない）。
+            IAreaCameraOwner camera = AreaCameraOwnerProvider.Current;
+            if (camera != null && camera.TryBindActiveArea())
+            {
+                camera.ApplyArrival();
+            }
+
+            _owner.ClearPendingTransfer();
+            AreaPendingArrival.Clear();
+            _owner.Clock.Thaw();
+            CommittedCount++;
+            FastTravelCommittedCount++;
+            LastFailure = string.Empty;
+            _retiring = !retained;
+            // ---- 同期区間ここまで ----
+
+            if (_slide.TryConsumeArrivalAnnouncement(transitionId) && _slide.Release(transitionId))
+            {
+                // 登録・休息・周期・保存はここで（到着の配置と進行適用が成功した後）。
+                _owner.CompleteFastTravelJump(transitionId);
+                _owner.RaiseArrivalCompleted(connection.ToAreaId);
+            }
+
+            if (retained)
+            {
+                yield break;
+            }
+
+            yield return UnloadDeparture(departureHandle, departureSceneHandle);
+            _retiring = false;
+        }
+
+        private IEnumerator FastTravelRollback(
+            int transitionId, AreaRuntimeBundle departure, AreaInstanceHandle departureHandle,
+            string reason, AreaRuntimeBundle destination = null, bool waitForPreloadRelease = true)
+        {
+            int before = RolledBackCount + FailedCount;
+            yield return Rollback(transitionId, departure, departureHandle, reason, destination, waitForPreloadRelease);
+            if (RolledBackCount + FailedCount > before)
+            {
+                FastTravelRolledBackCount++;
+                _owner.FailFastTravelJump(transitionId);
+            }
         }
 
         /// <summary>

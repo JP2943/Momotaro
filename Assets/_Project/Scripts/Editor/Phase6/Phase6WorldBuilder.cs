@@ -338,6 +338,13 @@ namespace Momotaro.Editor.Phase6
                 new List<ShrineDefinition> { shrineA, shrineC }, Phase6WorldIds.ShrineA,
                 Phase6TrialValues.KibidangoCapacity, new List<ItemDefinition> { tonic },
                 new List<SkillNodeData> { data.Growth });
+            asset.EditorSetKnownIds(
+                new List<StableId>
+                {
+                    data.ClearBNorth.Id, data.ClearBSouth.Id, data.ClearCBoss.Id, data.FindScroll.Id,
+                },
+                new List<StableId> { Momotaro.Gameplay.Companion.CompanionIds.Inumaru },
+                new List<StableId> { Phase6WorldIds.QuestFixture });
             asset.EditorSetTestTuning(Phase6TrialValues.TestEnemyAttackScale, Phase6TrialValues.TestPlayerMaxHpScale);
             EditorUtility.SetDirty(asset);
             return asset;

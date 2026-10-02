@@ -47,8 +47,14 @@ namespace Momotaro.Gameplay.Save
     /// </summary>
     public sealed class SaveSnapshot
     {
-        /// <summary>保存形式の版（Envelope の schemaVersion）。</summary>
-        public const int CurrentSchemaVersion = 1;
+        /// <summary>
+        /// 保存形式の版（Envelope の schemaVersion）。2：クエスト段階の接続口（questStages）を足した（受入 P6A 08）。
+        /// 1 の保存はクエスト段階が空のものとして読む（<see cref="OldestReadableSchemaVersion"/>）。
+        /// </summary>
+        public const int CurrentSchemaVersion = 2;
+
+        /// <summary>読める最も古い保存形式の版。</summary>
+        public const int OldestReadableSchemaVersion = 1;
 
         public SaveSnapshot(
             string campaignId, int contentVersion, string adventureId, long revision, int respawnCycle,
@@ -56,7 +62,7 @@ namespace Momotaro.Gameplay.Save
             string[] visitedAreas, string[] recruited, AreaSaveRecord[] areas,
             KeyValuePair<string, int>[] inventory, int kibidango,
             string[] registeredShrines, string checkpoint, ResumeAnchorKind resumeKind, string resumeAreaId,
-            string resumePointId, PartySaveValues party)
+            string resumePointId, PartySaveValues party, KeyValuePair<string, int>[] questStages = null)
         {
             CampaignId = campaignId ?? string.Empty;
             ContentVersion = contentVersion;
@@ -78,6 +84,7 @@ namespace Momotaro.Gameplay.Save
             ResumeAreaId = resumeAreaId ?? string.Empty;
             ResumePointId = resumePointId ?? string.Empty;
             Party = party;
+            QuestStages = questStages ?? Array.Empty<KeyValuePair<string, int>>();
         }
 
         public string CampaignId { get; }
@@ -103,6 +110,9 @@ namespace Momotaro.Gameplay.Save
         public string ResumeAreaId { get; }
         public string ResumePointId { get; }
         public PartySaveValues Party { get; }
+
+        /// <summary>クエストの段階（安定 ID 順。P7 の進行の接続口。受入 P6A 08）。</summary>
+        public IReadOnlyList<KeyValuePair<string, int>> QuestStages { get; }
 
         /// <summary>
         /// Session と Actor の値から Snapshot を採る（<b>メインスレッドで</b>。仕様 §9）。
@@ -151,6 +161,10 @@ namespace Momotaro.Gameplay.Save
             session.Inventory.CopyTo(inventory);
             inventory.Sort(ByKey);
 
+            var quests = new List<KeyValuePair<string, int>>();
+            session.CopyQuestStagesTo(quests);
+            quests.Sort(ByKey);
+
             ResumeAnchor resume = session.Resume;
             return new SaveSnapshot(
                 campaign.CampaignId.Value, campaign.ContentVersion, session.AdventureId, session.Changes.Revision,
@@ -159,7 +173,7 @@ namespace Momotaro.Gameplay.Save
                 SortedIds(session.VisitedAreas), SortedIds(session.Recruited), areas.ToArray(),
                 inventory.ToArray(), session.Kibidango,
                 SortedIds(session.RegisteredShrines), session.Checkpoint.Value,
-                resume.Kind, resume.AreaId.Value, resume.PointId.Value, party);
+                resume.Kind, resume.AreaId.Value, resume.PointId.Value, party, quests.ToArray());
         }
 
         private static int ByKey(KeyValuePair<string, int> a, KeyValuePair<string, int> b) =>

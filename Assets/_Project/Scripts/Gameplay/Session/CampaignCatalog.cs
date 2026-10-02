@@ -108,6 +108,9 @@ namespace Momotaro.Gameplay.Session
         private readonly List<GrowthInfo> _growthOrder = new List<GrowthInfo>();
         private readonly Dictionary<string, RewardSnapshot> _arrivalRewards = new Dictionary<string, RewardSnapshot>();
         private readonly Dictionary<string, AreaContentIds> _content = new Dictionary<string, AreaContentIds>();
+        private readonly HashSet<string> _knownRewards = new HashSet<string>();
+        private readonly HashSet<string> _knownCompanions = new HashSet<string>();
+        private readonly HashSet<string> _knownQuests = new HashSet<string>();
 
         private CampaignCatalog(StableId campaignId, int contentVersion, StableId initialShrineId, int kibidangoBaseCapacity)
         {
@@ -169,6 +172,17 @@ namespace Momotaro.Gameplay.Session
                 ? reward
                 : RewardSnapshot.None;
         }
+
+        /// <summary>
+        /// この campaign で付与されうる一度きり報酬の ID か（保存の検証。レビュー R4）。初到達報酬と Data の一覧の和。
+        /// </summary>
+        public bool IsKnownGrantOnceReward(StableId rewardId) => !rewardId.IsEmpty && _knownRewards.Contains(rewardId.Value);
+
+        /// <summary>この campaign で加入しうる仲間の ID か（保存の検証。レビュー R4）。</summary>
+        public bool IsKnownCompanion(StableId companionId) => !companionId.IsEmpty && _knownCompanions.Contains(companionId.Value);
+
+        /// <summary>この campaign の保存が持ちうるクエストの ID か（P7 の接続口。受入 P6A 08）。</summary>
+        public bool IsKnownQuest(StableId questId) => !questId.IsEmpty && _knownQuests.Contains(questId.Value);
 
         /// <summary>エリアの保存対象 ID 一覧（未知エリアは false）。</summary>
         public bool TryGetContent(StableId areaId, out AreaContentIds content)
@@ -306,13 +320,43 @@ namespace Momotaro.Gameplay.Session
 
                 if (area.ArrivalReward != null)
                 {
-                    built._arrivalRewards[area.Id.Value] = RewardSnapshot.From(area.ArrivalReward);
+                    RewardSnapshot arrival = RewardSnapshot.From(area.ArrivalReward);
+                    built._arrivalRewards[area.Id.Value] = arrival;
+                    if (arrival.GrantOnce && !arrival.RewardId.IsEmpty)
+                    {
+                        built._knownRewards.Add(arrival.RewardId.Value);
+                    }
                 }
 
                 built._content[area.Id.Value] = AreaContentIds.From(area.Content);
             }
 
+            AddKnown(built._knownRewards, data.GrantOnceRewardIds, "reward", errors);
+            AddKnown(built._knownCompanions, data.CompanionIds, "companion", errors);
+            AddKnown(built._knownQuests, data.QuestIds, "quest", errors);
+
             return errors.Count == before ? built : null;
+        }
+
+        private static void AddKnown(HashSet<string> target, IReadOnlyList<StableId> ids, string label, List<string> errors)
+        {
+            var seen = new HashSet<string>();
+            for (int i = 0; i < ids.Count; i++)
+            {
+                if (!ids[i].IsValid)
+                {
+                    errors.Add("Campaign contains an invalid " + label + " id.");
+                    continue;
+                }
+
+                if (!seen.Add(ids[i].Value))
+                {
+                    errors.Add("Duplicate " + label + " id '" + ids[i].Value + "'.");
+                    continue;
+                }
+
+                target.Add(ids[i].Value);
+            }
         }
 
         private static IReadOnlyList<StableId> IdsOf(IReadOnlyList<SkillNodeData> nodes)

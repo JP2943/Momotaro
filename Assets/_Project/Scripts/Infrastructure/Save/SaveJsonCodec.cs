@@ -62,6 +62,13 @@ namespace Momotaro.Infrastructure.Save
         private static readonly string[] PayloadKeys =
         {
             "revision", "respawnCycle", "virtue", "grantedRewards", "growth", "visitedAreas", "recruited", "areas",
+            "inventory", "kibidango", "shrines", "resume", "party", "questStages",
+        };
+
+        /// <summary>版 1 の payload の欄（questStages が無い）。読むときだけ使う。</summary>
+        private static readonly string[] PayloadKeysV1 =
+        {
+            "revision", "respawnCycle", "virtue", "grantedRewards", "growth", "visitedAreas", "recruited", "areas",
             "inventory", "kibidango", "shrines", "resume", "party",
         };
 
@@ -118,7 +125,7 @@ namespace Momotaro.Infrastructure.Save
                 return false;
             }
 
-            if (schema != SaveSnapshot.CurrentSchemaVersion)
+            if (schema < SaveSnapshot.OldestReadableSchemaVersion || schema > SaveSnapshot.CurrentSchemaVersion)
             {
                 error = "未対応の保存形式の版です（" + schema + "）。";
                 return false;
@@ -154,7 +161,10 @@ namespace Momotaro.Infrastructure.Save
             }
 
             var r = new Reader(payload, "payload");
-            r.ExpectExactly(PayloadKeys);
+
+            // 版 1 は questStages を持たない（クエスト段階の接続口は版 2 から）。欠けた欄を黙って補わず、版で分ける。
+            bool v1 = info.SchemaVersion == 1;
+            r.ExpectExactly(v1 ? PayloadKeysV1 : PayloadKeys);
             long revision = r.Long("revision");
             int cycle = r.Int("respawnCycle");
 
@@ -180,6 +190,9 @@ namespace Momotaro.Infrastructure.Save
             string resumePoint = resume.Str("pointId");
 
             PartySaveValues party = ReadParty(r);
+            KeyValuePair<string, int>[] quests = v1
+                ? new KeyValuePair<string, int>[0]
+                : r.Pairs("questStages", "questId", "stage");
 
             if (r.Failed || virtue.Failed || shrines.Failed || resume.Failed)
             {
@@ -195,7 +208,7 @@ namespace Momotaro.Infrastructure.Save
 
             snapshot = new SaveSnapshot(info.CampaignId, info.ContentVersion, info.AdventureId, revision, cycle,
                 total, spent, granted, growth, visited, recruited, areas, inventory, kibidango,
-                registered, checkpoint, kind, resumeArea, resumePoint, party);
+                registered, checkpoint, kind, resumeArea, resumePoint, party, quests);
             error = null;
             return true;
         }
@@ -294,6 +307,7 @@ namespace Momotaro.Infrastructure.Save
                     },
                     ["companion"] = companion,
                 },
+                ["questStages"] = Pairs(s.QuestStages, "questId", "stage"),
             };
         }
 

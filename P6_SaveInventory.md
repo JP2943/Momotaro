@@ -28,10 +28,11 @@
 |---|---|---|---|---|---|---|
 | 累計徳 | `PlayerProgressState.TotalVirtue` | — | 0 | 報酬付与 | 候補 Session 構築時 | RoundTrip |
 | 使用済み徳 | `PlayerProgressState.SpentVirtue` | — | 0 | 成長購入の成功 | 同上（0 ≤ 使用済み ≤ 累計を検証） | RoundTrip／Validator |
-| GrantOnce 付与記録 | `PlayerProgressState` の付与済み集合 | RewardData の StableId | 空 | 初到達・初回クリア・発見の付与 | 同上 | RoundTrip |
+| GrantOnce 付与記録 | `PlayerProgressState` の付与済み集合 | RewardData の StableId（**campaign の既知報酬**＝初到達報酬＋`AreaCatalogData.GrantOnceRewardIds`。2026-10-02 レビュー R4） | 空 | 初到達・初回クリア・発見の付与 | 同上。未知 ID は Load 拒否 | RoundTrip／Validator |
 | 取得済み成長と実支出 | `PlayerProgressState` の成長記録 | SkillNodeData の StableId ＋ 支出額 | 空 | 成長購入の成功 | 同上。効果は**基礎値と取得 ID から再計算**（加算を繰り返さない） | RoundTrip／効果非累積 |
 | 訪問済み Area | `GameSessionState` 訪問集合 | AreaId | 空 | 遷移 Commit（`NoteArrival`）／直開き | 同上。**Load では到着報酬を出さない** | RoundTrip |
-| 加入済み仲間 | `GameSessionState` 加入集合 | CompanionId | 空 | 加入（P8） | 同上 | RoundTrip |
+| 加入済み仲間 | `GameSessionState` 加入集合 | CompanionId（**campaign の既知仲間**＝`AreaCatalogData.CompanionIds`。R4） | 空 | 加入（P8） | 同上。未知 ID は Load 拒否 | RoundTrip／Validator |
+| クエストの段階（**P7 の接続口**） | `GameSessionState` のクエスト段階（ID → 0 以上の整数） | QuestId（campaign の既知クエスト＝`AreaCatalogData.QuestIds`。P6A は接続 fixture `quest_p6a_fixture` だけ） | 空（未設定は 0） | P7 の進行確定（`TrySetQuestStage`。保存要求つき）。**死亡・休息・周期では戻らない** | 同上。未知 ID・負数は Load 拒否 | RoundTrip／Validator／PlayMode（死亡を跨いで保持・保存） |
 | 普通敵の復活周期 | `GameSessionState.RespawnCycle` | — | 0 | 休息・成長・死亡・旅立ちの成功（各 1 回） | 同上 | RoundTrip |
 | 調査済み地点 | `AreaRuntimeState` の調査記録 | 調査点 StableId（Area ごと） | 空 | 調査完了 | 同上。到着時に Holder へ Bind | RoundTrip |
 | 開通済みの仕掛け | `AreaRuntimeState` の FlagId 集合 | FlagId（Area ごと） | 空 | レバー・遭遇戦クリアの開通 | 同上。到着時に門へ `TryApplyOpened` | RoundTrip |
@@ -87,7 +88,7 @@ P5 の `P5_ActorTransferInventory.md` で「保持」に分類した値を土台
 
 Load では回復・周期更新・到着報酬・獲得演出を**発生させない**。
 
-## 5. DTO 対応（schemaVersion 1）
+## 5. DTO 対応（schemaVersion 2）
 
 | DTO の欄 | 表の行 |
 |---|---|
@@ -101,6 +102,12 @@ Load では回復・周期更新・到着報酬・獲得演出を**発生させ�
 | `shrines.registered[]`／`shrines.checkpoint` | 登録済みお地蔵様／Checkpoint |
 | `resume {kind, areaId, pointId}` | ResumeAnchor |
 | `party.player {...}`／`party.companion {...}` | §2 |
+| `questStages[] {questId, stage}` | クエストの段階（版 2 で追加） |
 | Envelope `schemaVersion`／`contentVersion`／`campaignId`／`adventureId`／`generation`／`savedAtUtc`／`checksum` | 仕様 §10 |
 
-**旧版移行は作らない。** 既存のセーブ形式は無い（P5 までは保存なし。旧 P6 案は仕様書のみで実装なし。記録 001 で確認）。
+**版 1 → 2 の読み替え**（2026-10-02、受入 P6A 08 の接続 fixture）：版 1 は `questStages` を持たない。読むときは欄の一覧を版で分け
+（版 1 に `questStages` があれば未知の欄として拒否）、**クエスト段階が空**として候補 Session を作る。書くのは常に版 2。
+版 3 以上・0 以下は「未対応の保存形式の版」で拒否する。それより前の形式は無い（P5 までは保存なし。記録 001 で確認）。
+
+**保存先の退避（New Game）**：スロットの両側を `archive/<日時>` へ**写して読み直して一致を確かめてから**、古い世代 → 最新の世代の順にスロットから消す。
+最新を消せずに止まったら、消した古い側を写しから戻す（戻せなくても最新の側は残る）。どの段の失敗でも New Game は始めない（2026-10-02 レビュー R2）。

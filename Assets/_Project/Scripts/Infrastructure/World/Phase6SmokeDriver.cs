@@ -6,10 +6,13 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Threading;
+using Momotaro.Gameplay.Encounter;
 using Momotaro.Gameplay.Session;
 using Momotaro.Infrastructure.Bootstrap;
 using Momotaro.Infrastructure.Save;
 using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
 using Debug = UnityEngine.Debug;
 
 namespace Momotaro.Infrastructure.World
@@ -19,7 +22,11 @@ namespace Momotaro.Infrastructure.World
     ///
     /// <list type="bullet">
     /// <item><c>-p6a-smoke new</c>：New Game → 到着・保存 → きびだんごを 1 つ使う（保存契機ではない変化）→ 正常終了の保存 → 終了。</item>
+    /// <item><c>-p6a-smoke close</c>：New Game → 到着・保存 → <b>版を進めない変化だけ</b>（HP・犬丸の Down と残時間）→
+    /// 期待値を書き出して<b>通常の終了要求</b>（<c>Application.Quit</c>）。終了前の保存は wantsToQuit の経路が行う（レビュー R1）。</item>
     /// <item><c>-p6a-smoke continue</c>：別プロセスで Continue → 採用 → 状態を書き出して終了（Editor の static に依らない）。</item>
+    /// <item><c>-p6a-smoke play</c>：New Game のあと<b>実入力で歩き・実攻撃で普通敵を倒し・お地蔵様で休息する</b>を繰り返し、
+    /// その間のフレーム時間と採取時間を測る（P6A 25 の「連続撃破・通常移動中」）。</item>
     /// <item><c>-p6a-smoke perf</c>：New Game のあと保存契機を 150 回以上出し（連続・書込中の追加要求を含む）、
     /// 採取のメインスレッド時間・要求から完了までの時間・フレーム時間を測って書き出す。<c>-p6a-slow-io &lt;ms&gt;</c> で遅い I/O。</item>
     /// </list>
@@ -143,6 +150,12 @@ namespace Momotaro.Infrastructure.World
                 case "continue":
                     yield return ContinueThenExit();
                     break;
+                case "close":
+                    yield return NewGameThenWindowClose();
+                    break;
+                case "play":
+                    yield return PerfPlay();
+                    break;
                 case "perf":
                     yield return Perf();
                     break;
@@ -253,7 +266,363 @@ namespace Momotaro.Infrastructure.World
             _result["resume"] = session.Resume.ToString();
             _result["savedRevision"] = Saves.Coordinator.SavedRevision.ToString(CultureInfo.InvariantCulture);
             _result["dirtyAfterContinue"] = Saves.Coordinator.IsDirty ? "true" : "false";
+            WriteParty("after");
             Finish();
+        }
+
+        // ---------------------------------------------------------------- 通常の終了要求（P6A 22・23。レビュー R1）
+
+        private static bool TryPort(out AreaActorTransferPort port)
+        {
+            port = null;
+            AreaTransitionService t = BootstrapServices.Get<AreaTransitionService>();
+            return t != null && t.TryGetActiveTransferPort(out port);
+        }
+
+        private void WriteParty(string prefix)
+        {
+            if (!TryPort(out AreaActorTransferPort port))
+            {
+                _result[prefix + "PartyError"] = "no transfer port";
+                return;
+            }
+
+            Momotaro.Gameplay.Save.PartySaveValues party = port.ExportForSave();
+            _result[prefix + "PlayerHp"] = party.Player.Hp.ToString(CultureInfo.InvariantCulture);
+            _result[prefix + "CompanionDown"] = party.HasCompanion && party.Companion.IsDown ? "true" : "false";
+            _result[prefix + "CompanionRecovery"] = party.Companion.RecoveryRemaining.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+
+        private IEnumerator NewGameThenWindowClose()
+        {
+            yield return StartNewGame();
+            if (_result.ContainsKey("error"))
+            {
+                Finish();
+                yield break;
+            }
+
+            if (!TryPort(out AreaActorTransferPort port))
+            {
+                _result["error"] = "no transfer port";
+                Finish();
+                yield break;
+            }
+
+            // 版を進めない変化だけを作る：主人公の HP を減らし、犬丸を Down（復帰まで長め）にする。
+            Momotaro.Gameplay.Save.PartySaveValues before = port.ExportForSave();
+            var player = new Momotaro.Gameplay.Save.PlayerSaveValues(Math.Max(1, before.Player.Hp - 7),
+                before.Player.Stamina, before.Player.StaminaRegenDelay, 0f);
+            Momotaro.Gameplay.Save.CompanionSaveValues c = before.Companion;
+            long revision = GameSessionProvider.Current.Changes.Revision;
+
+            // 復帰待ちは Data の上限を超えられないので、受け付けられる最も長い値を使う（終了までに自然復帰しないように）。
+            bool applied = false;
+            foreach (float recovery in new[] { 60f, 30f, 20f, 15f, 10f, 8f, 6f, 5f })
+            {
+                var companion = new Momotaro.Gameplay.Save.CompanionSaveValues(c.CompanionId, 0, true, recovery, 0f,
+                    c.AttackCooldown, c.GuardCooldown, c.EvadeCooldown, c.GuardianCooldown);
+                if (port.TryApplySaveValues(new Momotaro.Gameplay.Save.PartySaveValues(player, before.HasCompanion, companion)))
+                {
+                    applied = true;
+                    _result["appliedRecovery"] = recovery.ToString("0.###", CultureInfo.InvariantCulture);
+                    break;
+                }
+            }
+
+            if (!applied)
+            {
+                _result["error"] = "could not apply the change: " + port.LastApplyFailure;
+                Finish();
+                yield break;
+            }
+
+            yield return null;
+            GameSessionState session = GameSessionProvider.Current;
+            _result["adventureId"] = session.AdventureId;
+            _result["area"] = CurrentAreaProvider.Current.AreaId.Value;
+            _result["revisionUnchanged"] = session.Changes.Revision == revision ? "true" : "false";
+            _result["dirtyBeforeClose"] = Saves.Coordinator.IsDirty ? "true" : "false";
+            WriteParty("before");
+            _result["closeRequested"] = "true";
+            WriteResult();
+
+            // 通常の終了要求。冒険中なので wantsToQuit がいったん断り、最新を採って保存してから自分で終了する。
+            Application.Quit();
+
+            // 終わらなければ（素通しされず、保存も終わらない）、理由を残して閉じる。
+            float deadline = Time.realtimeSinceStartup + 30f;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            _result["error"] = "the normal quit did not finish (outcome=" + Saves.LastExitOutcome
+                + " awaitingChoice=" + Saves.AwaitingExitChoice + " wantsToQuit=" + Saves.WantsToQuitCount + ")";
+            Finish();
+        }
+
+        // ---------------------------------------------------------------- 実プレイ中の保存性能（P6A 25）
+
+        private Keyboard _keyboard;
+        private readonly List<double> _restMs = new List<double>();
+
+        private IEnumerator PerfPlay()
+        {
+            yield return StartNewGame();
+            if (_result.ContainsKey("error"))
+            {
+                Finish();
+                yield break;
+            }
+
+            _keyboard = InputSystem.AddDevice<Keyboard>("P6ASmokeKeyboard");
+            yield return null;
+            SaveCoordinator c = Saves.Coordinator;
+            CampaignShrineService shrines = BootstrapServices.Get<CampaignShrineService>();
+            int captureStart = c.CaptureMilliseconds.Count;
+            int successStart = c.SuccessCount;
+            var frames = new List<double>();
+            var walkFrames = new List<double>();
+            int kills = 0;
+            int rests = 0;
+            int failedKills = 0;
+            int failedRests = 0;
+            bool measuring = true;
+            bool walking = false;
+            string phase = "start";
+            var spikes = new List<string>();
+            int lastCaptures = c.CaptureMilliseconds.Count;
+
+            // 33ms を超えたフレームは、そのとき何をしていたか（歩行・撃破・休息）と、そのフレームに保存の採取があったかを残す。
+            IEnumerator FrameSampler()
+            {
+                while (measuring)
+                {
+                    yield return null;
+                    double ms = Time.unscaledDeltaTime * 1000.0;
+                    frames.Add(ms);
+                    if (walking)
+                    {
+                        walkFrames.Add(ms);
+                    }
+
+                    int captures = c.CaptureMilliseconds.Count;
+                    if (ms > 33.4)
+                    {
+                        spikes.Add(phase + "=" + ms.ToString("0.0", CultureInfo.InvariantCulture) + "ms(capture="
+                            + (captures > lastCaptures ? "yes" : "no") + ",writing=" + (c.IsWriting ? "yes" : "no") + ")");
+                    }
+
+                    lastCaptures = captures;
+                }
+            }
+
+            Coroutine sampler = StartCoroutine(FrameSampler());
+            float started = Time.realtimeSinceStartup;
+            for (int cycle = 0; cycle < 8 && Time.realtimeSinceStartup - started < 100f; cycle++)
+            {
+                // 歩く（実キー W・D・S・A を順に押し続ける）。保存の書込はこの間にも裏で走る。
+                phase = "c" + cycle + "/walk";
+                walking = true;
+                foreach (Key key in new[] { Key.W, Key.D, Key.S, Key.A })
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(key));
+                    float until = Time.realtimeSinceStartup + 0.5f;
+                    while (Time.realtimeSinceStartup < until)
+                    {
+                        yield return null;
+                    }
+                }
+
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                walking = false;
+
+                // 普通敵を実攻撃（J）で倒す。撃破のたびに報酬と保存要求が実経路で立つ。
+                phase = "c" + cycle + "/kill";
+                AreaRuntimeBundle bundle = CurrentAreaProvider.Current;
+                if (bundle != null && bundle.TryResolve(out AreaFieldEnemyDirector director))
+                {
+                    var targets = new List<GameObject>(director.Spawned);
+                    foreach (GameObject go in targets)
+                    {
+                        Momotaro.Gameplay.Enemy.EnemyActor enemy = go != null
+                            ? go.GetComponentInChildren<Momotaro.Gameplay.Enemy.EnemyActor>() : null;
+                        if (enemy == null || enemy.IsDefeated || !go.activeInHierarchy)
+                        {
+                            continue;
+                        }
+
+                        bool killed = false;
+                        yield return KillWithAttacks(enemy, ok => killed = ok);
+                        if (killed)
+                        {
+                            kills++;
+                        }
+                        else
+                        {
+                            failedKills++;
+                        }
+                    }
+                }
+
+                // お地蔵様で休息する（実キー E で調べ、休息。普通敵が戻り、保存要求が立つ）。
+                phase = "c" + cycle + "/rest";
+                bool rested = false;
+                yield return RestAtShrine(shrines, ok => rested = ok);
+                if (rested)
+                {
+                    rests++;
+                }
+                else
+                {
+                    failedRests++;
+                }
+            }
+
+            float elapsed = Time.realtimeSinceStartup - started;
+            yield return WaitSaved();
+            measuring = false;
+            StopCoroutine(sampler);
+            InputSystem.RemoveDevice(_keyboard);
+
+            var captures = new List<double>();
+            for (int i = captureStart; i < c.CaptureMilliseconds.Count; i++)
+            {
+                captures.Add(c.CaptureMilliseconds[i]);
+            }
+
+            _result["seconds"] = elapsed.ToString("0.0", CultureInfo.InvariantCulture);
+            _result["kills"] = kills.ToString(CultureInfo.InvariantCulture);
+            _result["failedKills"] = failedKills.ToString(CultureInfo.InvariantCulture);
+            _result["rests"] = rests.ToString(CultureInfo.InvariantCulture);
+            _result["failedRests"] = failedRests.ToString(CultureInfo.InvariantCulture);
+            _result["saves"] = (c.SuccessCount - successStart).ToString(CultureInfo.InvariantCulture);
+            _result["failures"] = c.FailureCount.ToString(CultureInfo.InvariantCulture);
+            _result["captures"] = captures.Count.ToString(CultureInfo.InvariantCulture);
+            _result["captureP95Ms"] = Percentile(captures, 0.95);
+            _result["captureMaxMs"] = Percentile(captures, 1.0);
+            _result["frames"] = frames.Count.ToString(CultureInfo.InvariantCulture);
+            _result["frameMedianMs"] = Percentile(frames, 0.5);
+            _result["frameP95Ms"] = Percentile(frames, 0.95);
+            _result["frameP99Ms"] = Percentile(frames, 0.99);
+            _result["frameMaxMs"] = Percentile(frames, 1.0);
+            _result["walkFrames"] = walkFrames.Count.ToString(CultureInfo.InvariantCulture);
+            _result["walkFrameP95Ms"] = Percentile(walkFrames, 0.95);
+            _result["walkFrameMaxMs"] = Percentile(walkFrames, 1.0);
+            _result["over33ms"] = CountOver(frames, 33.4).ToString(CultureInfo.InvariantCulture);
+            _result["spikes"] = string.Join(" ", spikes);
+            _result["restCallMs"] = string.Join(" ", _restMs.ConvertAll(v => v.ToString("0.0", CultureInfo.InvariantCulture)));
+            if (kills == 0 || rests == 0 || c.Status == SaveStatus.Failed)
+            {
+                _result["error"] = "play did not exercise saves (kills=" + kills + " rests=" + rests + " status=" + c.Status + ")";
+            }
+
+            Finish();
+        }
+
+        private static int CountOver(List<double> values, double limit)
+        {
+            int n = 0;
+            foreach (double v in values)
+            {
+                if (v > limit)
+                {
+                    n++;
+                }
+            }
+
+            return n;
+        }
+
+        private IEnumerator KillWithAttacks(Momotaro.Gameplay.Enemy.EnemyActor enemy, Action<bool> done)
+        {
+            AreaRuntimeBundle bundle = CurrentAreaProvider.Current;
+            if (bundle == null || !bundle.TryResolve(out Momotaro.Gameplay.Player.PlayerRoot root))
+            {
+                done(false);
+                yield break;
+            }
+
+            var facing = root.GetComponentInChildren<Momotaro.Gameplay.Player.PlayerFacing>();
+            var vitals = root.GetComponentInChildren<Momotaro.Gameplay.Player.PlayerVitalsHolder>();
+            float deadline = Time.realtimeSinceStartup + 8f;
+            float nextPress = 0f;
+            bool pressed = false;
+            while (Time.realtimeSinceStartup < deadline && enemy != null && !enemy.IsDefeated)
+            {
+                // 計測を死亡の解決で止めないよう HP は保つ（測る対象は撃破と保存）。
+                if (vitals != null && vitals.Vitals.Health.Current < vitals.Vitals.Health.Max / 2)
+                {
+                    vitals.Vitals.Health.SetCurrent(vitals.Vitals.Health.Max);
+                }
+
+                Vector3 stand = enemy.transform.position + new Vector3(0f, 0f, -1.0f);
+                if (root.Body != null)
+                {
+                    root.Body.position = stand;
+                    root.Body.linearVelocity = Vector3.zero;
+                }
+
+                root.transform.position = stand;
+                facing?.ConfirmFromInput(Vector2.up);
+                if (Time.realtimeSinceStartup >= nextPress)
+                {
+                    pressed = !pressed;
+                    InputSystem.QueueStateEvent(_keyboard, pressed ? new KeyboardState(Key.J) : new KeyboardState());
+                    nextPress = Time.realtimeSinceStartup + 0.12f;
+                }
+
+                yield return null;
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            yield return null;
+            done(enemy == null || enemy.IsDefeated);
+        }
+
+        private IEnumerator RestAtShrine(CampaignShrineService shrines, Action<bool> done)
+        {
+            AreaRuntimeBundle bundle = CurrentAreaProvider.Current;
+            if (shrines == null || bundle == null
+                || !bundle.TryResolve(out Momotaro.Gameplay.Interaction.ShrinePoint point)
+                || !bundle.TryResolve(out Momotaro.Gameplay.Player.PlayerRoot root))
+            {
+                done(false);
+                yield break;
+            }
+
+            Vector3 stand = point.InteractionAnchor + new Vector3(0f, 0f, 1.0f);
+            stand.y = root.transform.position.y;
+            if (root.Body != null)
+            {
+                root.Body.position = stand;
+                root.Body.linearVelocity = Vector3.zero;
+            }
+
+            root.transform.position = stand;
+            Physics.SyncTransforms();
+            yield return new WaitForFixedUpdate();
+            yield return null;
+
+            // 調べる（お地蔵様の Interact が呼ぶのと同じ窓口）。計測の対象は保存なので、選択の入力は経由しない。
+            shrines.OnShrineInteracted(point.ShrineId);
+            if (!shrines.IsMenuOpen)
+            {
+                done(false);
+                yield break;
+            }
+
+            yield return null;
+
+            // 休息そのもの（全回復・補充・普通敵の作り直し・保存要求）にかかったメインスレッド時間。保存の採取は LateUpdate で別。
+            Stopwatch restWatch = Stopwatch.StartNew();
+            bool ok = shrines.Rest() == ShrineMenuResult.Rested;
+            restWatch.Stop();
+            _restMs.Add(restWatch.Elapsed.TotalMilliseconds);
+            shrines.Close();
+            yield return null;
+            done(ok);
         }
 
         // ---------------------------------------------------------------- 性能（P6A 25）
@@ -388,6 +757,23 @@ namespace Momotaro.Infrastructure.World
 
         private void Finish()
         {
+            WriteResult();
+
+            // 結果は書いた。終了前の保存（と失敗時の選択待ち）は自動確認では行わない——New Game の確認は
+            // 自分で SaveBeforeExit を通し終えている。選択待ちで止まるとプロセスが終わらない（実際に踏んだ）。
+            CampaignSaveService saves = Saves;
+            if (saves != null)
+            {
+                saves.ChooseQuitWithoutSaving();
+            }
+            else
+            {
+                Application.Quit();
+            }
+        }
+
+        private void WriteResult()
+        {
             try
             {
                 var sb = new StringBuilder("{");
@@ -408,18 +794,6 @@ namespace Momotaro.Infrastructure.World
             catch (Exception e)
             {
                 Debug.LogError("P6A smoke: could not write the result: " + e.Message);
-            }
-
-            // 結果は書いた。終了前の保存（と失敗時の選択待ち）は自動確認では行わない——New Game の確認は
-            // 自分で SaveBeforeExit を通し終えている。選択待ちで止まるとプロセスが終わらない（実際に踏んだ）。
-            CampaignSaveService saves = Saves;
-            if (saves != null)
-            {
-                saves.ChooseQuitWithoutSaving();
-            }
-            else
-            {
-                Application.Quit();
             }
         }
 

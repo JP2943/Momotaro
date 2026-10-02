@@ -33,3 +33,8 @@ MonoBehaviour:
   _kibidangoBaseCapacity: 3
   _items: []
   _growthNodes: []
+  _grantOnceRewardIds: []
+  _companionIds: []
+  _questIds: []
+  _testEnemyAttackScale: 1
+  _testPlayerMaxHpScale: 1

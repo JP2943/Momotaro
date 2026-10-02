@@ -53,6 +53,7 @@ namespace Momotaro.Gameplay.Save
 
             session.Inventory.RestoreFrom(new List<KeyValuePair<string, int>>(snapshot.Inventory));
             session.RestoreVisitsAndRecruits(Ids(snapshot.VisitedAreas), Ids(snapshot.Recruited));
+            session.RestoreQuestStages(snapshot.QuestStages);
             session.RestoreAdventure(
                 snapshot.AdventureId, Ids(snapshot.RegisteredShrines), new StableId(snapshot.Checkpoint),
                 ResumeAnchor.From(snapshot.ResumeKind, new StableId(snapshot.ResumeAreaId), new StableId(snapshot.ResumePointId)),

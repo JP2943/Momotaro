@@ -91,6 +91,30 @@ namespace Momotaro.Editor.Phase6
                     Get(created, "processId") != Get(continued, "processId") ? "different" : "same");
             }
 
+            // ---- 2b. 別プロセス：版を進めない変化だけで通常の終了要求 → Continue（レビュー R1）----
+            string closeSaves = Path.Combine(work, "close_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss"));
+            Directory.CreateDirectory(closeSaves);
+            bool closeOk = RunPlayer(exe, "close", closeSaves, work, 0, batch: true, outputs, out Dictionary<string, string> closed);
+            closeOk &= RunPlayer(exe, "continue", closeSaves, work, 0, batch: true, outputs,
+                out Dictionary<string, string> reopened, tag: "continue_after_close");
+            if (closeOk)
+            {
+                closeOk &= Expect(outputs, "終了要求の前は版が進んでいない（HP・Down だけ）", "true", Get(closed, "revisionUnchanged"));
+                closeOk &= Expect(outputs, "同じ冒険", Get(closed, "adventureId"), Get(reopened, "adventureId"));
+                closeOk &= Expect(outputs, "終了要求の直前の HP が戻る", Get(closed, "beforePlayerHp"), Get(reopened, "afterPlayerHp"));
+                closeOk &= Expect(outputs, "犬丸の Down が戻る", "true", Get(reopened, "afterCompanionDown"));
+                closeOk &= ExpectAtMost(outputs, "犬丸の復帰待ちは終了時以下（無料回復しない）",
+                    Get(closed, "beforeCompanionRecovery"), Get(reopened, "afterCompanionRecovery"));
+                closeOk &= Expect(outputs, "Continue 直後は未保存なし", "false", Get(reopened, "dirtyAfterContinue"));
+            }
+
+            ok &= closeOk;
+
+            // ---- 2c. 実プレイ中（歩行・実攻撃の連続撃破・休息）の保存性能。画面あり ----
+            string playSaves = Path.Combine(work, "play_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss"));
+            Directory.CreateDirectory(playSaves);
+            ok &= RunPlayer(exe, "play", playSaves, work, 0, batch: false, outputs, out _);
+
             // ---- 3. 性能（通常 I/O・遅い I/O）。画面ありで 60fps 目標 ----
             string perfSaves = Path.Combine(work, "perf_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss"));
             Directory.CreateDirectory(perfSaves);
@@ -112,11 +136,22 @@ namespace Momotaro.Editor.Phase6
             return ok;
         }
 
+        private static bool ExpectAtMost(List<string> outputs, string label, string limit, string actual)
+        {
+            bool ok = float.TryParse(limit, System.Globalization.NumberStyles.Float,
+                          System.Globalization.CultureInfo.InvariantCulture, out float l)
+                      && float.TryParse(actual, System.Globalization.NumberStyles.Float,
+                          System.Globalization.CultureInfo.InvariantCulture, out float a)
+                      && a <= l + 0.001f && a > 0f;
+            outputs.Add((ok ? "[OK] " : "[NG] ") + label + "：上限=" + limit + " 実際=" + actual);
+            return ok;
+        }
+
         private static bool RunPlayer(string exe, string mode, string saveDir, string work, int slowIo, bool batch,
-            List<string> outputs, out Dictionary<string, string> result)
+            List<string> outputs, out Dictionary<string, string> result, string tag = null)
         {
             result = null;
-            string tag = mode + (slowIo > 0 ? "_slow" + slowIo : string.Empty);
+            tag ??= mode + (slowIo > 0 ? "_slow" + slowIo : string.Empty);
             string outPath = Path.Combine(work, "result_" + tag + ".json");
             string logPath = Path.Combine(work, "player_" + tag + ".log");
             if (File.Exists(outPath))

@@ -25,6 +25,16 @@ namespace Momotaro.Infrastructure.Save
         TimedOut = 2,
     }
 
+    /// <summary>終了導線の行き先（レビュー R3：失敗後の「もう一度」はここへ向かう）。</summary>
+    public enum ExitDestination
+    {
+        /// <summary>タイトルへ戻る。</summary>
+        Title = 0,
+
+        /// <summary>アプリを終了する。</summary>
+        Quit = 1,
+    }
+
     /// <summary>
     /// オートセーブの常駐ホスト（P6A-02／05。仕様 §8〜§10）。<see cref="SaveCoordinator"/> を Unity の時間と終了導線へ繋ぐ。
     ///
@@ -71,6 +81,15 @@ namespace Momotaro.Infrastructure.Save
 
         /// <summary>終了の保存に失敗して、選択を待っているか。</summary>
         public bool AwaitingExitChoice { get; private set; }
+
+        /// <summary>
+        /// いま進めている（または失敗して選択を待っている）終了導線の行き先。失敗後の「もう一度保存」は<b>ここへ向かう</b>
+        /// （タイトルへ戻ろうとして失敗したのに、再試行でアプリが終了しない。レビュー R3）。
+        /// </summary>
+        public ExitDestination PendingExitDestination { get; private set; } = ExitDestination.Title;
+
+        /// <summary>通常のウィンドウ終了要求を受けた回数（診断・実ビルド確認用）。</summary>
+        public int WantsToQuitCount { get; private set; }
 
         /// <summary>直近の終了・タイトル復帰の結果。</summary>
         public SaveExitOutcome LastExitOutcome { get; private set; }
@@ -233,7 +252,7 @@ namespace Momotaro.Infrastructure.Save
                 int choice = _navigator.Poll(3, null, out bool back);
                 if (choice == 0)
                 {
-                    ChooseRetry(thenQuit: true);
+                    ChooseRetry();
                 }
                 else if (choice == 1 || back)
                 {
@@ -241,7 +260,7 @@ namespace Momotaro.Infrastructure.Save
                 }
                 else if (choice == 2)
                 {
-                    ChooseQuitWithoutSaving();
+                    ChooseLeaveWithoutSaving();
                 }
 
                 return;
@@ -427,52 +446,47 @@ namespace Momotaro.Infrastructure.Save
         }
 
         /// <summary>ゲーム内の「終了」。保存を終えてから終了する。</summary>
-        public void RequestQuit()
-        {
-            if (_exiting)
-            {
-                return;
-            }
-
-            StartCoroutine(SaveBeforeExit(outcome =>
-            {
-                if (outcome == SaveExitOutcome.Saved)
-                {
-                    QuitNow();
-                }
-            }));
-        }
+        public void RequestQuit() => BeginExit(ExitDestination.Quit);
 
         /// <summary>ゲーム内の「タイトルへ」。保存を終えてから Launcher へ戻る。</summary>
-        public void RequestReturnToTitle()
+        public void RequestReturnToTitle() => BeginExit(ExitDestination.Title);
+
+        private void BeginExit(ExitDestination destination)
         {
             if (_exiting)
             {
                 return;
             }
 
+            PendingExitDestination = destination;
             StartCoroutine(SaveBeforeExit(outcome =>
             {
                 if (outcome == SaveExitOutcome.Saved)
                 {
-                    ReturnToTitleNow();
+                    // 行き先は完了時点のもの：タイトルへ向かう保存の途中でウィンドウが閉じられたら終了へ切り替わっている。
+                    LeaveTo(PendingExitDestination);
                 }
             }));
         }
 
-        /// <summary>失敗時の選択：もう一度保存して終える。</summary>
-        public void ChooseRetry(bool thenQuit)
+        private void LeaveTo(ExitDestination destination)
         {
-            AwaitingExitChoice = false;
-            _exiting = false;
-            if (thenQuit)
+            if (destination == ExitDestination.Quit)
             {
-                RequestQuit();
+                QuitNow();
             }
             else
             {
-                RequestReturnToTitle();
+                ReturnToTitleNow();
             }
+        }
+
+        /// <summary>失敗時の選択：もう一度保存して、<b>元の行き先</b>（<see cref="PendingExitDestination"/>）へ進む。</summary>
+        public void ChooseRetry()
+        {
+            AwaitingExitChoice = false;
+            _exiting = false;
+            BeginExit(PendingExitDestination);
         }
 
         /// <summary>失敗時の選択：ゲームへ戻る（保存はまだできていない表示を残す）。</summary>
@@ -483,7 +497,14 @@ namespace Momotaro.Infrastructure.Save
             ResumeGameplayInput();
         }
 
-        /// <summary>失敗時の選択：未保存分を失って終了する。</summary>
+        /// <summary>失敗時の選択：未保存分を失って、元の行き先（タイトル／終了）へ進む。</summary>
+        public void ChooseLeaveWithoutSaving()
+        {
+            AwaitingExitChoice = false;
+            LeaveTo(PendingExitDestination);
+        }
+
+        /// <summary>保存せずに終了する（自動確認の後始末用。行き先を問わずアプリを閉じる）。</summary>
         public void ChooseQuitWithoutSaving()
         {
             AwaitingExitChoice = false;
@@ -535,18 +556,27 @@ namespace Momotaro.Infrastructure.Save
         }
 
         /// <summary>
-        /// 通常のウィンドウ終了要求（仕様 §9）。未保存があれば<b>いったん断り</b>、保存を終えてから自分で終了する。
+        /// 通常のウィンドウ終了要求（仕様 §9）。冒険中なら<b>必ずいったん断り</b>、最新を採って保存を終えてから自分で終了する。
         /// </summary>
+        /// <remarks>
+        /// 「未保存か」では判断しない（レビュー R1）。HP・スタミナ・犬丸の Down 残時間などは版を進めないので、
+        /// 版の差だけでは未保存に見えず、直前の保存より後の値が黙って失われる。素通しは明示の承認（保存済みの終了・
+        /// 「保存せずに終了」）のあとだけ。
+        /// </remarks>
         private bool OnWantsToQuit()
         {
+            WantsToQuitCount++;
             if (_quitApproved || _coordinator == null || _coordinator.Session == null)
             {
                 return true;
             }
 
-            if (!_coordinator.IsDirty && !_coordinator.IsWriting)
+            _menuOpen = false;
+            if (_exiting || AwaitingExitChoice)
             {
-                return true;
+                // 進行中（または失敗後の選択待ち）の終了導線を「終了」へ向け直す。もう一度保存すれば終了する。
+                PendingExitDestination = ExitDestination.Quit;
+                return false;
             }
 
             RequestQuit();
@@ -677,9 +707,10 @@ namespace Momotaro.Infrastructure.Save
                 ? "保存が時間内に終わりませんでした。"
                 : "理由：" + _coordinator.LastError);
             GUILayout.Label("最後に保存できたところまでしか残りません。");
-            if (_navigator.DrawItem(0, "もう一度保存"))
+            bool toTitle = PendingExitDestination == ExitDestination.Title;
+            if (_navigator.DrawItem(0, toTitle ? "もう一度保存してタイトルへ" : "もう一度保存して終了"))
             {
-                ChooseRetry(thenQuit: true);
+                ChooseRetry();
             }
 
             if (_navigator.DrawItem(1, "ゲームへ戻る"))
@@ -687,9 +718,9 @@ namespace Momotaro.Infrastructure.Save
                 ChooseBackToGame();
             }
 
-            if (_navigator.DrawItem(2, "保存せずに終了"))
+            if (_navigator.DrawItem(2, toTitle ? "保存せずにタイトルへ" : "保存せずに終了"))
             {
-                ChooseQuitWithoutSaving();
+                ChooseLeaveWithoutSaving();
             }
 
             GUILayout.FlexibleSpace();

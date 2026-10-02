@@ -41,7 +41,7 @@ namespace Momotaro.Infrastructure.World
         // 保存からの再開（P6A-02。Continue）。Actor 値は運ばず、到着側が保存値を適用する。
         private int _loadTransitionId;
 
-        // 旅立ち（P6A-04）。通常の Single／Fade 経路で運び、成功の確定後に呼び出し側が休息・登録・保存を行う。
+        // 旅立ち（P6A-04）のうち同じ Area の中のもの（Single 経路）。別 Area へは出発保持の経路（_fastTravelJumpId。レビュー D1）。
         private int _fastTravelTransitionId;
         private Momotaro.Gameplay.Save.PartySaveValues _pendingLoadParty;
 
@@ -684,14 +684,39 @@ namespace Momotaro.Infrastructure.World
         }
 
         /// <summary>
-        /// 旅立ち（P6A-04。仕様 §6）。<b>既存の Fade／Single 経路</b>で運ぶ（Camera・SceneFlow の第二系統を作らない）。
-        /// Single 読込は載っている Area を全部置き換えるので、在留は 1 枚から始まる（最大 2 を超えない）。
+        /// 旅立ち（P6A-04。仕様 §6。レビュー D1）。<b>出発 Area を到着準備の成功まで保持する</b>：
+        /// 到着先を Additive で読み、隔離したまま配置と復元を済ませてから確定し、そのあと出発側を手放す
+        /// （<see cref="AreaSlideTransitionRunner.TryFastTravel"/>）。準備のどこで失敗しても出発側に留まり、再試行できる。
+        /// 在留は最大 2。排他・世代・在留台帳はスライドと共有する（第二系統を作らない）。
         ///
-        /// 失敗時は通常の移動と同じく出発 Area へ復旧する（運んだ Actor 値で）。<b>到着の配置と進行適用が成功した後</b>に
-        /// <see cref="FastTravelCompleted"/> が出るので、登録・回復・周期・保存はそこで一括確定する。
+        /// <b>到着の配置と進行適用が成功した後</b>に <see cref="FastTravelCompleted"/> が出るので、
+        /// 登録・回復・周期・保存はそこで一括確定する。失敗は <see cref="FastTravelFailed"/>。
+        ///
+        /// 同じ Area の中の旅立ちだけは、同じ Scene を 2 枚載せられないので従来の Single 経路で運ぶ
+        /// （P6A の検証 campaign には無い。<c>P6A_後続課題.md</c>）。
         /// </summary>
         public AreaTransitionDecision TryFastTravel(StableId areaId, StableId entryId)
         {
+            AreaRuntimeBundle current = CurrentBundle();
+            bool sameArea = current != null && current.AreaId.Equals(areaId);
+            if (!sameArea)
+            {
+                if (_coordinator == null)
+                {
+                    return AreaTransitionDecision.Reject(AreaTransitionRejection.NotReady);
+                }
+
+                AreaTransitionDecision jump = Slide.TryFastTravel(areaId, entryId);
+                if (jump.Accepted)
+                {
+                    _fastTravelJumpId = jump.TransitionId;
+                    HasTerminalFailure = false;
+                    TerminalFailureReason = null;
+                }
+
+                return jump;
+            }
+
             AreaTransitionDecision decision = TryTravel(areaId, entryId);
             if (decision.Accepted)
             {
@@ -699,6 +724,32 @@ namespace Momotaro.Infrastructure.World
             }
 
             return decision;
+        }
+
+        private int _fastTravelJumpId;
+
+        /// <summary>旅立ち（出発保持の経路）が確定した（スライド側の世代）。</summary>
+        internal void CompleteFastTravelJump(int transitionId)
+        {
+            if (_fastTravelJumpId == 0 || transitionId != _fastTravelJumpId)
+            {
+                return;
+            }
+
+            _fastTravelJumpId = 0;
+            FastTravelCompleted?.Invoke(transitionId);
+        }
+
+        /// <summary>旅立ち（出発保持の経路）が出発側へ戻った（スライド側の世代）。</summary>
+        internal void FailFastTravelJump(int transitionId)
+        {
+            if (_fastTravelJumpId == 0 || transitionId != _fastTravelJumpId)
+            {
+                return;
+            }
+
+            _fastTravelJumpId = 0;
+            FastTravelFailed?.Invoke(transitionId);
         }
 
         /// <summary>旅立ちが活動許可まで済んだ（引数は遷移の世代）。</summary>

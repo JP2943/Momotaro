@@ -131,6 +131,58 @@ namespace Momotaro.Gameplay.Session
         /// <summary>加入済み仲間を列挙する（保存用）。</summary>
         public IEnumerable<StableId> Recruited => _recruited;
 
+        // ---- 将来のクエスト・章進行の接続口（P6 仕様 §3「P7 が所有。安定 ID 付き状態を保存へ接続できる境界」）----
+
+        private readonly Dictionary<string, int> _questStages = new Dictionary<string, int>();
+
+        /// <summary>
+        /// クエストの段階（安定 ID → 0 以上の整数）。<b>P6A はクエストランナーを作らない</b>——P7 が持つ状態を
+        /// 保存・死亡・休息へ通す<b>境界だけ</b>を置く（受入 P6A 08 の接続 fixture）。未設定は 0。
+        /// </summary>
+        public int QuestStageOf(StableId questId) =>
+            !questId.IsEmpty && _questStages.TryGetValue(questId.Value, out int stage) ? stage : 0;
+
+        /// <summary>
+        /// クエストの段階を確定する（P7 の進行確定の入口。仕様 §8「将来の P7 進行確定：クエスト・章状態と関連報酬を一緒に」）。
+        /// 負数・空 ID は拒否。変化したら版を進めて保存を要求する。<b>死亡・休息・周期では戻らない</b>（恒久進行）。
+        /// </summary>
+        public bool TrySetQuestStage(StableId questId, int stage)
+        {
+            if (questId.IsEmpty || stage < 0)
+            {
+                return false;
+            }
+
+            if (_questStages.TryGetValue(questId.Value, out int current) && current == stage)
+            {
+                return false;
+            }
+
+            _questStages[questId.Value] = stage;
+            _log.Touch("quest_stage", autosave: true);
+            return true;
+        }
+
+        /// <summary>段階を持つクエストを列挙する（保存用。順序は呼び出し側で決める）。</summary>
+        public void CopyQuestStagesTo(List<KeyValuePair<string, int>> buffer)
+        {
+            buffer.Clear();
+            foreach (KeyValuePair<string, int> pair in _questStages)
+            {
+                buffer.Add(pair);
+            }
+        }
+
+        /// <summary>保存からクエストの段階を置く（候補 Session の構築だけ。検証済みの値）。</summary>
+        internal void RestoreQuestStages(IEnumerable<KeyValuePair<string, int>> stages)
+        {
+            _questStages.Clear();
+            foreach (KeyValuePair<string, int> pair in stages)
+            {
+                _questStages[pair.Key] = pair.Value;
+            }
+        }
+
         // ---- 冒険・お地蔵様・復帰位置・きびだんご（P6A）----
 
         private readonly HashSet<StableId> _registeredShrines = new HashSet<StableId>();

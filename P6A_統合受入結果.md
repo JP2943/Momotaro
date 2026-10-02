@@ -325,3 +325,158 @@ EditMode 全件は開いている Scene を置き換えるため（CLAUDE.md）�
 次の全件実行の機会に回帰を確かめる。
 
 **UI の見た目（1.5 倍の大きさ・選択の印）は画面で確認していない。** パッドでの操作はテストで確かめた。
+
+---
+
+## 記録 006：GPT レビュー（`Momotaro_P6A_Review_03e9f94.md`）への対応（2026-10-02）
+
+対象は `03e9f94`。指摘 R1〜R4・D1 をコードで確かめてから直し（オーナー回答：「すべて着手」「出発 Area を保持する形に直す」）、
+未達とされた証跡（P6A 08・12・17・25・27、F06）を足し、対応表から未確認の「合格」を外した。
+
+### 1. R1：通常の終了要求が「未保存なし」で素通りしていた
+
+| 確かめたこと | 直したこと |
+|---|---|
+| `OnWantsToQuit` は `IsDirty` が false なら終了を許していた。HP・スタミナ・犬丸の Down 残時間は版を進めないので、**直前の保存より後の値が黙って失われた** | 冒険を結んでいる間は、明示の承認（保存済みの終了・「保存せずに終了」）が無い限り**必ずいったん断り**、`SaveBeforeExit` で最新を採ってから自分で終了する。保存の途中・失敗後の選択中にもう一度閉じられたら、行き先を「終了」へ向け直す |
+| 版の変わらない保存（終了前など）が失敗しても、版の差が無いので `IsDirty` が false に戻っていた | `SaveCoordinator` に「直近の書込が失敗して、まだ次の成功が無い」印を持たせ、`IsDirty` に含める（`HasUnsavedFailure`）。次の成功・結び直しでだけ消える |
+
+証跡：`Coordinator_FailedSaveWithUnchangedRevision_StaysDirtyUntilNextSuccess`（E）、`WindowClose_HpOnlyChange_IsNotPassedThrough_FailureStaysUnsaved`（P。Editor の再生では
+`wantsToQuit` が来ないので同じ入口を呼ぶ。成功するとアプリが終わるため失敗側を通す）、実ビルド `close`（下の §4）。
+
+### 2. R2：New Game の退避が途中で失敗すると旧冒険の最新世代がスロットから消えていた
+
+`TryArchiveCurrent` は A・B を順に退避先へ**移動**していた。2 つ目で失敗すると、スロットには古い片側だけが残り、最新は退避先にしか無かった。
+手順を「**写す → 読み直して一致を確かめる → 古い世代から消す → 最新を消せなければ古い側を写しから戻す**」に変えた。どの段で失敗しても
+スロットには「読める旧冒険（最新の世代）」か「空」しか残らず、New Game は始まらない（`P6_SaveInventory.md` §5 末尾）。
+
+証跡：`Store_ArchivePartialFailure_KeepsLatestLoadable_AcrossRestart`（2 つ目の写し・2 つ目の削除・削除後の戻しの失敗をそれぞれ注入し、新しい Store＝再起動でも世代 2 を読む）。
+
+### 3. R3：失敗後の「もう一度保存」が常に終了へ向かっていた
+
+タイトルへ戻ろうとして失敗したのに、選択肢の「もう一度」は `ChooseRetry(thenQuit: true)` 固定だった。行き先（`ExitDestination`：タイトル／終了）を覚え、
+「もう一度保存して…」「保存せずに…」は元の行き先へ向かう（ラベルも行き先で変わる）。
+
+証跡：`ExitChoice_RetryByDecideInput_KeepsTheTitleDestination`（失敗中に **Enter の決定**で再試行 → また失敗して行き先はタイトルのまま → 直して **パッドの決定（South）** → タイトルへ戻り、最新の HP が保存されている）。
+
+### 4. R4：付与済み報酬・加入済み仲間の ID を検証していなかった
+
+`SaveSnapshotValidator` は両者を書式だけで通していた。campaign のカタログに既知の一度きり報酬（初到達報酬＋Data の一覧）と既知の仲間を持たせ、
+未知 ID を拒否する。Validator（`validate-phase6-world`）は、この campaign の Data にある一度きり報酬がすべて既知であること・一覧に Data の無い ID が無いこと・犬丸が既知であることを見る。
+
+証跡：`Validator_RejectsWellFormedUnknownRewardAndCompanionIds`。
+
+### 5. D1：旅立ちが出発 Area を先に捨てていた（仕様 §6 との不一致）
+
+旅立ちは P5 の Fade／Single 経路を使っていたので、到着先の準備より前に出発 Area が破棄されていた（失敗すると「出発 Area を読み直して戻る」）。
+仕様 §6「活動 Area は到着準備成功まで保持…解放失敗時は遷移を確定せず、出発側を維持して再試行可能」に合わせ、**スライドと同じ排他・世代・在留台帳・先読みの口**で運ぶ
+`AreaSlideTransitionRunner.TryFastTravel` を足した。到着先を Additive で読み、隔離したまま配置と復元を済ませ、確定してから出発側を手放す（預かり）。
+読込開始・読込・準備・配置・預かっていた旧 Area の解放のどこで失敗しても、出発側を開け直してその場に留まる。カメラは送らず、確定時に到着 Area へ結び直して合わせる。
+同じ Area の中の旅立ちだけは同じ Scene を 2 枚載せられないので従来の経路（`P6A_後続課題.md` F11。検証 campaign には無い）。
+
+証跡：`ABC_FastTravel_Death_EachAdvancesCycleOnce`（到着先 C が載った時点で出発 A もまだ載っている。Single 読込を使わない）、
+`FastTravel_KeepsDeparture_UntilPrepared_FailuresStayAndRetry`、`FailedTravelAndFastTravel_CommitNothing`（読込開始の失敗）。
+
+### 6. P6A 12 の複合異常（旅立ち × 保存）
+
+`FastTravel_KeepsDeparture_UntilPrepared_FailuresStayAndRetry` で、いずれも在留・Scene 2 枚以下を毎フレーム確かめる：
+
+1. 読み終えたあとの**準備・配置の失敗**（到着先の準備完了後・確定前に失敗を注入）→ 出発側の主人公が**同じ実体のまま**操作に戻る。周期・補充・回復・登録・進行・保存は 1 つも起きない。到着先は手放す
+2. **遅いロード**（読込の開始を保留）→ 待つ間は出発 A が活動のまま、保存要求は採取されない（遷移の前後をまたがない）。着いてから 1 回だけ休息し、周期・再開位置・死亡再開点を同じ保存へ載せる
+3. **預かっていた旧 Area の解放失敗と重なる旅立ち**（B から A へ。A を読むには預かっている C を手放す必要がある）→ 旅立たず B に留まる（3 枚目を読まない）。直れば同じ操作で旅立てる
+
+### 7. P6A 08：クエスト接続 fixture
+
+本番のクエストランナーは作らず（P7）、仕様 §3「将来のクエストと章進行：安定 ID 付き状態を保存へ接続できる境界」だけを置いた：
+`GameSessionState` のクエスト段階（ID → 0 以上の整数、`TrySetQuestStage` で保存要求）、Snapshot・DTO（`questStages`、保存形式の版 2）、
+検証（campaign の既知クエスト ID。P6A は `quest_p6a_fixture` だけ）、候補 Session への復元。死亡・休息・周期では戻らない。
+版 1 の保存は「クエスト段階が空」として読む（版で欄の一覧を分ける。欠けた欄を黙って補わない）。
+
+証跡：`ABC_*`（段階 3 にしてから実際に死に、死亡後のメモリと保存ファイルの両方で 3）、`RoundTrip_*`、`Validator_RejectsUnknownIdsRangesAndContradictions`、`Codec_ReadsSchemaVersion1_AsNoQuestStages`、`Codec_RejectsMissingDuplicateUnknownWrongTypeAndTamper`（版 1 に questStages があれば拒否・版 3 は拒否）。
+
+### 8. P6A 17：実経路の同フレーム致死と報酬、死亡再開の失敗と終了要求
+
+`SameFrameKillAndDeath_RespawnFailsDuringExit_NoHpZeroSave_ThenRecovers`：普通敵を**実の被弾窓口**（`EnemyActor.ReceiveHit` → 撃破 → 報酬 → 保存要求）で倒し、
+同じフレームで主人公も倒れる。倒れている間にタイトル復帰を求め、**死亡再開の遷移を失敗させる**。保存は時間切れの選択になり（成功表示をしない）、
+倒れてから 1 度も採取していない（HP 0 の通常保存なし）、ファイルは倒れる前の一貫した世代のまま。ゲームへ戻り再開を直すと、報酬・周期 +1（1 回だけ）・全回復が同じ保存に載る。
+
+### 9. P6A 27：実際に表示された VFX の記録、F06
+
+`AttackVfx_RecordsShownTiersAndDirections`：A で下上左右それぞれ実キー J を押し続け、**実際に再生された絵**を素材の組と照合して記録した
+（`_bridge/p6a27_vfx_observed.json`）。観測：**通常 1・2・3 段 × 下・上・左・右の 12 通りすべて**。
+
+| 対象 | 実際の表示を確認 | 素材・配置の検査だけ |
+|---|---|---|
+| 主人公の剣閃 通常 1〜3 段 × 4 方向 | ✔（上の記録。画面内・遮蔽なし・遷移後は `AttackVfx_ShowsInA_AndAfterSlideInB` で 1 段目） | — |
+| 主人公の剣閃 特殊攻撃 | — | ✔（この検証 campaign に特殊攻撃の実入力の経路が無い） |
+| 敵の剣閃・ガード不能の頭上警告・ジャストガードの閃光 | — | ✔（`validate-phase6-world` で 1 つずつ・素材あり） |
+
+F06（2 Area 在留での配信元の選択）：`JustGuardVfxPresenter`・`CombatFeedbackPresenter`・`PlayerHitSePresenter`（と配信元の主人公探索）は
+`FindFirstObjectByType` で**載っているどれか**を掴んでいた。今の開閉順（出発側を閉じてから到着側を開ける）では正しいものを掴むが、順序に頼っていた。
+「自分と同じ Scene のものを優先」（`SceneLocalLookup`）へ変えた。証跡：`FeedbackPresenters_BindTheirOwnScenesDispatcher_WithTwoAreasLoaded`
+（配信元が 2 Scene で同時に有効でも各表示役は自分の Scene のものを見る。実 Area で A を預かったまま B が活動しているとき B の表示役は B の配信元）。
+修正前のコードでこの検査が落ちることを確かめた（§11）。
+
+### 10. P6A 25：実プレイ中の保存性能
+
+`P6A_性能測定記録.md` §5。実キーで歩き、実攻撃で普通敵を 16 体倒し、8 回休息（保存 32 回）を 3 回。保存の採取 p95 は 1ms 未満、歩行中・撃破中にフレームは伸びない。
+**1 回目の休息で 1 フレームだけ 281〜326ms 止まる**（3 回とも）。休息の呼び出しは 4ms・採取は 1ms 未満で、保存連打の計測には現れない——休息側の初回の処理と見ているが
+切り分けていない。P6A 25 は「保存の基準は満たす。休息の停止は F04 として残す」とし、全面合格とは書かない。
+
+### 11. 修正を外すとテストが落ちることの確認（CLAUDE.md）
+
+修正だけを一時的に外した版をビルドして実行し、新しい検査が落ちることを確かめた（確認後に元へ戻し、元の版と一致することを `cmp` で確認）：
+
+| 外した修正 | 落ちた検査（核心の判定で落ちたか） |
+|---|---|
+| R1：失敗の印を `IsDirty` から外す | `Coordinator_FailedSaveWithUnchangedRevision_*`・`WindowClose_*`（「版の差が無くても、失敗した保存のあとは未保存」） |
+| R2：退避を移動版（`03e9f94`）へ戻す | `Store_ArchivePartialFailure_*`（「写しの失敗を成功にした」） |
+| R4：既知 ID の照合を外す | `Validator_RejectsWellFormedUnknownRewardAndCompanionIds`（「未知の付与済み報酬を受け付けた」） |
+| D1：旅立ちを Single 経路へ戻す | `ABC_*`（「到着先が載った時点で出発 Area もまだ載っていた」）・`FastTravel_KeepsDeparture_*` |
+| F06：同じ Scene 優先を外す | `FeedbackPresenters_*`（「2 つ目の Scene の表示役は 2 つ目の配信元を見る」） |
+
+R3 は外すと Editor の再生が止まる（終了へ向かう）ので、この方法では確かめていない。
+
+### 12. 実ビルド（P6A 22・23・25）
+
+ブリッジ op `p6a-player-smoke`（`s13`。`s10`・`s12` も同じ結果）：
+
+| 確認 | 結果 |
+|---|---|
+| New Game → ゲーム内の終了 → 別プロセスで Continue | 同じ冒険・残数・エリア、Continue 直後に未保存なし |
+| **版を進めない変化だけ（HP −7、犬丸を Down・復帰待ち 5 秒）→ `Application.Quit`（通常の終了要求）→ 別プロセスで Continue** | 終了要求の前は未保存に見えない（以前ならここで素通り）。Continue で HP 43・犬丸 Down・復帰待ち 4.967 秒（終了時 4.983 秒以下＝無料回復なし） |
+| 実プレイ中の性能 | §10 |
+| 保存連打の性能（通常・200ms の遅い I/O） | 採取 p95 0.02ms、要求→完了 p95 50ms／450ms、フレーム最大 17.6ms |
+
+### 13. 変更した既存の契約
+
+- `SaveCoordinator.IsDirty`：直近の書込失敗（次の成功まで）を含む。`HasUnsavedFailure` を追加。
+- `CampaignSaveService`：通常の終了要求は冒険中なら必ず保存を通す。`ExitDestination`／`PendingExitDestination`、`ChooseRetry()`（引数なし。元の行き先へ）、`ChooseLeaveWithoutSaving()`。`ChooseQuitWithoutSaving()` は自動確認の後始末用に残した。
+- `SaveFileStore.TryArchiveCurrent`：写して確かめてから消す。`RealSaveFileSystem.Delete` も一時的な共有違反をやり直す。
+- `SaveSnapshot`：保存形式の版 2（`questStages`）。版 1 も読める。
+- `AreaCatalogData`／`CampaignCatalog`：既知の一度きり報酬・仲間・クエストの ID。`GameSessionState`：クエスト段階。
+- `AreaTransitionService.TryFastTravel`：別 Area へは `AreaSlideTransitionRunner.TryFastTravel`（出発保持）。`AreaConnectionSnapshot.ForFastTravel`（接続 Data に現れない擬似接続）。
+- 表示役の配信元探索：同じ Scene 優先（`SceneLocalLookup`）。
+- 実ビルド確認：`-p6a-smoke close`・`play` を追加。
+
+### 14. 最終の実行（すべて作業ツリーの最終版で）
+
+| 実行 | 内容 | 結果 |
+|---|---|---|
+| `b2`→`v2` | `build-phase6-world` → `validate-phase6-world` | 合格（警告 1：A に遭遇戦が無い——構成どおり） |
+| `v3`／`v4` | `validate-exploration-trial`（P5）／`validate-phase55-world`（P5.5） | 合格（警告 1／2。従来どおり） |
+| `ef4` | EditMode 全件 | 1872／1872（予定 1872） |
+| `pq1`／`pq2`／`pq3`／`pq4` | PlayMode 全件を分割（P5.5 スライド 64／往復 13／P5.5 その他 72／その他 115） | 64／13／72／115 |
+| `pq5` | PlayMode `P6AWorldPlayTests` | 18／18 |
+| `vqP4`／`vqP5`／`vqP55`／`vqP6A` | `verify-required-tests`（`ef4,pq1,pq2,pq3,pq4,pq5`） | P4 226／226・P5 93／93・P5.5 293／293・P6A 71／71、未説明の Skip なし、未対応要求なし |
+| `s13` | `p6a-player-smoke`（実ビルド・別プロセス・通常の終了要求・実プレイ中と連打の性能） | 合格（`s10`・`s12` も同じ。`s11` は実プレイの計測が 180 秒で打ち切られた——撃破の待ちを短くし全体の上限を置いて直した） |
+
+途中の実行（`e1`、`p1`〜`p9`、`f1`〜`f7`）は §11 の確認と、テストの書き方の誤り（保存要求の無い変化を待った・入力の処理と同じフレームに当たらない 1 回押し・
+1 撃では倒れない被弾後無敵）の直しに使った。製品コードの誤りはこの段階では見つかっていない。
+
+PlayMode と Scene を置き換える実行（EditMode 全件・Builder）は、オーナーの常時許可のもとで事前の告知なしに行った。
+
+### 15. 状態
+
+- レビューの R1〜R4・D1 と、証跡の不足（P6A 08・12・17・25・27、F06）に対応した。対応表は未確認の「合格」を外し、P6A 25（休息の初回停止）と P6A 27（特殊攻撃・敵側の VFX の表示）は条件付きで記録した。
+- 人間確認（README §4）は未実施。
+- オーナー判断が要るもの：F01（P5／P5.5 の試遊 Scene へ VFX を入れるか）。

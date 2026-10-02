@@ -115,9 +115,19 @@ namespace Momotaro.Infrastructure.Save
         /// <summary>結び付いている Session。</summary>
         public GameSessionState Session => _session;
 
-        /// <summary>未保存の変化があるか（要求の保留・書込中・版の差のどれか）。</summary>
+        /// <summary>未保存の変化があるか（要求の保留・書込中・版の差・直近の書込失敗のどれか）。</summary>
+        /// <remarks>
+        /// <b>直近の書込が失敗したら、版が進んでいなくても未保存</b>（レビュー R1）。HP・スタミナ・犬丸の Down 残時間など
+        /// 版を進めない変化は、失敗した書込にしか乗っていないことがある。次に書けるまで「保存済み」と読ませない。
+        /// </remarks>
         public bool IsDirty =>
-            _session != null && (_pending || IsWriting || _session.Changes.Revision > SavedRevision);
+            _session != null
+            && (_pending || IsWriting || _lastWriteFailed || _session.Changes.Revision > SavedRevision);
+
+        /// <summary>直近に取り込んだ書込が失敗していて、まだ次の成功が無いか。</summary>
+        public bool HasUnsavedFailure => _session != null && _lastWriteFailed;
+
+        private bool _lastWriteFailed;
 
         /// <summary>書込中か。</summary>
         /// <remarks>
@@ -153,6 +163,7 @@ namespace Momotaro.Infrastructure.Save
             _retryArmed = false;
             _inFlightRevision = -1;
             _awaitingCompletion = false;
+            _lastWriteFailed = false;
             SavedRevision = alreadySavedRevision;
             LastError = string.Empty;
 
@@ -290,6 +301,7 @@ namespace Momotaro.Infrastructure.Save
             if (result.Success)
             {
                 SuccessCount++;
+                _lastWriteFailed = false;
                 LastBytes = result.Bytes;
                 LastGeneration = result.Generation;
                 LastError = string.Empty;
@@ -305,6 +317,7 @@ namespace Momotaro.Infrastructure.Save
             }
 
             FailureCount++;
+            _lastWriteFailed = true;
             LastError = result.Error;
             SetStatus(SaveStatus.Failed);
         }

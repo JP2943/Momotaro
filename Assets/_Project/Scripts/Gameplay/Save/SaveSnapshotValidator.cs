@@ -68,7 +68,7 @@ namespace Momotaro.Gameplay.Save
                 errors.Add("徳の会計が不正です（累計 " + snapshot.TotalVirtue + "／使用済み " + snapshot.SpentVirtue + "）。");
             }
 
-            CheckIdList(snapshot.GrantedRewards, "付与済み報酬", null, errors);
+            CheckIdList(snapshot.GrantedRewards, "付与済み報酬", campaign.IsKnownGrantOnceReward, errors);
 
             long growthSum = 0;
             var growthIds = new HashSet<string>();
@@ -124,7 +124,7 @@ namespace Momotaro.Gameplay.Save
 
             // ---- 訪問・加入 ----
             CheckIdList(snapshot.VisitedAreas, "訪問済みエリア", id => catalog.TryGetScenePath(id, out _), errors);
-            CheckIdList(snapshot.Recruited, "加入済み仲間", null, errors);
+            CheckIdList(snapshot.Recruited, "加入済み仲間", campaign.IsKnownCompanion, errors);
 
             // ---- Area ごとの記録 ----
             var areaIds = new HashSet<string>();
@@ -192,6 +192,28 @@ namespace Momotaro.Gameplay.Save
                 if (item.Value < 1 || item.Value > maxStack)
                 {
                     errors.Add("アイテム '" + item.Key + "' の個数 " + item.Value + " が範囲外です（1〜" + maxStack + "）。");
+                }
+            }
+
+            // ---- クエストの段階（P7 の接続口。受入 P6A 08）----
+            var quests = new HashSet<string>();
+            foreach (KeyValuePair<string, int> quest in snapshot.QuestStages)
+            {
+                var id = new StableId(quest.Key);
+                if (!id.IsValid || !campaign.IsKnownQuest(id))
+                {
+                    errors.Add("未知のクエスト '" + quest.Key + "'。");
+                    continue;
+                }
+
+                if (!quests.Add(quest.Key))
+                {
+                    errors.Add("クエスト '" + quest.Key + "' が重複しています。");
+                }
+
+                if (quest.Value < 0)
+                {
+                    errors.Add("クエスト '" + quest.Key + "' の段階が負です（" + quest.Value + "）。");
                 }
             }
 

@@ -43,6 +43,15 @@ namespace Momotaro.Data.World
         [Tooltip("成長項目（P6A は検証用の仮項目だけ）。")]
         [SerializeField] private List<SkillNodeData> _growthNodes = new List<SkillNodeData>();
 
+        [Tooltip("この campaign で付与されうる一度きり（GrantOnce）報酬の ID。保存の検証で未知 ID を拒否する（初到達報酬は自動で含む）。")]
+        [SerializeField] private List<StableId> _grantOnceRewardIds = new List<StableId>();
+
+        [Tooltip("この campaign で加入しうる仲間の ID。保存の検証で未知 ID を拒否する。")]
+        [SerializeField] private List<StableId> _companionIds = new List<StableId>();
+
+        [Tooltip("この campaign の保存が段階を持ちうるクエストの ID（P7 の接続口。P6A は接続 fixture だけ）。")]
+        [SerializeField] private List<StableId> _questIds = new List<StableId>();
+
         [Header("テスト専用の調整（P6 の検証 campaign だけ。本編の数値ではない）")]
         [Tooltip("敵の攻撃力の倍率（死亡を何度も試すための措置）。0 以下は未設定＝1 として扱う。")]
         [SerializeField] private float _testEnemyAttackScale = 1f;
@@ -85,6 +94,15 @@ namespace Momotaro.Data.World
 
         /// <summary>成長項目（P6A の仮項目）。</summary>
         public IReadOnlyList<SkillNodeData> GrowthNodes => _growthNodes;
+
+        /// <summary>この campaign で付与されうる GrantOnce 報酬の ID（初到達報酬は別に自動で含む）。</summary>
+        public IReadOnlyList<StableId> GrantOnceRewardIds => _grantOnceRewardIds;
+
+        /// <summary>この campaign で加入しうる仲間の ID。</summary>
+        public IReadOnlyList<StableId> CompanionIds => _companionIds;
+
+        /// <summary>この campaign の保存が段階を持ちうるクエストの ID（P7 の接続口）。</summary>
+        public IReadOnlyList<StableId> QuestIds => _questIds;
 
         /// <summary>保存・お地蔵様を持つ P6 campaign か（恒久クリア規則で判定する）。</summary>
         public bool IsP6Campaign => _encounterClearPolicy == EncounterClearPolicy.Permanent;
@@ -303,6 +321,15 @@ namespace Momotaro.Data.World
             _kibidangoBaseCapacity = kibidangoBaseCapacity;
             _items = items ?? new List<ItemDefinition>();
             _growthNodes = growthNodes ?? new List<SkillNodeData>();
+        }
+
+        /// <summary>保存で扱う既知 ID（一度きり報酬・仲間）の設定入口（Editor 専用。レビュー R4）。</summary>
+        public void EditorSetKnownIds(List<StableId> grantOnceRewardIds, List<StableId> companionIds,
+            List<StableId> questIds = null)
+        {
+            _grantOnceRewardIds = grantOnceRewardIds ?? new List<StableId>();
+            _companionIds = companionIds ?? new List<StableId>();
+            _questIds = questIds ?? new List<StableId>();
         }
 
         /// <summary>テスト専用の調整の設定入口（Editor 専用。P6A の Builder）。</summary>
