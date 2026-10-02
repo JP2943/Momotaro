@@ -476,6 +476,12 @@ namespace Momotaro.Gameplay.Session
             _playerVitals?.ApplyMaxHpBonus(bonus);
         }
 
+        /// <summary>主人公の基礎最大 HP の倍率（campaign のテスト専用の調整。P6A）。加算より前に掛ける。</summary>
+        public void SetPlayerMaxHpScale(float scale)
+        {
+            _playerVitals?.SetMaxHpScale(scale);
+        }
+
         private PlayerFacing _playerFacing;
 
         private PlayerStateController ResolvePlayerState()

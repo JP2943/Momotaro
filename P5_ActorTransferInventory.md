@@ -154,6 +154,7 @@ P5-05（再探索間隔・停滞時間）や P5-07（Encounter）で可変時間
 | `_defeated` | 保持 | Import 後に HP から導出して整合させる。Snapshot には載せず HP を正本とする。 |
 | `_data` | 固定設定・参照 | SerializeField の PlayerData。 |
 | `MaxHpBonus` | 再構築 | P6A：成長による最大 HP の加算。正本は Session の取得済み成長で、入場のたびに `AreaInitializer` が基礎値＋加算で置き直す（持ち越さない）。 |
+| `MaxHpScale` | 再構築 | P6A（テスト専用の調整）：基礎最大 HP の倍率。正本は campaign の Data（`AreaCatalogData.TestPlayerMaxHpScale`）で、入場のたびに `AreaInitializer` が置き直す（持ち越さない）。P6 の検証 campaign だけ 0.5、ほかは 1。 |
 | `_transferInProgress` | Capture前に終了 | 守護転送の再入ガード。遷移手順 §6.2 の 4 で行動を停止してから採取する。 |
 | `_transferHitId` | Capture前に終了 | 進行中の転送の命中 id。同上。 |
 | `_incomingObservers` | 再構築 | 被弾入口の購読者（R3-02）。OnEnable／OnDisable 対称で新 Scene が張り直す。 |

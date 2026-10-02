@@ -332,6 +332,7 @@ namespace Momotaro.Infrastructure.World
             }
 
             _menuOpen = true;
+            _navigator.Reset(0);
             IGameModeService modes = GameModeProvider.Current;
             if (modes != null && modes.Current != GameMode.Paused)
             {
@@ -392,6 +393,28 @@ namespace Momotaro.Infrastructure.World
                 return;
             }
 
+            // パッド・矢印キーでの選択（試遊のフィードバック 2026-10-02）。
+            List<MenuItem> items = BuildItems();
+            var enabled = new bool[items.Count];
+            for (int i = 0; i < items.Count; i++)
+            {
+                enabled[i] = items[i].Enabled;
+            }
+
+            int chosen = _navigator.Poll(items.Count, enabled, out bool cancelled);
+            if (chosen >= 0)
+            {
+                Execute(items[chosen]);
+                return;
+            }
+
+            if (cancelled)
+            {
+                Close();
+                return;
+            }
+
+            // 既存のショートカット（キーボード）。
             Keyboard keyboard = Keyboard.current;
             if (keyboard == null)
             {
@@ -422,6 +445,84 @@ namespace Momotaro.Infrastructure.World
                         break;
                     }
                 }
+            }
+        }
+
+        // ---------------------------------------------------------------- 選択肢（描画と入力で同じ並び）
+
+        private enum MenuKind
+        {
+            Rest,
+            Growth,
+            Travel,
+            Close,
+        }
+
+        private readonly struct MenuItem
+        {
+            public MenuItem(MenuKind kind, StableId id, string label, bool enabled)
+            {
+                Kind = kind;
+                Id = id;
+                Label = label;
+                Enabled = enabled;
+            }
+
+            public MenuKind Kind { get; }
+            public StableId Id { get; }
+            public string Label { get; }
+            public bool Enabled { get; }
+        }
+
+        private readonly PadMenuNavigator _navigator = new PadMenuNavigator();
+
+        private List<MenuItem> BuildItems()
+        {
+            var items = new List<MenuItem>
+            {
+                new MenuItem(MenuKind.Rest, default, "1. 休息する（全回復・きびだんご補充・敵が戻る）", true),
+            };
+
+            GameSessionState session = Session;
+            CampaignCatalog campaign = Campaign;
+            if (campaign != null && session != null)
+            {
+                foreach (GrowthInfo growth in campaign.GrowthNodes)
+                {
+                    bool owned = session.Progress.HasGrowth(growth.GrowthId);
+                    items.Add(new MenuItem(MenuKind.Growth, growth.GrowthId,
+                        "2. 成長：" + (string.IsNullOrEmpty(growth.DisplayName) ? growth.GrowthId.Value : growth.DisplayName)
+                        + "（徳 " + growth.Cost + "）" + (owned ? " 取得済み" : string.Empty), !owned));
+                }
+            }
+
+            List<ShrineInfo> destinations = Destinations();
+            for (int i = 0; i < destinations.Count; i++)
+            {
+                items.Add(new MenuItem(MenuKind.Travel, destinations[i].ShrineId,
+                    (3 + i) + ". 旅立つ：" + destinations[i].DisplayName, true));
+            }
+
+            items.Add(new MenuItem(MenuKind.Close, default, "Esc. 閉じる", true));
+            return items;
+        }
+
+        private void Execute(MenuItem item)
+        {
+            switch (item.Kind)
+            {
+                case MenuKind.Rest:
+                    Rest();
+                    break;
+                case MenuKind.Growth:
+                    PurchaseGrowth(item.Id);
+                    break;
+                case MenuKind.Travel:
+                    FastTravel(item.Id);
+                    break;
+                default:
+                    Close();
+                    break;
             }
         }
 
@@ -481,7 +582,9 @@ namespace Momotaro.Infrastructure.World
             {
                 if (!string.IsNullOrEmpty(Message) && Time.unscaledTime < _messageUntil)
                 {
-                    GUI.Label(new Rect(16f, Screen.height - 40f, 600f, 24f), Message);
+                    _navigator.BeginScaled();
+                    GUI.Label(new Rect(16f, PadMenuNavigator.VirtualHeight - 40f, 700f, 28f), Message);
+                    _navigator.EndScaled();
                 }
 
                 return;
@@ -490,48 +593,29 @@ namespace Momotaro.Infrastructure.World
             _messageUntil = Time.unscaledTime + 3f;
             GameSessionState session = Session;
             CampaignCatalog campaign = Campaign;
-            const float width = 460f;
-            var area = new Rect((Screen.width - width) * 0.5f, 80f, width, 360f);
+            List<MenuItem> items = BuildItems();
+            _navigator.BeginScaled();
+            const float width = 520f;
+            float height = 150f + items.Count * 36f;
+            var area = new Rect((PadMenuNavigator.VirtualWidth - width) * 0.5f, 40f, width, height);
             GUI.Box(area, "お地蔵様：" + _openShrine.DisplayName);
             GUILayout.BeginArea(new Rect(area.x + 16f, area.y + 28f, area.width - 32f, area.height - 40f));
             GUILayout.Label("徳 " + session.Progress.AvailableVirtue + "／きびだんご " + session.Kibidango
                 + "／" + campaign.KibidangoCapacityOf(session.Progress));
-            if (GUILayout.Button("1. 休息する（全回復・きびだんご補充・敵が戻る）"))
+            for (int i = 0; i < items.Count; i++)
             {
-                Rest();
-            }
-
-            foreach (GrowthInfo growth in campaign.GrowthNodes)
-            {
-                bool owned = session.Progress.HasGrowth(growth.GrowthId);
-                string label = "2. 成長：" + (string.IsNullOrEmpty(growth.DisplayName) ? growth.GrowthId.Value : growth.DisplayName)
-                    + "（徳 " + growth.Cost + "）" + (owned ? " 取得済み" : string.Empty);
-                GUI.enabled = !owned;
-                if (GUILayout.Button(label))
+                if (_navigator.DrawItem(i, items[i].Label, items[i].Enabled))
                 {
-                    PurchaseGrowth(growth.GrowthId);
-                }
-
-                GUI.enabled = true;
-            }
-
-            List<ShrineInfo> destinations = Destinations();
-            for (int i = 0; i < destinations.Count; i++)
-            {
-                if (GUILayout.Button((3 + i) + ". 旅立つ：" + destinations[i].DisplayName))
-                {
-                    FastTravel(destinations[i].ShrineId);
+                    Execute(items[i]);
                     break;
                 }
             }
 
-            if (GUILayout.Button("Esc. 閉じる"))
-            {
-                Close();
-            }
-
             GUILayout.Label(Message);
+            GUILayout.FlexibleSpace();
+            GUILayout.Label(PadMenuNavigator.Hint);
             GUILayout.EndArea();
+            _navigator.EndScaled();
         }
 
         private float _messageUntil;

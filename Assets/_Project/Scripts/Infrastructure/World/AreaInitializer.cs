@@ -286,7 +286,12 @@ namespace Momotaro.Infrastructure.World
             CampaignCatalog campaign = _transitions.Catalog != null ? _transitions.Catalog.Campaign : null;
             if (campaign != null)
             {
+                // テスト専用の調整（P6 の検証 campaign だけが 1 以外を持つ）：基礎最大 HP の倍率 → 成長の加算の順。
+                _transferPort?.SetPlayerMaxHpScale(campaign.TestPlayerMaxHpScale);
                 _transferPort?.ApplyMaxHpBonus(campaign.MaxHpBonusOf(session.Progress));
+                _fieldEnemies?.SetEnemyAttackPowerScale(campaign.TestEnemyAttackScale);
+                _encounterGroup?.SetEnemyAttackPowerScale(campaign.TestEnemyAttackScale);
+                _encounter?.SetEnemyAttackPowerScale(campaign.TestEnemyAttackScale);
             }
 
             // 5. 入口へ配置し、運ばれてきた Actor 値を復元する（§4.4〜§4.6）。

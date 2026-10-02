@@ -37,6 +37,17 @@ namespace Momotaro.Gameplay.Encounter
         private readonly List<IEnemyDefeatSource> _registered = new List<IEnemyDefeatSource>();
         private Transform _root;
 
+        private float _attackPowerScale = 1f;
+
+        /// <summary>生成する敵の攻撃力の倍率（実行時だけ。campaign のテスト専用の調整。P6A）。</summary>
+        public float AttackPowerScale => _attackPowerScale;
+
+        /// <summary>以後に生成する敵の攻撃力の倍率を設定する（0 以下は 1）。</summary>
+        public void SetEnemyAttackPowerScale(float scale)
+        {
+            _attackPowerScale = scale > 0f && !float.IsInfinity(scale) ? scale : 1f;
+        }
+
         /// <inheritdoc />
         public int SpawnedCount => _spawned.Count;
 
@@ -136,6 +147,7 @@ namespace Momotaro.Gameplay.Encounter
                     return false;
                 }
 
+                actor.SetAttackPowerScale(_attackPowerScale);
                 _registered.Add(actor);
                 _session.RegisterEnemy(actor);
             }

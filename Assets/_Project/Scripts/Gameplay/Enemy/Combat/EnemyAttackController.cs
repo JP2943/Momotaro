@@ -220,7 +220,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
                 return; // Launcher 未装備なら発射しない（Gameplay は継続。Presentation 欠如に準ずる）。
             }
 
-            float attackPower = _actor.Archetype != null ? _actor.Archetype.AttackPower : 0f;
+            float attackPower = _actor.EffectiveAttackPower;
             _launcher.TryLaunch(snap, _actor.WorldPosition, _aimDir, _actor, attackPower, _currentSwing);
         }
 
@@ -633,7 +633,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
                 return false;
             }
 
-            float attackPower = _actor.Archetype != null ? _actor.Archetype.AttackPower : 0f;
+            float attackPower = _actor.EffectiveAttackPower;
             HitInfo hit = EnemyHitFactory.Build(_machine.Snapshot, attackPower, _actor, target, _aimDir, hitPoint, _currentSwing);
             target.ReceiveHit(hit);
             return true;

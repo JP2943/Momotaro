@@ -81,6 +81,15 @@ namespace Momotaro.Gameplay.Encounter
             }
         }
 
+        /// <summary>全遭遇戦の敵の攻撃力の倍率（campaign のテスト専用の調整。P6A）。</summary>
+        public void SetEnemyAttackPowerScale(float scale)
+        {
+            for (int i = 0; i < _runners.Count; i++)
+            {
+                _runners[i]?.SetEnemyAttackPowerScale(scale);
+            }
+        }
+
         /// <summary>入場のたび：記録からクリア済みを復元する。</summary>
         public void RestoreAllFromRecord()
         {

@@ -129,6 +129,12 @@ namespace Momotaro.Gameplay.Session
         /// <summary>きびだんごの基本補充上限（仮値）。</summary>
         public int KibidangoBaseCapacity { get; }
 
+        /// <summary>テスト専用：敵の攻撃力の倍率（1 で無効。P6 の検証 campaign だけが 1 以外を持つ）。</summary>
+        public float TestEnemyAttackScale { get; private set; } = 1f;
+
+        /// <summary>テスト専用：主人公の基礎最大 HP の倍率（1 で無効）。</summary>
+        public float TestPlayerMaxHpScale { get; private set; } = 1f;
+
         /// <summary>お地蔵様（定義順）。</summary>
         public IReadOnlyList<ShrineInfo> Shrines => _shrineOrder;
 
@@ -202,7 +208,11 @@ namespace Momotaro.Gameplay.Session
         internal static CampaignCatalog Build(AreaCatalogData data, AreaCatalog areas, List<string> errors)
         {
             int before = errors.Count;
-            var built = new CampaignCatalog(data.Id, data.ContentVersion, data.InitialShrineId, data.KibidangoBaseCapacity);
+            var built = new CampaignCatalog(data.Id, data.ContentVersion, data.InitialShrineId, data.KibidangoBaseCapacity)
+            {
+                TestEnemyAttackScale = data.TestEnemyAttackScale,
+                TestPlayerMaxHpScale = data.TestPlayerMaxHpScale,
+            };
 
             if (!data.Id.IsValid)
             {

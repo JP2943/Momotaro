@@ -280,3 +280,48 @@ PlayMode とScene を置き換える実行（EditMode 全件・Builder）は、�
 
 - **P6A の実装と自動受入は完了。** 人間確認（README §4）は未実施——P6A の受入はその結果を待つ。P6（P6B 以降）は未着手。
 - オーナー判断が要るもの：`P6A_後続課題.md` F01（P5／P5.5 の試遊 Scene へ VFX を入れるか）。
+
+---
+
+## 記録 005：試遊のフィードバックへの対応（2026-10-02）
+
+オーナーの試遊で「現環境ではテストしづらい」とされた 2 点を直した。
+
+### 1. 仮 UI
+
+| 指摘 | 対応 |
+|---|---|
+| タイトル・お地蔵様の UI が小さく読みにくい | 共通部品 `PadMenuNavigator` で **1.5 倍**に描く（`GUI.matrix` の拡大。文字・枠・余白とも）。タイトル・お地蔵様に加え、同じ系統のゲーム内メニュー・保存表示・保存失敗の選択肢・お地蔵様の通知も揃えた |
+| 選択肢をパッドで選べない | 十字キー・左スティックの上下で選択、A（South）で決定、B（East）で戻る。キーボードの ↑↓・Enter も同じ。ゲーム内メニューはパッドの Start でも開く。選択中は「▶」と色で示す。既存のショートカット（N／C／Y、数字、T／Q、Esc）とマウスは残した |
+
+- 決定・戻るのボタンは入力定義（`IA_Momotaro`）の UI Submit／Cancel と同じ割り当て（South／East）。
+- **開いた直後のフレームは入力を見ない**。お地蔵様を調べるボタン（Interact＝South）がそのまま 1 つ目の選択肢（休息）を決定しないため。
+- タイトルは保存があれば「つづきから」、New Game の確認は「いいえ」を選んだ状態で開く（うっかり上書きしない）。
+- 描画と入力は同じ選択肢の並びを使う（お地蔵様は休息・成長・旅立ち・閉じる）。入力は Update で 1 回だけ読む。
+
+### 2. 死にやすいテスト環境（P6 のテスト専用）
+
+| 指示 | 実装 |
+|---|---|
+| 敵の攻撃力を倍に | `EnemyActor.AttackPowerScale`（実行時だけ・既定 1）を攻撃の命中（近接・飛び道具）で使う。遭遇戦の生成役・普通敵の配置役が生成時に設定し、`AreaInitializer` が campaign の値を渡す |
+| 初期体力を半分に | `PlayerVitalsHolder.MaxHpScale`（実行時だけ・既定 1）。最大 HP は「基礎値 × 倍率 ＋ 成長の加算」で置き直す（累積しない）。New Game は半分の最大値で満タン |
+| P6 のテスト専用 | 値は campaign の Data `AreaCatalogData` の「テスト専用の調整」（`TestEnemyAttackScale`＝2・`TestPlayerMaxHpScale`＝0.5）。campaign のカタログだけが読み、P6A の検証 campaign だけが 1 以外を持つ。Data（敵・主人公）は書き換えない |
+
+- 持ち越し台帳（`P5_ActorTransferInventory.md`）へ `MaxHpScale` を「再構築」で追記（E28 の検査が新しい欄を検出した）。
+
+### 3. テスト
+
+| 実行 | 内容 | 結果 |
+|---|---|---|
+| `b10`→`v14` | `build-phase6-world`→`validate-phase6-world` | 合格 |
+| `e4` | EditMode `P6A`（`TestTuning_OnlyInTheP6ACampaign`：出荷カタログで P6A は 2／0.5、P5・P5.5 東西・南北は 1／1。`MaxHpScale_AppliesBeforeGrowthBonus_NotCumulative`） | 47／47 |
+| `e5` | EditMode：敵・主人公の Vitals・P6A・遭遇戦・Validator 網羅・ブリッジ・MonoScript 名（Scene を置き換えない範囲） | 320／320 |
+| `e6`→`e7` | 持ち越し台帳 E28 | 追記前は `MaxHpScale` の未分類で失敗（想定どおりの検出）→ 追記後 1／1 |
+| `vr2` | `verify-required-tests`（P6A、`e4,e5,p25`） | 61／61 Passed、未対応要求なし |
+| `p25` | PlayMode `P6AWorldPlayTests`（追加 3 本：`Title_PadDecideStartsNewGame`・`ShrineAndGameMenu_PadNavigation`・`TestTuning_HalfPlayerHp_DoubleEnemyAttack`。既存 9 本は敵 2 倍・HP 半分の下でも通る） | 12／12 |
+
+**全件の回帰（EditMode 全件・PlayMode 全件）は今回は走らせていない。** 試遊中で Editor を使っている可能性があり、
+EditMode 全件は開いている Scene を置き換えるため（CLAUDE.md）。敵の攻撃と主人公の最大 HP は既定値 1 で従来と同じ計算になる。
+次の全件実行の機会に回帰を確かめる。
+
+**UI の見た目（1.5 倍の大きさ・選択の印）は画面で確認していない。** パッドでの操作はテストで確かめた。

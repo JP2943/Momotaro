@@ -43,6 +43,13 @@ namespace Momotaro.Data.World
         [Tooltip("成長項目（P6A は検証用の仮項目だけ）。")]
         [SerializeField] private List<SkillNodeData> _growthNodes = new List<SkillNodeData>();
 
+        [Header("テスト専用の調整（P6 の検証 campaign だけ。本編の数値ではない）")]
+        [Tooltip("敵の攻撃力の倍率（死亡を何度も試すための措置）。0 以下は未設定＝1 として扱う。")]
+        [SerializeField] private float _testEnemyAttackScale = 1f;
+
+        [Tooltip("主人公の基礎最大 HP の倍率（成長の加算より前に掛ける）。0 以下は未設定＝1 として扱う。")]
+        [SerializeField] private float _testPlayerMaxHpScale = 1f;
+
         /// <summary>登録エリア（読み取り専用）。</summary>
         public IReadOnlyList<AreaDefinition> Areas => _areas;
 
@@ -66,6 +73,12 @@ namespace Momotaro.Data.World
 
         /// <summary>きびだんごの基本補充上限（P6A の仮値）。</summary>
         public int KibidangoBaseCapacity => _kibidangoBaseCapacity;
+
+        /// <summary>テスト専用：敵の攻撃力の倍率（未設定は 1）。</summary>
+        public float TestEnemyAttackScale => _testEnemyAttackScale > 0f ? _testEnemyAttackScale : 1f;
+
+        /// <summary>テスト専用：主人公の基礎最大 HP の倍率（未設定は 1）。</summary>
+        public float TestPlayerMaxHpScale => _testPlayerMaxHpScale > 0f ? _testPlayerMaxHpScale : 1f;
 
         /// <summary>一般消耗品の定義（P6A）。</summary>
         public IReadOnlyList<ItemDefinition> Items => _items;
@@ -168,6 +181,12 @@ namespace Momotaro.Data.World
             if (_kibidangoBaseCapacity < 0)
             {
                 report.Error(name + ": KibidangoBaseCapacity must be >= 0.");
+            }
+
+            if (float.IsNaN(_testEnemyAttackScale) || float.IsInfinity(_testEnemyAttackScale)
+                || float.IsNaN(_testPlayerMaxHpScale) || float.IsInfinity(_testPlayerMaxHpScale))
+            {
+                report.Error(name + ": test tuning scales must be finite.");
             }
 
             var shrineIds = new HashSet<string>();
@@ -284,6 +303,13 @@ namespace Momotaro.Data.World
             _kibidangoBaseCapacity = kibidangoBaseCapacity;
             _items = items ?? new List<ItemDefinition>();
             _growthNodes = growthNodes ?? new List<SkillNodeData>();
+        }
+
+        /// <summary>テスト専用の調整の設定入口（Editor 専用。P6A の Builder）。</summary>
+        public void EditorSetTestTuning(float enemyAttackScale, float playerMaxHpScale)
+        {
+            _testEnemyAttackScale = enemyAttackScale;
+            _testPlayerMaxHpScale = playerMaxHpScale;
         }
 #endif
     }

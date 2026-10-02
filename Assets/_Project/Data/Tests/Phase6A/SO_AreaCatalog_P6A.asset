@@ -53,3 +53,5 @@ MonoBehaviour:
     _displayName: "\u5F37\u58EE\u85AC\uFF08\u691C\u8A3C\u7528\uFF09"
   _growthNodes:
   - {fileID: 11400000, guid: 132ec78c070519f408695acecbbded23, type: 2}
+  _testEnemyAttackScale: 2
+  _testPlayerMaxHpScale: 0.5

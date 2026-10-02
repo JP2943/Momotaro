@@ -196,10 +196,59 @@ namespace Momotaro.Infrastructure.Save
             ResumeGameplayInput();
         }
 
+        private readonly PadMenuNavigator _navigator = new PadMenuNavigator();
+
+        /// <summary>どれかのパッドで Start（Menu）が押されたか。</summary>
+        private static bool AnyStartPressed()
+        {
+            for (int i = 0; i < Gamepad.all.Count; i++)
+            {
+                if (Gamepad.all[i].startButton.wasPressedThisFrame)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        private bool _choiceShownLastFrame;
+
         private void Update()
         {
             Keyboard keyboard = Keyboard.current;
-            if (keyboard == null || _coordinator == null || _coordinator.Session == null || _exiting || AwaitingExitChoice)
+            if (_coordinator == null || _coordinator.Session == null)
+            {
+                return;
+            }
+
+            // 終了前の保存に失敗したときの選択（0：もう一度保存 1：ゲームへ戻る 2：保存せずに終了）。
+            if (AwaitingExitChoice)
+            {
+                if (!_choiceShownLastFrame)
+                {
+                    _navigator.Reset(0);
+                    _choiceShownLastFrame = true;
+                }
+
+                int choice = _navigator.Poll(3, null, out bool back);
+                if (choice == 0)
+                {
+                    ChooseRetry(thenQuit: true);
+                }
+                else if (choice == 1 || back)
+                {
+                    ChooseBackToGame();
+                }
+                else if (choice == 2)
+                {
+                    ChooseQuitWithoutSaving();
+                }
+
+                return;
+            }
+
+            _choiceShownLastFrame = false;
+            if (_exiting)
             {
                 return;
             }
@@ -209,25 +258,33 @@ namespace Momotaro.Infrastructure.Save
                 // お地蔵様のメニューを Esc で閉じた同じフレームでは開かない。
                 CampaignShrineService shrines = BootstrapServices.Get<CampaignShrineService>();
                 bool shrineJustClosed = shrines != null && (shrines.IsMenuOpen || shrines.LastClosedFrame == Time.frameCount);
-                if (keyboard.escapeKey.wasPressedThisFrame && !shrineJustClosed)
+                bool open = (keyboard != null && keyboard.escapeKey.wasPressedThisFrame) || AnyStartPressed();
+                if (open && !shrineJustClosed && OpenMenu())
                 {
-                    OpenMenu();
+                    _navigator.Reset(0);
                 }
 
                 return;
             }
 
-            if (keyboard.tKey.wasPressedThisFrame)
+            // 0：タイトルへ戻る 1：終了する 2：ゲームへ戻る
+            int item = _navigator.Poll(3, null, out bool cancelled);
+            bool toTitle = item == 0 || (keyboard != null && keyboard.tKey.wasPressedThisFrame);
+            bool quit = item == 1 || (keyboard != null && keyboard.qKey.wasPressedThisFrame);
+            bool close = item == 2 || cancelled
+                || (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+                || AnyStartPressed();
+            if (toTitle)
             {
                 _menuOpen = false;
                 RequestReturnToTitle();
             }
-            else if (keyboard.qKey.wasPressedThisFrame)
+            else if (quit)
             {
                 _menuOpen = false;
                 RequestQuit();
             }
-            else if (keyboard.escapeKey.wasPressedThisFrame)
+            else if (close)
             {
                 CloseMenu();
             }
@@ -512,18 +569,31 @@ namespace Momotaro.Infrastructure.Save
                 return;
             }
 
-            if (AwaitingExitChoice)
+            _navigator.BeginScaled();
+            try
             {
-                DrawExitChoice();
-                return;
-            }
+                if (AwaitingExitChoice)
+                {
+                    DrawExitChoice();
+                    return;
+                }
 
-            if (_menuOpen)
+                if (_menuOpen)
+                {
+                    DrawMenu();
+                    return;
+                }
+
+                DrawStatus();
+            }
+            finally
             {
-                DrawMenu();
-                return;
+                _navigator.EndScaled();
             }
+        }
 
+        private void DrawStatus()
+        {
             string label;
             switch (_coordinator.Status)
             {
@@ -548,7 +618,9 @@ namespace Momotaro.Infrastructure.Save
                 return;
             }
 
-            var rect = new Rect(Screen.width - 420f, Screen.height - 64f, 404f, 48f);
+            float w = PadMenuNavigator.VirtualWidth;
+            float h = PadMenuNavigator.VirtualHeight;
+            var rect = new Rect(w - 420f, h - 64f, 404f, 48f);
             GUI.Box(rect, GUIContent.none);
             GUILayout.BeginArea(new Rect(rect.x + 8f, rect.y + 6f, rect.width - 16f, rect.height - 12f));
             GUILayout.BeginHorizontal();
@@ -564,61 +636,64 @@ namespace Momotaro.Infrastructure.Save
 
         private void DrawMenu()
         {
-            const float width = 360f;
-            const float height = 170f;
-            var area = new Rect((Screen.width - width) * 0.5f, (Screen.height - height) * 0.5f, width, height);
+            const float width = 400f;
+            const float height = 220f;
+            var area = new Rect((PadMenuNavigator.VirtualWidth - width) * 0.5f,
+                (PadMenuNavigator.VirtualHeight - height) * 0.5f, width, height);
             GUI.Box(area, "メニュー");
-            GUILayout.BeginArea(new Rect(area.x + 16f, area.y + 32f, area.width - 32f, area.height - 48f));
+            GUILayout.BeginArea(new Rect(area.x + 16f, area.y + 30f, area.width - 32f, area.height - 40f));
             GUILayout.Label("保存してから進みます。");
-            if (GUILayout.Button("タイトルへ戻る（T）", GUILayout.Height(28f)))
+            if (_navigator.DrawItem(0, "タイトルへ戻る（T）"))
             {
                 _menuOpen = false;
                 RequestReturnToTitle();
             }
 
-            if (GUILayout.Button("終了する（Q）", GUILayout.Height(28f)))
+            if (_navigator.DrawItem(1, "終了する（Q）"))
             {
                 _menuOpen = false;
                 RequestQuit();
             }
 
-            if (GUILayout.Button("ゲームへ戻る（Esc）", GUILayout.Height(28f)))
+            if (_navigator.DrawItem(2, "ゲームへ戻る（Esc）"))
             {
                 CloseMenu();
             }
 
+            GUILayout.FlexibleSpace();
+            GUILayout.Label(PadMenuNavigator.Hint);
             GUILayout.EndArea();
         }
 
         private void DrawExitChoice()
         {
-            const float width = 520f;
-            const float height = 190f;
-            var area = new Rect((Screen.width - width) * 0.5f, (Screen.height - height) * 0.5f, width, height);
+            const float width = 560f;
+            const float height = 260f;
+            var area = new Rect((PadMenuNavigator.VirtualWidth - width) * 0.5f,
+                (PadMenuNavigator.VirtualHeight - height) * 0.5f, width, height);
             GUI.Box(area, "保存できませんでした");
-            GUILayout.BeginArea(new Rect(area.x + 16f, area.y + 32f, area.width - 32f, area.height - 48f));
+            GUILayout.BeginArea(new Rect(area.x + 16f, area.y + 30f, area.width - 32f, area.height - 40f));
             GUILayout.Label(LastExitOutcome == SaveExitOutcome.TimedOut
                 ? "保存が時間内に終わりませんでした。"
                 : "理由：" + _coordinator.LastError);
             GUILayout.Label("最後に保存できたところまでしか残りません。");
-            GUILayout.FlexibleSpace();
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("もう一度保存", GUILayout.Height(28f)))
+            if (_navigator.DrawItem(0, "もう一度保存"))
             {
                 ChooseRetry(thenQuit: true);
             }
 
-            if (GUILayout.Button("ゲームへ戻る", GUILayout.Height(28f)))
+            if (_navigator.DrawItem(1, "ゲームへ戻る"))
             {
                 ChooseBackToGame();
             }
 
-            if (GUILayout.Button("保存せずに終了", GUILayout.Height(28f)))
+            if (_navigator.DrawItem(2, "保存せずに終了"))
             {
                 ChooseQuitWithoutSaving();
             }
 
-            GUILayout.EndHorizontal();
+            GUILayout.FlexibleSpace();
+            GUILayout.Label(PadMenuNavigator.Hint);
             GUILayout.EndArea();
         }
     }

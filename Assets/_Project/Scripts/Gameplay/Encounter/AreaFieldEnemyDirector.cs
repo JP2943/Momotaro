@@ -138,6 +138,22 @@ namespace Momotaro.Gameplay.Encounter
             }
         }
 
+        private float _attackPowerScale = 1f;
+
+        /// <summary>生成する普通敵の攻撃力の倍率（実行時だけ。campaign のテスト専用の調整。P6A）。</summary>
+        public float AttackPowerScale => _attackPowerScale;
+
+        /// <summary>攻撃力の倍率を設定する（0 以下は 1）。すでに生成済みの普通敵にも当てる。</summary>
+        public void SetEnemyAttackPowerScale(float scale)
+        {
+            _attackPowerScale = scale > 0f && !float.IsInfinity(scale) ? scale : 1f;
+            for (int i = 0; i < _spawned.Count; i++)
+            {
+                EnemyActor actor = _spawned[i] != null ? _spawned[i].GetComponentInChildren<EnemyActor>(true) : null;
+                actor?.SetAttackPowerScale(_attackPowerScale);
+            }
+        }
+
         /// <summary>Session の取り出し口を注入する（Area の初期化担当が呼ぶ。常駐 Session は serialize できない）。</summary>
         public void BindSession(Func<GameSessionState> session)
         {
@@ -251,6 +267,7 @@ namespace Momotaro.Gameplay.Encounter
                     continue;
                 }
 
+                actor.SetAttackPowerScale(_attackPowerScale);
                 _placementOfEnemy[actor.DamageableId] = p.PlacementId;
                 actor.Defeats.AddListener(this);
                 _channels.Add(actor.Defeats);

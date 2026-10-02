@@ -68,6 +68,7 @@ namespace Momotaro.Infrastructure.World
 
             _ready = true;
             Refresh();
+            _menu.Reset(_save.CanLoad ? 1 : 0); // 保存があれば「つづきから」を選んだ状態で開く。
 
             if (smoke)
             {
@@ -140,36 +141,61 @@ namespace Momotaro.Infrastructure.World
             return true;
         }
 
+        private readonly PadMenuNavigator _menu = new PadMenuNavigator();
+
         private void Update()
         {
-            Keyboard keyboard = Keyboard.current;
-            if (keyboard == null || !_ready || _started)
+            if (!_ready || _started)
             {
                 return;
             }
 
+            Keyboard keyboard = Keyboard.current;
             if (_confirmingNewGame)
             {
-                if (keyboard.yKey.wasPressedThisFrame)
+                // 0：はい（退避してはじめる） 1：いいえ
+                int chosen = _menu.Poll(2, null, out bool cancelled);
+                bool yes = chosen == 0 || (keyboard != null && keyboard.yKey.wasPressedThisFrame);
+                bool no = chosen == 1 || cancelled
+                    || (keyboard != null && (keyboard.nKey.wasPressedThisFrame || keyboard.escapeKey.wasPressedThisFrame));
+                if (yes)
                 {
                     PressNewGame(confirmed: true);
                 }
-                else if (keyboard.nKey.wasPressedThisFrame || keyboard.escapeKey.wasPressedThisFrame)
+                else if (no)
                 {
-                    _confirmingNewGame = false;
+                    CancelConfirm();
                 }
 
                 return;
             }
 
-            if (keyboard.nKey.wasPressedThisFrame)
+            // 0：はじめから 1：つづきから（保存が読めるときだけ）
+            int item = _menu.Poll(2, new[] { true, _save.CanLoad }, out _);
+            if (item == 0 || (keyboard != null && keyboard.nKey.wasPressedThisFrame))
             {
-                PressNewGame(confirmed: false);
+                AskNewGame();
             }
-            else if (keyboard.cKey.wasPressedThisFrame)
+            else if (item == 1 || (keyboard != null && keyboard.cKey.wasPressedThisFrame))
             {
                 PressContinue();
             }
+        }
+
+        private void AskNewGame()
+        {
+            bool wasConfirming = _confirmingNewGame;
+            PressNewGame(confirmed: false);
+            if (_confirmingNewGame && !wasConfirming)
+            {
+                _menu.Reset(1); // 確認は「いいえ」から（うっかり上書きしない）。
+            }
+        }
+
+        private void CancelConfirm()
+        {
+            _confirmingNewGame = false;
+            _menu.Reset(0);
         }
 
         private void OnGUI()
@@ -179,52 +205,51 @@ namespace Momotaro.Infrastructure.World
                 return;
             }
 
+            _menu.BeginScaled();
             const float width = 520f;
-            var area = new Rect((Screen.width - width) * 0.5f, 120f, width, 260f);
+            var area = new Rect((PadMenuNavigator.VirtualWidth - width) * 0.5f, 60f, width, 270f);
             GUI.Box(area, "桃太郎 P6A 進行・保存試遊");
-            GUILayout.BeginArea(new Rect(area.x + 16f, area.y + 32f, area.width - 32f, area.height - 48f));
+            GUILayout.BeginArea(new Rect(area.x + 16f, area.y + 30f, area.width - 32f, area.height - 40f));
             if (!_ready)
             {
                 GUILayout.Label("起動中…");
                 GUILayout.EndArea();
+                _menu.EndScaled();
                 return;
             }
 
             GUILayout.Label(DescribeSave());
             if (_confirmingNewGame)
             {
-                GUILayout.Label("いまの冒険は退避され、はじめからになります。よろしいですか？（Y／N）");
-                GUILayout.BeginHorizontal();
-                if (GUILayout.Button("はい（Y）", GUILayout.Height(28f)))
+                GUILayout.Label("いまの冒険は退避され、はじめからになります。よろしいですか？");
+                if (_menu.DrawItem(0, "はい（Y）"))
                 {
                     PressNewGame(confirmed: true);
                 }
 
-                if (GUILayout.Button("いいえ（N）", GUILayout.Height(28f)))
+                if (_menu.DrawItem(1, "いいえ（N）"))
                 {
-                    _confirmingNewGame = false;
+                    CancelConfirm();
                 }
-
-                GUILayout.EndHorizontal();
             }
             else
             {
-                if (GUILayout.Button("はじめから（N）", GUILayout.Height(30f)))
+                if (_menu.DrawItem(0, "はじめから（N）"))
                 {
-                    PressNewGame(confirmed: false);
+                    AskNewGame();
                 }
 
-                GUI.enabled = _save.CanLoad;
-                if (GUILayout.Button("つづきから（C）", GUILayout.Height(30f)))
+                if (_menu.DrawItem(1, "つづきから（C）", _save.CanLoad))
                 {
                     PressContinue();
                 }
-
-                GUI.enabled = true;
             }
 
             GUILayout.Label(_status);
+            GUILayout.FlexibleSpace();
+            GUILayout.Label(PadMenuNavigator.Hint);
             GUILayout.EndArea();
+            _menu.EndScaled();
         }
 
         private string DescribeSave()

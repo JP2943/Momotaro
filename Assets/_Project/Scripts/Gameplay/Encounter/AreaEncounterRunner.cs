@@ -228,6 +228,15 @@ namespace Momotaro.Gameplay.Encounter
             _sessionSource = session ?? _sessionSource;
         }
 
+        /// <summary>この遭遇戦が生成する敵の攻撃力の倍率（campaign のテスト専用の調整。P6A）。</summary>
+        public void SetEnemyAttackPowerScale(float scale)
+        {
+            if (_spawnerSource != null)
+            {
+                _spawnerSource.SetEnemyAttackPowerScale(scale);
+            }
+        }
+
         /// <summary>クリアで開通した門の所在（P6A。Builder が配線する）。</summary>
         public void BindAreaRoot(AreaRoot areaRoot)
         {

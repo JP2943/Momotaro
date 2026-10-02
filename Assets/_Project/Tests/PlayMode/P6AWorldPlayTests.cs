@@ -74,6 +74,7 @@ namespace Momotaro.Tests.PlayMode
 
         private GameObject _bootstrap;
         private Keyboard _keyboard;
+        private Gamepad _pad;
         private string _saveDir;
         private int _expectedSlides;
 
@@ -816,6 +817,118 @@ namespace Momotaro.Tests.PlayMode
             public System.IDisposable TryLock(string path) => _real.TryLock(path);
         }
 
+        // ================================================================ 8. パッドでのメニュー操作・テスト専用の調整
+
+        /// <summary>
+        /// 試遊のフィードバック（2026-10-02）：タイトルの選択肢をパッドの上下と決定で選べる。保存が無いときは「はじめから」が選ばれていて、
+        /// 決定で New Game が始まる。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Title_PadDecideStartsNewGame()
+        {
+            yield return StartBootstrap();
+            yield return SceneManager.LoadSceneAsync(TitleScene, LoadSceneMode.Single);
+            var launcher = Object.FindFirstObjectByType<Phase6CampaignLauncher>();
+            Assert.IsNotNull(launcher, "タイトルの起動役がある。");
+            for (int i = 0; i < 10; i++)
+            {
+                yield return null;
+            }
+
+            Gamepad pad = AddPad();
+            yield return null;
+            yield return TapPad(pad, GamepadButton.DpadDown); // 「つづきから」は保存が無いので選べず、先頭に留まる。
+            yield return TapPad(pad, GamepadButton.South);
+            yield return WaitAreaReady(AreaA);
+            Assert.IsFalse(string.IsNullOrEmpty(Session().AdventureId), "パッドの決定で New Game が始まった。");
+        }
+
+        /// <summary>
+        /// お地蔵様のメニューとゲーム内メニューをパッドで操作できる：決定で休息、下で「閉じる」へ移って決定で閉じる、
+        /// Start でゲーム内メニュー、下へ移って「ゲームへ戻る」。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ShrineAndGameMenu_PadNavigation()
+        {
+            yield return NewGame();
+            QuietFieldEnemies();
+            Gamepad pad = AddPad();
+            yield return null;
+
+            yield return InteractShrine(ShrineA);
+            CampaignShrineService shrines = BootstrapServices.Get<CampaignShrineService>();
+            yield return null;
+            yield return TapPad(pad, GamepadButton.South);
+            Assert.AreEqual(1, shrines.RestCount, "先頭（休息する）を決定で選べる。");
+            Assert.IsTrue(shrines.IsMenuOpen, "休息のあともメニューは開いたまま。");
+
+            yield return TapPad(pad, GamepadButton.DpadUp); // 先頭から上で末尾（閉じる）へ回り込む。
+
+            yield return TapPad(pad, GamepadButton.South);
+            Assert.IsFalse(shrines.IsMenuOpen, "末尾の「閉じる」を決定で閉じる。");
+            yield return null;
+            Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current, "操作に戻る。");
+
+            CampaignSaveService saves = Saves();
+            yield return TapPad(pad, GamepadButton.Start);
+            Assert.IsTrue(saves.IsMenuOpen, "Start でゲーム内メニューが開く。");
+            yield return TapPad(pad, GamepadButton.DpadDown);
+            yield return TapPad(pad, GamepadButton.DpadDown);
+            yield return TapPad(pad, GamepadButton.South);
+            Assert.IsFalse(saves.IsMenuOpen, "「ゲームへ戻る」で閉じる。");
+            Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current);
+
+            yield return TapPad(pad, GamepadButton.Start);
+            Assert.IsTrue(saves.IsMenuOpen);
+            yield return TapPad(pad, GamepadButton.East);
+            Assert.IsFalse(saves.IsMenuOpen, "B（戻る）でも閉じる。");
+        }
+
+        /// <summary>
+        /// テスト専用の調整（P6 の検証 campaign だけ）：主人公の最大 HP は基礎値の半分、普通敵・遭遇戦の敵の攻撃力は 2 倍。
+        /// 成長の加算は半分にした後に足す。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator TestTuning_HalfPlayerHp_DoubleEnemyAttack()
+        {
+            yield return NewGame();
+            PlayerVitalsHolder vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+            var data = new UnityEditor.SerializedObject(vitals).FindProperty("_data")?.objectReferenceValue
+                as Momotaro.Data.Characters.PlayerData;
+            Assert.IsNotNull(data, "主人公の Data がある。");
+            Assert.AreEqual(0.5f, vitals.MaxHpScale, 1e-4f, "基礎最大 HP の倍率は 0.5。");
+            Assert.AreEqual(Mathf.RoundToInt(data.MaxHp * 0.5f), vitals.Vitals.Health.Max, "最大 HP は基礎値の半分。");
+            Assert.AreEqual(vitals.Vitals.Health.Max, vitals.Vitals.Health.Current, "New Game は満タン（半分の最大値で）。");
+
+            AreaFieldEnemyDirector field = Object.FindFirstObjectByType<AreaFieldEnemyDirector>();
+            EnemyActor enemy = field.Spawned[0].GetComponentInChildren<EnemyActor>();
+            Assert.AreEqual(2f, enemy.AttackPowerScale, 1e-4f, "普通敵の攻撃力は 2 倍。");
+            Assert.AreEqual(enemy.Archetype.AttackPower * 2f, enemy.EffectiveAttackPower, 1e-3f, "攻撃に使う値も 2 倍。");
+
+            yield return SlideTo(ExitAEast, Key.D, Vector3.left, "A→B");
+            AreaEncounterRunner north = FindRunner(EncounterBNorth);
+            yield return StartEncounter(north);
+            foreach (EnemyActor e in EnemiesOf(north))
+            {
+                Assert.AreEqual(2f, e.AttackPowerScale, 1e-4f, "遭遇戦の敵の攻撃力も 2 倍。");
+            }
+        }
+
+        private Gamepad AddPad()
+        {
+            _pad = InputSystem.AddDevice<Gamepad>("P55Gamepad");
+            return _pad;
+        }
+
+        private static IEnumerator TapPad(Gamepad pad, GamepadButton button)
+        {
+            InputSystem.QueueStateEvent(pad, new GamepadState().WithButton(button));
+            yield return null;
+            InputSystem.QueueStateEvent(pad, new GamepadState());
+            yield return null;
+            yield return null;
+        }
+
         // ================================================================ 手順
 
         private IEnumerator NewGame()
@@ -1395,6 +1508,12 @@ namespace Momotaro.Tests.PlayMode
                 _keyboard = null;
             }
 
+            if (_pad != null)
+            {
+                InputSystem.RemoveDevice(_pad);
+                _pad = null;
+            }
+
             RemoveStrayDevices();
         }
 
@@ -1403,7 +1522,8 @@ namespace Momotaro.Tests.PlayMode
             for (int i = InputSystem.devices.Count - 1; i >= 0; i--)
             {
                 InputDevice device = InputSystem.devices[i];
-                if (device != null && device.name != null && device.name.StartsWith("P55Keyboard"))
+                if (device != null && device.name != null
+                    && (device.name.StartsWith("P55Keyboard") || device.name.StartsWith("P55Gamepad")))
                 {
                     InputSystem.RemoveDevice(device);
                 }

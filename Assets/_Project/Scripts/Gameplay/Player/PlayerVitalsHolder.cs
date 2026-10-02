@@ -230,7 +230,7 @@ namespace Momotaro.Gameplay.Player
                 return;
             }
 
-            int baseMax = _data.MaxHp;
+            int baseMax = Mathf.Max(1, Mathf.RoundToInt(_data.MaxHp * MaxHpScale));
             int target = baseMax + (bonus < 0 ? 0 : bonus);
             if (_vitals.Health.Max != target)
             {
@@ -242,6 +242,19 @@ namespace Momotaro.Gameplay.Player
 
         /// <summary>適用中の最大 HP 加算（診断・テスト用）。</summary>
         public int MaxHpBonus { get; private set; }
+
+        /// <summary>
+        /// 基礎最大 HP の倍率（実行時だけ。既定 1）。campaign の<b>テスト専用の調整</b>（P6A：死亡を何度も試すため）。
+        /// Data（<c>PlayerData.MaxHp</c>）は書き換えない。成長の加算はこの後に足す。
+        /// </summary>
+        public float MaxHpScale { get; private set; } = 1f;
+
+        /// <summary>基礎最大 HP の倍率を設定し、最大値を置き直す（0 以下・非数は 1）。現在 HP は上限で切り詰めるだけ。</summary>
+        public void SetMaxHpScale(float scale)
+        {
+            MaxHpScale = scale > 0f && !float.IsInfinity(scale) ? scale : 1f;
+            ApplyMaxHpBonus(MaxHpBonus);
+        }
 
         /// <summary>
         /// 条件付きスタミナ消費（Phase2 P2-09。ステップ等）。残量が <paramref name="amount"/> 以上でブレイク中でないときだけ消費し

@@ -338,6 +338,7 @@ namespace Momotaro.Editor.Phase6
                 new List<ShrineDefinition> { shrineA, shrineC }, Phase6WorldIds.ShrineA,
                 Phase6TrialValues.KibidangoCapacity, new List<ItemDefinition> { tonic },
                 new List<SkillNodeData> { data.Growth });
+            asset.EditorSetTestTuning(Phase6TrialValues.TestEnemyAttackScale, Phase6TrialValues.TestPlayerMaxHpScale);
             EditorUtility.SetDirty(asset);
             return asset;
         }

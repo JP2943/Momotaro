@@ -96,6 +96,13 @@ namespace Momotaro.Editor.Phase6
         public const int GrowthCost = 20;
         public const int GrowthMaxHp = 10;
         public const int KibidangoCapacity = 3;
+
+        // ---- テスト専用（死亡を何度も試すための措置。オーナー指示 2026-10-02。本編・他の試遊には効かない）----
+        /// <summary>敵の攻撃力の倍率。</summary>
+        public const float TestEnemyAttackScale = 2f;
+
+        /// <summary>主人公の基礎最大 HP の倍率。</summary>
+        public const float TestPlayerMaxHpScale = 0.5f;
     }
 
     /// <summary>

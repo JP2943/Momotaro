@@ -253,7 +253,11 @@
         "P6A09"
       ],
       "implemented": true,
-      "supportingTests": []
+      "supportingTests": [
+        "Momotaro.Tests.EditMode.P6AShrineTests.TestTuning_OnlyInTheP6ACampaign",
+        "Momotaro.Tests.EditMode.P6AShrineTests.MaxHpScale_AppliesBeforeGrowthBonus_NotCumulative",
+        "Momotaro.Tests.PlayMode.P6AWorldPlayTests.TestTuning_HalfPlayerHp_DoubleEnemyAttack"
+      ]
     },
     {
       "requirementId": "P6A10",
@@ -372,7 +376,9 @@
       ],
       "implemented": true,
       "supportingTests": [
-        "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ReturnToTitle_SaveFails_OffersChoices_RetryWritesLatest"
+        "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ReturnToTitle_SaveFails_OffersChoices_RetryWritesLatest",
+        "Momotaro.Tests.PlayMode.P6AWorldPlayTests.Title_PadDecideStartsNewGame",
+        "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ShrineAndGameMenu_PadNavigation"
       ]
     },
     {

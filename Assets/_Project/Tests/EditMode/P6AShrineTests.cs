@@ -277,6 +277,68 @@ namespace Momotaro.Tests.EditMode
             Assert.IsFalse(rig.Runner.AbandonChallenge(), "クリア済みは戻さない。");
         }
 
+        /// <summary>
+        /// テスト専用の調整（2026-10-02 オーナー指示：敵の攻撃力 2 倍・初期体力半分）は<b>P6A の検証 campaign だけ</b>に入っている。
+        /// 出荷アセットを読んで確かめる（P5／P5.5 の試遊カタログは 1 のまま）。数値は campaign の Data が正本。
+        /// </summary>
+        [Test]
+        public void TestTuning_OnlyInTheP6ACampaign()
+        {
+            var p6 = UnityEditor.AssetDatabase.LoadAssetAtPath<AreaCatalogData>(
+                "Assets/_Project/Data/Tests/Phase6A/SO_AreaCatalog_P6A.asset");
+            Assert.IsNotNull(p6, "P6A のカタログがある（build-phase6-world）。");
+            Assert.AreEqual(2f, p6.TestEnemyAttackScale, 1e-4f, "P6A：敵の攻撃力 2 倍。");
+            Assert.AreEqual(0.5f, p6.TestPlayerMaxHpScale, 1e-4f, "P6A：基礎最大 HP 半分。");
+
+            foreach (string path in new[]
+                     {
+                         "Assets/_Project/Data/Tests/Phase5/SO_AreaCatalog_P5.asset",
+                         "Assets/_Project/Data/Tests/Phase55/SO_AreaCatalog_P55.asset",
+                         "Assets/_Project/Data/Tests/Phase55NS/SO_AreaCatalog_P55NS.asset",
+                     })
+            {
+                var other = UnityEditor.AssetDatabase.LoadAssetAtPath<AreaCatalogData>(path);
+                Assert.IsNotNull(other, path);
+                Assert.AreEqual(1f, other.TestEnemyAttackScale, 1e-4f, path + "：テスト用の調整は入っていない。");
+                Assert.AreEqual(1f, other.TestPlayerMaxHpScale, 1e-4f, path + "：テスト用の調整は入っていない。");
+            }
+        }
+
+        /// <summary>基礎最大 HP の倍率は成長の加算より前に掛かり、何度設定しても累積しない。</summary>
+        [Test]
+        public void MaxHpScale_AppliesBeforeGrowthBonus_NotCumulative()
+        {
+            var data = ScriptableObject.CreateInstance<PlayerData>();
+            var so = new UnityEditor.SerializedObject(data);
+            so.FindProperty("_maxHp").intValue = 100;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            var go = new GameObject("P6ATuningVitals");
+            go.SetActive(false);
+            var vitals = go.AddComponent<PlayerVitalsHolder>();
+            var vso = new UnityEditor.SerializedObject(vitals);
+            vso.FindProperty("_data").objectReferenceValue = data;
+            vso.ApplyModifiedPropertiesWithoutUndo();
+            try
+            {
+                vitals.SetMaxHpScale(0.5f);
+                Assert.AreEqual(50, vitals.Vitals.Health.Max);
+                Assert.AreEqual(50, vitals.Vitals.Health.Current, "満タンは半分の最大値で。");
+                vitals.ApplyMaxHpBonus(10);
+                Assert.AreEqual(60, vitals.Vitals.Health.Max, "加算は半分にした後に足す。");
+                vitals.SetMaxHpScale(0.5f);
+                vitals.ApplyMaxHpBonus(10);
+                Assert.AreEqual(60, vitals.Vitals.Health.Max, "何度設定しても累積しない。");
+                vitals.SetMaxHpScale(0f);
+                Assert.AreEqual(1f, vitals.MaxHpScale, "0 以下は未設定＝1。");
+                Assert.AreEqual(110, vitals.Vitals.Health.Max);
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+                Object.DestroyImmediate(data);
+            }
+        }
+
         /// <summary>P5 の遭遇戦（撤退を許さない）は、従来どおり戦闘中の遷移を断る。</summary>
         [Test]
         public void Retreat_NotAllowedInP5()
