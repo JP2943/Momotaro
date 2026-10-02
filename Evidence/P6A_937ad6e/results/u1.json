@@ -1,0 +1,29 @@
+{
+    "id": "u1",
+    "command": "run-op",
+    "status": "ok",
+    "message": "P6A 検証ワールド：Scene 4 件（タイトル／A／B／C）、接続 4 件、Build Settings へ 0 件を追加。",
+    "startedAt": "2026-10-02T11:45:41.6153757Z",
+    "finishedAt": "2026-10-02T11:45:46.1972992Z",
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "expected": 0,
+    "termination": "",
+    "runLogPath": "",
+    "details": [
+        "Assets/_Project/Data/Tests/Phase6A/SO_AreaConnections_P6A.asset",
+        "Assets/_Project/Data/Tests/Phase6A/SO_Area_P6A_A.asset",
+        "Assets/_Project/Data/Tests/Phase6A/SO_Area_P6A_B.asset",
+        "Assets/_Project/Data/Tests/Phase6A/SO_AreaCatalog_P6A.asset",
+        "Assets/_Project/Data/Tests/Phase5/SO_Encounter_P5_B_Road.asset",
+        "Assets/_Project/Prefabs/Cameras/PF_ResidentCameraRig.prefab",
+        "Assets/_Project/Scenes/Tests/Phase6A/SCN_Phase6A_AreaA.unity",
+        "Assets/_Project/Scenes/Tests/Phase6A/SCN_Phase6A_AreaB.unity",
+        "Assets/_Project/Scenes/Tests/Phase6A/SCN_Phase6A_Title.unity",
+        "Assets/_Project/Scenes/Tests/Phase6A/SCN_Phase6A_AreaC.unity",
+        "Assets/_Project/Data/Tests/Phase6A/SO_AreaCatalog_P6A.asset",
+        "Assets/_Project/Scenes/Tests/Phase6A/SCN_Phase6A_Title.unity"
+    ]
+}

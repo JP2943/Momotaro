@@ -1,0 +1,16 @@
+{
+    "id": "up3",
+    "command": "run-tests",
+    "status": "ok",
+    "message": "成功 72 / 失敗 0 / スキップ 0（251.4 秒）",
+    "startedAt": "2026-10-02T11:54:03.6547315Z",
+    "finishedAt": "2026-10-02T11:58:32.0234011Z",
+    "passed": 72,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "expected": 0,
+    "termination": "completed",
+    "runLogPath": "_bridge/runs/up3.json",
+    "details": []
+}

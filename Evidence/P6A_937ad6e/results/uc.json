@@ -1,0 +1,16 @@
+{
+    "id": "uc",
+    "command": "compile-status",
+    "status": "ok",
+    "message": "再コンパイルは発生しませんでした（スクリプトに変更なし）。強制したい場合は force を true にしてください。",
+    "startedAt": "2026-10-02T11:45:35.1569740Z",
+    "finishedAt": "2026-10-02T11:45:40.5309561Z",
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "expected": 0,
+    "termination": "",
+    "runLogPath": "",
+    "details": []
+}

@@ -1,0 +1,1 @@
+{ "observed": ["A/end:alive/t=1.3", "A/enemy_slash", "A/guardPresses=1", "A/just_guard", "A/playerHits=Damage:1,JustGuard:1", "C/end:alive/t=9.1", "C/enemy_slash", "C/guardPresses=1", "C/just_guard", "C/player_special/up", "C/playerHits=Damage:3,JustGuard:1", "C/unblockable_warning"] }
