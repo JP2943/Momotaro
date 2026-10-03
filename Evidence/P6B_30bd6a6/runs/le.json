@@ -1,0 +1,162 @@
+{
+    "id": "le",
+    "mode": "EditMode",
+    "filter": "P6B(Growth|KibidangoUse)Tests",
+    "startedAt": "2026-10-03T11:54:36.6437086Z",
+    "finishedAt": "2026-10-03T11:54:44.8970615Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 24,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.AcquireRefundRepeated_EffectsAlwaysRebuiltFromBase",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.ChapterRights_Initial3_PlusThreePerChapter_Cap6_NoDuplicates",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.ChapterRights_JoinTheCallersSaveUnit",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Effects_AppliedToPlayerVitals_RecomputedFromBase",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Effects_EachNodeAndFullTree_AddUp",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.GraphCheck_RejectsCycleForeignReferenceZeroEffectAndNegative",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Purchase_InsufficientVirtue_ChangesNothing",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Purchase_MixedDirections_AndRejectionsChangeNothing",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Purchase_RestsOnceAtNewCaps_RefillsAndSavesOnce",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Refund_LowersCaps_RestsOnce_RejectionsAndDoubleInputChangeNothing",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Refund_OnlyLeaves_WithBranchingFixture",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Refund_ReturnsActualSpend_PriceChangeReacquireAtNewPrice",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Save_V1AndV2_MigrateToInitialRightsAndEmptyChapters",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Save_V3_RejectsBadRefundGrowthAndStock",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Save_V3_RoundTripsRightsChaptersGrowthAndStock",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.ShippedTree_NineNodes_ThreeDirections_CostsAndPrerequisites",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.Commit_RequestsOneSave_WithHpAndStockConsistent",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.EndFrame_PressesAtTheBoundaryAreDropped_RepressIsAccepted",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.ExitGate_NoRequestWhileUsing_ThenRequestsWithoutRelease",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.GrowthMultipliers_DoNotTouchJustGuardReflection",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.Hits_InterruptBeforeCommit_KeepAfter_SameFrameHitWins_IgnoredContactsContinue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.Start_RejectsFullHpEmptyStockSameFrameActionAndBusy_HoldDoesNotRepeat",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.Time_PauseAndFreezeStop_LongFrameCommitsOnce_FullHpAfterStartClamps_StolenStockAborts",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.Use_CommitsOnceAt1_5_EndsAt2_0_SlowMove_NoInvulnerability_DropsForbiddenInputs",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

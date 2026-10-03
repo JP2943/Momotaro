@@ -1,0 +1,79 @@
+######## A 近接・犬丸 Down・後隙で開始
+== 犬丸 Down 試行 1：開始 1・確定 0・かばい 0・最初の被弾 経過=0.450（確定済み=False）・残数 3→3
+t=0.012 経過=0.000 確定=0 frame=2456 使用開始=True 拒否=None HP=60 残数=3 犬丸=Down 敵=PF_Enemy_Melee_Prototype_field_p6_a_01
+t=0.461 経過=0.450 確定=0 frame=2496 被弾結果=Damage 適用HP=3 HP後=57
+t=0.461 経過=- 確定=0 frame=2497 使用終了 状態=Hurt HP=57 残数=3
+t=1.934 経過=- 確定=0 frame=2630 被弾結果=Damage 適用HP=1 HP後=56
+t=2.752 経過=- 確定=0 frame=2704 被弾結果=Damage 適用HP=3 HP後=53
+== 犬丸 Down 試行 2：開始 1・確定 0・かばい 0・最初の被弾 経過=0.619（確定済み=False）・残数 3→3
+t=0.015 経過=0.000 確定=0 frame=2844 使用開始=True 拒否=None HP=60 残数=3 犬丸=Down 敵=PF_Enemy_Melee_Prototype_field_p6_a_01
+t=0.634 経過=0.619 確定=0 frame=2897 被弾結果=Damage 適用HP=3 HP後=57
+t=0.634 経過=- 確定=0 frame=2898 使用終了 状態=Hurt HP=57 残数=3
+t=2.268 経過=- 確定=0 frame=3049 被弾結果=Damage 適用HP=1 HP後=56
+t=2.894 経過=- 確定=0 frame=3107 被弾結果=Damage 適用HP=3 HP後=53
+== 犬丸 Down 試行 3：開始 1・確定 0・かばい 0・最初の被弾 経過=0.259（確定済み=False）・残数 3→3
+t=0.012 経過=0.000 確定=0 frame=3305 使用開始=True 拒否=None HP=60 残数=3 犬丸=Down 敵=PF_Enemy_Melee_Prototype_field_p6_a_01
+t=0.271 経過=0.259 確定=0 frame=3328 被弾結果=Damage 適用HP=3 HP後=57
+t=0.271 経過=- 確定=0 frame=3329 使用終了 状態=Hurt HP=57 残数=3
+t=1.909 経過=- 確定=0 frame=3478 被弾結果=Damage 適用HP=1 HP後=56
+t=2.510 経過=- 確定=0 frame=3536 被弾結果=Damage 適用HP=3 HP後=53
+######## A 近接・犬丸 Down・予備動作で開始
+== 犬丸 Down 試行 1：開始 1・確定 0・かばい 1・最初の被弾 経過=0.869（確定済み=False）・残数 3→3
+t=0.011 経過=0.000 確定=0 frame=3672 使用開始=True 拒否=None HP=60 残数=3 犬丸=Down 敵=PF_Enemy_Melee_Prototype_field_p6_a_01
+t=0.157 経過=0.146 確定=0 frame=3685 犬丸がかばった
+t=0.880 経過=0.869 確定=0 frame=3758 被弾結果=Damage 適用HP=3 HP後=57
+t=0.880 経過=- 確定=0 frame=3759 使用終了 状態=Hurt HP=57 残数=3
+t=2.477 経過=- 確定=0 frame=3908 被弾結果=Damage 適用HP=1 HP後=56
+t=3.127 経過=- 確定=0 frame=3970 被弾結果=Damage 適用HP=3 HP後=53
+== 犬丸 Down 試行 2：開始 1・確定 0・かばい 0・最初の被弾 経過=0.262（確定済み=False）・残数 3→3
+t=0.011 経過=0.000 確定=0 frame=4100 使用開始=True 拒否=None HP=60 残数=3 犬丸=Down 敵=PF_Enemy_Melee_Prototype_field_p6_a_01
+t=0.272 経過=0.262 確定=0 frame=4123 被弾結果=Damage 適用HP=1 HP後=59
+t=0.272 経過=- 確定=0 frame=4124 使用終了 状態=Hurt HP=59 残数=3
+t=0.906 経過=- 確定=0 frame=4184 被弾結果=Damage 適用HP=3 HP後=56
+t=2.512 経過=- 確定=0 frame=4332 被弾結果=Damage 適用HP=1 HP後=55
+t=3.151 経過=- 確定=0 frame=4393 被弾結果=Damage 適用HP=3 HP後=52
+== 犬丸 Down 試行 3：開始 1・確定 0・かばい 1・最初の被弾 経過=0.901（確定済み=False）・残数 3→3
+t=0.011 経過=0.000 確定=0 frame=4514 使用開始=True 拒否=None HP=60 残数=3 犬丸=Down 敵=PF_Enemy_Melee_Prototype_field_p6_a_01
+t=0.278 経過=0.268 確定=0 frame=4535 犬丸がかばった
+t=0.912 経過=0.901 確定=0 frame=4599 被弾結果=Damage 適用HP=3 HP後=57
+t=0.912 経過=- 確定=0 frame=4600 使用終了 状態=Hurt HP=57 残数=3
+t=2.516 経過=- 確定=0 frame=4750 被弾結果=Damage 適用HP=1 HP後=56
+######## A 近接・犬丸あり・予備動作で開始
+== 犬丸あり 試行 1：開始 1・確定 0・かばい 1・最初の被弾 経過=0.263（確定済み=False）・残数 3→3
+t=0.013 経過=0.000 確定=0 frame=4946 使用開始=True 拒否=None HP=60 残数=3 犬丸=あり 敵=PF_Enemy_Melee_Prototype_field_p6_a_01
+t=0.276 経過=0.263 確定=0 frame=4969 被弾結果=Damage 適用HP=1 HP後=59
+t=0.276 経過=- 確定=0 frame=4970 使用終了 状態=Hurt HP=59 残数=3
+t=0.971 経過=- 確定=0 frame=5035 被弾結果=Damage 適用HP=3 HP後=56
+t=2.515 経過=- 確定=0 frame=5181 犬丸がかばった
+t=3.194 経過=- 確定=0 frame=5245 被弾結果=Damage 適用HP=3 HP後=53
+== 犬丸あり 試行 2：開始 1・確定 0・かばい 0・最初の被弾 経過=0.259（確定済み=False）・残数 3→3
+t=0.012 経過=0.000 確定=0 frame=5369 使用開始=True 拒否=None HP=60 残数=3 犬丸=あり 敵=PF_Enemy_Melee_Prototype_field_p6_a_01
+t=0.271 経過=0.259 確定=0 frame=5392 被弾結果=Damage 適用HP=1 HP後=59
+t=0.271 経過=- 確定=0 frame=5393 使用終了 状態=Hurt HP=59 残数=3
+t=0.944 経過=- 確定=0 frame=5452 被弾結果=Damage 適用HP=3 HP後=56
+t=3.185 経過=- 確定=0 frame=5658 被弾結果=Damage 適用HP=3 HP後=53
+試行 3：敵の攻撃が始まらなかった
+試行 4：生きている敵がいない
+試行 5：生きている敵がいない
+試行 6：生きている敵がいない
+試行 7：生きている敵がいない
+試行 8：生きている敵がいない
+######## B 遠距離・犬丸 Down・予備動作で開始
+== 犬丸 Down 試行 1：開始 1・確定 0・かばい 0・最初の被弾 経過=0.418（確定済み=False）・残数 3→3
+t=0.010 経過=0.000 確定=0 frame=5909 使用開始=True 拒否=None HP=60 残数=3 犬丸=Down 敵=PF_Enemy_Ranged_Prototype_1
+t=0.429 経過=0.418 確定=0 frame=5945 被弾結果=Damage 適用HP=3 HP後=57
+t=0.429 経過=- 確定=0 frame=5946 使用終了 状態=Hurt HP=57 残数=3
+t=0.522 経過=- 確定=0 frame=5958 被弾結果=Evade 適用HP=0 HP後=57
+t=2.689 経過=- 確定=0 frame=6147 被弾結果=Damage 適用HP=3 HP後=54
+t=3.082 経過=- 確定=0 frame=6186 被弾結果=Evade 適用HP=0 HP後=54
+== 犬丸 Down 試行 2：開始 1・確定 0・かばい 1・最初の被弾 経過=0.487（確定済み=False）・残数 3→3
+t=0.011 経過=0.000 確定=0 frame=6346 使用開始=True 拒否=None HP=60 残数=3 犬丸=Down 敵=PF_Enemy_Ranged_Prototype_1
+t=0.502 経過=0.487 確定=0 frame=6389 被弾結果=Damage 適用HP=1 HP後=59
+t=0.509 経過=- 確定=0 frame=6389 使用終了 状態=Hurt HP=59 残数=3
+t=2.429 経過=- 確定=0 frame=6562 犬丸がかばった
+t=3.142 経過=- 確定=0 frame=6633 被弾結果=Damage 適用HP=1 HP後=58
+== 犬丸 Down 試行 3：開始 1・確定 0・かばい 1・最初の被弾 経過=0.498（確定済み=False）・残数 3→3
+t=0.016 経過=0.000 確定=0 frame=7127 使用開始=True 拒否=None HP=60 残数=3 犬丸=Down 敵=PF_Enemy_Ranged_Prototype_1
+t=0.515 経過=0.498 確定=0 frame=7169 被弾結果=Damage 適用HP=1 HP後=59
+t=0.524 経過=- 確定=0 frame=7169 使用終了 状態=Hurt HP=59 残数=3
+t=1.231 経過=- 確定=0 frame=7234 犬丸がかばった
