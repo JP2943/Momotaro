@@ -624,6 +624,151 @@ namespace Momotaro.Tests.PlayMode
             public System.IDisposable TryLock(string path) => _real.TryLock(path);
         }
 
+        // ================================================================ 7. 使用中の正常終了・終了保存の失敗からの復帰（レビュー ddb2d19 D1）
+
+        private const string TitleScene = "Assets/_Project/Scenes/Tests/Phase6B/SCN_Phase6B_Title.unity";
+
+        /// <summary>
+        /// P6B 14：使用中（確定前 0.6 秒／確定後の後隙 1.7 秒）に、<b>製品のゲーム内メニュー</b>（Esc → T：タイトルへ）で正常終了する。
+        /// 終了前の保存（SaveBeforeExit）がその時点の HP と残数を書き、Continue 後は各時点の値のまま——
+        /// 確定前は未回復・未消費、確定後は回復済み・1 個減。再回復も遅延消費も無く、使用は持ち越さない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Kibidango_NormalExitMidUse_BeforeAndAfterCommit_ContinueMatchesThatMoment()
+        {
+            yield return NewGame();
+            QuietFieldEnemies();
+            yield return WaitSaved("New Game");
+
+            foreach ((float at, int hpAfter, int stockAfter) in new[] { (0.6f, 40, 3), (1.7f, 90, 2) })
+            {
+                Transitions().LauncherScenePath = TitleScene;
+                GameSessionState s = Session();
+                PlayerVitalsHolder vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+                PlayerStateController player = Object.FindFirstObjectByType<PlayerStateController>();
+                vitals.Vitals.Health.SetCurrent(40);
+                s.RefillKibidango(3);
+                yield return TapKey(Key.F);
+                Assert.IsTrue(player.IsUsingItem, at + "：使用を開始（拒否=" + player.LastItemUseRejection + "）。");
+                yield return WaitUntilOrTimeout(() => player.ItemUseElapsed >= at, 4f);
+                Assert.IsTrue(player.IsUsingItem, at + "：まだ使用中。");
+                Assert.AreEqual(at > 1.5f, player.ItemUseCommitted, at + "：確定の前後が狙いどおり。");
+
+                CampaignSaveService saves = Saves();
+                AreaTransitionService transitions = Transitions();
+                int returned = transitions.ReturnedToLauncherCount;
+                yield return PressKeyUntil(Key.Escape, () => saves.IsMenuOpen, 3f);
+                Assert.IsTrue(saves.IsMenuOpen, at + "：Esc でメニューが開く（使用中でも）。");
+                float frozen = player.ItemUseElapsed;
+                yield return PressKeyUntil(Key.T, () => saves.IsExiting || transitions.ReturnedToLauncherCount > returned, 3f);
+                yield return WaitUntilOrTimeout(() => transitions.ReturnedToLauncherCount > returned || saves.AwaitingExitChoice, 20f);
+                Assert.IsFalse(saves.AwaitingExitChoice, at + "：保存に失敗していない: " + saves.Coordinator.LastError);
+                Assert.AreEqual(SaveExitOutcome.Saved, saves.LastExitOutcome, at + "：終了前の保存が成功。");
+                Assert.AreEqual(returned + 1, transitions.ReturnedToLauncherCount, at + "：タイトルへ戻った。");
+                Assert.AreEqual(at > 1.5f, frozen > 1.5f, at + "：メニューを開いた時点の経過。");
+
+                SaveLoadDecision decision = saves.Coordinator.Store.DecideLoad();
+                Assert.IsTrue(SaveJsonCodec.TryDeserialize(decision.Chosen.Json, out _, out SaveSnapshot snap, out string err), err);
+                Assert.AreEqual(hpAfter, snap.Party.Player.Hp, at + "：終了時点の HP が保存されている。");
+                Assert.AreEqual(stockAfter, snap.Kibidango, at + "：終了時点の残数が保存されている。");
+
+                if (_keyboard != null)
+                {
+                    InputSystem.RemoveDevice(_keyboard);
+                    _keyboard = null;
+                }
+
+                yield return ContinueAndWait(AreaA);
+                QuietFieldEnemies();
+                PlayerVitalsHolder v2 = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+                PlayerStateController p2 = Object.FindFirstObjectByType<PlayerStateController>();
+                Assert.AreEqual(hpAfter, v2.CurrentHp, at + "：Continue 後の HP（再回復なし）。");
+                Assert.AreEqual(stockAfter, Session().Kibidango, at + "：Continue 後の残数（遅延消費なし）。");
+                Assert.IsFalse(p2.IsUsingItem, at + "：使用は持ち越さない（中立姿勢）。");
+                yield return new WaitForSeconds(2.2f);
+                Assert.AreEqual(hpAfter, v2.CurrentHp, at + "：時間が経っても遅れて回復しない。");
+                Assert.AreEqual(stockAfter, Session().Kibidango, at + "：遅れて消費しない。");
+                yield return WaitSaved(at + "：Continue 後");
+            }
+        }
+
+        /// <summary>
+        /// P6B 15：使用中（確定前 0.6 秒／確定後 1.7 秒）にタイトルへの終了を求め、<b>終了前の保存を失敗</b>させる。
+        /// 失敗の選択中は使用の経過が止まり、実キーで「ゲームへ戻る」を選ぶと同じ経過時間・確定状態から続く。
+        /// 確定前の側はその後 1 回だけ確定し、確定済みの側は再消費しない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Kibidango_ExitSaveFailsMidUse_BackToGame_ResumesSameUseState()
+        {
+            var fs = new SwitchableFileSystem();
+            yield return NewGameWithFileSystem(fs);
+            QuietFieldEnemies();
+            SaveCoordinator c = Saves().Coordinator;
+
+            foreach (float at in new[] { 0.6f, 1.7f })
+            {
+                Transitions().LauncherScenePath = TitleScene;
+                GameSessionState s = Session();
+                PlayerVitalsHolder vitals = Object.FindFirstObjectByType<PlayerVitalsHolder>();
+                PlayerStateController player = Object.FindFirstObjectByType<PlayerStateController>();
+                vitals.Vitals.Health.SetCurrent(40);
+                s.RefillKibidango(3);
+                int commits = player.ItemUseCommitCount;
+                yield return TapKey(Key.F);
+                Assert.IsTrue(player.IsUsingItem, at + "：使用を開始（拒否=" + player.LastItemUseRejection + "）。");
+                yield return WaitUntilOrTimeout(() => player.ItemUseElapsed >= at, 4f);
+                bool committedBefore = player.ItemUseCommitted;
+                Assert.AreEqual(at > 1.5f, committedBefore);
+                int stockBefore = s.Kibidango;
+                int hpBefore = vitals.CurrentHp;
+
+                fs.FailReplace = true;
+                CampaignSaveService saves = Saves();
+                AreaTransitionService transitions = Transitions();
+                int returned = transitions.ReturnedToLauncherCount;
+                yield return PressKeyUntil(Key.Escape, () => saves.IsMenuOpen, 3f);
+                float frozen = player.ItemUseElapsed;
+                yield return PressKeyUntil(Key.T, () => saves.IsExiting || saves.AwaitingExitChoice, 3f);
+                yield return WaitUntilOrTimeout(() => saves.AwaitingExitChoice, 20f);
+                Assert.IsTrue(saves.AwaitingExitChoice, at + "：終了前の保存が失敗して選択を待つ。");
+                Assert.AreEqual(returned, transitions.ReturnedToLauncherCount, at + "：タイトルへは戻っていない。");
+
+                yield return new WaitForSeconds(1.0f);
+                Assert.IsTrue(player.IsUsingItem, at + "：失敗の選択中も使用状態のまま。");
+                Assert.AreEqual(frozen, player.ItemUseElapsed, 1e-4f, at + "：選択中は経過が止まる。");
+                Assert.AreEqual(committedBefore, player.ItemUseCommitted, at + "：選択中に確定は変わらない。");
+                Assert.AreEqual(stockBefore, s.Kibidango);
+                Assert.AreEqual(hpBefore, vitals.CurrentHp);
+
+                // 実キーで「ゲームへ戻る」（選択肢の 2 番目）。
+                yield return TapKey(Key.DownArrow);
+                yield return TapKey(Key.Enter);
+                Assert.IsFalse(saves.AwaitingExitChoice, at + "：選択が閉じた。");
+                Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current, at + "：ゲームへ戻った。");
+                Assert.IsTrue(player.IsUsingItem, at + "：同じ使用へ戻る。");
+                // 戻った直後の数フレームは進んでよい。最初からやり直していない（frozen 未満にならない）・飛んでいないこと。
+                float resumed = player.ItemUseElapsed;
+                Assert.GreaterOrEqual(resumed, frozen - 1e-4f, at + "：最初からやり直さない（再開 " + resumed + "）。");
+                Assert.Less(resumed, frozen + 0.2f, at + "：止まっていた分を飛ばさない（再開 " + resumed + "）。");
+
+                yield return WaitUntilOrTimeout(() => !player.IsUsingItem, 4f);
+                Assert.AreEqual(commits + 1, player.ItemUseCommitCount, at + "：確定はこの使用につき 1 回だけ。");
+                Assert.AreEqual(committedBefore ? stockBefore : stockBefore - 1, s.Kibidango,
+                    at + (committedBefore ? "：確定済みは再消費しない。" : "：未確定はその後 1 回だけ消費。"));
+                Assert.AreEqual(90, vitals.CurrentHp, at + "：回復は 1 回分。");
+
+                fs.FailReplace = false;
+                int submits = c.SubmitCount;
+                c.RetryNow();
+                yield return WaitUntilOrTimeout(() => c.SubmitCount > submits, 3f);
+                yield return WaitSaved(at + "：復旧後の再試行");
+                SaveLoadDecision decision = c.Store.DecideLoad();
+                Assert.IsTrue(SaveJsonCodec.TryDeserialize(decision.Chosen.Json, out _, out SaveSnapshot snap, out string err), err);
+                Assert.AreEqual(90, snap.Party.Player.Hp, at + "：最新（使用後）を書く。");
+                Assert.AreEqual(2, snap.Kibidango, at);
+            }
+        }
+
         private IEnumerator Swing(RecordingTarget target, Key key, float hold)
         {
             int before = target.Count;

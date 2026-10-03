@@ -220,6 +220,33 @@ namespace Momotaro.Editor.Phase6
                 ok &= Expect(outputs, "Continue 直後は未保存なし", "false", Get(continued, "dirtyAfterContinue"));
             }
 
+            // 使用中の通常の終了要求（確定前 0.6 秒／確定後の後隙 1.7 秒）→ 別プロセスで Continue（レビュー ddb2d19 D1）。
+            foreach ((string at, string hp, string stock, string committed) in new[]
+                     { ("0.6", "40", "3", "false"), ("1.7", "90", "2", "true") })
+            {
+                string useSaves = Path.Combine(work, "useclose_" + at.Replace('.', '_') + "_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss"));
+                Directory.CreateDirectory(useSaves);
+                string tag = "useclose_" + at.Replace('.', '_');
+                bool useOk = RunPlayer(exe, "useclose", useSaves, work, 0, batch: false, outputs,
+                    out Dictionary<string, string> closed, tag: tag, extraArgs: " -p6b-use-quit-at " + at);
+                useOk &= RunPlayer(exe, "continue", useSaves, work, 0, batch: true, outputs,
+                    out Dictionary<string, string> reopened, tag: "continue_after_" + tag);
+                if (useOk)
+                {
+                    useOk &= Expect(outputs, at + " 秒：終了時の確定状態", committed, Get(closed, "quitCommitted"));
+                    useOk &= Expect(outputs, at + " 秒：終了直前の HP", hp, Get(closed, "beforePlayerHp"));
+                    useOk &= Expect(outputs, at + " 秒：終了直前の残数", stock, Get(closed, "kibidango"));
+                    useOk &= Expect(outputs, at + " 秒：同じ冒険", Get(closed, "adventureId"), Get(reopened, "adventureId"));
+                    useOk &= Expect(outputs, at + " 秒：Continue 後の HP（再回復なし）", hp, Get(reopened, "afterPlayerHp"));
+                    useOk &= Expect(outputs, at + " 秒：Continue 後の残数（遅延消費なし）", stock, Get(reopened, "kibidango"));
+                    useOk &= Expect(outputs, at + " 秒：使用は持ち越さない", "false", Get(reopened, "afterUsingItem"));
+                    useOk &= Expect(outputs, at + " 秒：プロセスが別", "different",
+                        Get(closed, "processId") != Get(reopened, "processId") ? "different" : "same");
+                }
+
+                ok &= useOk;
+            }
+
             return new BuildResult(ok, ok ? "P6B の実ビルド別プロセス確認が終わりました。" : "P6B の実ビルド確認に失敗があります。",
                 outputs);
         }

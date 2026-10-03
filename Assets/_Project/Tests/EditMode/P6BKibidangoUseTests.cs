@@ -180,6 +180,56 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(1, _service.CommitCount);
         }
 
+        // ================================================================ P6B 10：終了フレームの禁止入力（レビュー ddb2d19 R1）
+
+        /// <summary>
+        /// 確定済みの 1.99 秒から 2 秒を跨ぐフレームに F／J／Space／E を押す。追加使用・攻撃・回避・Interact は
+        /// そのフレームにも次のフレームにも起きない（押しっぱなしでも）。離して押し直せば受け付ける。
+        /// </summary>
+        [Test]
+        public void EndFrame_PressesAtTheBoundaryAreDropped_RepressIsAccepted()
+        {
+            SetPrivate(_player, "_attackCombo", AssetDatabase.LoadAssetAtPath<Momotaro.Data.Combat.PlayerAttackComboData>(
+                "Assets/_Project/Data/Combat/SO_Player_AttackCombo.asset"));
+            var keys = new (string name, Action<bool> set, Func<bool> fired)[]
+            {
+                ("F（追加使用）", v => _input.SetUseItem(v), () => _player.IsUsingItem),
+                ("J（攻撃）", v => _input.SetAttack(v), () => _player.Current == PlayerState.Attack),
+                ("Space（回避）", v => _input.SetStep(v), () => _player.IsStepping),
+                ("E（Interact）", v => _input.SetInteract(v), () => _input.InteractPressed),
+            };
+
+            foreach ((string name, Action<bool> set, Func<bool> fired) in keys)
+            {
+                _session.RefillKibidango(3);
+                SetHp(40);
+                StartUse();
+                RunUntil(1.96f);
+                Assert.IsTrue(_player.IsUsingItem && _player.ItemUseCommitted && _player.ItemUseElapsed < 1.995f,
+                    name + "：前提（確定済み・終了直前。経過 " + _player.ItemUseElapsed + "）。");
+                int starts = _player.ItemUseStartCount;
+
+                set(true);              // このフレームに押す（押したまま）
+                Frame(0.06f);           // 2 秒を跨ぐ
+                Assert.IsFalse(_player.IsUsingItem && _player.ItemUseStartCount > starts, name + "：終了フレームに再使用しない。");
+                Assert.IsFalse(fired(), name + "：終了フレームに発火しない。");
+                Frame(0.02f);
+                Frame(0.02f);
+                Assert.IsFalse(fired(), name + "：次のフレームにも発火しない（押しっぱなし）。");
+                Assert.AreEqual(starts, _player.ItemUseStartCount, name + "：使用は増えない。");
+
+                set(false);
+                Frame(0.02f);
+                set(true);
+                Frame(0.02f);
+                Assert.IsTrue(fired(), name + "：離して押し直せば受け付ける。");
+                set(false);
+                _input.DiscardInteractPressed();
+                Run(2.5f); // 攻撃・回避・使用を終わらせる
+                Assert.AreEqual(PlayerState.Idle, _player.Current, name + "：後始末。");
+            }
+        }
+
         // ================================================================ P6B 11：被弾と中断
 
         /// <summary>

@@ -47,6 +47,9 @@ namespace Momotaro.Infrastructure.World
         /// <summary>保存の採取を止める（性能の切り分け用。<c>-p6a-no-save</c>）。</summary>
         public static bool NoSave { get; private set; }
 
+        /// <summary>P6B：きびだんご使用の何秒目で通常の終了要求を出すか（<c>-p6b-use-quit-at</c>）。</summary>
+        public static float UseQuitAt { get; private set; } = 0.6f;
+
         /// <summary>計測の前に切り分けの下準備を段階ごとに行う（<c>-p6a-play-probe</c>）。</summary>
         public static bool Probe { get; private set; }
 
@@ -70,6 +73,10 @@ namespace Momotaro.Infrastructure.World
                         break;
                     case "-p6a-play-probe":
                         Probe = args[i + 1] == "1";
+                        break;
+                    case "-p6b-use-quit-at":
+                        float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out float at);
+                        UseQuitAt = at;
                         break;
                     case "-p6a-no-save":
                         NoSave = args[i + 1] == "1";
@@ -177,6 +184,9 @@ namespace Momotaro.Infrastructure.World
                     break;
                 case "growth":
                     yield return GrowthThenExit();
+                    break;
+                case "useclose":
+                    yield return UseThenWindowClose();
                     break;
                 default:
                     _result["error"] = "unknown mode";
@@ -295,6 +305,11 @@ namespace Momotaro.Infrastructure.World
             _result["dirtyAfterContinue"] = Saves.Coordinator.IsDirty ? "true" : "false";
             WriteParty("after");
             WriteProgress("after");
+            if (TryPort(out AreaActorTransferPort after) && after.PlayerState != null)
+            {
+                _result["afterUsingItem"] = after.PlayerState.IsUsingItem ? "true" : "false";
+            }
+
             Finish();
         }
 
@@ -382,6 +397,71 @@ namespace Momotaro.Infrastructure.World
             SaveExitOutcome outcome = SaveExitOutcome.TimedOut;
             yield return Saves.SaveBeforeExit(o => outcome = o);
             _result["exitOutcome"] = outcome.ToString();
+            Finish();
+        }
+
+        /// <summary>
+        /// P6B 14（レビュー ddb2d19 D1）：New Game → HP を下げて仮想キーボードの F で使い始め、<c>-p6b-use-quit-at</c> 秒で
+        /// <b>通常の終了要求</b>（<c>Application.Quit</c> → wantsToQuit → 最新を採って保存 → 終了）。
+        /// 別プロセスの continue が、その時点の HP・残数（確定前なら未回復・未消費、確定後なら回復済み・1 個減）を書き出すかを突き合わせる。
+        /// </summary>
+        private IEnumerator UseThenWindowClose()
+        {
+            yield return StartNewGame();
+            if (_result.ContainsKey("error"))
+            {
+                Finish();
+                yield break;
+            }
+
+            if (!TryPort(out AreaActorTransferPort port) || port.PlayerVitals == null || port.PlayerState == null)
+            {
+                _result["error"] = "no player";
+                Finish();
+                yield break;
+            }
+
+            GameSessionState session = GameSessionProvider.Current;
+            port.PlayerVitals.Vitals.Health.SetCurrent(40);
+            Keyboard keyboard = InputSystem.AddDevice<Keyboard>("P6BSmokeKeyboard");
+            yield return null;
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.F));
+            yield return null;
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            float deadline = Time.realtimeSinceStartup + 6f;
+            while (port.PlayerState.IsUsingItem && port.PlayerState.ItemUseElapsed < Phase6SmokeArgs.UseQuitAt
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            if (!port.PlayerState.IsUsingItem)
+            {
+                _result["error"] = "the use did not start or ended before the quit point (rejection="
+                    + port.PlayerState.LastItemUseRejection + ")";
+                Finish();
+                yield break;
+            }
+
+            _result["quitAtElapsed"] = port.PlayerState.ItemUseElapsed.ToString("0.###", CultureInfo.InvariantCulture);
+            _result["quitCommitted"] = port.PlayerState.ItemUseCommitted ? "true" : "false";
+            _result["adventureId"] = session.AdventureId;
+            _result["kibidango"] = session.Kibidango.ToString(CultureInfo.InvariantCulture);
+            _result["area"] = CurrentAreaProvider.Current.AreaId.Value;
+            WriteParty("before");
+            _result["closeRequested"] = "true";
+            WriteResult();
+
+            // 通常の終了要求（使用中のまま）。wantsToQuit がいったん断り、最新を採って保存してから自分で終了する。
+            Application.Quit();
+            float quitDeadline = Time.realtimeSinceStartup + 30f;
+            while (Time.realtimeSinceStartup < quitDeadline)
+            {
+                yield return null;
+            }
+
+            _result["error"] = "the normal quit did not finish (outcome=" + Saves.LastExitOutcome
+                + " awaitingChoice=" + Saves.AwaitingExitChoice + ")";
             Finish();
         }
 

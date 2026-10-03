@@ -378,6 +378,35 @@
       "requirementIds": [],
       "implemented": true,
       "supportingTests": []
+    },
+    {
+      "requirementId": "P6B10",
+      "stage": "P6B-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.EndFrame_PressesAtTheBoundaryAreDropped_RepressIsAccepted",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B14",
+      "stage": "P6B-03",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_NormalExitMidUse_BeforeAndAfterCommit_ContinueMatchesThatMoment",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B15",
+      "stage": "P6B-03",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_ExitSaveFailsMidUse_BackToGame_ResumesSameUseState",
+      "requirementIds": [
+        "P6B14"
+      ],
+      "implemented": true,
+      "supportingTests": []
     }
   ],
   "allowedSkips": []

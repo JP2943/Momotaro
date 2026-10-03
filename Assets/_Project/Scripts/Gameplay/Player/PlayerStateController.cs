@@ -728,8 +728,11 @@ namespace Momotaro.Gameplay.Player
             }
         }
 
-        /// <summary>使用中の 1 フレーム：禁止行動の押下を捨て、20% 移動・向き変更だけを許す。</summary>
-        private void ApplyItemUseFrame(bool active)
+        /// <summary>
+        /// 使用中に届いた禁止行動（攻撃・ステップ・追加使用・Interact）の押下を捨てる。溜めて終了後に発火させない。
+        /// 押しっぱなしのボタンは押下エッジが立たないので、受け付けるのは離して押し直した新しい入力だけになる。
+        /// </summary>
+        private void DiscardForbiddenPresses()
         {
             if (_input != null)
             {
@@ -741,6 +744,12 @@ namespace Momotaro.Gameplay.Player
 
             _attackBuffer?.Clear();
             _stepChainBuffered = false;
+        }
+
+        /// <summary>使用中の 1 フレーム：禁止行動の押下を捨て、20% 移動・向き変更だけを許す。</summary>
+        private void ApplyItemUseFrame(bool active)
+        {
+            DiscardForbiddenPresses();
             DriveJustGuard(false);
 
             bool isMoving = active && _input != null && _input.Move.sqrMagnitude > _moveThreshold * _moveThreshold;
@@ -908,6 +917,11 @@ namespace Momotaro.Gameplay.Player
                     ApplyItemUseFrame(active);
                     return;
                 }
+
+                // 使用が<b>このフレームで</b>終わった（2 秒到達・中断）。フレーム開始時点では使用中だったので、
+                // このフレームに届いた禁止行動の押下も使用中のものとして捨てる（レビュー ddb2d19 R1）。
+                // 移動はこのまま通常処理へ（速度は EndItemUse で戻してある）。ガード・必殺は解放待ちのまま。
+                DiscardForbiddenPresses();
             }
             else if (TryStartItemUse(active, broken))
             {
