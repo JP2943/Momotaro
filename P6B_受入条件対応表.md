@@ -1,6 +1,6 @@
 # P6B 受入条件対応表
 
-仕様 §11 の要件 ID と、実テストの完全名・ログ・実ビルド・人間確認の対応。テストの正本は `P6BRequiredTests.json`（32 名）で、
+仕様 §11 の要件 ID と、実テストの完全名・ログ・実ビルド・人間確認の対応。テストの正本は `P6BRequiredTests.json`（33 名）で、
 `verify-required-tests`（manifest `P6B`）が欠落・非 Passed・未許可 Skip を不合格にする。結果と対象 SHA は `P6B_統合受入結果.md`。
 
 区分：**自動**＝テストランナー、**実ビルド**＝`p6b-player-smoke`、**人間**＝README §5（未実施）。
@@ -17,7 +17,7 @@
 | P6B08 | 初期3・上限6・章ごと＋3。上限で追加0の章も処理済み。Load・再通知で重複追加なし | `EditMode.P6BGrowthTests.ChapterRights_Initial3_PlusThreePerChapter_Cap6_NoDuplicates`（EditMode）<br>`EditMode.P6BGrowthTests.ChapterRights_JoinTheCallersSaveUnit`（EditMode） |  |
 | P6B09 | 使用可能条件と禁止状態、HP満タン・残数0、同時入力、長押しで連続使用なし | `EditMode.P6BKibidangoUseTests.Start_RejectsFullHpEmptyStockSameFrameActionAndBusy_HoldDoesNotRepeat`（EditMode）<br>`PlayMode.P6BWorldPlayTests.Kibidango_RealKeyAndTrigger_CommitSaves_ContinueRestoresWithoutReheal`（PlayMode） |  |
 | P6B10 | 2秒動作、1.5秒で回復と1個消費を同時に一回確定。0.5秒後隙、20％移動、禁止行動・無敵付与なし | `EditMode.P6BKibidangoUseTests.Use_CommitsOnceAt1_5_EndsAt2_0_SlowMove_NoInvulnerability_DropsForbiddenInputs`（EditMode）<br>`PlayMode.P6BWorldPlayTests.Kibidango_RealKeyAndTrigger_CommitSaves_ContinueRestoresWithoutReheal`（PlayMode）<br>`EditMode.P6BKibidangoUseTests.EndFrame_PressesAtTheBoundaryAreDropped_RepressIsAccepted`（EditMode。終了フレームの禁止入力。レビュー ddb2d19 R1） |  |
-| P6B11 | 確定前後の実被弾、中断、死亡、無敵中の無効接触、かばうとの整合。同フレーム競合の規則 | `EditMode.P6BKibidangoUseTests.Hits_InterruptBeforeCommit_KeepAfter_SameFrameHitWins_IgnoredContactsContinue`（EditMode）<br>`PlayMode.P6BWorldPlayTests.Kibidango_HitInterrupts_DeathTakesPrecedence`（PlayMode） |  |
+| P6B11 | 確定前後の実被弾、中断、死亡、無敵中の無効接触、かばうとの整合。同フレーム競合の規則 | `EditMode.P6BKibidangoUseTests.Hits_InterruptBeforeCommit_KeepAfter_SameFrameHitWins_IgnoredContactsContinue`（EditMode）<br>`PlayMode.P6BWorldPlayTests.Kibidango_HitInterrupts_DeathTakesPrecedence`（PlayMode）<br>`PlayMode.P6BWorldPlayTests.Kibidango_RealEnemyAttack_Timeline_InterruptsBeforeCommit`（PlayMode。配置された敵の通常の攻撃経路：A の近接普通敵・B の遠距離敵。時刻の記録つき。記録 005） |  |
 | P6B12 | Pause・ヒットストップ・長いフレームで時間と一回確定が正しい。開始後HP満タンの扱い | `EditMode.P6BKibidangoUseTests.Time_PauseAndFreezeStop_LongFrameCommitsOnce_FullHpAfterStartClamps_StolenStockAborts`（EditMode） |  |
 | P6B13 | 使用中の通常遷移禁止と場外防止、終了後に離れ直さず外向き入力で遷移可能 | `EditMode.P6BKibidangoUseTests.ExitGate_NoRequestWhileUsing_ThenRequestsWithoutRelease`（EditMode）<br>`PlayMode.P6BWorldPlayTests.Kibidango_AtBoundary_NoTransitionWhileUsing_ThenTransitionsWithoutRelease`（PlayMode） | 補足：場外防止は既存の境界（AreaSeamBarrier）のまま。PlayMode で使用中に外向き入力を 2 秒押しても遷移・場外なし。 |
 | P6B14 | 使用確定の保存要求、HPと残数の整合、使用中Snapshot非破壊、確定前後の正常終了とContinue | `EditMode.P6BKibidangoUseTests.Commit_RequestsOneSave_WithHpAndStockConsistent`（EditMode）<br>`PlayMode.P6BWorldPlayTests.Kibidango_RealKeyAndTrigger_CommitSaves_ContinueRestoresWithoutReheal`（PlayMode）<br>`PlayMode.P6BWorldPlayTests.Kibidango_NormalExitMidUse_BeforeAndAfterCommit_ContinueMatchesThatMoment`（PlayMode） | **正常中断**（製品の終了経路：ゲーム内メニュー Esc→T の SaveBeforeExit、実ビルドでは通常の終了要求 Application.Quit）を確定前 0.6 秒／確定後 1.7 秒で確認：PlayMode `Kibidango_NormalExitMidUse_*`、実ビルド `p6b-player-smoke` の `useclose_0_6`／`useclose_1_7` → 別プロセス continue。**自動保存からの再起動**（保存待ち後に常駐を作り直すテスト用の再起動）は `Kibidango_RealKeyAndTrigger_*` で別に確認。使用中 Snapshot 非破壊は「保存の採取後も使用が続く」で確認。 |

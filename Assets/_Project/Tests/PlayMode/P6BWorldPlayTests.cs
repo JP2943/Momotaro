@@ -4,6 +4,7 @@ using System.IO;
 using Momotaro.Core.Identification;
 using Momotaro.Data.World;
 using Momotaro.Gameplay.Combat;
+using Momotaro.Gameplay.Combat.Guardian;
 using Momotaro.Gameplay.Companion;
 using Momotaro.Gameplay.Companion.Investigation;
 using Momotaro.Gameplay.Encounter;
@@ -767,6 +768,344 @@ namespace Momotaro.Tests.PlayMode
                 Assert.AreEqual(90, snap.Party.Player.Hp, at + "：最新（使用後）を書く。");
                 Assert.AreEqual(2, snap.Kibidango, at);
             }
+        }
+
+        // ================================================================ 8. 配置された敵の実攻撃で使用中に被弾（人間試遊の報告）
+
+        /// <summary>
+        /// P6B 11（人間試遊の報告「使用中に攻撃を受けても回復する」の切り分け）：P6B の A に配置された普通敵（近接）の
+        /// <b>通常の攻撃経路</b>（敵の攻撃機械 → 命中判定 → 主人公の被弾入口）で、実キー F の使用中に被弾させる。
+        /// まず犬丸を Down させて（かばうなし）、次に犬丸ありで行う。各試行の使用開始・被弾・確定・終了の時刻と HP・残数を
+        /// <c>_bridge/p6b_kibidango_hit_timeline.txt</c> へ書き出し、仕様 §7 の規則で判定する：
+        /// 確定前の有効な被弾 → 中断し、元の終了時刻を過ぎても回復・消費しない／確定後の被弾 → 残り動作を中断・二重確定なし／
+        /// かばいだけ → 継続。使用ボタンを押し続けても中断後に再使用しない。
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Kibidango_RealEnemyAttack_Timeline_InterruptsBeforeCommit()
+        {
+            yield return NewGame();
+            yield return WaitSaved("New Game");
+            var log = new List<string>();
+            int preCommitHits = 0, postCommitHits = 0, coverOnly = 0;
+            // 条件：(犬丸, 開始の時機, 敵の絞り込み, 立ち位置)。A の普通敵（近接）で、予備動作中に使い始める（確定前の被弾）／
+            // 攻撃の後隙に使い始める（次の攻撃が確定の後に来やすい）。最後に B の南の遭遇戦の遠距離敵（飛び道具の経路）。
+            var conditions = new (bool dog, bool late, string filter, float stand, string label)[]
+            {
+                (false, true, "Melee", 0.95f, "A 近接・犬丸 Down・後隙で開始"),
+                (false, false, "Melee", 0.95f, "A 近接・犬丸 Down・予備動作で開始"),
+                (true, false, "Melee", 0.95f, "A 近接・犬丸あり・予備動作で開始"),
+                (false, false, "Ranged", 3.5f, "B 遠距離・犬丸 Down・予備動作で開始"),
+            };
+
+            foreach ((bool withDog, bool late, string filter, float stand, string condition) in conditions)
+            {
+                log.Add("######## " + condition);
+                if (filter == "Ranged")
+                {
+                    yield return SlideTo(ExitAEast, Key.D, Vector3.left, "A→B");
+                    yield return StartEncounter(FindRunner(EncounterBSouth));
+                }
+
+                int trials = 0;
+                int seenDamage = 0;
+                while (trials < 8 && seenDamage < 3)
+                {
+                    trials++;
+                    TrialResult r = null;
+                    yield return EnemyTrial(withDog, trials, log, x => r = x, late, filter, stand);
+                    if (r == null)
+                    {
+                        continue;
+                    }
+
+                    if (r.FirstDamageElapsed >= 0f)
+                    {
+                        seenDamage++;
+                    }
+
+                    if (r.FirstDamageElapsed >= 0f && !r.CommittedAtFirstDamage)
+                    {
+                        preCommitHits++;
+                        Assert.AreEqual(0, r.Commits, r.Label + "：確定前の被弾後に確定した（回復した）。");
+                        Assert.AreEqual(r.StockAtStart, r.StockAtEnd, r.Label + "：確定前の被弾後に消費した。");
+                        Assert.LessOrEqual(r.MaxHpAfterHit, r.HpAfterFirstDamage, r.Label + "：被弾後、元の終了時刻を過ぎても HP が増えてはいけない。");
+                        Assert.IsFalse(r.UsingAfterHit, r.Label + "：被弾後も使用が続いた。");
+                    }
+                    else if (r.FirstDamageElapsed >= 0f)
+                    {
+                        postCommitHits++;
+                        Assert.AreEqual(1, r.Commits, r.Label + "：確定後の被弾で二重確定。");
+                        Assert.AreEqual(r.StockAtStart - 1, r.StockAtEnd, r.Label);
+                        Assert.IsFalse(r.UsingAfterHit, r.Label + "：確定後の被弾で残り動作が中断していない。");
+                    }
+                    else if (r.Covers > 0)
+                    {
+                        coverOnly++;
+                        Assert.AreEqual(1, r.Commits, r.Label + "：完全にかばわれた使用は継続して確定する。");
+                    }
+
+                    Assert.AreEqual(1, r.Starts, r.Label + "：押し続けても再使用しない。");
+                }
+            }
+
+            File.WriteAllLines(Path.Combine(Directory.GetParent(Application.dataPath).FullName, "_bridge",
+                "p6b_kibidango_hit_timeline.txt"), log);
+            Assert.Greater(preCommitHits, 0, "確定前の実被弾を 1 回以上観測する（観測なしでは検証にならない）。\n" + string.Join("\n", log));
+        }
+
+        private sealed class TrialResult
+        {
+            public string Label;
+            public int Starts, Commits, Covers, StockAtStart, StockAtEnd, HpAfterFirstDamage, MaxHpAfterHit;
+            public float FirstDamageElapsed = -1f;
+            public bool CommittedAtFirstDamage, UsingAfterHit;
+        }
+
+        private sealed class UseHitRecorder : IHitResultListener, IGuardianTransferListener
+        {
+            private readonly PlayerStateController _player;
+            private readonly PlayerVitalsHolder _vitals;
+            private readonly float _t0;
+            public readonly List<string> Lines = new List<string>();
+            public float FirstDamageElapsed = -1f;
+            public bool CommittedAtFirstDamage;
+            public int HpAfterFirstDamage;
+            public int Covers;
+
+            public UseHitRecorder(PlayerStateController player, PlayerVitalsHolder vitals, float t0)
+            {
+                _player = player;
+                _vitals = vitals;
+                _t0 = t0;
+            }
+
+            public void OnHitResult(in HitResult result)
+            {
+                Lines.Add(Stamp() + " 被弾結果=" + result.Kind + " 適用HP=" + result.AppliedDamage.Hp + " HP後=" + _vitals.CurrentHp);
+                if (result.Kind == HitResultKind.Damage && FirstDamageElapsed < 0f && _player.IsUsingItem)
+                {
+                    FirstDamageElapsed = _player.ItemUseElapsed;
+                    CommittedAtFirstDamage = _player.ItemUseCommitted;
+                    HpAfterFirstDamage = _vitals.CurrentHp;
+                }
+            }
+
+            public void OnGuardianTransfer(in GuardianTransferEvent transfer)
+            {
+                Covers++;
+                Lines.Add(Stamp() + " 犬丸がかばった");
+            }
+
+            public string Stamp() =>
+                "t=" + (Time.time - _t0).ToString("0.000") + " 経過=" + (_player.IsUsingItem ? _player.ItemUseElapsed.ToString("0.000") : "-")
+                + " 確定=" + _player.ItemUseCommitCount + " frame=" + Time.frameCount;
+        }
+
+        private IEnumerator EnemyTrial(bool withDog, int trial, List<string> log, System.Action<TrialResult> done,
+            bool late, string nameFilter, float standDistance)
+        {
+            var root = Object.FindFirstObjectByType<PlayerRoot>();
+            var facing = root.GetComponentInChildren<PlayerFacing>();
+            var vitals = root.GetComponentInChildren<PlayerVitalsHolder>();
+            var player = root.GetComponentInChildren<PlayerStateController>();
+            GameSessionState s = Session();
+            CompanionHitReceiver dog = null;
+            foreach (CompanionHitReceiver d in Object.FindObjectsByType<CompanionHitReceiver>(FindObjectsSortMode.None))
+            {
+                if (d.gameObject.scene == CurrentScene())
+                {
+                    dog = d;
+                }
+            }
+
+            if (!withDog && dog != null && !dog.Vitals.IsDown)
+            {
+                yield return KnockDown(dog);
+            }
+
+            EnemyActor enemy = null;
+            float best = float.MaxValue;
+            foreach (EnemyActor e in Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None))
+            {
+                float dist = e != null && !e.IsDefeated && e.gameObject.activeInHierarchy && e.gameObject.scene == CurrentScene()
+                             && e.name.Contains(nameFilter)
+                    ? Vector3.Distance(e.transform.position, root.transform.position) : float.MaxValue;
+                if (dist < best)
+                {
+                    best = dist;
+                    enemy = e;
+                }
+            }
+
+            if (enemy == null && nameFilter == "Melee")
+            {
+                // 普通敵が倒れていたら作り直す（休息と同じ口。試行を続けるため）。
+                foreach (AreaFieldEnemyDirector d in Object.FindObjectsByType<AreaFieldEnemyDirector>(FindObjectsSortMode.None))
+                {
+                    if (d.gameObject.scene == CurrentScene())
+                    {
+                        d.RebuildNow();
+                    }
+                }
+
+                yield return null;
+                yield return null;
+                foreach (EnemyActor e in Object.FindObjectsByType<EnemyActor>(FindObjectsSortMode.None))
+                {
+                    if (e != null && !e.IsDefeated && e.gameObject.activeInHierarchy && e.gameObject.scene == CurrentScene()
+                        && e.name.Contains(nameFilter))
+                    {
+                        enemy = e;
+                        break;
+                    }
+                }
+            }
+
+            if (enemy == null)
+            {
+                log.Add("試行 " + trial + "：生きている敵がいない");
+                yield break;
+            }
+
+            enemy.SetAttackPowerScale(0.3f); // 倒れないように弱める（攻撃経路はそのまま）。
+            EnemyAttackController attack = enemy.GetComponentInChildren<EnemyAttackController>();
+            System.Reflection.FieldInfo machineField = typeof(EnemyAttackController).GetField("_machine",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+            // 敵の正面へ立ち、背を向けて J（音）で気付かせ、攻撃の予備動作（Prepare）に入るまで待つ。
+            float deadline = Time.realtimeSinceStartup + 20f;
+            float nextTap = 0f;
+            bool preparing = false;
+            while (Time.realtimeSinceStartup < deadline && !preparing && !enemy.IsDefeated)
+            {
+                if (vitals.CurrentHp < vitals.MaxHp)
+                {
+                    vitals.Vitals.Health.SetCurrent(vitals.MaxHp);
+                }
+
+                Vector3 toPlayer = root.transform.position - enemy.transform.position;
+                toPlayer.y = 0f;
+                if (toPlayer.magnitude > standDistance + 0.45f || toPlayer.magnitude < standDistance - 0.35f)
+                {
+                    Vector3 stand = enemy.transform.position + (toPlayer.sqrMagnitude > 0.01f ? toPlayer.normalized : Vector3.back) * standDistance;
+                    root.Body.position = new Vector3(stand.x, root.Body.position.y, stand.z);
+                    root.Body.linearVelocity = Vector3.zero;
+                    root.transform.position = new Vector3(stand.x, root.transform.position.y, stand.z);
+                }
+
+                var machine = (EnemyAttackMachine)machineField.GetValue(attack);
+                preparing = machine != null && machine.Current == EnemyAttackMachine.Phase.Prepare;
+                if (!preparing && Time.realtimeSinceStartup >= nextTap && player.Current != PlayerState.Hurt)
+                {
+                    Vector3 look = enemy.transform.position - root.transform.position;
+                    facing.ConfirmFromInput(Mathf.Abs(look.x) > Mathf.Abs(look.z)
+                        ? new Vector2(-Mathf.Sign(look.x), 0f) : new Vector2(0f, -Mathf.Sign(look.z)));
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.J));
+                    nextTap = Time.realtimeSinceStartup + 2.5f;
+                }
+                else
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                }
+
+                yield return null;
+            }
+
+            if (!preparing)
+            {
+                log.Add("試行 " + trial + "：敵の攻撃が始まらなかった");
+                yield break;
+            }
+
+            if (late)
+            {
+                // この攻撃が終わる（後隙に入る）まで待ってから使い始める。HP は保つ。
+                float lateDeadline = Time.realtimeSinceStartup + 6f;
+                while (Time.realtimeSinceStartup < lateDeadline)
+                {
+                    var m = (EnemyAttackMachine)machineField.GetValue(attack);
+                    if (m == null || m.Current == EnemyAttackMachine.Phase.Recovery || m.Current == EnemyAttackMachine.Phase.None)
+                    {
+                        break;
+                    }
+
+                    vitals.Vitals.Health.SetCurrent(vitals.MaxHp);
+                    yield return null;
+                }
+            }
+
+            // 使用：HP を下げ、F を押し<b>続ける</b>（中断後の自動再使用が無いことも見る）。
+            yield return WaitUntilOrTimeout(() => player.Current == PlayerState.Idle || player.Current == PlayerState.Move, 1f);
+            vitals.Vitals.Health.SetCurrent(60);
+            s.RefillKibidango(3);
+            int stockAtStart = s.Kibidango;
+            int startsBefore = player.ItemUseStartCount;
+            int commitsBefore = player.ItemUseCommitCount;
+            var rec = new UseHitRecorder(player, vitals, Time.time);
+            vitals.Results.AddListener(rec);
+            vitals.GuardianTransfers.AddListener(rec);
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.F));
+            yield return null;
+            rec.Lines.Add(rec.Stamp() + " 使用開始=" + (player.ItemUseStartCount > startsBefore) + " 拒否=" + player.LastItemUseRejection
+                + " HP=" + vitals.CurrentHp + " 残数=" + s.Kibidango + " 犬丸=" + (withDog ? "あり" : "Down") + " 敵=" + enemy.name);
+            int lastCommits = player.ItemUseCommitCount;
+            bool lastUsing = player.IsUsingItem;
+            int maxHpAfterHit = int.MinValue;
+            bool usingAfterHit = false;
+            int hitFrame = -1;
+            float until = Time.time + 3.2f; // 元の終了時刻（2.0 秒）を十分に過ぎるまで
+            while (Time.time < until)
+            {
+                yield return null;
+                if (player.ItemUseCommitCount != lastCommits)
+                {
+                    rec.Lines.Add(rec.Stamp() + " 確定 HP=" + vitals.CurrentHp + " 残数=" + s.Kibidango);
+                    lastCommits = player.ItemUseCommitCount;
+                }
+
+                if (player.IsUsingItem != lastUsing)
+                {
+                    rec.Lines.Add(rec.Stamp() + (player.IsUsingItem ? " 使用中へ" : " 使用終了") + " 状態=" + player.Current
+                        + " HP=" + vitals.CurrentHp + " 残数=" + s.Kibidango);
+                    lastUsing = player.IsUsingItem;
+                }
+
+                if (rec.FirstDamageElapsed >= 0f)
+                {
+                    if (hitFrame < 0)
+                    {
+                        hitFrame = Time.frameCount;
+                    }
+                    else if (Time.frameCount > hitFrame + 1)
+                    {
+                        usingAfterHit |= player.IsUsingItem;
+                        maxHpAfterHit = Mathf.Max(maxHpAfterHit, vitals.CurrentHp);
+                    }
+                }
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            vitals.Results.RemoveListener(rec);
+            vitals.GuardianTransfers.RemoveListener(rec);
+            var r = new TrialResult
+            {
+                Label = (withDog ? "犬丸あり" : "犬丸 Down") + " 試行 " + trial,
+                Starts = player.ItemUseStartCount - startsBefore,
+                Commits = player.ItemUseCommitCount - commitsBefore,
+                Covers = rec.Covers,
+                StockAtStart = stockAtStart,
+                StockAtEnd = s.Kibidango,
+                FirstDamageElapsed = rec.FirstDamageElapsed,
+                CommittedAtFirstDamage = rec.CommittedAtFirstDamage,
+                HpAfterFirstDamage = rec.HpAfterFirstDamage,
+                MaxHpAfterHit = maxHpAfterHit == int.MinValue ? rec.HpAfterFirstDamage : maxHpAfterHit,
+                UsingAfterHit = usingAfterHit,
+            };
+            log.Add("== " + r.Label + "：開始 " + r.Starts + "・確定 " + r.Commits + "・かばい " + r.Covers + "・最初の被弾 経過="
+                + r.FirstDamageElapsed.ToString("0.000") + "（確定済み=" + r.CommittedAtFirstDamage + "）・残数 " + r.StockAtStart + "→" + r.StockAtEnd);
+            log.AddRange(rec.Lines);
+            done(r);
+            yield return new WaitForSeconds(0.8f);
         }
 
         private IEnumerator Swing(RecordingTarget target, Key key, float hold)

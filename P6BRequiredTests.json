@@ -407,6 +407,18 @@
       ],
       "implemented": true,
       "supportingTests": []
+    },
+    {
+      "requirementId": "P6B11",
+      "stage": "P6B-03",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_RealEnemyAttack_Timeline_InterruptsBeforeCommit",
+      "requirementIds": [
+        "P6B10",
+        "P6B09"
+      ],
+      "implemented": true,
+      "supportingTests": []
     }
   ],
   "allowedSkips": []
