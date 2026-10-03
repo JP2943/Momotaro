@@ -145,3 +145,40 @@ Dialogue マップ、および直接ポーリングしている既存箇所（R�
 - EditMode：P6A 3 クラス 51 件、P6B 2 クラス（22 → 23 件）、`P5ContractTests` 36 件、全件 1 回（1894／1895。上記の台帳 1 件を直して再実行済み）。
 - PlayMode：`P6BWorldPlayTests` を段階的に 9 回（最終 6／6）。
 - 実ビルド `p6b-player-smoke` 3 回（1・2 回目はビルド前の Data 検証で失敗、3 回目で 13 項目すべて一致）。
+
+---
+
+## 記録 003：P6B 05（必須受入・回帰・実ビルド・証跡）
+
+**対象コード SHA `b79448e`**（親 `6162620`）。証跡は `Evidence/P6B_b79448e/`（README に実行順と各ファイル）。
+実行はすべて Unity 6000.3.20f1 の Editor 常駐ブリッジから、`b79448e` を作業ツリーに置いた状態で行った（コンパイル 0 警告を確認してから）。
+
+### 1. 結果
+
+| 実行 | 内容 | 結果 |
+|---|---|---|
+| `fe1` | EditMode 全件 | **1895／1895 Passed**、Skip 0（予定 1895、完走） |
+| `fp1` | PlayMode：`P55SlideTransitionPlayTests` | 64／64 |
+| `fp2` | PlayMode：`P55RoundTripPlayTests` | 13／13 |
+| `fp3` | PlayMode：P5.5 その他 12 クラス | 72／72 |
+| `fp4` | PlayMode：その他 22 クラス（split4） | 115／115 |
+| `fp5` | PlayMode：`P6AWorldPlayTests` | 20／20 |
+| `fp6` | PlayMode：`P6BWorldPlayTests` | 6／6 |
+| `vbP4`／`vbP5`／`vbP55`／`vbP6A`／`vbP6B` | `verify-required-tests`（上の 7 実行と照合） | 必須 226／226・93／93・293／293・73／73・**29／29**、未説明の Skip なし |
+| `sb1` | 実ビルド `p6b-player-smoke`（別プロセス：成長・払い戻し・実入力 F の使用 → 正常終了 → Continue） | **13 項目すべて一致**（成長 4 件・権利 2・徳 190・上限 4・残数 3・HP 90・最大 HP 110・刀 1.20 ほか） |
+| `sa1` | 実ビルド `p6a-player-smoke`（共有経路の回帰：New Game／終了要求／Continue・実プレイ・保存性能） | すべて OK。実プレイ 16 撃破・フレーム p99 16.7ms・最大 22.8ms・採取最大 0.56ms。保存契機の連打（通常／遅い I/O 200ms）フレーム最大 17.1／17.4ms |
+
+PlayMode の分割は P6A と同じ 5 本に `P6BWorldPlayTests` を足した 6 本（計 290）。
+
+### 2. 区別（仕様 §11）
+
+- **自動検査**：上表のテストランナー実行と照合（必須 29 名は `P6BRequiredTests.json`）。
+- **実ビルド**：`sb1`（P6B 19）、`sa1`（P6A の共有経路）。
+- **ログ確認**：Builder／Validator（`build-phase6b-world`／`validate-phase6b-world` 合格）、`validate-project-data` 合格（記録 002 §6）。
+- **実表示確認**：成長の木・HUD は PlayMode で実入力から状態を確かめたが、**画面の見た目は人が見ていない**。
+- **人間確認：未実施**（README §5 の 4 点）。
+
+### 3. 残るもの
+
+`P6B_後続課題.md`（G01〜G12）。P6B の完了は**成長要素全体の完成ではない**（全ツリー・新技・最深部・ジャスト回避・本番数値は未完。
+第一章の試遊後に成長と戦闘の調和を検討する）。main への統合は別指示を待つ。
