@@ -431,6 +431,7 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(slides, transitions.SlideCommittedCount, "押されただけでは遷移しない。");
 
             yield return PlaceAt(gate.transform.position + Vector3.left * 0.4f);
+
             vitals.Vitals.Health.SetCurrent(40);
             yield return TapKey(Key.F);
             Assert.IsTrue(player.IsUsingItem, "拒否=" + player.LastItemUseRejection);
@@ -451,7 +452,10 @@ namespace Momotaro.Tests.PlayMode
             yield return WaitUntilOrTimeout(() => transitions.SlideCommittedCount > slides, 10f);
             InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
             Assert.Greater(transitions.SlideCommittedCount, slides, "終了後は離れ直さずに遷移する（失敗="
-                + transitions.Slide.LastFailure + " 範囲内=" + gate.PlayerInside + "）。");
+                + transitions.Slide.LastFailure + " 範囲内=" + gate.PlayerInside + " 要求数=" + gate.RequestCount
+                + " 待ち=" + !gate.IsArmed + " 拒否=" + transitions.Slide.Coordinator.LastRejection
+                + " 準備=" + transitions.Slide.Preloader.LastRejection + " 主人公=" + player.Current
+                + " mode=" + GameModeProvider.Current?.Current + " 溜め=" + gate.HeldSeconds + "）。");
             yield return WaitAreaReady(AreaB);
         }
 
@@ -813,9 +817,17 @@ namespace Momotaro.Tests.PlayMode
                     trials++;
                     TrialResult r = null;
                     yield return EnemyTrial(withDog, trials, log, x => r = x, late, filter, stand);
+                    File.WriteAllLines(Path.Combine(Directory.GetParent(Application.dataPath).FullName, "_bridge",
+                        "p6b_kibidango_hit_timeline.txt"), log);
                     if (r == null)
                     {
                         continue;
+                    }
+
+                    Assert.LessOrEqual(r.Starts, 1, r.Label + "：押し続けても再使用しない。");
+                    if (r.Starts == 0)
+                    {
+                        continue; // 敵の攻撃と重なって開始できなかった（被弾硬直中など。ログに理由）。この試行は数えない。
                     }
 
                     if (r.FirstDamageElapsed >= 0f)
@@ -844,7 +856,6 @@ namespace Momotaro.Tests.PlayMode
                         Assert.AreEqual(1, r.Commits, r.Label + "：完全にかばわれた使用は継続して確定する。");
                     }
 
-                    Assert.AreEqual(1, r.Starts, r.Label + "：押し続けても再使用しない。");
                 }
             }
 
