@@ -32,7 +32,12 @@ namespace Momotaro.Gameplay.Save
 
             var growth = new List<KeyValuePair<string, int>>(snapshot.Growth);
             var granted = new List<string>(snapshot.GrantedRewards);
-            if (!session.Progress.TryRestore(snapshot.TotalVirtue, snapshot.SpentVirtue, granted, growth, out error))
+            // P6B 02：版 1・2 は払い戻しの欄を持たない。明示的な移行として権利＝初期値・章集合＝空で補う
+            // （P6A には本番の章報酬が無いので遡及追加しない）。版 3 以降は保存の値をそのまま使う（Load で初期化しない）。
+            int rights = snapshot.HasRefundData ? snapshot.RefundRights : catalog.Campaign.RefundRightsInitial;
+            var chapters = new List<string>(snapshot.ProcessedChapters);
+            if (!session.Progress.TryRestore(snapshot.TotalVirtue, snapshot.SpentVirtue, granted, growth, rights,
+                    chapters, out error))
             {
                 return false;
             }

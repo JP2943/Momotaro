@@ -480,9 +480,9 @@ namespace Momotaro.Tests.EditMode
                 RestCallOrder = ++_order;
             }
 
-            public void ApplyMaxHpBonus(int bonus)
+            public void ApplyGrowthEffects(in GrowthEffects effects)
             {
-                BonusCalls.Add(bonus);
+                BonusCalls.Add(effects.MaxHpBonus);
                 BonusCallOrder = ++_order;
             }
         }

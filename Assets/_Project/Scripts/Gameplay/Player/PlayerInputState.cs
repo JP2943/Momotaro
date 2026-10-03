@@ -10,7 +10,7 @@ namespace Momotaro.Gameplay.Player
     /// <see cref="SetActive"/> が false のときはゲートが閉じ、Move はゼロ、Guard は解除される
     /// （GameMode が Gameplay でないときの挙動）。
     /// </summary>
-    public sealed class PlayerInputState : IPlayerInput, IInteractInput
+    public sealed class PlayerInputState : IPlayerInput, IInteractInput, IItemUseInput
     {
         private bool _active = true;
         private bool _attackHeldRaw;
@@ -20,6 +20,8 @@ namespace Momotaro.Gameplay.Player
         private bool _specialHeld;
         private bool _interactHeldRaw;
         private bool _interactLatched;
+        private bool _useItemHeldRaw;
+        private bool _useItemLatched;
         private bool _requiresRelease;
 
         /// <inheritdoc />
@@ -50,6 +52,7 @@ namespace Momotaro.Gameplay.Player
             _attackLatched = false;
             _stepLatched = false;
             _interactLatched = false;
+            _useItemLatched = false;
         }
 
         /// <summary>解放待ちを解く（押していないことが分かっているとき）。</summary>
@@ -211,6 +214,38 @@ namespace Momotaro.Gameplay.Player
         }
 
         /// <inheritdoc />
+        /// <summary>使用ボタン（P6B 03）の押下・解除。押下エッジだけをラッチする（保持で連続しない）。</summary>
+        public void SetUseItem(bool pressed)
+        {
+            bool rising = pressed && !_useItemHeldRaw;
+            _useItemHeldRaw = pressed;
+
+            if (ConsumeReleaseGate())
+            {
+                return; // 再開に使ったボタンを離すまでは受け付けない（§9.1 末尾）。
+            }
+
+            if (_active && rising)
+            {
+                _useItemLatched = true;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool ConsumeUseItemPressed()
+        {
+            if (!_useItemLatched)
+            {
+                return false;
+            }
+
+            _useItemLatched = false;
+            return true;
+        }
+
+        /// <inheritdoc />
+        public bool HasPendingActionPress => _attackLatched || _stepLatched;
+
         public bool SpecialAttackHeld => _specialHeld;
 
         /// <summary>必殺技ボタンの保持状態を設定する。ゲートが閉じている間は解除する。</summary>
@@ -240,6 +275,7 @@ namespace Momotaro.Gameplay.Player
             _attackLatched = false;
             _stepLatched = false;
             _interactLatched = false;
+            _useItemLatched = false;
             _specialHeld = false;
             if (GuardHeld)
             {

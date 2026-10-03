@@ -61,10 +61,12 @@ namespace Momotaro.Infrastructure.World
                 return; // 1 フレームに 1 件だけ。
             }
 
+            // P6B 03：きびだんご使用中は出入口の要求を出さない（受付で断られて「離れ直し待ち」にならないように）。
+            bool requestAllowed = _player == null || !_player.IsUsingItem;
             for (int i = 0; i < _areaRoot.ExitGates.Count; i++)
             {
                 AreaExitGate gate = _areaRoot.ExitGates[i];
-                if (gate == null || !gate.Tick(deltaTime, moveInput))
+                if (gate == null || !gate.Tick(deltaTime, moveInput, requestAllowed))
                 {
                     continue;
                 }

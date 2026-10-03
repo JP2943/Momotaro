@@ -62,6 +62,13 @@ namespace Momotaro.Infrastructure.Save
         private static readonly string[] PayloadKeys =
         {
             "revision", "respawnCycle", "virtue", "grantedRewards", "growth", "visitedAreas", "recruited", "areas",
+            "inventory", "kibidango", "shrines", "resume", "party", "questStages", "refund",
+        };
+
+        // 版 2：払い戻し（P6B）の欄が無い。
+        private static readonly string[] PayloadKeysV2 =
+        {
+            "revision", "respawnCycle", "virtue", "grantedRewards", "growth", "visitedAreas", "recruited", "areas",
             "inventory", "kibidango", "shrines", "resume", "party", "questStages",
         };
 
@@ -163,8 +170,10 @@ namespace Momotaro.Infrastructure.Save
             var r = new Reader(payload, "payload");
 
             // 版 1 は questStages を持たない（クエスト段階の接続口は版 2 から）。欠けた欄を黙って補わず、版で分ける。
+            // 版 2 は払い戻しの欄を持たない（P6B）。どちらも版ごとの鍵の一覧で厳密に見る。
             bool v1 = info.SchemaVersion == 1;
-            r.ExpectExactly(v1 ? PayloadKeysV1 : PayloadKeys);
+            bool v2 = info.SchemaVersion == 2;
+            r.ExpectExactly(v1 ? PayloadKeysV1 : (v2 ? PayloadKeysV2 : PayloadKeys));
             long revision = r.Long("revision");
             int cycle = r.Int("respawnCycle");
 
@@ -194,9 +203,22 @@ namespace Momotaro.Infrastructure.Save
                 ? new KeyValuePair<string, int>[0]
                 : r.Pairs("questStages", "questId", "stage");
 
-            if (r.Failed || virtue.Failed || shrines.Failed || resume.Failed)
+            bool hasRefund = !v1 && !v2;
+            int refundRights = 0;
+            string[] chapters = Array.Empty<string>();
+            Reader refund = null;
+            if (hasRefund)
             {
-                error = FirstError(r, virtue, shrines, resume);
+                refund = r.Child("refund", "rights", "chapters");
+                refundRights = refund.Int("rights");
+                chapters = refund.Strings("chapters");
+            }
+
+            if (r.Failed || virtue.Failed || shrines.Failed || resume.Failed || (refund != null && refund.Failed))
+            {
+                error = refund != null && refund.Failed && !(r.Failed || virtue.Failed || shrines.Failed || resume.Failed)
+                    ? refund.Error
+                    : FirstError(r, virtue, shrines, resume);
                 return false;
             }
 
@@ -208,7 +230,8 @@ namespace Momotaro.Infrastructure.Save
 
             snapshot = new SaveSnapshot(info.CampaignId, info.ContentVersion, info.AdventureId, revision, cycle,
                 total, spent, granted, growth, visited, recruited, areas, inventory, kibidango,
-                registered, checkpoint, kind, resumeArea, resumePoint, party, quests);
+                registered, checkpoint, kind, resumeArea, resumePoint, party, quests,
+                hasRefund, refundRights, chapters);
             error = null;
             return true;
         }
@@ -308,6 +331,11 @@ namespace Momotaro.Infrastructure.Save
                     ["companion"] = companion,
                 },
                 ["questStages"] = Pairs(s.QuestStages, "questId", "stage"),
+                ["refund"] = new JObject
+                {
+                    ["rights"] = s.RefundRights,
+                    ["chapters"] = new JArray(s.ProcessedChapters),
+                },
             };
         }
 

@@ -145,7 +145,7 @@ namespace Momotaro.Infrastructure.Save
             }
 
             string directory = string.IsNullOrEmpty(SaveDirectory) ? DefaultDirectory : SaveDirectory;
-            var store = new SaveFileStore(directory, "slot0", FileSystemOverride);
+            var store = new SaveFileStore(directory, SlotName, FileSystemOverride);
             _coordinator = new SaveCoordinator(store, ExecutorOverride ?? new ThreadSaveExecutor())
             {
                 CanCapture = CanCaptureNow,
@@ -158,6 +158,32 @@ namespace Momotaro.Infrastructure.Save
             }
 
             return _coordinator;
+        }
+
+        /// <summary>保存スロット名（campaign ごと。P6A は既定 slot0、P6B は専用。P6B 仕様 §9）。</summary>
+        public string SlotName { get; private set; } = "slot0";
+
+        /// <summary>
+        /// 使うスロットを切り替える（P6B。タイトルが campaign の Data から呼ぶ）。同じなら何もしない。
+        /// <b>冒険を結んでいる間は切り替えない</b>（false）。切り替えるときは調停役を作り直し、ロックも取り直す。
+        /// </summary>
+        public bool UseSlot(string slotName)
+        {
+            string target = string.IsNullOrEmpty(slotName) ? "slot0" : slotName;
+            if (target == SlotName)
+            {
+                return true;
+            }
+
+            if (_coordinator != null && _coordinator.Session != null)
+            {
+                return false;
+            }
+
+            _coordinator?.Dispose();
+            _coordinator = null;
+            SlotName = target;
+            return true;
         }
 
         /// <summary>

@@ -15,7 +15,7 @@ namespace Momotaro.Gameplay.Combat
     /// </summary>
     public sealed class StaminaState : ITransferableRuntime<StaminaTransferSnapshot>
     {
-        private readonly float _max;
+        private float _max;
         private readonly float _regenPerSecond;
         private readonly float _regenDelay;
         private readonly float _zeroRegenDelay;
@@ -146,6 +146,24 @@ namespace Momotaro.Gameplay.Combat
         /// 遷移する際に呼び、Hurt 終了後に GuardBreak へ戻らないようにする。スタミナ現在値は保持し（回復は通常待機から再開）、
         /// ブレイク中でなければ何もしない。ブレイク終了時の <see cref="_breakRestoreRatio"/> 回復は行わない（時間破棄のみ）。
         /// </summary>
+        /// <summary>
+        /// 最大値を置き直す（P6B 01。成長の最大スタミナ）。<b>現在値は回復しない</b>——上限を超えた分だけ切り詰める。
+        /// 回復は休息が <see cref="Reset"/> で行う。0 以下・非数は無視。
+        /// </summary>
+        public void SetMax(float max)
+        {
+            if (float.IsNaN(max) || float.IsInfinity(max) || max <= 0f)
+            {
+                return;
+            }
+
+            _max = max;
+            if (_current > _max)
+            {
+                _current = _max;
+            }
+        }
+
         public void ClearBreak()
         {
             if (_breakRemaining > 0f)

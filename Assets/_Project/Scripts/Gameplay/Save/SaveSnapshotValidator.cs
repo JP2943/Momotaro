@@ -217,7 +217,29 @@ namespace Momotaro.Gameplay.Save
                 }
             }
 
-            int capacity = campaign.KibidangoBaseCapacity;
+            // ---- 払い戻し（P6B 02。版 3 以降だけ。版 1・2 は移行で補う）----
+            if (snapshot.HasRefundData)
+            {
+                if (snapshot.RefundRights < 0 || snapshot.RefundRights > campaign.RefundRightsMax)
+                {
+                    errors.Add("払い戻し権利 " + snapshot.RefundRights + " が範囲外です（0〜" + campaign.RefundRightsMax + "）。");
+                }
+
+                CheckIdList(snapshot.ProcessedChapters, "処理済み章", campaign.IsKnownChapter, errors);
+            }
+            else if (snapshot.ProcessedChapters.Count != 0 || snapshot.RefundRights != 0)
+            {
+                errors.Add("払い戻しの欄が無い保存に権利・章の値があります。");
+            }
+
+            // きびだんごの上限は Data と取得済み成長から導く（P6B。未知の成長 ID は上で拒否済み）。
+            var growthKeys = new List<string>();
+            foreach (KeyValuePair<string, int> pair in snapshot.Growth)
+            {
+                growthKeys.Add(pair.Key);
+            }
+
+            int capacity = campaign.KibidangoCapacityOf(growthKeys);
             if (snapshot.Kibidango < 0 || snapshot.Kibidango > capacity)
             {
                 errors.Add("きびだんごの残数 " + snapshot.Kibidango + " が範囲外です（0〜" + capacity + "）。");

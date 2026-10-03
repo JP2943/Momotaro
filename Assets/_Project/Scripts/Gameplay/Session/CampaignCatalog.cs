@@ -75,10 +75,20 @@ namespace Momotaro.Gameplay.Session
     {
         public GrowthInfo(StableId growthId, int cost, int maxHpBonus, IReadOnlyList<StableId> prerequisites,
             IReadOnlyList<StableId> exclusives, string displayName)
+            : this(growthId, cost, new GrowthEffects(maxHpBonus, 0f, 0, 0f, 0, 0), 0, prerequisites, exclusives,
+                displayName, string.Empty)
+        {
+        }
+
+        public GrowthInfo(StableId growthId, int cost, GrowthEffects effects, int tier, IReadOnlyList<StableId> prerequisites,
+            IReadOnlyList<StableId> exclusives, string displayName, string description)
         {
             GrowthId = growthId;
             Cost = cost;
-            MaxHpBonus = maxHpBonus;
+            Effects = effects;
+            Tier = tier;
+            Description = description ?? string.Empty;
+            MaxHpBonus = effects.MaxHpBonus;
             Prerequisites = prerequisites ?? System.Array.Empty<StableId>();
             Exclusives = exclusives ?? System.Array.Empty<StableId>();
             DisplayName = displayName ?? string.Empty;
@@ -87,6 +97,16 @@ namespace Momotaro.Gameplay.Session
         public StableId GrowthId { get; }
         public int Cost { get; }
         public int MaxHpBonus { get; }
+
+        /// <summary>このノード 1 つの効果（P6B）。</summary>
+        public GrowthEffects Effects { get; }
+
+        /// <summary>階層（表示用。保存形式には持たない）。</summary>
+        public int Tier { get; }
+
+        /// <summary>説明（表示用）。</summary>
+        public string Description { get; }
+
         public IReadOnlyList<StableId> Prerequisites { get; }
         public IReadOnlyList<StableId> Exclusives { get; }
         public string DisplayName { get; }
@@ -111,6 +131,7 @@ namespace Momotaro.Gameplay.Session
         private readonly HashSet<string> _knownRewards = new HashSet<string>();
         private readonly HashSet<string> _knownCompanions = new HashSet<string>();
         private readonly HashSet<string> _knownQuests = new HashSet<string>();
+        private readonly HashSet<string> _knownChapters = new HashSet<string>();
 
         private CampaignCatalog(StableId campaignId, int contentVersion, StableId initialShrineId, int kibidangoBaseCapacity)
         {
@@ -213,8 +234,121 @@ namespace Momotaro.Gameplay.Session
             return sum;
         }
 
-        /// <summary>きびだんごの現在の補充上限（基本値。成長での拡張は P6B）。</summary>
-        public int KibidangoCapacityOf(PlayerProgressState progress) => KibidangoBaseCapacity;
+        /// <summary>
+        /// 取得済み成長の効果を<b>基礎値（0）から作り直す</b>（P6B 01。仕様 §3「基礎値＋取得済み効果から毎回再構築」）。
+        /// 定義順に足すだけで、取得順・既存の値には依存しない。
+        /// </summary>
+        public GrowthEffects GrowthEffectsOf(PlayerProgressState progress)
+        {
+            GrowthEffects sum = GrowthEffects.None;
+            if (progress == null)
+            {
+                return sum;
+            }
+
+            for (int i = 0; i < _growthOrder.Count; i++)
+            {
+                GrowthInfo g = _growthOrder[i];
+                if (progress.HasGrowth(g.GrowthId))
+                {
+                    GrowthEffects e = g.Effects;
+                    sum = sum.Plus(e.MaxHpBonus, e.AttackHpMultiplierBonus, e.MaxStaminaBonus,
+                        e.NormalPoiseMultiplierBonus, e.KibidangoHealBonus, e.KibidangoCapacityBonus);
+                }
+            }
+
+            return sum;
+        }
+
+        /// <summary>きびだんごの現在の補充上限（基本値＋成長。P6B）。</summary>
+        public int KibidangoCapacityOf(PlayerProgressState progress) =>
+            KibidangoBaseCapacity + GrowthEffectsOf(progress).KibidangoCapacityBonus;
+
+        /// <summary>
+        /// 取得 ID の集合だけから上限を求める（保存の検証用。Session を作る前に使う）。未知 ID は数えない。
+        /// </summary>
+        public int KibidangoCapacityOf(IEnumerable<string> growthIds)
+        {
+            int capacity = KibidangoBaseCapacity;
+            if (growthIds == null)
+            {
+                return capacity;
+            }
+
+            foreach (string id in growthIds)
+            {
+                if (id != null && _growth.TryGetValue(id, out GrowthInfo g))
+                {
+                    capacity += g.Effects.KibidangoCapacityBonus;
+                }
+            }
+
+            return capacity;
+        }
+
+        /// <summary>きびだんご 1 個の回復量（基礎の固定値＋成長。最大 HP には連動しない。P6B）。</summary>
+        public int KibidangoHealOf(PlayerProgressState progress) =>
+            KibidangoBaseHeal + GrowthEffectsOf(progress).KibidangoHealBonus;
+
+        /// <summary>きびだんご 1 個の基礎回復量（0＝この campaign に使用動作は無い＝P6A）。</summary>
+        public int KibidangoBaseHeal { get; private set; }
+
+        /// <summary>きびだんごを使用できる campaign か（P6B）。</summary>
+        public bool HasKibidangoUse => KibidangoBaseHeal > 0;
+
+        /// <summary>きびだんご使用の全動作（Gameplay 秒）。</summary>
+        public float KibidangoUseSeconds { get; private set; } = 2f;
+
+        /// <summary>きびだんご使用の確定時刻（Gameplay 秒）。</summary>
+        public float KibidangoCommitSeconds { get; private set; } = 1.5f;
+
+        /// <summary>きびだんご使用中の移動速度倍率。</summary>
+        public float KibidangoMoveSpeedMultiplier { get; private set; } = 0.2f;
+
+        /// <summary>払い戻しの初期権利。</summary>
+        public int RefundRightsInitial { get; private set; } = 3;
+
+        /// <summary>章クリア 1 回の追加権利。</summary>
+        public int RefundRightsPerChapter { get; private set; } = 3;
+
+        /// <summary>払い戻し権利の上限。</summary>
+        public int RefundRightsMax { get; private set; } = 6;
+
+        /// <summary>保存スロット名（campaign ごと）。</summary>
+        public string SaveSlotName { get; private set; } = "slot0";
+
+        /// <summary>権利を追加しうる章の ID か（P6B。保存の検証と章接続口が使う）。</summary>
+        public bool IsKnownChapter(StableId chapterId) => !chapterId.IsEmpty && _knownChapters.Contains(chapterId.Value);
+
+        /// <summary>
+        /// この成長に依存している（前提に挙げている）<b>取得済み</b>ノードがあるか（P6B 05。払い戻しは末端だけ）。
+        /// </summary>
+        public bool HasAcquiredDependent(PlayerProgressState progress, StableId growthId)
+        {
+            if (progress == null || growthId.IsEmpty)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < _growthOrder.Count; i++)
+            {
+                GrowthInfo g = _growthOrder[i];
+                if (!progress.HasGrowth(g.GrowthId))
+                {
+                    continue;
+                }
+
+                for (int p = 0; p < g.Prerequisites.Count; p++)
+                {
+                    if (g.Prerequisites[p].Equals(growthId))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
 
         /// <summary>
         /// Data から構築する。<b>1 件でも不整合があれば構築しない</b>（<see cref="AreaCatalog.TryBuild"/> と同じ方針）。
@@ -226,7 +360,34 @@ namespace Momotaro.Gameplay.Session
             {
                 TestEnemyAttackScale = data.TestEnemyAttackScale,
                 TestPlayerMaxHpScale = data.TestPlayerMaxHpScale,
+                KibidangoBaseHeal = data.KibidangoBaseHeal,
+                KibidangoUseSeconds = data.KibidangoUseSeconds,
+                KibidangoCommitSeconds = data.KibidangoCommitSeconds,
+                KibidangoMoveSpeedMultiplier = data.KibidangoMoveSpeedMultiplier,
+                RefundRightsInitial = data.RefundRightsInitial,
+                RefundRightsPerChapter = data.RefundRightsPerChapter,
+                RefundRightsMax = data.RefundRightsMax,
+                SaveSlotName = data.SaveSlotName,
             };
+
+            if (data.KibidangoBaseHeal < 0)
+            {
+                errors.Add("P6 campaign KibidangoBaseHeal must be >= 0.");
+            }
+
+            if (data.KibidangoBaseHeal > 0
+                && !(data.KibidangoCommitSeconds > 0f && data.KibidangoUseSeconds >= data.KibidangoCommitSeconds
+                     && !float.IsInfinity(data.KibidangoUseSeconds)
+                     && data.KibidangoMoveSpeedMultiplier >= 0f && data.KibidangoMoveSpeedMultiplier <= 1f))
+            {
+                errors.Add("P6 campaign kibidango use timing is invalid.");
+            }
+
+            if (data.RefundRightsInitial < 0 || data.RefundRightsPerChapter < 0
+                || data.RefundRightsInitial > data.RefundRightsMax)
+            {
+                errors.Add("P6 campaign refund rights are invalid.");
+            }
 
             if (!data.Id.IsValid)
             {
@@ -293,7 +454,11 @@ namespace Momotaro.Gameplay.Session
 
             foreach (SkillNodeData node in data.GrowthNodes)
             {
-                if (node == null || !node.Id.IsValid || node.VirtueCost < 0 || node.MaxHpBonus < 0)
+                if (node == null || !node.Id.IsValid || node.VirtueCost < 0 || node.MaxHpBonus < 0
+                    || node.MaxStaminaBonus < 0 || node.KibidangoHealBonus < 0 || node.KibidangoCapacityBonus < 0
+                    || !(node.AttackHpMultiplierBonus >= 0f) || float.IsInfinity(node.AttackHpMultiplierBonus)
+                    || !(node.NormalPoiseMultiplierBonus >= 0f) || float.IsInfinity(node.NormalPoiseMultiplierBonus)
+                    || !node.HasAnyEffect)
                 {
                     errors.Add("Campaign contains an invalid growth node.");
                     continue;
@@ -305,8 +470,10 @@ namespace Momotaro.Gameplay.Session
                     continue;
                 }
 
-                var info = new GrowthInfo(node.Id, node.VirtueCost, node.MaxHpBonus,
-                    IdsOf(node.Prerequisites), IdsOf(node.MutuallyExclusive), node.DisplayName);
+                var effects = new GrowthEffects(node.MaxHpBonus, node.AttackHpMultiplierBonus, node.MaxStaminaBonus,
+                    node.NormalPoiseMultiplierBonus, node.KibidangoHealBonus, node.KibidangoCapacityBonus);
+                var info = new GrowthInfo(node.Id, node.VirtueCost, effects, node.Tier,
+                    IdsOf(node.Prerequisites), IdsOf(node.MutuallyExclusive), node.DisplayName, node.Description);
                 built._growth.Add(node.Id.Value, info);
                 built._growthOrder.Add(info);
             }
@@ -334,6 +501,8 @@ namespace Momotaro.Gameplay.Session
             AddKnown(built._knownRewards, data.GrantOnceRewardIds, "reward", errors);
             AddKnown(built._knownCompanions, data.CompanionIds, "companion", errors);
             AddKnown(built._knownQuests, data.QuestIds, "quest", errors);
+            AddKnown(built._knownChapters, data.ChapterIds, "chapter", errors);
+            SkillGraphCheck.Check(data.GrowthNodes, errors);
 
             return errors.Count == before ? built : null;
         }

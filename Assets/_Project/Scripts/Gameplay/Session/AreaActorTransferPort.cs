@@ -470,11 +470,25 @@ namespace Momotaro.Gameplay.Session
         /// </summary>
         public void RestoreForRest() => RestoreForCampaignRespawn();
 
-        /// <summary>成長による最大 HP の加算を主人公へ置き直す（P6A。何度呼んでも同じ結果）。</summary>
-        public void ApplyMaxHpBonus(int bonus)
+        /// <summary>
+        /// 成長の効果一式を主人公へ置き直す（P6A の最大 HP を P6B 01 で一般化。何度呼んでも同じ結果）。
+        /// 最大 HP・最大スタミナは Vitals、刀と通常体幹の倍率は命中窓口（<see cref="PlayerStateController"/>）。
+        /// </summary>
+        public void ApplyGrowthEffects(in Momotaro.Gameplay.Progression.GrowthEffects effects)
         {
-            _playerVitals?.ApplyMaxHpBonus(bonus);
+            _playerVitals?.ApplyGrowth(effects.MaxHpBonus, effects.MaxStaminaBonus);
+            ResolvePlayerState()?.SetGrowthMultipliers(effects.AttackHpMultiplier, effects.NormalPoiseMultiplier);
+            AppliedGrowth = effects;
         }
+
+        /// <summary>主人公の Vitals（P6B：成長 UI・HUD の表示用。読み取りに使う）。</summary>
+        public PlayerVitalsHolder PlayerVitals => _playerVitals;
+
+        /// <summary>主人公の状態（P6B：HUD の使用表示用）。</summary>
+        public PlayerStateController PlayerState => ResolvePlayerState();
+
+        /// <summary>直近に置き直した成長の効果（診断・テスト用）。</summary>
+        public Momotaro.Gameplay.Progression.GrowthEffects AppliedGrowth { get; private set; }
 
         /// <summary>主人公の基礎最大 HP の倍率（campaign のテスト専用の調整。P6A）。加算より前に掛ける。</summary>
         public void SetPlayerMaxHpScale(float scale)

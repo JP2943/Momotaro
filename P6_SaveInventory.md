@@ -29,7 +29,9 @@
 | 累計徳 | `PlayerProgressState.TotalVirtue` | — | 0 | 報酬付与 | 候補 Session 構築時 | RoundTrip |
 | 使用済み徳 | `PlayerProgressState.SpentVirtue` | — | 0 | 成長購入の成功 | 同上（0 ≤ 使用済み ≤ 累計を検証） | RoundTrip／Validator |
 | GrantOnce 付与記録 | `PlayerProgressState` の付与済み集合 | RewardData の StableId（**campaign の既知報酬**＝初到達報酬＋`AreaCatalogData.GrantOnceRewardIds`。2026-10-02 レビュー R4） | 空 | 初到達・初回クリア・発見の付与 | 同上。未知 ID は Load 拒否 | RoundTrip／Validator |
-| 取得済み成長と実支出 | `PlayerProgressState` の成長記録 | SkillNodeData の StableId ＋ 支出額 | 空 | 成長購入の成功 | 同上。効果は**基礎値と取得 ID から再計算**（加算を繰り返さない） | RoundTrip／効果非累積 |
+| 取得済み成長と実支出 | `PlayerProgressState` の成長記録 | SkillNodeData の StableId ＋ 支出額 | 空 | 成長購入の成功・**払い戻しの成功（記録を消し、実支出を使用済みから戻す。P6B）** | 同上。効果は**基礎値と取得 ID から再計算**（加算を繰り返さない）。前提の充足・既知 ID・使用済み＝実支出合計を検証（現在価格と実支出の違いは不正にしない） | RoundTrip／効果非累積／P6BGrowthTests |
+| 払い戻し権利（**P6B**） | `PlayerProgressState.RefundRights` | — | campaign の初期値（P6B は 3）。New Game で置く | 払い戻しの成功（−1）・章クリアの接続口（min(上限, 現在＋追加)）。**死亡・休息・Load で初期化しない** | 同上。0〜上限（P6B は 6）を検証。**版 1・2 は明示移行で初期値（3）** | P6BGrowthTests（RoundTrip・旧版移行・範囲） |
+| 権利を追加済みの章（**P6B**） | `PlayerProgressState` の処理済み章集合 | ChapterId（campaign の既知章＝`AreaCatalogData.ChapterIds`。P6B は接続 fixture だけ） | 空 | 章クリアの接続口（増加 0 でも処理済みにする） | 同上。未知 ID・重複は Load 拒否。版 1・2 は空 | P6BGrowthTests |
 | 訪問済み Area | `GameSessionState` 訪問集合 | AreaId | 空 | 遷移 Commit（`NoteArrival`）／直開き | 同上。**Load では到着報酬を出さない** | RoundTrip |
 | 加入済み仲間 | `GameSessionState` 加入集合 | CompanionId（**campaign の既知仲間**＝`AreaCatalogData.CompanionIds`。R4） | 空 | 加入（P8） | 同上。未知 ID は Load 拒否 | RoundTrip／Validator |
 | クエストの段階（**P7 の接続口**） | `GameSessionState` のクエスト段階（ID → 0 以上の整数） | QuestId（campaign の既知クエスト＝`AreaCatalogData.QuestIds`。P6A は接続 fixture `quest_p6a_fixture` だけ） | 空（未設定は 0） | P7 の進行確定（`TrySetQuestStage`。保存要求つき）。**死亡・休息・周期では戻らない** | 同上。未知 ID・負数は Load 拒否 | RoundTrip／Validator／PlayMode（死亡を跨いで保持・保存） |
@@ -41,7 +43,7 @@
 | 普通敵の撃破 | `AreaRuntimeState` の撃破記録（配置 ID → 周期） | 配置 ID（敵種 ID ではない） | 空 | 撃破確定（報酬と同時） | 同上。**現在周期と一致するものだけ**非出現 | RoundTrip／周期 |
 | 取得済み配置物 | `AreaRuntimeState` の取得集合 | 配置物 StableId | 空 | 取得成功（所持数と同時） | 同上 | RoundTrip |
 | 所持品 | `InventoryState` | ItemId → 個数 | 空 | 取得・消費（原子的） | 同上。未知 ID・負数・上限超過は拒否 | RoundTrip／Validator |
-| きびだんご残数 | `RecoveryStockState.Current` | — | 上限 | 使用（P6B）・休息等で上限へ | 同上。上限は定義と成長から算出（保存しない） | RoundTrip |
+| きびだんご残数 | `GameSessionState.Kibidango` | — | 上限 | **使用の確定（P6B：1.5 秒で回復と同じ 1 更新・保存要求つき）**・休息等で上限へ | 同上。上限は定義と成長から算出（保存しない）。**成長込みの上限**を超える値は Load 拒否 | RoundTrip／P6BGrowthTests／P6BKibidangoUseTests |
 | 登録済みお地蔵様 | `ShrineProgressState` の登録集合 | お地蔵様 StableId | campaign の初期お地蔵様 1 件 | 調べる・旅立ち到着 | 同上 | RoundTrip |
 | 死亡用再開地点（Checkpoint） | `ShrineProgressState.Checkpoint` | お地蔵様 StableId | campaign の初期お地蔵様 | 調べる・旅立ち到着 | 同上。catalog で解決できなければ Load 拒否 | RoundTrip／Validator |
 | 中断用復帰位置（ResumeAnchor） | `GameSessionState.Resume` | 種別（入口／お地蔵様）＋ AreaId ＋ 点 ID | campaign の初期お地蔵様 | 通常到着・お地蔵様操作・死亡復帰・旅立ち到着 | Continue の行き先 | RoundTrip／Validator |
@@ -88,7 +90,7 @@ P5 の `P5_ActorTransferInventory.md` で「保持」に分類した値を土台
 
 Load では回復・周期更新・到着報酬・獲得演出を**発生させない**。
 
-## 5. DTO 対応（schemaVersion 2）
+## 5. DTO 対応（schemaVersion 3。P6B で 2 → 3）
 
 | DTO の欄 | 表の行 |
 |---|---|
@@ -103,11 +105,23 @@ Load では回復・周期更新・到着報酬・獲得演出を**発生させ�
 | `resume {kind, areaId, pointId}` | ResumeAnchor |
 | `party.player {...}`／`party.companion {...}` | §2 |
 | `questStages[] {questId, stage}` | クエストの段階（版 2 で追加） |
+| `refund {rights, chapters[]}` | 払い戻し権利／権利を追加済みの章（版 3 で追加。P6B） |
 | Envelope `schemaVersion`／`contentVersion`／`campaignId`／`adventureId`／`generation`／`savedAtUtc`／`checksum` | 仕様 §10 |
 
 **版 1 → 2 の読み替え**（2026-10-02、受入 P6A 08 の接続 fixture）：版 1 は `questStages` を持たない。読むときは欄の一覧を版で分け
 （版 1 に `questStages` があれば未知の欄として拒否）、**クエスト段階が空**として候補 Session を作る。書くのは常に版 2。
 版 3 以上・0 以下は「未対応の保存形式の版」で拒否する。それより前の形式は無い（P5 までは保存なし。記録 001 で確認）。
+
+**版 2 → 3 の読み替え**（2026-10-03、P6B 02）：版 2（と版 1）は `refund` を持たない。読むときは欄の一覧を版で分け（版 1・2 に `refund` が
+あれば未知の欄として拒否）、`SaveSnapshot.HasRefundData = false` として持つ。候補 Session の構築が**明示的な移行**として権利＝campaign の初期値（3）・
+章集合＝空を置く（P6A には本番の章報酬が無いので遡及追加しない）。書くのは常に版 3 で、以後は保存した権利をそのまま使う（Load のたびに 3 へ戻さない）。
+版 4 以上・0 以下は「未対応の保存形式の版」で拒否する。
+
+**保存先（P6B）**：campaign ごとに保存スロットを分ける（`AreaCatalogData.SaveSlotName`。P6A は従来の `slot0`、P6B は `p6b_slot0`）。
+P6A の保存・campaign・ノード定義は変えない。P6A → P6B の campaign 変換は対象外。
+
+**保存しない（P6B）**：きびだんご使用の経過時間・動作・入力ラッチ（Continue は中立姿勢から。確定後 0.5 秒の残り動作を持ち越さない）。
+成長 UI の表示順・座標（列と段は前提の鎖から毎回組む）。
 
 **保存先の退避（New Game）**：スロットの両側を `archive/<日時>` へ**写して読み直して一致を確かめてから**、古い世代 → 最新の世代の順にスロットから消す。
 最新を消せずに止まったら、消した古い側を写しから戻す（戻せなくても最新の側は残る）。どの段の失敗でも New Game は始めない（2026-10-02 レビュー R2）。

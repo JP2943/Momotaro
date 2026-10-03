@@ -88,6 +88,9 @@ namespace Momotaro.Gameplay.Session
         /// <summary>要求を出した回数（診断・テスト用）。</summary>
         public int RequestCount { get; private set; }
 
+        /// <summary>主人公の使用中で要求を控えたフレーム数（診断・テスト用。P6B 03）。</summary>
+        public int SuppressedWhileBusyCount { get; private set; }
+
         /// <summary>範囲内を測り直した回数（診断・テスト用。工程 P55-15a）。</summary>
         public int ResyncCount { get; private set; }
 
@@ -218,7 +221,14 @@ namespace Momotaro.Gameplay.Session
         /// <paramref name="moveInput"/> は XZ の移動入力。
         /// </summary>
         /// <returns>この Tick で遷移を要求すべきになったら true（1 回だけ）。</returns>
-        public bool Tick(float deltaTime, Vector3 moveInput)
+        public bool Tick(float deltaTime, Vector3 moveInput) => Tick(deltaTime, moveInput, requestAllowed: true);
+
+        /// <summary>
+        /// <paramref name="requestAllowed"/> が false の間は<b>溜めも要求もしない</b>（P6B 03。きびだんご使用中）。
+        /// 要求して受付に断られると「一度離れるまで無効」になってしまうので、使用中はそもそも要求を出さない。
+        /// 使用が終われば、外向きの入力を続けたまま通常どおり溜まって遷移できる（離れ直し不要）。
+        /// </summary>
+        public bool Tick(float deltaTime, Vector3 moveInput, bool requestAllowed)
         {
             if (GameplayClockProvider.IsFrozen)
             {
@@ -251,6 +261,13 @@ namespace Momotaro.Gameplay.Session
                     _requiresRelease = false;
                 }
 
+                _held = 0f;
+                return false;
+            }
+
+            if (!requestAllowed)
+            {
+                SuppressedWhileBusyCount++;
                 _held = 0f;
                 return false;
             }

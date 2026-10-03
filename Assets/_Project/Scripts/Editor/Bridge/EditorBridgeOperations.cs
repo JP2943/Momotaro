@@ -74,6 +74,15 @@ namespace Momotaro.EditorBridge
         /// </summary>
         public const string P6APlayerSmoke = "p6a-player-smoke";
 
+        /// <summary>P6B の検証 campaign（P6A と同じ 3 エリア構成を設定で再利用）を再生成する（P6B 04）。</summary>
+        public const string BuildPhase6BWorld = "build-phase6b-world";
+
+        /// <summary>P6B の検証 campaign を検査する（P6A と同じ検査＋9 ノード・使用・払い戻し・入力。P6B 17）。</summary>
+        public const string ValidatePhase6BWorld = "validate-phase6b-world";
+
+        /// <summary>P6B の Windows 実ビルドで成長・権利・残数・HP の別プロセス復元を確かめる（P6B 19）。</summary>
+        public const string P6BPlayerSmoke = "p6b-player-smoke";
+
         /// <summary>実行できる操作の一覧（エラーメッセージにそのまま出す）。</summary>
         public static readonly string[] All =
         {
@@ -81,6 +90,7 @@ namespace Momotaro.EditorBridge
             BuildCompanionField, BuildCompanionTrial, BuildExplorationTrial,
             ValidateExplorationTrial, BuildPhase55World, ValidatePhase55World,
             BuildPhase6World, ValidatePhase6World, P6APlayerSmoke,
+            BuildPhase6BWorld, ValidatePhase6BWorld, P6BPlayerSmoke,
         };
 
         /// <summary>実行結果。</summary>
@@ -110,7 +120,8 @@ namespace Momotaro.EditorBridge
                 || op == BuildCompanionField || op == BuildCompanionTrial || op == BuildExplorationTrial
                 || op == ValidateExplorationTrial || op == BuildPhase55World
                 || op == ValidatePhase55World || op == BuildPhase6World || op == ValidatePhase6World
-                || op == P6APlayerSmoke;
+                || op == P6APlayerSmoke || op == BuildPhase6BWorld || op == ValidatePhase6BWorld
+                || op == P6BPlayerSmoke;
         }
 
         /// <summary>操作を実行する。未知の操作・呼び出し失敗は <see cref="OperationResult.Success"/> false で返す。</summary>
@@ -157,6 +168,15 @@ namespace Momotaro.EditorBridge
 
                     case P6APlayerSmoke:
                         return RunBuilder(Phase6PlayerSmokeType);
+
+                    case BuildPhase6BWorld:
+                        return RunBuilder(Phase6WorldBuilderType, "BuildP6B");
+
+                    case ValidatePhase6BWorld:
+                        return RunWorldValidation(Phase6WorldValidatorType, "P6B 検証ワールド", "ValidateP6B");
+
+                    case P6BPlayerSmoke:
+                        return RunBuilder(Phase6PlayerSmokeType, "BuildAllP6B");
 
                     case BuildCompanionField:
                         return RunBuildCompanionField();
@@ -593,7 +613,8 @@ namespace Momotaro.EditorBridge
         /// <c>Validate(List&lt;string&gt;, List&lt;string&gt;)</c> を持つワールド検査を呼ぶ（P5.5／P6A で同じ形）。
         /// <b>Scene を開く操作なので、未保存の変更があれば断る</b>（生成と同じ扱い）。
         /// </summary>
-        private static OperationResult RunWorldValidation(string validatorTypeName, string label)
+        private static OperationResult RunWorldValidation(string validatorTypeName, string label,
+            string methodName = "Validate")
         {
             for (int i = 0; i < UnityEditor.SceneManagement.EditorSceneManager.sceneCount; i++)
             {
@@ -615,12 +636,12 @@ namespace Momotaro.EditorBridge
             }
 
             MethodInfo validate = validator.GetMethod(
-                "Validate", BindingFlags.Public | BindingFlags.Static, null,
+                methodName, BindingFlags.Public | BindingFlags.Static, null,
                 new[] { typeof(List<string>), typeof(List<string>) }, null);
             if (validate == null)
             {
                 return new OperationResult(false,
-                    validatorTypeName + ".Validate(List<string>, List<string>) が見つかりません。");
+                    validatorTypeName + "." + methodName + "(List<string>, List<string>) が見つかりません。");
             }
 
             var errors = new List<string>();
@@ -653,7 +674,7 @@ namespace Momotaro.EditorBridge
         /// 引数なしの <c>BuildAll()</c> を持つ生成器を反射で呼ぶ（P5／P5.5 で同じ形）。
         /// 戻り値は <c>Success</c>／<c>Message</c>／<c>Outputs</c> を持つ構造体であることを期待する。
         /// </summary>
-        private static OperationResult RunBuilder(string builderTypeName)
+        private static OperationResult RunBuilder(string builderTypeName, string methodName = "BuildAll")
         {
             Type builder = FindType(builderTypeName);
             if (builder == null)
@@ -662,10 +683,10 @@ namespace Momotaro.EditorBridge
             }
 
             MethodInfo build = builder.GetMethod(
-                "BuildAll", BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
+                methodName, BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
             if (build == null)
             {
-                return new OperationResult(false, builderTypeName + ".BuildAll() が見つかりません。");
+                return new OperationResult(false, builderTypeName + "." + methodName + "() が見つかりません。");
             }
 
             object result = build.Invoke(null, null);

@@ -48,10 +48,10 @@ namespace Momotaro.Gameplay.Save
     public sealed class SaveSnapshot
     {
         /// <summary>
-        /// 保存形式の版（Envelope の schemaVersion）。2：クエスト段階の接続口（questStages）を足した（受入 P6A 08）。
+        /// 保存形式の版（Envelope の schemaVersion）。2：クエスト段階の接続口（questStages）を足した（受入 P6A 08）。3：払い戻し権利と処理済み章（refund）を足した（P6B 02）。
         /// 1 の保存はクエスト段階が空のものとして読む（<see cref="OldestReadableSchemaVersion"/>）。
         /// </summary>
-        public const int CurrentSchemaVersion = 2;
+        public const int CurrentSchemaVersion = 3;
 
         /// <summary>読める最も古い保存形式の版。</summary>
         public const int OldestReadableSchemaVersion = 1;
@@ -62,8 +62,12 @@ namespace Momotaro.Gameplay.Save
             string[] visitedAreas, string[] recruited, AreaSaveRecord[] areas,
             KeyValuePair<string, int>[] inventory, int kibidango,
             string[] registeredShrines, string checkpoint, ResumeAnchorKind resumeKind, string resumeAreaId,
-            string resumePointId, PartySaveValues party, KeyValuePair<string, int>[] questStages = null)
+            string resumePointId, PartySaveValues party, KeyValuePair<string, int>[] questStages = null,
+            bool hasRefundData = false, int refundRights = 0, string[] processedChapters = null)
         {
+            HasRefundData = hasRefundData;
+            RefundRights = refundRights;
+            ProcessedChapters = processedChapters ?? Array.Empty<string>();
             CampaignId = campaignId ?? string.Empty;
             ContentVersion = contentVersion;
             AdventureId = adventureId ?? string.Empty;
@@ -113,6 +117,18 @@ namespace Momotaro.Gameplay.Save
 
         /// <summary>クエストの段階（安定 ID 順。P7 の進行の接続口。受入 P6A 08）。</summary>
         public IReadOnlyList<KeyValuePair<string, int>> QuestStages { get; }
+
+        /// <summary>
+        /// 払い戻し権利と処理済み章を持つか（P6B 02。版 3 以降の保存と採取は true）。版 1・2 から読んだものは false で、
+        /// 候補 Session の構築が<b>明示的な移行</b>（権利＝campaign の初期値・章集合＝空）で補う。欠損を黙って 0 にしない。
+        /// </summary>
+        public bool HasRefundData { get; }
+
+        /// <summary>払い戻し権利の残り（<see cref="HasRefundData"/> のときだけ意味を持つ）。</summary>
+        public int RefundRights { get; }
+
+        /// <summary>権利を追加済みの章 ID（整列済み）。</summary>
+        public IReadOnlyList<string> ProcessedChapters { get; }
 
         /// <summary>
         /// Session と Actor の値から Snapshot を採る（<b>メインスレッドで</b>。仕様 §9）。
@@ -165,6 +181,10 @@ namespace Momotaro.Gameplay.Save
             session.CopyQuestStagesTo(quests);
             quests.Sort(ByKey);
 
+            var chapters = new List<string>();
+            session.Progress.CopyProcessedChaptersTo(chapters);
+            chapters.Sort(StringComparer.Ordinal);
+
             ResumeAnchor resume = session.Resume;
             return new SaveSnapshot(
                 campaign.CampaignId.Value, campaign.ContentVersion, session.AdventureId, session.Changes.Revision,
@@ -173,7 +193,8 @@ namespace Momotaro.Gameplay.Save
                 SortedIds(session.VisitedAreas), SortedIds(session.Recruited), areas.ToArray(),
                 inventory.ToArray(), session.Kibidango,
                 SortedIds(session.RegisteredShrines), session.Checkpoint.Value,
-                resume.Kind, resume.AreaId.Value, resume.PointId.Value, party, quests.ToArray());
+                resume.Kind, resume.AreaId.Value, resume.PointId.Value, party, quests.ToArray(),
+                true, session.Progress.RefundRights, chapters.ToArray());
         }
 
         private static int ByKey(KeyValuePair<string, int> a, KeyValuePair<string, int> b) =>

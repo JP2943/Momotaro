@@ -23,3 +23,8 @@ MonoBehaviour:
   _prerequisites: []
   _mutuallyExclusive: []
   _maxHpBonus: 10
+  _attackHpMultiplierBonus: 0
+  _maxStaminaBonus: 0
+  _normalPoiseMultiplierBonus: 0
+  _kibidangoHealBonus: 0
+  _kibidangoCapacityBonus: 0

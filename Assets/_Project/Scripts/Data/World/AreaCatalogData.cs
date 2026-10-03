@@ -37,6 +37,35 @@ namespace Momotaro.Data.World
         [Tooltip("きびだんごの基本補充上限（仮値。成長で増える分は別）。")]
         [SerializeField] private int _kibidangoBaseCapacity = 3;
 
+        [Tooltip("きびだんご 1 個の基礎回復量（P6B。成長なしの基礎最大 HP の半分を切り上げた固定値。0 は使用動作なし＝P6A）。")]
+        [SerializeField] private int _kibidangoBaseHeal;
+
+        [Tooltip("きびだんご使用の全動作（Gameplay 秒。P6B 仕様 §6）。")]
+        [SerializeField] private float _kibidangoUseSeconds = 2f;
+
+        [Tooltip("きびだんご使用の確定時刻（開始からの Gameplay 秒。回復と残数 -1 を同じ更新で一回だけ）。")]
+        [SerializeField] private float _kibidangoCommitSeconds = 1.5f;
+
+        [Tooltip("きびだんご使用中の移動速度倍率（歩行速度への倍率。ノックバックには掛けない）。")]
+        [SerializeField] private float _kibidangoMoveSpeedMultiplier = 0.2f;
+
+        [Header("払い戻し（P6B 仕様 §5）")]
+        [Tooltip("初期の払い戻し権利。")]
+        [SerializeField] private int _refundRightsInitial = 3;
+
+        [Tooltip("章クリア 1 回で追加する権利。")]
+        [SerializeField] private int _refundRightsPerChapter = 3;
+
+        [Tooltip("払い戻し権利の保有上限。")]
+        [SerializeField] private int _refundRightsMax = 6;
+
+        [Tooltip("権利を追加しうる章の ID（P6B は接続 fixture だけ。本番の章進行は作らない）。")]
+        [SerializeField] private List<StableId> _chapterIds = new List<StableId>();
+
+        [Header("保存")]
+        [Tooltip("保存スロット名（campaign ごとに分ける。P6A は既定の slot0）。")]
+        [SerializeField] private string _saveSlotName = "slot0";
+
         [Tooltip("一般消耗品の定義（保存の検証で未知 ID を拒否する）。")]
         [SerializeField] private List<ItemDefinition> _items = new List<ItemDefinition>();
 
@@ -91,6 +120,24 @@ namespace Momotaro.Data.World
 
         /// <summary>一般消耗品の定義（P6A）。</summary>
         public IReadOnlyList<ItemDefinition> Items => _items;
+
+        public int KibidangoBaseHeal => _kibidangoBaseHeal;
+
+        public float KibidangoUseSeconds => _kibidangoUseSeconds;
+
+        public float KibidangoCommitSeconds => _kibidangoCommitSeconds;
+
+        public float KibidangoMoveSpeedMultiplier => _kibidangoMoveSpeedMultiplier;
+
+        public int RefundRightsInitial => _refundRightsInitial;
+
+        public int RefundRightsPerChapter => _refundRightsPerChapter;
+
+        public int RefundRightsMax => _refundRightsMax;
+
+        public IReadOnlyList<StableId> ChapterIds => _chapterIds;
+
+        public string SaveSlotName => string.IsNullOrEmpty(_saveSlotName) ? "slot0" : _saveSlotName;
 
         /// <summary>成長項目（P6A の仮項目）。</summary>
         public IReadOnlyList<SkillNodeData> GrowthNodes => _growthNodes;
@@ -201,6 +248,34 @@ namespace Momotaro.Data.World
                 report.Error(name + ": KibidangoBaseCapacity must be >= 0.");
             }
 
+            if (_kibidangoBaseHeal < 0)
+            {
+                report.Error(name + ": KibidangoBaseHeal must be >= 0.");
+            }
+
+            if (_kibidangoBaseHeal > 0
+                && !(_kibidangoCommitSeconds > 0f && _kibidangoUseSeconds >= _kibidangoCommitSeconds
+                     && !float.IsInfinity(_kibidangoUseSeconds)
+                     && _kibidangoMoveSpeedMultiplier >= 0f && _kibidangoMoveSpeedMultiplier <= 1f))
+            {
+                report.Error(name + ": kibidango use timing must satisfy 0 < commit <= use (finite) and 0 <= move <= 1.");
+            }
+
+            if (_refundRightsInitial < 0 || _refundRightsPerChapter < 0 || _refundRightsMax < 0
+                || _refundRightsInitial > _refundRightsMax)
+            {
+                report.Error(name + ": refund rights must satisfy 0 <= initial <= max and perChapter >= 0.");
+            }
+
+            var chapters = new HashSet<string>();
+            for (int i = 0; i < _chapterIds.Count; i++)
+            {
+                if (!_chapterIds[i].IsValid || !chapters.Add(_chapterIds[i].Value))
+                {
+                    report.Error(name + ": ChapterIds[" + i + "] is invalid or duplicated.");
+                }
+            }
+
             if (float.IsNaN(_testEnemyAttackScale) || float.IsInfinity(_testEnemyAttackScale)
                 || float.IsNaN(_testPlayerMaxHpScale) || float.IsInfinity(_testPlayerMaxHpScale))
             {
@@ -275,6 +350,20 @@ namespace Momotaro.Data.World
                 {
                     report.Error(name + ": Duplicate growth id '" + node.Id.Value + "'.");
                 }
+
+                if (!node.HasAnyEffect)
+                {
+                    report.Error(name + ": Growth '" + node.Id.Value + "' has no effect (zero-effect nodes are not allowed).");
+                }
+            }
+
+            var graphErrors = new List<string>();
+            if (!SkillGraphCheck.Check(_growthNodes, graphErrors))
+            {
+                for (int i = 0; i < graphErrors.Count; i++)
+                {
+                    report.Error(name + ": " + graphErrors[i]);
+                }
             }
         }
 
@@ -330,6 +419,21 @@ namespace Momotaro.Data.World
             _grantOnceRewardIds = grantOnceRewardIds ?? new List<StableId>();
             _companionIds = companionIds ?? new List<StableId>();
             _questIds = questIds ?? new List<StableId>();
+        }
+
+        /// <summary>P6B の設定入口（Editor 専用。きびだんご使用・払い戻し・章・保存スロット）。</summary>
+        public void EditorSetP6B(int kibidangoBaseHeal, float useSeconds, float commitSeconds, float moveSpeedMultiplier,
+            int refundInitial, int refundPerChapter, int refundMax, List<StableId> chapterIds, string saveSlotName)
+        {
+            _kibidangoBaseHeal = kibidangoBaseHeal;
+            _kibidangoUseSeconds = useSeconds;
+            _kibidangoCommitSeconds = commitSeconds;
+            _kibidangoMoveSpeedMultiplier = moveSpeedMultiplier;
+            _refundRightsInitial = refundInitial;
+            _refundRightsPerChapter = refundPerChapter;
+            _refundRightsMax = refundMax;
+            _chapterIds = chapterIds ?? new List<StableId>();
+            _saveSlotName = saveSlotName;
         }
 
         /// <summary>テスト専用の調整の設定入口（Editor 専用。P6A の Builder）。</summary>

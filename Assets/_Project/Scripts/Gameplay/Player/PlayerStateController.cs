@@ -102,6 +102,26 @@ namespace Momotaro.Gameplay.Player
         private bool _wasHurt;
         private bool _wasDefeated;
 
+        /// <summary>
+        /// 成長による刀の HP ダメージ倍率（P6B 01。既定 1）。通常各段と必殺の<b>攻撃側寄与</b>に 1 回だけ掛ける。
+        /// 仲間・環境・敵体幹・ガード消費には掛けない。整数化は既存どおり対象側。
+        /// </summary>
+        public float GrowthAttackHpMultiplier { get; private set; } = 1f;
+
+        /// <summary>成長による通常攻撃の体幹倍率（P6B 01。既定 1）。JG 反射・必殺には掛けない。</summary>
+        public float GrowthNormalPoiseMultiplier { get; private set; } = 1f;
+
+        /// <summary>
+        /// 成長の倍率を置き直す（何度呼んでも同じ結果。基礎値と取得 ID から作った値を渡す）。不正値は 1。
+        /// </summary>
+        public void SetGrowthMultipliers(float attackHpMultiplier, float normalPoiseMultiplier)
+        {
+            GrowthAttackHpMultiplier = Valid(attackHpMultiplier) ? attackHpMultiplier : 1f;
+            GrowthNormalPoiseMultiplier = Valid(normalPoiseMultiplier) ? normalPoiseMultiplier : 1f;
+        }
+
+        private static bool Valid(float v) => !float.IsNaN(v) && !float.IsInfinity(v) && v > 0f;
+
         /// <summary>現在の Gameplay 状態（Visual が参照する）。</summary>
         public PlayerState Current => _machine.Current;
 
@@ -258,6 +278,13 @@ namespace Momotaro.Gameplay.Player
         /// <inheritdoc />
         public void CancelSpecialChargeOnHit()
         {
+            // P6B 03：主人公に有効な被弾が成立した（無敵・回避・ガード・かばうで成立しなかった接触はここへ来ない）。
+            // 未確定の使用は中断する。確定は LateUpdate なので、同じフレームの被弾は 1.5 秒到達より優先される。
+            if (_usingItem)
+            {
+                _itemHitDuringUse = true;
+            }
+
             // 被弾（実ダメージ）で必殺技チャージを中断する（発動・後隙中は中断しない）。必殺技ボタンを離すまで再チャージ禁止。
             if (_special != null && _special.IsActive)
             {
@@ -341,6 +368,11 @@ namespace Momotaro.Gameplay.Player
         /// </summary>
         private void NeutralizeForHurt()
         {
+            if (_usingItem)
+            {
+                EndItemUse(interrupted: !_itemCommitted);
+            }
+
             _combo?.Interrupt();
             _hitTracker.Clear();
             _attackBuffer?.Clear();
@@ -412,6 +444,12 @@ namespace Momotaro.Gameplay.Player
         /// <summary>状態・攻撃・ロック・移動抑制・先行入力を中立へ戻す（Disable 時）。</summary>
         public void ResetToNeutral()
         {
+            if (_usingItem)
+            {
+                EndItemUse(interrupted: !_itemCommitted);
+            }
+
+            _guardRequiresRelease = false;
             _input = null;
             _machine.Reset();
             _combo?.Interrupt();
@@ -485,6 +523,270 @@ namespace Momotaro.Gameplay.Player
         private void Update()
         {
             Tick(Time.deltaTime);
+        }
+
+        private void LateUpdate()
+        {
+            // 確定はこのフレームの命中解決がすべて終わってから（同フレームの被弾・死亡を優先する。P6B 仕様 §7）。
+            ResolveItemUseCommit();
+        }
+
+        // ================================================================ きびだんご使用（P6B 03）
+
+        private bool _usingItem;
+        private float _itemElapsed;
+        private bool _itemCommitted;
+        private bool _itemCommitPending;
+        private bool _itemHitDuringUse;
+        private bool _guardRequiresRelease;
+        private Momotaro.Gameplay.Session.KibidangoUseConfig _itemConfig;
+
+        /// <summary>使用の受け口の差し替え（テスト用。null で <see cref="Session.KibidangoUseProvider"/>）。</summary>
+        public Momotaro.Gameplay.Session.IKibidangoUseService ItemUseOverride { get; set; }
+
+        /// <summary>きびだんごを使用中か（2 秒の全動作の間。確定後の 0.5 秒も含む）。</summary>
+        public bool IsUsingItem => _usingItem;
+
+        /// <summary>使用開始からの Gameplay 秒（使用中だけ意味を持つ）。</summary>
+        public float ItemUseElapsed => _usingItem ? _itemElapsed : 0f;
+
+        /// <summary>今回の使用が確定済みか（回復と残数 -1 が済んだ）。</summary>
+        public bool ItemUseCommitted => _usingItem && _itemCommitted;
+
+        /// <summary>今回の使用の全動作秒（HUD 表示用）。</summary>
+        public float ItemUseDuration => _usingItem ? _itemConfig.UseSeconds : 0f;
+
+        /// <summary>今回の使用の確定時刻（HUD 表示用）。</summary>
+        public float ItemUseCommitTime => _usingItem ? _itemConfig.CommitSeconds : 0f;
+
+        /// <summary>使用を開始した回数（診断・テスト用）。</summary>
+        public int ItemUseStartCount { get; private set; }
+
+        /// <summary>確定した回数（診断・テスト用）。</summary>
+        public int ItemUseCommitCount { get; private set; }
+
+        /// <summary>確定前に中断した回数（診断・テスト用）。</summary>
+        public int ItemUseInterruptCount { get; private set; }
+
+        /// <summary>最後まで終えた回数（診断・テスト用）。</summary>
+        public int ItemUseCompleteCount { get; private set; }
+
+        /// <summary>直近の確定で回復した量（診断・テスト用）。</summary>
+        public int LastItemHealed { get; private set; }
+
+        /// <summary>直近の開始拒否の理由（診断・テスト・HUD 用）。</summary>
+        public ItemUseRejection LastItemUseRejection { get; private set; }
+
+        /// <summary>直近の確定の結果（診断・テスト用）。</summary>
+        public Momotaro.Gameplay.Session.KibidangoCommitResult LastItemCommitResult { get; private set; }
+
+        private Momotaro.Gameplay.Session.IKibidangoUseService ItemService =>
+            ItemUseOverride ?? Momotaro.Gameplay.Session.KibidangoUseProvider.Current;
+
+        /// <summary>
+        /// 押下を 1 回取り出し、開始条件を満たすなら使用を始める。押下は条件不成立でも捨てる（溜めない）。
+        /// 開始条件：生存・入力有効・ブレイク外・直前が Idle／Move・同フレームの攻撃／ステップ押下なし・ガード／必殺の保持なし・
+        /// HP が最大未満・残数 1 以上。
+        /// </summary>
+        private bool TryStartItemUse(bool active, bool broken)
+        {
+            if (!(_input is IItemUseInput use) || !use.ConsumeUseItemPressed())
+            {
+                return false;
+            }
+
+            ItemUseRejection reason = CheckItemUseStart(active, broken, use, out Momotaro.Gameplay.Session.KibidangoUseConfig config);
+            LastItemUseRejection = reason;
+            if (reason != ItemUseRejection.None)
+            {
+                return false;
+            }
+
+            _usingItem = true;
+            _itemElapsed = 0f;
+            _itemCommitted = false;
+            _itemCommitPending = false;
+            _itemHitDuringUse = false;
+            _itemConfig = config;
+            ItemUseStartCount++;
+            return true;
+        }
+
+        private ItemUseRejection CheckItemUseStart(bool active, bool broken, IItemUseInput use,
+            out Momotaro.Gameplay.Session.KibidangoUseConfig config)
+        {
+            config = default;
+            Momotaro.Gameplay.Session.IKibidangoUseService service = ItemService;
+            if (service == null || !service.TryGetConfig(out config))
+            {
+                return ItemUseRejection.NotAvailable;
+            }
+
+            if (!active || broken || IsDefeated || IsHurt)
+            {
+                return ItemUseRejection.Busy;
+            }
+
+            PlayerState current = _machine.Current;
+            bool busy = (current != PlayerState.Idle && current != PlayerState.Move)
+                || (_step != null && _step.IsActive)
+                || (_special != null && _special.IsActive) || _specialAttackRemaining > 0f
+                || (_combo != null && _combo.IsActive)
+                || (_attackBuffer != null && _attackBuffer.HasBuffered)
+                || use.HasPendingActionPress
+                || _input.GuardHeld || _input.SpecialAttackHeld;
+            if (busy)
+            {
+                return ItemUseRejection.Busy; // 同フレームの既存行動を優先する。
+            }
+
+            PlayerVitalsHolder vitals = ResolveVitals();
+            if (vitals == null)
+            {
+                return ItemUseRejection.NotAvailable;
+            }
+
+            if (vitals.CurrentHp >= vitals.MaxHp)
+            {
+                return ItemUseRejection.HpFull;
+            }
+
+            if (service.Remaining < 1)
+            {
+                return ItemUseRejection.OutOfStock;
+            }
+
+            return ItemUseRejection.None;
+        }
+
+        /// <summary>
+        /// 使用中の時間を進める（Gameplay 時計。入力が閉じている＝Pause・メニュー中は止める）。1.5 秒で確定を予約し
+        /// （実行は LateUpdate）、確定済みで全動作に達したら終える。確定前の有効な被弾・ブレイクは中断。
+        /// </summary>
+        private void TickItemUse(bool active, bool broken)
+        {
+            if (broken || IsDefeated || (_itemHitDuringUse && !_itemCommitted))
+            {
+                EndItemUse(interrupted: !_itemCommitted);
+                return;
+            }
+
+            if (active)
+            {
+                _itemElapsed += _deltaTime;
+            }
+
+            if (!_itemCommitted && !_itemCommitPending && _itemElapsed >= _itemConfig.CommitSeconds)
+            {
+                _itemCommitPending = true;
+            }
+
+            if (_itemCommitted && _itemElapsed >= _itemConfig.UseSeconds)
+            {
+                EndItemUse(interrupted: false);
+            }
+        }
+
+        /// <summary>
+        /// 予約した確定を実行する（LateUpdate。テストは直接呼べる）。<b>1 回の使用につき 1 回だけ</b>。
+        /// 同じフレームに有効な被弾・死亡があれば確定せず中断する（被弾・死亡を優先）。
+        /// </summary>
+        public void ResolveItemUseCommit()
+        {
+            if (!_usingItem || !_itemCommitPending)
+            {
+                return;
+            }
+
+            _itemCommitPending = false;
+            if (_itemHitDuringUse || IsDefeated || IsHurt)
+            {
+                EndItemUse(interrupted: true);
+                return;
+            }
+
+            Momotaro.Gameplay.Session.IKibidangoUseService service = ItemService;
+            int healed = 0;
+            Momotaro.Gameplay.Session.KibidangoCommitResult result = service != null
+                ? service.TryCommit(ResolveVitals(), out healed)
+                : Momotaro.Gameplay.Session.KibidangoCommitResult.NotAvailable;
+            LastItemCommitResult = result;
+            if (result != Momotaro.Gameplay.Session.KibidangoCommitResult.Committed)
+            {
+                EndItemUse(interrupted: true);
+                return;
+            }
+
+            LastItemHealed = healed;
+            _itemCommitted = true;
+            ItemUseCommitCount++;
+
+            // 長いフレームで全動作も同時に越えていたら、ここで終える（確定は 1 回だけ済んでいる）。
+            if (_itemElapsed >= _itemConfig.UseSeconds)
+            {
+                EndItemUse(interrupted: false);
+            }
+        }
+
+        /// <summary>使用中の 1 フレーム：禁止行動の押下を捨て、20% 移動・向き変更だけを許す。</summary>
+        private void ApplyItemUseFrame(bool active)
+        {
+            if (_input != null)
+            {
+                _input.ConsumeAttackPressed();
+                _input.ConsumeStepPressed();
+                (_input as IItemUseInput)?.ConsumeUseItemPressed();
+                (_input as IInteractInput)?.DiscardInteractPressed();
+            }
+
+            _attackBuffer?.Clear();
+            _stepChainBuffered = false;
+            DriveJustGuard(false);
+
+            bool isMoving = active && _input != null && _input.Move.sqrMagnitude > _moveThreshold * _moveThreshold;
+            _machine.Tick(active, isMoving, false, false, false, false, false, false, false, false, usingItem: true);
+
+            if (_facing != null)
+            {
+                _facing.IsLocked = false; // 向き変更は可。
+            }
+
+            if (_motor != null)
+            {
+                _motor.MovementSuppressed = false;
+                _motor.StepVelocity = Vector3.zero;
+                _motor.SpeedMultiplier = _itemConfig.MoveSpeedMultiplier; // 歩行だけ。ノックバックは Motor 側で別扱い。
+            }
+        }
+
+        private void EndItemUse(bool interrupted)
+        {
+            if (!_usingItem)
+            {
+                return;
+            }
+
+            _usingItem = false;
+            _itemCommitPending = false;
+            _itemHitDuringUse = false;
+            if (interrupted)
+            {
+                ItemUseInterruptCount++;
+            }
+            else
+            {
+                ItemUseCompleteCount++;
+            }
+
+            // 使用中に押された禁止行動を終了直後に発火させない：保持中のガード・必殺は一度離すまで受け付けない。
+            _guardRequiresRelease = _input != null && _input.GuardHeld;
+            _specialRequiresRelease = true;
+            _attackBuffer?.Clear();
+
+            if (_motor != null)
+            {
+                _motor.SpeedMultiplier = 1f;
+            }
         }
 
         /// <summary>
@@ -596,6 +898,29 @@ namespace Momotaro.Gameplay.Player
                 _input.ConsumeStepPressed();
             }
 
+            // P6B 03：きびだんご使用。使用中は他の行動を受け付けず、ここで 1 フレームを終える。
+            // 終了したフレームは通常処理へ落ちる（行動ボタンは解放後の新しい入力から）。
+            if (_usingItem)
+            {
+                TickItemUse(active, broken);
+                if (_usingItem)
+                {
+                    ApplyItemUseFrame(active);
+                    return;
+                }
+            }
+            else if (TryStartItemUse(active, broken))
+            {
+                ApplyItemUseFrame(active);
+                return;
+            }
+
+            // 使用終了時に押されていたガードは、一度離すまで構えない（P6B 仕様 §6「解放後の新しい入力で受け付け」）。
+            if (_guardRequiresRelease && (_input == null || !_input.GuardHeld))
+            {
+                _guardRequiresRelease = false;
+            }
+
             // 先行入力の取り込みと時間経過。遮断中は預かった入力を破棄する。
             if (active)
             {
@@ -611,7 +936,7 @@ namespace Momotaro.Gameplay.Player
                 _attackBuffer.Clear();
             }
 
-            bool guarding = active && _input.GuardHeld;
+            bool guarding = active && _input.GuardHeld && !_guardRequiresRelease;
             bool isMoving = active && _input.Move.sqrMagnitude > _moveThreshold * _moveThreshold;
 
             // ステップ回避（ガードブレイク未満・攻撃/ガード/移動より優先。§3/§10）。開始・時間経過・連続予約を処理する。
@@ -982,7 +1307,9 @@ namespace Momotaro.Gameplay.Player
             }
 
             float attackPower = _attackerStats != null ? _attackerStats.AttackPower : 0f;
-            float hpContribution = HpDamageCalculator.AttackContribution(attackPower, _specialData.HpMultiplier);
+            // P6B：成長の刀倍率は攻撃側寄与へ 1 回だけ（attackerMultiplier の位置）。
+            float hpContribution = HpDamageCalculator.AttackContribution(attackPower, _specialData.HpMultiplier,
+                GrowthAttackHpMultiplier);
 
             for (int i = 0; i < count; i++)
             {
@@ -1221,7 +1548,9 @@ namespace Momotaro.Gameplay.Player
 
                 // HP は攻撃側寄与（防御適用前）＝攻撃力 × 技倍率 × 0.1 × 背後(×1.1)。防御・スタン倍率は対象側で適用。
                 float hpBackMultiplier = isBackHit ? HpDamageCalculator.BackMultiplier : 1f;
-                float hpContribution = HpDamageCalculator.AttackContribution(attackPower, d.HpMultiplier, 1f, hpBackMultiplier);
+                // P6B：成長の刀倍率は攻撃側寄与へ 1 回だけ（attackerMultiplier の位置）。
+                float hpContribution = HpDamageCalculator.AttackContribution(attackPower, d.HpMultiplier,
+                    GrowthAttackHpMultiplier, hpBackMultiplier);
 
                 // 対象が「攻撃の予備/判定中」か（体幹の攻撃中補正対象）を共通契約から取得。未実装ならフォールバック false。
                 bool targetActing = false;
@@ -1233,7 +1562,9 @@ namespace Momotaro.Gameplay.Player
 
                 // 体幹は固定系統。状況補正（背後×1.5・攻撃中×1.5。乗算せず高い方だけ）を攻撃側で適用。
                 float poiseSituational = PoiseDamageCalculator.SituationalMultiplier(isBackHit, targetActing);
-                float poiseContribution = PoiseDamageCalculator.Compute(d.PoiseDamage, poiseSituational, 1f, 1f);
+                // P6B：成長の体幹倍率は通常攻撃だけ（必殺・JG 反射は別経路で掛からない）。
+                float poiseContribution = PoiseDamageCalculator.Compute(d.PoiseDamage, poiseSituational,
+                    GrowthNormalPoiseMultiplier, 1f);
 
                 // ひるませ値は状況補正なし（背後・攻撃中の補正対象外）。
                 float flinchValue = FlinchValueCalculator.Compute(d.FlinchPower, 1f, 1f);

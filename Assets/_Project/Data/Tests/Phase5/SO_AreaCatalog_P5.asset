@@ -31,6 +31,15 @@ MonoBehaviour:
   _initialShrineId:
     _value: 
   _kibidangoBaseCapacity: 3
+  _kibidangoBaseHeal: 0
+  _kibidangoUseSeconds: 2
+  _kibidangoCommitSeconds: 1.5
+  _kibidangoMoveSpeedMultiplier: 0.2
+  _refundRightsInitial: 3
+  _refundRightsPerChapter: 3
+  _refundRightsMax: 6
+  _chapterIds: []
+  _saveSlotName: slot0
   _items: []
   _growthNodes: []
   _grantOnceRewardIds: []

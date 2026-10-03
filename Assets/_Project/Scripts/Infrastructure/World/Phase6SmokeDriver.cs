@@ -175,6 +175,9 @@ namespace Momotaro.Infrastructure.World
                 case "perf":
                     yield return Perf();
                     break;
+                case "growth":
+                    yield return GrowthThenExit();
+                    break;
                 default:
                     _result["error"] = "unknown mode";
                     Finish();
@@ -291,7 +294,127 @@ namespace Momotaro.Infrastructure.World
             _result["savedRevision"] = Saves.Coordinator.SavedRevision.ToString(CultureInfo.InvariantCulture);
             _result["dirtyAfterContinue"] = Saves.Coordinator.IsDirty ? "true" : "false";
             WriteParty("after");
+            WriteProgress("after");
             Finish();
+        }
+
+        // ---------------------------------------------------------------- P6B 19：成長・権利・使用後の残数と HP
+
+        /// <summary>
+        /// P6B の実ビルド確認（<c>-p6a-smoke growth</c>）：New Game → 初期お地蔵様のメニューで取得・払い戻し →
+        /// HP を下げて<b>仮想キーボードの F</b>できびだんごを使い、確定まで待つ → 値を書き出して正常終了の保存 → 終了。
+        /// 別プロセスの <c>continue</c> が同じ値を書き出すかを Editor 側で突き合わせる。
+        /// </summary>
+        private IEnumerator GrowthThenExit()
+        {
+            yield return StartNewGame();
+            if (_result.ContainsKey("error"))
+            {
+                Finish();
+                yield break;
+            }
+
+            GameSessionState session = GameSessionProvider.Current;
+            CampaignShrineService shrines = BootstrapServices.Get<CampaignShrineService>();
+            CampaignCatalog campaign = BootstrapServices.Get<AreaTransitionService>().Catalog.Campaign;
+            Momotaro.Gameplay.Interaction.AreaInteractionOutcome opened = shrines.OnShrineInteracted(campaign.InitialShrineId);
+            if (!shrines.IsMenuOpen)
+            {
+                _result["error"] = "shrine menu did not open: " + opened.Message;
+                Finish();
+                yield break;
+            }
+
+            string[] buy = { "growth_vit_01", "growth_atk_01", "growth_atk_02", "growth_atk_stock_01", "growth_sta_01" };
+            foreach (string id in buy)
+            {
+                ShrineMenuResult r = shrines.PurchaseGrowth(new Momotaro.Core.Identification.StableId(id));
+                if (r != ShrineMenuResult.GrowthPurchased)
+                {
+                    _result["error"] = "purchase " + id + " failed: " + shrines.Message;
+                    Finish();
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            if (shrines.RefundGrowth(new Momotaro.Core.Identification.StableId("growth_sta_01")) != ShrineMenuResult.GrowthRefunded)
+            {
+                _result["error"] = "refund failed: " + shrines.Message;
+                Finish();
+                yield break;
+            }
+
+            shrines.Close();
+            yield return null;
+            yield return null;
+
+            if (!TryPort(out AreaActorTransferPort port) || port.PlayerVitals == null || port.PlayerState == null)
+            {
+                _result["error"] = "no player";
+                Finish();
+                yield break;
+            }
+
+            port.PlayerVitals.Vitals.Health.SetCurrent(40);
+            Keyboard keyboard = InputSystem.AddDevice<Keyboard>("P6BSmokeKeyboard");
+            yield return null;
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.F));
+            yield return null;
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            float deadline = Time.realtimeSinceStartup + 8f;
+            while (port.PlayerState.ItemUseCompleteCount == 0 && port.PlayerState.ItemUseInterruptCount == 0
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            _result["useStarted"] = port.PlayerState.ItemUseStartCount.ToString(CultureInfo.InvariantCulture);
+            _result["useCommitted"] = port.PlayerState.ItemUseCommitCount.ToString(CultureInfo.InvariantCulture);
+            _result["useRejection"] = port.PlayerState.LastItemUseRejection.ToString();
+            _result["adventureId"] = session.AdventureId;
+            _result["kibidango"] = session.Kibidango.ToString(CultureInfo.InvariantCulture);
+            _result["area"] = CurrentAreaProvider.Current.AreaId.Value;
+            WriteParty("before");
+            WriteProgress("before");
+
+            SaveExitOutcome outcome = SaveExitOutcome.TimedOut;
+            yield return Saves.SaveBeforeExit(o => outcome = o);
+            _result["exitOutcome"] = outcome.ToString();
+            Finish();
+        }
+
+        /// <summary>成長・権利・徳・上限・能力（P6B 19）を書き出す。</summary>
+        private void WriteProgress(string prefix)
+        {
+            GameSessionState session = GameSessionProvider.Current;
+            AreaTransitionService t = BootstrapServices.Get<AreaTransitionService>();
+            CampaignCatalog campaign = t != null && t.Catalog != null ? t.Catalog.Campaign : null;
+            if (session == null || campaign == null)
+            {
+                return;
+            }
+
+            var ids = new List<string>();
+            foreach (GrowthInfo g in campaign.GrowthNodes)
+            {
+                if (session.Progress.HasGrowth(g.GrowthId))
+                {
+                    ids.Add(g.GrowthId.Value);
+                }
+            }
+
+            _result[prefix + "Growth"] = string.Join("+", ids);
+            _result[prefix + "RefundRights"] = session.Progress.RefundRights.ToString(CultureInfo.InvariantCulture);
+            _result[prefix + "Virtue"] = session.Progress.AvailableVirtue.ToString(CultureInfo.InvariantCulture);
+            _result[prefix + "Capacity"] = campaign.KibidangoCapacityOf(session.Progress).ToString(CultureInfo.InvariantCulture);
+            if (TryPort(out AreaActorTransferPort port) && port.PlayerVitals != null && port.PlayerState != null)
+            {
+                _result[prefix + "MaxHp"] = port.PlayerVitals.MaxHp.ToString(CultureInfo.InvariantCulture);
+                _result[prefix + "AttackMultiplier"] =
+                    port.PlayerState.GrowthAttackHpMultiplier.ToString("0.00", CultureInfo.InvariantCulture);
+            }
         }
 
         // ---------------------------------------------------------------- 通常の終了要求（P6A 22・23。レビュー R1）

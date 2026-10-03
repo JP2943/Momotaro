@@ -52,5 +52,12 @@ namespace Momotaro.Gameplay.Player
         /// 再読込で初期化する。仮表示は現在 Facing の Hurt 最終 Frame 保持＋低彩度（仕様書 §3.1/§4）。
         /// </summary>
         Defeated = 10,
+
+        /// <summary>
+        /// 道具使用（P6B 03。きびだんご）。2.0 秒の全動作。歩行速度の 20% で移動・向き変更可。攻撃・必殺・ガード・回避・
+        /// 追加使用・Interact を受け付けない。通常エリア遷移も受け付けない（<c>IsFreeToTravel</c> は Idle／Move だけ）。
+        /// 優先度は Hurt・GuardBreak・Defeated より下（被弾で中断する）。
+        /// </summary>
+        UseItem = 11,
     }
 }

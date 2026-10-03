@@ -87,6 +87,15 @@
                     "initialStateCheck": false
                 },
                 {
+                    "name": "UseKibidango",
+                    "type": "Button",
+                    "id": "df01ddea-ff1d-4d5e-84da-fad4092bd239",
+                    "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
                     "name": "Map",
                     "type": "Button",
                     "id": "1f47079b-acb2-428d-b3bf-fc6f56a18532",
@@ -400,6 +409,28 @@
                     "processors": "",
                     "groups": "Gamepad",
                     "action": "Pause",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "474079a2-5c35-43ba-980d-20ada0ac3e71",
+                    "path": "<Keyboard>/f",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard&Mouse",
+                    "action": "UseKibidango",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "3011da87-9cbd-4dfc-ae67-86539de26d58",
+                    "path": "<Gamepad>/leftTrigger",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Gamepad",
+                    "action": "UseKibidango",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

@@ -136,6 +136,94 @@ namespace Momotaro.Editor.Phase6
             return new BuildResult(ok, ok ? "実ビルドの別プロセス確認と計測が終わりました。" : "実ビルドの確認に失敗があります。", outputs);
         }
 
+        /// <summary>
+        /// P6B の実ビルド確認（P6B 19）：P6B の 4 Scene で Windows ビルドを作り、別プロセスで
+        /// 成長の取得・払い戻し・きびだんご使用（仮想キーボードの F）→ 正常終了の保存 → 別プロセスで Continue し、
+        /// 成長・権利・徳・上限・使用後の残数と HP・最大 HP・刀の倍率が同じに戻ることを確かめる。
+        /// </summary>
+        public static BuildResult BuildAllP6B()
+        {
+            Phase6Profile previous = Phase6WorldIds.Profile;
+            Phase6WorldIds.Profile = Phase6Profile.P6B;
+            try
+            {
+                return BuildP6BCurrent();
+            }
+            finally
+            {
+                Phase6WorldIds.Profile = previous;
+            }
+        }
+
+        private static BuildResult BuildP6BCurrent()
+        {
+            var outputs = new List<string>();
+            string root = Directory.GetParent(Application.dataPath).FullName;
+            string work = Path.Combine(root, "_bridge/p6b_smoke");
+            Directory.CreateDirectory(work);
+            string saves = Path.Combine(work, "saves_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss"));
+            Directory.CreateDirectory(saves);
+            string exe = Path.Combine(root, "Builds/P6B", "Momotaro_P6B.exe");
+
+            var options = new BuildPlayerOptions
+            {
+                scenes = new[]
+                {
+                    Phase6WorldIds.TitleScenePath, Phase6WorldIds.AreaAScenePath,
+                    Phase6WorldIds.AreaBScenePath, Phase6WorldIds.AreaCScenePath,
+                },
+                locationPathName = exe,
+                target = BuildTarget.StandaloneWindows64,
+                options = BuildOptions.None,
+            };
+
+            var watch = Stopwatch.StartNew();
+            BuildReport report = BuildPipeline.BuildPlayer(options);
+            watch.Stop();
+            outputs.Add("ビルド: " + report.summary.result + "（" + watch.Elapsed.TotalSeconds.ToString("0") + " 秒、"
+                + (report.summary.totalSize / (1024 * 1024)) + " MB、エラー " + report.summary.totalErrors + "）→ " + exe);
+            if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
+            {
+                foreach (BuildStep step in report.steps)
+                {
+                    foreach (BuildStepMessage m in step.messages)
+                    {
+                        if (m.type == LogType.Error || m.type == LogType.Exception)
+                        {
+                            outputs.Add("[ビルドエラー] " + m.content);
+                        }
+                    }
+                }
+
+                return new BuildResult(false, "ビルドに失敗しました。", outputs);
+            }
+
+            // 画面あり（実入力の F を通すため）。
+            bool ok = RunPlayer(exe, "growth", saves, work, 0, batch: false, outputs, out Dictionary<string, string> grown);
+            ok &= RunPlayer(exe, "continue", saves, work, 0, batch: true, outputs, out Dictionary<string, string> continued,
+                tag: "continue_after_growth");
+            if (ok)
+            {
+                ok &= Expect(outputs, "実入力 F で使用が確定した", "1", Get(grown, "useCommitted"));
+                ok &= Expect(outputs, "正常終了の保存が成功", "Saved", Get(grown, "exitOutcome"));
+                ok &= Expect(outputs, "別プロセスの Continue が同じ冒険", Get(grown, "adventureId"), Get(continued, "adventureId"));
+                ok &= Expect(outputs, "プロセスが別", "different",
+                    Get(grown, "processId") != Get(continued, "processId") ? "different" : "same");
+                ok &= Expect(outputs, "成長（取得・払い戻し後）", Get(grown, "beforeGrowth"), Get(continued, "afterGrowth"));
+                ok &= Expect(outputs, "払い戻し権利", Get(grown, "beforeRefundRights"), Get(continued, "afterRefundRights"));
+                ok &= Expect(outputs, "使用可能な徳", Get(grown, "beforeVirtue"), Get(continued, "afterVirtue"));
+                ok &= Expect(outputs, "きびだんごの上限", Get(grown, "beforeCapacity"), Get(continued, "afterCapacity"));
+                ok &= Expect(outputs, "使用後の残数", Get(grown, "kibidango"), Get(continued, "kibidango"));
+                ok &= Expect(outputs, "使用後の HP（再度回復しない）", Get(grown, "beforePlayerHp"), Get(continued, "afterPlayerHp"));
+                ok &= Expect(outputs, "最大 HP（基礎値から作り直し）", Get(grown, "beforeMaxHp"), Get(continued, "afterMaxHp"));
+                ok &= Expect(outputs, "刀の倍率", Get(grown, "beforeAttackMultiplier"), Get(continued, "afterAttackMultiplier"));
+                ok &= Expect(outputs, "Continue 直後は未保存なし", "false", Get(continued, "dirtyAfterContinue"));
+            }
+
+            return new BuildResult(ok, ok ? "P6B の実ビルド別プロセス確認が終わりました。" : "P6B の実ビルド確認に失敗があります。",
+                outputs);
+        }
+
         private static string Get(Dictionary<string, string> d, string key) =>
             d != null && d.TryGetValue(key, out string v) ? v : "(なし)";
 

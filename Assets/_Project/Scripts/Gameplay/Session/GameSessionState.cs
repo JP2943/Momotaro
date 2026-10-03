@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
 using Momotaro.Data.World;
@@ -215,19 +216,30 @@ namespace Momotaro.Gameplay.Session
         /// New Game の初期化（P6 仕様 §5 末尾）。<b>一度だけ</b>：冒険 ID の発行、初期お地蔵様の登録と
         /// 死亡・中断の両地点、きびだんごの充填。2 回目以降は何もしない（古い保存の欠損をこの初期値で隠さない）。
         /// </summary>
-        public bool InitializeNewAdventure(string adventureId, ShrineInfo initialShrine, int kibidangoCapacity)
+        public bool InitializeNewAdventure(string adventureId, ShrineInfo initialShrine, int kibidangoCapacity,
+            int refundRights = 0)
         {
             if (!string.IsNullOrEmpty(AdventureId) || string.IsNullOrEmpty(adventureId) || !initialShrine.IsValid)
             {
                 return false;
             }
 
-            AdventureId = adventureId;
-            _registeredShrines.Add(initialShrine.ShrineId);
-            Checkpoint = initialShrine.ShrineId;
-            Resume = ResumeAnchor.AtShrine(initialShrine.AreaId, initialShrine.ShrineId);
-            Kibidango = kibidangoCapacity < 0 ? 0 : kibidangoCapacity;
-            _log.Touch("new_adventure", autosave: true);
+            _log.BeginBatch("new_adventure");
+            try
+            {
+                AdventureId = adventureId;
+                _registeredShrines.Add(initialShrine.ShrineId);
+                Checkpoint = initialShrine.ShrineId;
+                Resume = ResumeAnchor.AtShrine(initialShrine.AreaId, initialShrine.ShrineId);
+                Kibidango = kibidangoCapacity < 0 ? 0 : kibidangoCapacity;
+                _progress.SetInitialRefundRights(refundRights); // P6B 02：初期の払い戻し権利。
+                _log.Touch("new_adventure", autosave: true);
+            }
+            finally
+            {
+                _log.EndBatch();
+            }
+
             return true;
         }
 
@@ -296,6 +308,33 @@ namespace Momotaro.Gameplay.Session
 
             Kibidango -= count;
             _log.Touch("kibidango_used", autosave: false);
+            return true;
+        }
+
+        /// <summary>
+        /// きびだんご使用の確定（P6B 03。仕様 §6〜§8）。<b>残数 -1 と回復を同じ 1 更新</b>で行い、版を進めて保存要求を
+        /// 1 件出す。回復の適用は <paramref name="applyHeal"/>（主人公の Vitals）。残数が足りなければ何も変えず false。
+        /// 保存の購読者はまとめの外（両方が終わった後）でしか呼ばれないので、HP と残数の食い違った組は採取されない。
+        /// </summary>
+        public bool TryCommitKibidangoUse(Action applyHeal)
+        {
+            if (Kibidango < 1)
+            {
+                return false;
+            }
+
+            _log.BeginBatch("kibidango_used");
+            try
+            {
+                Kibidango -= 1;
+                applyHeal?.Invoke();
+                _log.Touch("kibidango_used", autosave: true);
+            }
+            finally
+            {
+                _log.EndBatch();
+            }
+
             return true;
         }
 

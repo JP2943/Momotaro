@@ -1,0 +1,384 @@
+{
+  "version": 1,
+  "phase": "P6B",
+  "note": "P6B（成長ときびだんご）の必須テスト一覧。P6B 仕様 v1.0 §11 の ID を実際の完全修飾テスト名へ対応させる。テストランナーの外で確認する要求（P6B19 実ビルドの別プロセス復元＝ブリッジ op p6b-player-smoke、既存必須一覧 P4／P5／P5.5／P6A の再照合）は requirements に載せず、P6B_受入条件対応表.md に証跡を記録する。Builder／Validator の検査（build-phase6b-world／validate-phase6b-world）は P6B17 の補助で、テストではない。",
+  "stages": [
+    "P6B-01",
+    "P6B-02",
+    "P6B-03",
+    "P6B-04"
+  ],
+  "requirements": [
+    {
+      "id": "P6B01",
+      "summary": "9ノードの前提と費用、三方向混合、未知ID・取得済み・徳不足・前提不足・場所外の無変更",
+      "stage": "P6B-01"
+    },
+    {
+      "id": "P6B02",
+      "summary": "各効果が設定値どおり。全取得の合計、刀と仲間・通常体幹とジャスガ等への適用範囲",
+      "stage": "P6B-01"
+    },
+    {
+      "id": "P6B03",
+      "summary": "取得後に新上限で休息・補充・普通敵周期更新・保存が各一回",
+      "stage": "P6B-01"
+    },
+    {
+      "id": "P6B04",
+      "summary": "基礎値からの再計算、取得と取消の反復、遷移・非活動Area再入場・死亡・Loadで非累積",
+      "stage": "P6B-01"
+    },
+    {
+      "id": "P6B05",
+      "summary": "末端のみ取消可能。複数子を持つテスト用前提グラフでも親を誤って取り消せない",
+      "stage": "P6B-02"
+    },
+    {
+      "id": "P6B06",
+      "summary": "実支出返還、累計不変、使用済み減少、権利一回減少、価格変更後の返還と再取得",
+      "stage": "P6B-02"
+    },
+    {
+      "id": "P6B07",
+      "summary": "払い戻し後の上限低下と休息、残数上限、普通敵一周期。不成立・取消・連打時の無変更または一回処理",
+      "stage": "P6B-02"
+    },
+    {
+      "id": "P6B08",
+      "summary": "初期3・上限6・章ごと＋3。上限で追加0の章も処理済み。Load・再通知で重複追加なし",
+      "stage": "P6B-02"
+    },
+    {
+      "id": "P6B09",
+      "summary": "使用可能条件と禁止状態、HP満タン・残数0、同時入力、長押しで連続使用なし",
+      "stage": "P6B-03"
+    },
+    {
+      "id": "P6B10",
+      "summary": "2秒動作、1.5秒で回復と1個消費を同時に一回確定。0.5秒後隙、20％移動、禁止行動・無敵付与なし",
+      "stage": "P6B-03"
+    },
+    {
+      "id": "P6B11",
+      "summary": "確定前後の実被弾、中断、死亡、無敵中の無効接触、かばうとの整合。同フレーム競合の規則",
+      "stage": "P6B-03"
+    },
+    {
+      "id": "P6B12",
+      "summary": "Pause・ヒットストップ・長いフレームで時間と一回確定が正しい。開始後HP満タンの扱い",
+      "stage": "P6B-03"
+    },
+    {
+      "id": "P6B13",
+      "summary": "使用中の通常遷移禁止と場外防止、終了後に離れ直さず外向き入力で遷移可能",
+      "stage": "P6B-03"
+    },
+    {
+      "id": "P6B14",
+      "summary": "使用確定の保存要求、HPと残数の整合、使用中Snapshot非破壊、確定前後の正常終了とContinue",
+      "stage": "P6B-03"
+    },
+    {
+      "id": "P6B15",
+      "summary": "保存失敗から復帰しても使用を巻き戻さず、権利・徳・取得の成立を維持。追加要求を取りこぼさない",
+      "stage": "P6B-03"
+    },
+    {
+      "id": "P6B16",
+      "summary": "新規保存項目を非初期値でRoundTrip、旧版移行、欠損・未知ID・前提矛盾拒否、P6A保存維持",
+      "stage": "P6B-02"
+    },
+    {
+      "id": "P6B17",
+      "summary": "Builder再生成、StableId・前提循環・未知参照・値検査。生成後もUIと入力とVFXが接続",
+      "stage": "P6B-04"
+    },
+    {
+      "id": "P6B18",
+      "summary": "UIの効果・費用・返還表示、ゲームパッド操作、キャンセル、解放待ちとGameplayへの入力漏れなし",
+      "stage": "P6B-04"
+    }
+  ],
+  "tests": [
+    {
+      "requirementId": "P6B01",
+      "stage": "P6B-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.ShippedTree_NineNodes_ThreeDirections_CostsAndPrerequisites",
+      "requirementIds": [
+        "P6B17"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B01",
+      "stage": "P6B-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Purchase_MixedDirections_AndRejectionsChangeNothing",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B01",
+      "stage": "P6B-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Purchase_InsufficientVirtue_ChangesNothing",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B02",
+      "stage": "P6B-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Effects_EachNodeAndFullTree_AddUp",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B02",
+      "stage": "P6B-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Effects_AppliedToPlayerVitals_RecomputedFromBase",
+      "requirementIds": [
+        "P6B04"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B03",
+      "stage": "P6B-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Purchase_RestsOnceAtNewCaps_RefillsAndSavesOnce",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B04",
+      "stage": "P6B-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.AcquireRefundRepeated_EffectsAlwaysRebuiltFromBase",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B05",
+      "stage": "P6B-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Refund_OnlyLeaves_WithBranchingFixture",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B06",
+      "stage": "P6B-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Refund_ReturnsActualSpend_PriceChangeReacquireAtNewPrice",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B07",
+      "stage": "P6B-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Refund_LowersCaps_RestsOnce_RejectionsAndDoubleInputChangeNothing",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B08",
+      "stage": "P6B-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.ChapterRights_Initial3_PlusThreePerChapter_Cap6_NoDuplicates",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B08",
+      "stage": "P6B-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.ChapterRights_JoinTheCallersSaveUnit",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B16",
+      "stage": "P6B-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Save_V3_RoundTripsRightsChaptersGrowthAndStock",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B16",
+      "stage": "P6B-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Save_V1AndV2_MigrateToInitialRightsAndEmptyChapters",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B16",
+      "stage": "P6B-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.Save_V3_RejectsBadRefundGrowthAndStock",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B17",
+      "stage": "P6B-04",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BGrowthTests.GraphCheck_RejectsCycleForeignReferenceZeroEffectAndNegative",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B09",
+      "stage": "P6B-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.Start_RejectsFullHpEmptyStockSameFrameActionAndBusy_HoldDoesNotRepeat",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B10",
+      "stage": "P6B-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.Use_CommitsOnceAt1_5_EndsAt2_0_SlowMove_NoInvulnerability_DropsForbiddenInputs",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B11",
+      "stage": "P6B-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.Hits_InterruptBeforeCommit_KeepAfter_SameFrameHitWins_IgnoredContactsContinue",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B12",
+      "stage": "P6B-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.Time_PauseAndFreezeStop_LongFrameCommitsOnce_FullHpAfterStartClamps_StolenStockAborts",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B14",
+      "stage": "P6B-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.Commit_RequestsOneSave_WithHpAndStockConsistent",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B13",
+      "stage": "P6B-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.ExitGate_NoRequestWhileUsing_ThenRequestsWithoutRelease",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B02",
+      "stage": "P6B-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6BKibidangoUseTests.GrowthMultipliers_DoNotTouchJustGuardReflection",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B01",
+      "stage": "P6B-01",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Tree_RealInput_AcquireAllRefundLeaf_EffectsOnPlayer_ContinueRestores",
+      "requirementIds": [
+        "P6B02",
+        "P6B03",
+        "P6B04",
+        "P6B07",
+        "P6B16",
+        "P6B17",
+        "P6B18"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B09",
+      "stage": "P6B-03",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_RealKeyAndTrigger_CommitSaves_ContinueRestoresWithoutReheal",
+      "requirementIds": [
+        "P6B10",
+        "P6B14"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B04",
+      "stage": "P6B-01",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_HitInterrupts_DeathTakesPrecedence",
+      "requirementIds": [
+        "P6B11"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B13",
+      "stage": "P6B-03",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_AtBoundary_NoTransitionWhileUsing_ThenTransitionsWithoutRelease",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B02",
+      "stage": "P6B-01",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.GrowthMultipliers_RealHitWindow_SwordAndSpecialScaled_PoiseOnlyNormal",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6B15",
+      "stage": "P6B-03",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.SaveFailure_GrowthRefundAndUseStay_RetryWritesLatest",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    }
+  ],
+  "allowedSkips": []
+}

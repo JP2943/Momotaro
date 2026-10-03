@@ -59,6 +59,17 @@ namespace Momotaro.Infrastructure.Save
             return _saves.EnsureCoordinator().Store.DecideLoad();
         }
 
+        /// <summary>campaign の保存スロットで覗く（P6B。campaign ごとに保存領域を分ける）。</summary>
+        public SaveLoadDecision PeekSave(AreaCatalogData catalogData)
+        {
+            if (catalogData != null)
+            {
+                _saves.UseSlot(catalogData.SaveSlotName);
+            }
+
+            return PeekSave();
+        }
+
         /// <summary>
         /// New Game（仕様 §5 末尾・§10）。前の冒険を退避し、新しい Session を作って初期お地蔵様の入口へ向かう。
         /// </summary>
@@ -73,6 +84,12 @@ namespace Momotaro.Infrastructure.Save
             if (!campaign.TryGetShrine(campaign.InitialShrineId, out ShrineInfo initial))
             {
                 error = "初期お地蔵様を解決できません。";
+                return false;
+            }
+
+            if (!_saves.UseSlot(campaign.SaveSlotName))
+            {
+                error = "別の冒険が結ばれたままです（保存スロットを切り替えられません）。";
                 return false;
             }
 
@@ -96,7 +113,7 @@ namespace Momotaro.Infrastructure.Save
 
             GameSessionState session = _sessions.StartNewSession(EncounterClearPolicy.Permanent);
             session.InitializeNewAdventure(Guid.NewGuid().ToString("N"), initial,
-                campaign.KibidangoCapacityOf(session.Progress));
+                campaign.KibidangoCapacityOf(session.Progress), campaign.RefundRightsInitial);
             _saves.BindAdventure(session, campaign, -1);
 
             _transitions.Bind(catalogData, new LauncherTravelConditions());
@@ -126,6 +143,12 @@ namespace Momotaro.Infrastructure.Save
 
             if (!TryBuildCampaign(catalogData, out AreaCatalog catalog, out error))
             {
+                return false;
+            }
+
+            if (!_saves.UseSlot(catalog.Campaign.SaveSlotName))
+            {
+                error = "別の冒険が結ばれたままです（保存スロットを切り替えられません）。";
                 return false;
             }
 

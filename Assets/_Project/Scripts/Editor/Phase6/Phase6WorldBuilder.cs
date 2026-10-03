@@ -51,9 +51,42 @@ namespace Momotaro.Editor.Phase6
                 result.Message, "OK");
         }
 
-        /// <summary>全部作る（Data → A・B → C → カタログ → タイトル → Build Settings）。</summary>
-        public static BuildResult BuildAll()
+        [MenuItem("Momotaro/Phase 6B/Generate Growth World")]
+        private static void GenerateP6BInteractive()
         {
+            BuildResult result = BuildP6B();
+            EditorUtility.DisplayDialog(result.Success ? "P6B 検証ワールド" : "P6B 検証ワールド（失敗）",
+                result.Message, "OK");
+        }
+
+        /// <summary>全部作る（P6A。従来どおり）。</summary>
+        public static BuildResult BuildAll() => Build(Phase6Profile.P6A);
+
+        /// <summary>
+        /// P6B の検証ワールドを作る（P6B 04。P6A と同じ 3 エリア構成を設定で再利用し、専用 campaign・Data・Scene を生成）。
+        /// P6A の生成物には触れない。
+        /// </summary>
+        public static BuildResult BuildP6B() => Build(Phase6Profile.P6B);
+
+        /// <summary>指定の設定で全部作る（Data → A・B → C → カタログ → タイトル → Build Settings）。</summary>
+        public static BuildResult Build(Phase6Profile profile)
+        {
+            Phase6Profile previous = Phase6WorldIds.Profile;
+            Phase6WorldIds.Profile = profile ?? Phase6Profile.P6A;
+            try
+            {
+                return BuildCurrent();
+            }
+            finally
+            {
+                Phase6WorldIds.Profile = previous;
+            }
+        }
+
+        private static BuildResult BuildCurrent()
+        {
+            bool p6b = Phase6WorldIds.Profile.IsP6B;
+            string tag = Phase6WorldIds.Profile.Tag;
             if (Phase5ExplorationBuilder.TryFindDirtyScene(out string dirty))
             {
                 return new BuildResult(false,
@@ -73,18 +106,27 @@ namespace Momotaro.Editor.Phase6
             Phase5Placeholder.EnsureFolder(Phase6WorldIds.SceneFolder);
 
             // ---- 1. Data（Scene が参照するので先に作る） ----
-            EnsureReward("ArriveA", "reward_p6a_arrive_a", "A 初到達", Phase6TrialValues.ArrivalA, true);
-            EnsureReward("ArriveB", "reward_p6a_arrive_b", "B 初到達", Phase6TrialValues.ArrivalB, true);
-            EnsureReward("ArriveC", "reward_p6a_arrive_c", "C 初到達", Phase6TrialValues.ArrivalC, true);
-            EnsureReward("Kill", "reward_p6a_kill", "個別撃破", Phase6TrialValues.Kill, false);
-            EnsureReward("ClearBNorth", "reward_p6a_clear_b_north", "B 北の殲滅", Phase6TrialValues.EncounterClear, true);
-            EnsureReward("ClearBSouth", "reward_p6a_clear_b_south", "B 南の殲滅", Phase6TrialValues.EncounterClear, true);
-            EnsureReward("ClearCBoss", "reward_p6a_clear_c_boss", "C 仮ボス", Phase6TrialValues.EncounterClear, true);
-            EnsureReward("FindScroll", "reward_p6a_find_scroll", "発見（巻物）", Phase6TrialValues.Discovery, true);
+            // P6B は A の初到達で 300（全取得 270 が可能。仕様 §10）。ほかの探索報酬は P6A と同じ値（実報酬の経路の確認用）。
+            EnsureReward("ArriveA", Phase6WorldIds.RewardId("arrive_a"), "A 初到達",
+                p6b ? Phase6BTrialValues.ArrivalA : Phase6TrialValues.ArrivalA, true);
+            EnsureReward("ArriveB", Phase6WorldIds.RewardId("arrive_b"), "B 初到達", Phase6TrialValues.ArrivalB, true);
+            EnsureReward("ArriveC", Phase6WorldIds.RewardId("arrive_c"), "C 初到達", Phase6TrialValues.ArrivalC, true);
+            EnsureReward("Kill", Phase6WorldIds.RewardId("kill"), "個別撃破", Phase6TrialValues.Kill, false);
+            EnsureReward("ClearBNorth", Phase6WorldIds.RewardId("clear_b_north"), "B 北の殲滅", Phase6TrialValues.EncounterClear, true);
+            EnsureReward("ClearBSouth", Phase6WorldIds.RewardId("clear_b_south"), "B 南の殲滅", Phase6TrialValues.EncounterClear, true);
+            EnsureReward("ClearCBoss", Phase6WorldIds.RewardId("clear_c_boss"), "C 仮ボス", Phase6TrialValues.EncounterClear, true);
+            EnsureReward("FindScroll", Phase6WorldIds.RewardId("find_scroll"), "発見（巻物）", Phase6TrialValues.Discovery, true);
             AssetDatabase.SaveAssets();
             var data = new WorldData();
 
-            EnsureGrowth();
+            if (p6b)
+            {
+                EnsureP6BGrowth();
+            }
+            else
+            {
+                EnsureGrowth();
+            }
             EnsureEncounter(Phase6WorldIds.EncounterBNorthPath, Phase6WorldIds.EncounterBNorth,
                 "B 北の遭遇", new[] { Phase5AreaIds.EnemyMelee, Phase5AreaIds.EnemyMelee },
                 data.ClearBNorth, Phase6WorldIds.FlagBCache, isBoss: false);
@@ -109,7 +151,7 @@ namespace Momotaro.Editor.Phase6
 
             // ---- 3. C ----
             AreaDefinition areaC = Phase5ExplorationBuilder.EnsureAreaDefinition(
-                Phase6WorldIds.AreaCDataPath, Phase6WorldIds.AreaC, "エリア C（P6A 検証）",
+                Phase6WorldIds.AreaCDataPath, Phase6WorldIds.AreaC, "エリア C（" + tag + " 検証）",
                 Phase6WorldIds.AreaCScenePath,
                 new[]
                 {
@@ -160,7 +202,7 @@ namespace Momotaro.Editor.Phase6
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             return new BuildResult(true,
-                "P6A 検証ワールド：Scene 4 件（タイトル／A／B／C）、接続 " + connections.Connections.Count
+                tag + " 検証ワールド：Scene 4 件（タイトル／A／B／C）、接続 " + connections.Connections.Count
                 + " 件、Build Settings へ " + added + " 件を追加。", outputs);
         }
 
@@ -185,6 +227,26 @@ namespace Momotaro.Editor.Phase6
             public RewardData ClearCBoss => Reward("ClearCBoss");
             public RewardData FindScroll => Reward("FindScroll");
             public SkillNodeData Growth => AssetDatabase.LoadAssetAtPath<SkillNodeData>(Phase6WorldIds.GrowthVitalityPath);
+
+            /// <summary>この campaign の成長ノード（P6A は 1 つ、P6B は 9 つ。定義順）。</summary>
+            public List<SkillNodeData> GrowthNodes
+            {
+                get
+                {
+                    if (!Phase6WorldIds.Profile.IsP6B)
+                    {
+                        return new List<SkillNodeData> { Growth };
+                    }
+
+                    var list = new List<SkillNodeData>();
+                    foreach (Phase6BTrialValues.Node n in Phase6BTrialValues.Nodes)
+                    {
+                        list.Add(AssetDatabase.LoadAssetAtPath<SkillNodeData>(Phase6WorldIds.GrowthNodePath(n.FileName)));
+                    }
+
+                    return list;
+                }
+            }
             public EncounterData EncounterBNorth => AssetDatabase.LoadAssetAtPath<EncounterData>(Phase6WorldIds.EncounterBNorthPath);
             public EncounterData EncounterBSouth => AssetDatabase.LoadAssetAtPath<EncounterData>(Phase6WorldIds.EncounterBSouthPath);
             public EncounterData EncounterCBoss => AssetDatabase.LoadAssetAtPath<EncounterData>(Phase6WorldIds.EncounterCBossPath);
@@ -224,6 +286,45 @@ namespace Momotaro.Editor.Phase6
             return asset;
         }
 
+        /// <summary>
+        /// P6B の浅い 9 ノード（仕様 §3）。先に全ノードを作ってから前提を結ぶ（参照先が未作成で null にならないよう）。
+        /// </summary>
+        private static void EnsureP6BGrowth()
+        {
+            var created = new Dictionary<string, SkillNodeData>();
+            foreach (Phase6BTrialValues.Node n in Phase6BTrialValues.Nodes)
+            {
+                string path = Phase6WorldIds.GrowthNodePath(n.FileName);
+                var asset = AssetDatabase.LoadAssetAtPath<SkillNodeData>(path);
+                if (asset == null)
+                {
+                    asset = ScriptableObject.CreateInstance<SkillNodeData>();
+                    AssetDatabase.CreateAsset(asset, path);
+                }
+
+                created[n.Id] = asset;
+            }
+
+            foreach (Phase6BTrialValues.Node n in Phase6BTrialValues.Nodes)
+            {
+                SkillNodeData asset = created[n.Id];
+                Phase5ExplorationBuilder.SetIdentity(asset, new StableId(n.Id), n.Name);
+                var so = new SerializedObject(asset);
+                so.FindProperty("_description").stringValue = n.Description;
+                so.ApplyModifiedPropertiesWithoutUndo();
+                var prerequisites = new List<SkillNodeData>();
+                if (!string.IsNullOrEmpty(n.Prerequisite))
+                {
+                    prerequisites.Add(created[n.Prerequisite]);
+                }
+
+                asset.EditorSetP6B(n.Cost, n.Tier, n.MaxHp, n.Attack, n.Stamina, n.Poise, n.Heal, n.Capacity, prerequisites);
+                EditorUtility.SetDirty(asset);
+            }
+
+            AssetDatabase.SaveAssets();
+        }
+
         private static EncounterData EnsureEncounter(string path, StableId id, string displayName, StableId[] enemies,
             RewardData clearReward, StableId unlockFlag, bool isBoss)
         {
@@ -259,7 +360,8 @@ namespace Momotaro.Editor.Phase6
                 AssetDatabase.CreateAsset(asset, Phase6WorldIds.ConnectionDataPath);
             }
 
-            Phase5ExplorationBuilder.SetIdentity(asset, Phase6WorldIds.Connections, "P6A エリア接続（東西 A–B–C）");
+            Phase5ExplorationBuilder.SetIdentity(asset, Phase6WorldIds.Connections,
+                Phase6WorldIds.Profile.Tag + " エリア接続（東西 A–B–C）");
 
             var aToB = new AreaConnectionDefinition();
             aToB.Configure(Phase6WorldIds.ConnectionAToB, Phase6WorldIds.AreaA, Phase6WorldIds.ExitAEast,
@@ -325,7 +427,8 @@ namespace Momotaro.Editor.Phase6
                 AssetDatabase.CreateAsset(asset, Phase6WorldIds.CatalogDataPath);
             }
 
-            Phase5ExplorationBuilder.SetIdentity(asset, Phase6WorldIds.Campaign, "P6A 検証 campaign");
+            bool p6b = Phase6WorldIds.Profile.IsP6B;
+            Phase5ExplorationBuilder.SetIdentity(asset, Phase6WorldIds.Campaign, Phase6WorldIds.Profile.Tag + " 検証 campaign");
             asset.EditorSet(new List<AreaDefinition> { a, b, c }, Phase6WorldIds.AreaA, Phase5AreaIds.AreaAStart);
 
             var shrineA = new ShrineDefinition();
@@ -339,8 +442,8 @@ namespace Momotaro.Editor.Phase6
 
             asset.EditorSetCampaign(EncounterClearPolicy.Permanent, 1,
                 new List<ShrineDefinition> { shrineA, shrineC, shrineC2 }, Phase6WorldIds.ShrineA,
-                Phase6TrialValues.KibidangoCapacity, new List<ItemDefinition> { tonic },
-                new List<SkillNodeData> { data.Growth });
+                p6b ? Phase6BTrialValues.KibidangoCapacity : Phase6TrialValues.KibidangoCapacity,
+                new List<ItemDefinition> { tonic }, data.GrowthNodes);
             asset.EditorSetKnownIds(
                 new List<StableId>
                 {
@@ -348,7 +451,22 @@ namespace Momotaro.Editor.Phase6
                 },
                 new List<StableId> { Momotaro.Gameplay.Companion.CompanionIds.Inumaru },
                 new List<StableId> { Phase6WorldIds.QuestFixture });
-            asset.EditorSetTestTuning(Phase6TrialValues.TestEnemyAttackScale, Phase6TrialValues.TestPlayerMaxHpScale);
+            if (p6b)
+            {
+                // P6B：効果を実定義で測るためテスト用の倍率は掛けない（記録 001 §3）。使用・払い戻し・章・専用スロット。
+                asset.EditorSetTestTuning(1f, 1f);
+                asset.EditorSetP6B(Phase6BTrialValues.KibidangoBaseHeal, Phase6BTrialValues.KibidangoUseSeconds,
+                    Phase6BTrialValues.KibidangoCommitSeconds, Phase6BTrialValues.KibidangoMoveSpeedMultiplier,
+                    Phase6BTrialValues.RefundRightsInitial, Phase6BTrialValues.RefundRightsPerChapter,
+                    Phase6BTrialValues.RefundRightsMax,
+                    new List<StableId> { Phase6BTrialValues.ChapterFixture, Phase6BTrialValues.ChapterFixture2 },
+                    Phase6BTrialValues.SaveSlot);
+            }
+            else
+            {
+                asset.EditorSetTestTuning(Phase6TrialValues.TestEnemyAttackScale, Phase6TrialValues.TestPlayerMaxHpScale);
+            }
+
             EditorUtility.SetDirty(asset);
             return asset;
         }
@@ -367,7 +485,7 @@ namespace Momotaro.Editor.Phase6
 
             return new Phase5BuildTargets
             {
-                Label = "P6A",
+                Label = Phase6WorldIds.Profile.Tag,
                 SceneFolder = Phase6WorldIds.SceneFolder,
                 DataFolder = Phase6WorldIds.DataFolder,
                 AreaAScenePath = Phase6WorldIds.AreaAScenePath,
@@ -377,9 +495,9 @@ namespace Momotaro.Editor.Phase6
                 AreaBDataPath = Phase6WorldIds.AreaBDataPath,
                 CatalogDataPath = Phase6WorldIds.CatalogDataPath,
                 CatalogId = Phase6WorldIds.Campaign,
-                CatalogDisplayName = "P6A 検証 campaign",
+                CatalogDisplayName = Phase6WorldIds.Profile.Tag + " 検証 campaign",
                 ConnectionDataPath = Phase6WorldIds.ConnectionDataPath,
-                TrialHeadline = "P6A 進行・保存試遊（起動）",
+                TrialHeadline = Phase6WorldIds.Profile.Title + "（起動）",
                 AreaAId = Phase6WorldIds.AreaA,
                 AreaBId = Phase6WorldIds.AreaB,
                 AreaAOrigin = Phase6WorldLayout.AreaAOrigin,
@@ -543,8 +661,8 @@ namespace Momotaro.Editor.Phase6
             // <b>パスから読み直す。</b> Scene を Single で開き直すと持ち回った参照は破棄済みになり、null が焼かれる
             // （実際に踏んだ：実ビルドで「カタログが null」）。
             var catalog = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase6WorldIds.CatalogDataPath);
-            root.gameObject.name = "Phase6ATitleRoot";
-            Phase5Placeholder.CreateLabel("P6A 進行・保存試遊", root, Vector3.zero, Color.white, 0.5f);
+            root.gameObject.name = Phase6WorldIds.Profile.SceneTag + "TitleRoot";
+            Phase5Placeholder.CreateLabel(Phase6WorldIds.Profile.Title, root, Vector3.zero, Color.white, 0.5f);
             Phase6CampaignLauncher launcher = root.gameObject.AddComponent<Phase6CampaignLauncher>();
             var so = new SerializedObject(launcher);
             so.FindProperty("_catalog").objectReferenceValue = catalog;

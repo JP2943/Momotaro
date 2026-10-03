@@ -48,7 +48,7 @@ namespace Momotaro.Editor.Phase6
         {
             new Phase55Arrangement
             {
-                Label = "P6A A–B",
+                Label = Phase6WorldIds.Profile.Tag + " A–B",
                 ASide = Phase5SeamSide.East,
                 AreaAScenePath = Phase6WorldIds.AreaAScenePath,
                 AreaBScenePath = Phase6WorldIds.AreaBScenePath,
@@ -57,7 +57,7 @@ namespace Momotaro.Editor.Phase6
                 AreaAId = Phase6WorldIds.AreaA,
                 AreaBId = Phase6WorldIds.AreaB,
                 ConnectionsId = Phase6WorldIds.Connections,
-                ConnectionsDisplayName = "P6A エリア接続（東西 A–B–C）",
+                ConnectionsDisplayName = Phase6WorldIds.Profile.Tag + " エリア接続（東西 A–B–C）",
                 ExitFromA = Phase6WorldIds.ExitAEast,
                 ExitFromB = Phase6WorldIds.ExitBWest,
                 EntryInA = Phase5AreaIds.AreaAFromB,
@@ -73,7 +73,7 @@ namespace Momotaro.Editor.Phase6
             },
             new Phase55Arrangement
             {
-                Label = "P6A B–C",
+                Label = Phase6WorldIds.Profile.Tag + " B–C",
                 ASide = Phase5SeamSide.East,
                 AreaAScenePath = Phase6WorldIds.AreaBScenePath,
                 AreaBScenePath = Phase6WorldIds.AreaCScenePath,
@@ -82,7 +82,7 @@ namespace Momotaro.Editor.Phase6
                 AreaAId = Phase6WorldIds.AreaB,
                 AreaBId = Phase6WorldIds.AreaC,
                 ConnectionsId = Phase6WorldIds.Connections,
-                ConnectionsDisplayName = "P6A エリア接続（東西 A–B–C）",
+                ConnectionsDisplayName = Phase6WorldIds.Profile.Tag + " エリア接続（東西 A–B–C）",
                 ExitFromA = Phase6WorldIds.ExitBEast,
                 ExitFromB = Phase6WorldIds.ExitCWest,
                 EntryInA = Phase6WorldIds.EntryBFromC,
@@ -98,7 +98,181 @@ namespace Momotaro.Editor.Phase6
             },
         };
 
-        /// <summary>全部見る。</summary>
+        [MenuItem("Momotaro/Phase 6B/Validate Growth World")]
+        private static void ValidateP6BInteractive()
+        {
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            ValidateP6B(errors, warnings);
+            EditorUtility.DisplayDialog("P6B 検証ワールドの検査",
+                errors.Count == 0
+                    ? "検査を通りました（警告 " + warnings.Count + " 件）。"
+                    : "エラー " + errors.Count + " 件。\n" + string.Join("\n", errors), "OK");
+        }
+
+        /// <summary>
+        /// P6B の検証ワールドを見る（P6B 04／17）。P6A と同じ配置・campaign の検査に加え、9 ノード・効果値・前提・
+        /// きびだんご使用・払い戻し・章・専用スロット・入力割当を検査する。
+        /// </summary>
+        public static void ValidateP6B(List<string> errors, List<string> warnings)
+        {
+            Phase6Profile previous = Phase6WorldIds.Profile;
+            Phase6WorldIds.Profile = Phase6Profile.P6B;
+            try
+            {
+                Validate(errors, warnings);
+                int start = errors.Count;
+                ValidateP6BCampaign(errors);
+                for (int i = start; i < errors.Count; i++)
+                {
+                    errors[i] = "【P6B】" + errors[i];
+                }
+            }
+            finally
+            {
+                Phase6WorldIds.Profile = previous;
+            }
+        }
+
+        /// <summary>P6B だけの検査（生成された Data から採る。Builder の表とも突き合わせる）。</summary>
+        private static void ValidateP6BCampaign(List<string> errors)
+        {
+            var data = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase6WorldIds.CatalogDataPath);
+            if (data == null)
+            {
+                errors.Add("カタログがありません: " + Phase6WorldIds.CatalogDataPath + "（build-phase6b-world を先に実行する）。");
+                return;
+            }
+
+            if (data.GrowthNodes.Count != Phase6BTrialValues.Nodes.Length)
+            {
+                errors.Add("成長ノードが " + data.GrowthNodes.Count + " 件です（9 件）。");
+            }
+
+            var byId = new Dictionary<string, SkillNodeData>();
+            foreach (SkillNodeData node in data.GrowthNodes)
+            {
+                if (node != null && node.Id.IsValid)
+                {
+                    byId[node.Id.Value] = node;
+                }
+            }
+
+            int total = 0;
+            foreach (Phase6BTrialValues.Node n in Phase6BTrialValues.Nodes)
+            {
+                if (!byId.TryGetValue(n.Id, out SkillNodeData node))
+                {
+                    errors.Add("成長ノード '" + n.Id + "' がカタログにありません。");
+                    continue;
+                }
+
+                total += node.VirtueCost;
+                if (node.VirtueCost != n.Cost || node.MaxHpBonus != n.MaxHp || node.MaxStaminaBonus != n.Stamina
+                    || !Mathf.Approximately(node.AttackHpMultiplierBonus, n.Attack)
+                    || !Mathf.Approximately(node.NormalPoiseMultiplierBonus, n.Poise)
+                    || node.KibidangoHealBonus != n.Heal || node.KibidangoCapacityBonus != n.Capacity)
+                {
+                    errors.Add("成長ノード '" + n.Id + "' の費用・効果が仕様表と一致しません。");
+                }
+
+                bool expectRoot = string.IsNullOrEmpty(n.Prerequisite);
+                if (expectRoot ? node.Prerequisites.Count != 0
+                        : node.Prerequisites.Count != 1 || node.Prerequisites[0] == null
+                          || node.Prerequisites[0].Id.Value != n.Prerequisite)
+                {
+                    errors.Add("成長ノード '" + n.Id + "' の前提が仕様表と一致しません。");
+                }
+
+                if (node.MutuallyExclusive.Count != 0)
+                {
+                    errors.Add("成長ノード '" + n.Id + "' に排他があります（P6B は排他なし）。");
+                }
+            }
+
+            if (total != 270)
+            {
+                errors.Add("全取得の費用が " + total + " です（270）。");
+            }
+
+            var report = new Momotaro.Data.DataValidationReport();
+            data.Validate(report);
+            foreach (string e in report.Errors)
+            {
+                errors.Add("Data 検証: " + e);
+            }
+
+            if (data.KibidangoBaseCapacity != 3 || data.KibidangoBaseHeal <= 0
+                || !Mathf.Approximately(data.KibidangoUseSeconds, 2f) || !Mathf.Approximately(data.KibidangoCommitSeconds, 1.5f)
+                || !Mathf.Approximately(data.KibidangoMoveSpeedMultiplier, 0.2f))
+            {
+                errors.Add("きびだんごの設定（最大 3・回復量・2.0 秒・1.5 秒・20%）が仕様と一致しません。");
+            }
+
+            var player = AssetDatabase.LoadAssetAtPath<Momotaro.Data.Characters.PlayerData>(
+                "Assets/_Project/Data/Player/SO_Player_Momotaro.asset");
+            if (player != null && data.KibidangoBaseHeal != (player.MaxHp + 1) / 2)
+            {
+                errors.Add("きびだんごの基礎回復量 " + data.KibidangoBaseHeal + " が基礎最大 HP " + player.MaxHp
+                    + " の半分の切り上げではありません。");
+            }
+
+            if (data.RefundRightsInitial != 3 || data.RefundRightsPerChapter != 3 || data.RefundRightsMax != 6)
+            {
+                errors.Add("払い戻し権利（初期 3・章 +3・上限 6）が仕様と一致しません。");
+            }
+
+            if (data.ChapterIds.Count == 0)
+            {
+                errors.Add("章の接続 fixture がありません。");
+            }
+
+            if (data.SaveSlotName == "slot0")
+            {
+                errors.Add("P6B の保存スロットが P6A と同じ slot0 です。");
+            }
+
+            if (!Mathf.Approximately(data.TestEnemyAttackScale, 1f) || !Mathf.Approximately(data.TestPlayerMaxHpScale, 1f))
+            {
+                errors.Add("P6B campaign にテスト用の倍率が掛かっています（1 のはず）。");
+            }
+
+            // 入力割当（記録 001 §4：F／LT）。Editor の asmdef は Input System を参照しないので定義ファイルを読む。
+            string inputPath = "Assets/_Project/Settings/Input/IA_Momotaro.inputactions";
+            string inputText = System.IO.File.Exists(inputPath) ? System.IO.File.ReadAllText(inputPath) : string.Empty;
+            int bindings = CountOf(inputText, "\"action\": \"UseKibidango\"");
+            if (!inputText.Contains("\"name\": \"UseKibidango\"") || bindings != 2
+                || !inputText.Contains("\"path\": \"<Keyboard>/f\"") || !inputText.Contains("\"path\": \"<Gamepad>/leftTrigger\""))
+            {
+                errors.Add("入力 Gameplay/UseKibidango（F／LT の 2 割当）がありません（割当 " + bindings + " 件）。");
+            }
+
+            // 有効な Data から実行時と同じ手順でカタログが組めること（9 ノードの前提循環・未知参照も含む）。
+            if (!AreaCatalog.TryBuild(data, out AreaCatalog built, out IReadOnlyList<string> buildErrors)
+                || built.Campaign == null)
+            {
+                errors.Add("カタログを組めません: " + string.Join(" / ", buildErrors ?? new List<string>()));
+            }
+            else if (!built.Campaign.HasKibidangoUse)
+            {
+                errors.Add("カタログにきびだんご使用がありません。");
+            }
+        }
+
+        private static int CountOf(string text, string token)
+        {
+            int count = 0;
+            int at = 0;
+            while ((at = text.IndexOf(token, at, System.StringComparison.Ordinal)) >= 0)
+            {
+                count++;
+                at += token.Length;
+            }
+
+            return count;
+        }
+
+        /// <summary>全部見る（現在の <see cref="Phase6WorldIds.Profile"/>。既定 P6A）。</summary>
         public static void Validate(List<string> errors, List<string> warnings)
         {
             foreach (Phase55Arrangement arrangement in Arrangements())

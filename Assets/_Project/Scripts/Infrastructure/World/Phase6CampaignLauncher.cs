@@ -89,7 +89,7 @@ namespace Momotaro.Infrastructure.World
                 return;
             }
 
-            _save = flow.PeekSave();
+            _save = flow.PeekSave(_catalog);
         }
 
         /// <summary>はじめから（保存があれば確認を挟む）。</summary>

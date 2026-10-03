@@ -179,8 +179,10 @@ namespace Momotaro.Tests.EditMode
             AssertRejected(json.Replace("\"kibidango\": 1,", "\"kibidango\": \"1\","), "型違い");
             AssertRejected(json.Replace("\"total\": ", "\"total\": 1"), "改ざん（checksum 不一致）");
             AssertRejected(json + "{}", "後ろの余計な内容");
-            AssertRejected(json.Replace("\"schemaVersion\": 2", "\"schemaVersion\": 3"), "未対応の版");
-            AssertRejected(json.Replace("\"schemaVersion\": 2", "\"schemaVersion\": 1"), "版 1 に questStages は無い（未知の欄）");
+            // P6B で現行の版は 3（払い戻しの欄を追加）。
+            AssertRejected(json.Replace("\"schemaVersion\": 3", "\"schemaVersion\": 4"), "未対応の版");
+            AssertRejected(json.Replace("\"schemaVersion\": 3", "\"schemaVersion\": 1"), "版 1 に questStages・refund は無い（未知の欄）");
+            AssertRejected(json.Replace("\"schemaVersion\": 3", "\"schemaVersion\": 2"), "版 2 に refund は無い（未知の欄）");
             AssertRejected(string.Empty, "空");
 
             // 0 は欠損と区別される（0 は正当な値）。
@@ -210,7 +212,7 @@ namespace Momotaro.Tests.EditMode
             Assert.Greater(at, 0);
             string payload = compact.Substring(at + "\"payload\":".Length, compact.Length - at - "\"payload\":".Length - 1);
             int quests = payload.IndexOf(",\"questStages\":", StringComparison.Ordinal);
-            Assert.Greater(quests, 0, "前提：版 2 は questStages を持つ。");
+            Assert.Greater(quests, 0, "前提：現行版は questStages を持つ（その後ろの refund ごと外す）。");
             string payloadV1 = payload.Substring(0, quests) + "}";
             string v1 = "{\"schemaVersion\":1,\"contentVersion\":" + info.ContentVersion
                 + ",\"campaignId\":\"" + info.CampaignId + "\",\"adventureId\":\"" + info.AdventureId

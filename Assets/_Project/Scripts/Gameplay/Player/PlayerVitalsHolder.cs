@@ -240,6 +240,69 @@ namespace Momotaro.Gameplay.Player
             MaxHpBonus = bonus < 0 ? 0 : bonus;
         }
 
+        /// <summary>
+        /// 成長による最大 HP・最大スタミナの加算を置き直す（P6B 01。何度呼んでも同じ結果）。現在値は回復せず、
+        /// 新しい上限を超えた分だけ切り詰める（回復は休息）。Data の基礎値は書き換えない。
+        /// </summary>
+        public void ApplyGrowth(int maxHpBonus, int maxStaminaBonus)
+        {
+            ApplyMaxHpBonus(maxHpBonus);
+            EnsureVitals();
+            if (_data == null || _stamina == null || _vitals == null)
+            {
+                return;
+            }
+
+            int bonus = maxStaminaBonus < 0 ? 0 : maxStaminaBonus;
+            int target = _data.MaxStamina + bonus;
+            _stamina.SetMax(target);
+            if (_vitals.Stamina.Max != target)
+            {
+                _vitals.Stamina.SetMax(target);
+            }
+
+            MaxStaminaBonus = bonus;
+            SyncStaminaVital();
+        }
+
+        /// <summary>適用中の最大スタミナ加算（診断・テスト用。P6B）。</summary>
+        public int MaxStaminaBonus { get; private set; }
+
+        /// <summary>現在の最大 HP（成長込み。診断・テスト・HUD 用）。</summary>
+        public int MaxHp
+        {
+            get { EnsureVitals(); return _vitals != null ? _vitals.Health.Max : 0; }
+        }
+
+        /// <summary>現在の最大スタミナ（成長込み。正本は StaminaState）。</summary>
+        public float MaxStaminaValue
+        {
+            get { EnsureVitals(); return _stamina != null ? _stamina.Max : 0f; }
+        }
+
+        /// <summary>現在 HP。</summary>
+        public int CurrentHp
+        {
+            get { EnsureVitals(); return _vitals != null ? _vitals.Health.Current : 0; }
+        }
+
+        /// <summary>
+        /// きびだんごの回復を HP へ適用する（P6B 03）。最大値で頭打ち。死亡確定後は何もしない。実際に増えた量を返す。
+        /// 確定の手順（残数 -1 と同じ更新）は呼び出し側が持つ。
+        /// </summary>
+        public int HealFromItem(int amount)
+        {
+            EnsureVitals();
+            if (_vitals == null || _defeated || amount <= 0)
+            {
+                return 0;
+            }
+
+            int before = _vitals.Health.Current;
+            _vitals.Health.Change(amount);
+            return _vitals.Health.Current - before;
+        }
+
         /// <summary>適用中の最大 HP 加算（診断・テスト用）。</summary>
         public int MaxHpBonus { get; private set; }
 
