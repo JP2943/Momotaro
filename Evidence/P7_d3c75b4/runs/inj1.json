@@ -1,0 +1,42 @@
+{
+    "id": "inj1",
+    "mode": "PlayMode",
+    "filter": "P7WorldPlayTests.Dialogue_RealKeys|P7WorldPlayTests.Dialogue_Freezes|P7WorldPlayTests.Dialogue_Refused|P7WorldPlayTests.Chapter_Simultaneous",
+    "startedAt": "2026-10-09T09:52:46.3190204Z",
+    "finishedAt": "2026-10-09T09:53:17.2450445Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "failed",
+    "termination": "completed",
+    "rootResultState": "Failed(Child)",
+    "expected": 0,
+    "passed": 3,
+    "failed": 1,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Chapter_SimultaneousDeath_KeepsClear_NoticeAfterRespawn",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "同時死亡でも章クリアを保持する。\r\n  Expected: True\r\n  But was:  False\n  at Momotaro.Tests.PlayMode.P7WorldPlayTests+<Chapter_SimultaneousDeath_KeepsClear_NoticeAfterRespawn>d__36.MoveNext () [0x003fd] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\PlayMode\\P7WorldPlayTests.cs:760"
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_FreezesPlayerCompanionAndCounter_AndRespectsExitPause",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_RealKeys_ReadAllChooseAndClose_NoSkipNoLeak",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_RefusedWhileBusyOrHitSameFrame_AndNotCarriedOver",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

@@ -1,0 +1,24 @@
+{
+    "id": "inj3",
+    "mode": "PlayMode",
+    "filter": "P7WorldPlayTests.Dialogue_RealKeys",
+    "startedAt": "2026-10-09T09:54:49.6866629Z",
+    "finishedAt": "2026-10-09T09:55:04.7758891Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "failed",
+    "termination": "completed",
+    "rootResultState": "Failed(Child)",
+    "expected": 0,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_RealKeys_ReadAllChooseAndClose_NoSkipNoLeak",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "Expected: True\r\n  But was:  False\n  at Momotaro.Tests.PlayMode.P7WorldPlayTests+<Dialogue_RealKeys_ReadAllChooseAndClose_NoSkipNoLeak>d__30.MoveNext () [0x0029b] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\PlayMode\\P7WorldPlayTests.cs:151"
+        }
+    ]
+}

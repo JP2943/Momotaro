@@ -1,0 +1,18 @@
+{
+    "id": "v_validate_phase7_world",
+    "command": "run-op",
+    "status": "ok",
+    "message": "P7 検証ワールドの検査を通りました（警告 1 件）。",
+    "startedAt": "2026-10-09T11:14:24.1600103Z",
+    "finishedAt": "2026-10-09T11:14:30.0716403Z",
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "expected": 0,
+    "termination": "",
+    "runLogPath": "",
+    "details": [
+        "[警告] 遭遇戦がありません（この Area に置かない構成なら想定どおり）。"
+    ]
+}

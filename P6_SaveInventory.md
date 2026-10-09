@@ -94,7 +94,7 @@ P5 の `P5_ActorTransferInventory.md` で「保持」に分類した値を土台
 
 Load では回復・周期更新・到着報酬・獲得演出を**発生させない**。
 
-## 5. DTO 対応（schemaVersion 3。P6B で 2 → 3。**P7 で 3 → 4 の予定**）
+## 5. DTO 対応（schemaVersion 4。P6B で 2 → 3、P7 で 3 → 4）
 
 | DTO の欄 | 表の行 |
 |---|---|
@@ -110,7 +110,7 @@ Load では回復・周期更新・到着報酬・獲得演出を**発生させ�
 | `party.player {...}`／`party.companion {...}` | §2 |
 | `questStages[] {questId, stage}` | クエストの段階（版 2 で追加） |
 | `refund {rights, chapters[]}` | 払い戻し権利／権利を追加済みの章（版 3 で追加。P6B） |
-| `story {events[], routes[] {chapterId, standardReached, standardCompleted, hardReached, hardCompleted, lastRoute, bossRoute}, chapters[] {chapterId, clearedRoute}}` | 必須イベント／経路の記録／章クリア（**版 4 で追加予定。P7**） |
+| `story {events[], routes[] {chapterId, standardReached, standardCompleted, hardReached, hardCompleted, lastRoute, bossRoute}, chapters[] {chapterId, clearedRoute}}` | 必須イベント／経路の記録／章クリア（**版 4 で追加。P7**） |
 | Envelope `schemaVersion`／`contentVersion`／`campaignId`／`adventureId`／`generation`／`savedAtUtc`／`checksum` | 仕様 §10 |
 
 **版 1 → 2 の読み替え**（2026-10-02、受入 P6A 08 の接続 fixture）：版 1 は `questStages` を持たない。読むときは欄の一覧を版で分け
@@ -136,7 +136,7 @@ P6A の保存・campaign・ノード定義は変えない。P6A → P6B の camp
 旅立ちの成功・通常エリア移動の成功（遷移の成功 Commit で出発側の主人公の権利を消す `AreaActorTransferPort.ClearShortLivedCombatOnCommittedDeparture`）で消える。失敗した移動要求・受理後に出発側を閉じてからの準備失敗／タイムアウトによる Rollback では消えない（凍結中は減らない。レビュー a24d92c R1）。
 保存先は P6C 専用（`p6c_slot0`。P6A の `slot0`・P6B の `p6b_slot0` とは別）。強化攻撃で生まれた撃破報酬は P6A の既存処理で一度だけ保存される。
 
-**版 3 → 4 の読み替え（P7。2026-10-09 の着手時に方針を記録。`P7_統合受入結果.md` 記録 001 §6）**：版 1〜3 は `story` を持たない（版 1〜3 に `story` があれば未知の欄として拒否）。
+**版 3 → 4 の読み替え（P7。2026-10-09 の着手時に方針を記録し（`P7_統合受入結果.md` 記録 001 §6）、そのとおり実装した（`b9d2850`。記録 002。`P7SaveTests` の往復・移行・不正データの拒否））**：版 1〜3 は `story` を持たない（版 1〜3 に `story` があれば未知の欄として拒否）。
 `SaveSnapshot.HasStoryData = false` として持ち、候補 Session の構築が**明示的な移行**としてイベント・経路・章クリアを空にする（P6 までに章クリアの本番の確定は無いので遡及しない）。
 処理済み章（`refund.chapters`）がある保存では、同じ章のボスを後から倒しても権利は追加しない（既存の処理済み判定）。版 5 以上・0 以下は拒否する。
 保存先は P7 専用（`p7_slot0`）。

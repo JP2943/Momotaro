@@ -1,0 +1,66 @@
+{
+    "id": "hq8c",
+    "mode": "PlayMode",
+    "filter": "P7WorldPlayTests",
+    "startedAt": "2026-10-09T11:12:09.1014366Z",
+    "finishedAt": "2026-10-09T11:13:10.9412094Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Chapter_RealBossKill_ClearsOnceWithRights_NoReviveAfterContinue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Chapter_SimultaneousDeath_KeepsClear_NoticeAfterRespawn",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_FreezesPlayerCompanionAndCounter_AndRespectsExitPause",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_QuitMidDecision_ContinueIsNeutral_NoPendingAction",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_RealKeys_ReadAllChooseAndClose_NoSkipNoLeak",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_RefusedWhileBusyOrHitSameFrame_AndNotCarriedOver",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Quest_AcceptReachReportOnce_GrowWithReward_SurvivesContinue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Quest_PreAcceptCompletion_GateEvent_HardRoute_Discovery_SurvivesContinue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

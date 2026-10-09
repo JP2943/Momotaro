@@ -1,0 +1,24 @@
+{
+    "id": "hq2r",
+    "mode": "PlayMode",
+    "filter": "P55RoundTripPlayTests.TheReportedRoute",
+    "startedAt": "2026-10-09T10:28:23.2891040Z",
+    "finishedAt": "2026-10-09T10:29:00.9206970Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheReportedRoute_WinningThenRoundTripsThenWalkingTheArena_NeverForcesATravel",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

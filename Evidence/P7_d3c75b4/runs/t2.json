@@ -1,0 +1,168 @@
+{
+    "id": "t2",
+    "mode": "EditMode",
+    "filter": "P7StoryTests|P7SaveTests",
+    "startedAt": "2026-10-09T09:56:39.2671604Z",
+    "finishedAt": "2026-10-09T09:56:49.7936385Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 25,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Chapter_BossVictory_CommitsClearBossChapterAndRightsInOneUpdate",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Chapter_RightsAtCap_AddZero_ButMarkProcessed_AndNeverRegrantAfterUseAndReload",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Report_WriteFailure_KeepsRuntime_RetrySavesLatestWithoutRegrant",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Save_RejectsInvalidStoryData",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Save_V3_MigratesToEmptyStory_AndStoryFieldInV3IsRejected",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Save_V4_RoundTripsNonInitialStoryValues",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.UpdatesDuringWrite_AreSavedAfterwards_WithoutDuplication",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.CatalogBuild_DetectsUnknownAreasTargetsAndBossMapping",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.DataCheck_DetectsDuplicatesUnknownsEmptyFallbackAmbiguityNegativeEmptyObjectivesAndSelfDependency",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Dialogue_ContentIsFixedAtOpen_AndReportChoiceIsNeverHidden",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Dialogue_HardOnly_SelectsHardOnlyLine",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Dialogue_PagesAdvance_AndLastPageShowsChoices",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Dialogue_SelectsHighestPriorityMatching_AndFallsBackToUnconditional",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Event_CompletesOnce_OpensFlagInSameUpdate_AndOnlyFromItsDialogue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_AcceptDeclineRevisitAndDuplicate",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_AndEvent_SurviveRespawnCycleAndRest",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_ConditionsMetBeforeAccept_DoNotAutoAccept_ButCountAfterAccepting",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_DiscoveryByInvestigationPoint_IsRecognized",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_ReportBeforeConditions_OrBeforeAccept_ChangesNothing",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_ReportGrants30Once_KeepsSpent_AndDoesNotRerunExistingRewards",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_ThreeObjectiveKinds_AndConjunction",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_TwoQuestsSharingATarget_ReportIndependently",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_UnfinishedEncounter_IsNotMet_AndRetreatKeepsItUnmet",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Route_ArrivalUpdate_IsMergedIntoArrivalSave",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Route_ReachedVsCompleted_BossRoute_Reroute_FastTravelKeeps_AndFixedAtClear",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

@@ -1,0 +1,14 @@
+{
+  "mode": "story",
+  "platform": "WindowsPlayer",
+  "unity": "6000.3.20f1",
+  "isEditor": "false",
+  "processId": "51208",
+  "device": "X570-PG4 (MouseComputer Co.,Ltd.) / AMD Ryzen 7 3700X 8-Core Processor  / NVIDIA GeForce RTX 3060 Ti",
+  "slowIoMs": "0",
+  "titlePrewarmDone": "true",
+  "acceptResult": "Accepted",
+  "gateOpened": "true",
+  "error": "step route: slide through exit_p6_a_east failed: ",
+  "failedStep": "route"
+}

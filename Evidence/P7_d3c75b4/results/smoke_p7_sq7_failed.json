@@ -1,0 +1,21 @@
+{
+    "id": "sq7",
+    "command": "run-op",
+    "status": "failed",
+    "message": "P7 の実ビルド確認に失敗があります。",
+    "startedAt": "2026-10-09T11:02:04.6786433Z",
+    "finishedAt": "2026-10-09T11:02:53.4137507Z",
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "expected": 0,
+    "termination": "",
+    "runLogPath": "",
+    "details": [
+        "ビルド: Succeeded（12 秒、267 MB、エラー 0）→ C:\\Users\\naked\\Momotaro\\Builds/P7\\Momotaro_P7.exe",
+        "story（33.1 秒）: {   \"mode\": \"story\",   \"platform\": \"WindowsPlayer\",   \"unity\": \"6000.3.20f1\",   \"isEditor\": \"false\",   \"processId\": \"51208\",   \"device\": \"X570-PG4 (MouseComputer Co.,Ltd.) / AMD Ryzen 7 3700X 8-Core Processor  / NVIDIA GeForce RTX 3060 Ti\",   \"slowIoMs\": \"0\",   \"titlePrewarmDone\": \"true\",   \"acceptResult\": \"Accepted\",   \"gateOpened\": \"true\",   \"error\": \"step route: slide through exit_p6_a_east failed: \",   \"failedStep\": \"route\" } ",
+        "[NG] story：step route: slide through exit_p6_a_east failed: ",
+        "continue_after_story（3.4 秒）: {   \"mode\": \"continue\",   \"platform\": \"WindowsPlayer\",   \"unity\": \"6000.3.20f1\",   \"isEditor\": \"false\",   \"processId\": \"10492\",   \"device\": \"X570-PG4 (MouseComputer Co.,Ltd.) / AMD Ryzen 7 3700X 8-Core Processor  / Null Device\",   \"slowIoMs\": \"0\",   \"adventureId\": \"396d9f4893d04adabd6d21334daa15bc\",   \"kibidango\": \"3\",   \"area\": \"area_p7_a\",   \"checkpoint\": \"shrine_p6_a\",   \"resume\": \"Entry:area_p7_a/entry_p6_a_shrine\",   \"savedRevision\": \"8\",   \"dirtyAfterContinue\": \"false\",   \"afterPlayerHp\": \"100\",   \"afterCompanionDown\": \"false\",   \"afterCompanionRecovery\": \"0\",   \"afterGrowth\": \"\",   \"afterRefundRights\": \"3\",   \"afterVirtue\": \"0\",   \"afterCapacity\": \"3\",   \"afterMaxHp\": \"100\",   \"afterAttackMultiplier\": \"1.00\",   \"afterTotalVirtue\": \"0\",   \"afterQuests\": \" …(省略)"
+    ]
+}

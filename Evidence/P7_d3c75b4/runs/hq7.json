@@ -1,0 +1,54 @@
+{
+    "id": "hq7",
+    "mode": "PlayMode",
+    "filter": "P6CWorldPlayTests",
+    "startedAt": "2026-10-09T10:44:57.5166676Z",
+    "finishedAt": "2026-10-09T10:46:21.9508422Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.FailedSlide_AfterDepartureGateClosed_TimeoutRollback_KeepsCounter_FrozenThenTicks",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.FastTravel_FailAfterDepartureGateClosed_KeepsCounter_SuccessClears",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.Lifecycle_SaveKeeps_FailedMoveKeeps_SlideClears_HudOnlyActiveArea_Kibidango_RestRespawnContinue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.Melee_RealAttack_RealKeys_JustEvadeCounterHitsHarder_NormalEvadeDoesNot",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.Projectile_RealArrow_RealKeys_JustEvade_NoReflectToArcher",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.Unblockable_RealEliteAttack_NormalGuardFails_JustGuardSucceeds_NoticeShown",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

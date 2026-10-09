@@ -1,0 +1,96 @@
+{
+    "id": "hq2",
+    "mode": "PlayMode",
+    "filter": "P55RoundTripPlayTests",
+    "startedAt": "2026-10-09T10:23:34.9705750Z",
+    "finishedAt": "2026-10-09T10:26:10.6014934Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "failed",
+    "termination": "completed",
+    "rootResultState": "Failed(Child)",
+    "expected": 0,
+    "passed": 12,
+    "failed": 1,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.AfterOpeningTheGateLeavingAndComingBack_TheGateIsStillPassable",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.AfterTheFight_TheArenaReleasesAndWalkingLeavesIt",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.ApproachingTheSeamOffCentre_NeverLeavesTheAreaUntransitioned",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.DodgingIntoTheSeam_NeverLeavesTheAreaUntransitioned",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.FromTheArrivalInB_WalkingEntersTheArenaAndOnlyThenItSeals",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.FromTheStart_WalkingReachesTheLeverTheInvestigationAndTheExit",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheFirstTravelLoadsOnce_AndTheRoundTripReusesIt",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheFollowRegion_LetsTheClampGoAndTheBackdropCoversTheOutside",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheReportedRoute_WinningThenRoundTripsThenWalkingTheArena_NeverForcesATravel",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "行き来したあと B に居る。\r\n  String lengths are both 10. Strings differ at index 9.\r\n  Expected: \"area_p55_b\"\r\n  But was:  \"area_p55_a\"\r\n  --------------------^\n  at Momotaro.Tests.PlayMode.P55RoundTripPlayTests+<TheReportedRoute_WinningThenRoundTripsThenWalkingTheArena_NeverForcesATravel>d__24.MoveNext () [0x00232] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\PlayMode\\P55RoundTripPlayTests.cs:1249"
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheWholeRoute_SurvivesFiveRoundTripsAFightAndARespawn(\"EastWest\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheWholeRoute_SurvivesFiveRoundTripsAFightAndARespawn(\"NorthSouth\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.WalkingAcrossTheOldRoomBoundariesAndTheGate_TheCameraFollowsContinuously",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.WalkingInsideTheArea_NeverLoadsOrReleasesAnything",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

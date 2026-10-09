@@ -1,0 +1,36 @@
+{
+    "id": "inj2",
+    "mode": "PlayMode",
+    "filter": "P7WorldPlayTests.Dialogue_RealKeys|P7WorldPlayTests.Dialogue_Freezes|P7WorldPlayTests.Dialogue_Refused",
+    "startedAt": "2026-10-09T09:53:59.2003114Z",
+    "finishedAt": "2026-10-09T09:54:23.1705773Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "failed",
+    "termination": "completed",
+    "rootResultState": "Failed(Child)",
+    "expected": 0,
+    "passed": 0,
+    "failed": 3,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_FreezesPlayerCompanionAndCounter_AndRespectsExitPause",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "会話中はスタミナが回復しない（主人公の時計が止まる）。\r\n  Expected: 62.934364318847656d +/- 9.9999997473787516E-05d\r\n  But was:  100.0d\n  at Momotaro.Tests.PlayMode.P7WorldPlayTests+<Dialogue_FreezesPlayerCompanionAndCounter_AndRespectsExitPause>d__31.MoveNext () [0x00345] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\PlayMode\\P7WorldPlayTests.cs:269"
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_RealKeys_ReadAllChooseAndClose_NoSkipNoLeak",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "会話中は Gameplay 時計を保持で止める。\r\n  Expected: True\r\n  But was:  False\n  at Momotaro.Tests.PlayMode.P7WorldPlayTests+<Dialogue_RealKeys_ReadAllChooseAndClose_NoSkipNoLeak>d__30.MoveNext () [0x00216] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\PlayMode\\P7WorldPlayTests.cs:144"
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_RefusedWhileBusyOrHitSameFrame_AndNotCarriedOver",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "被弾の解決を優先して断った。\r\n  Expected: HitThisFrame\r\n  But was:  PlayerBusy\n  at Momotaro.Tests.PlayMode.P7WorldPlayTests+<Dialogue_RefusedWhileBusyOrHitSameFrame_AndNotCarriedOver>d__32.MoveNext () [0x0056f] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\PlayMode\\P7WorldPlayTests.cs:365"
+        }
+    ]
+}

@@ -1,0 +1,28 @@
+{
+    "id": "vfP6A",
+    "command": "run-op",
+    "status": "ok",
+    "message": "必須 73/73 件すべて Passed。未説明の Skip なし。",
+    "startedAt": "2026-10-09T11:14:08.5400938Z",
+    "finishedAt": "2026-10-09T11:14:08.5536901Z",
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "expected": 0,
+    "termination": "",
+    "runLogPath": "",
+    "details": [
+        "必須一覧: P6ARequiredTests.json",
+        "工程: （全工程）",
+        "実行記録: ge9（EditMode、全件、1943 件）",
+        "実行記録: hq1（PlayMode、filter=P55SlideTransitionPlayTests、64 件）",
+        "実行記録: hq2b（PlayMode、filter=P55RoundTripPlayTests、13 件）",
+        "実行記録: hq3（PlayMode、filter=P55(ActivityGate|AreaBundle|AreaScope|CameraSlide|ConnectionInput|DisplayProxy|NorthSouthSlide|Preload|ReentryPreparation|RenderCapture|ResidentCamera|Uniqueness)PlayTests、72 件）",
+        "実行記録: hq4（PlayMode、filter=(BootstrapRootTests|CombatTrialReloadPlayTests|CompanionActivityGatePlayTests|CompanionActivityStopPlayTests|CompanionAggroReproPlayTests|CompanionCombatIntegrationPlayTests|CompanionFeedbackLifecyclePlayTests|CompanionFollowPlayTests|CompanionTrialScenePlayTests|EnemyChargePlayTests|EnemyDangerSensePlayTests|EnemyDangerUnblockablePlayTests|EnemyDiagnosticsPlayTests|EnemyFloorTraversalPlayTests|EnemyGroundingPlayTests|EnemyMeleeHitPathPlayTests|EnemyProjectilePlayTests|EnemyProjectilePlayerCombatTests|EnemyTestFieldPlayTests|P5ExplorationPlayTests|PlayerStepCollisionTests|PlayerVitalsSmokeTests|ReactionMotorPlayTests|RewardGrantPlayTests|SceneFlowManagerTests|VsFieldSmokeTests)、115 件）",
+        "実行記録: hq5（PlayMode、filter=P6AWorldPlayTests、20 件）",
+        "実行記録: hq6（PlayMode、filter=P6BWorldPlayTests、9 件）",
+        "実行記録: hq7（PlayMode、filter=P6CWorldPlayTests、6 件）",
+        "実行記録: hq8c（PlayMode、filter=P7WorldPlayTests、8 件）"
+    ]
+}
