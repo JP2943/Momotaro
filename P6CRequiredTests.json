@@ -306,7 +306,7 @@
       "requirementId": "P6C12",
       "stage": "P6C-02",
       "mode": "EditMode",
-      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Clear_OnAreaEntryAndRespawnReset",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Clear_OnRespawnRest_Kept_OnTemporaryDisableAndEntryPreparation",
       "requirementIds": [],
       "implemented": true,
       "supportingTests": []
@@ -364,6 +364,44 @@
         "P6C13",
         "P6C14"
       ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C10",
+      "stage": "P6C-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Exception_StepAvailabilityFollowsDefinition_FalsePiercesNoReward_TrueCanJustEvade",
+      "requirementIds": [
+        "P6C01"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C10",
+      "stage": "P6C-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.P6C_Exception_SteppableFalse_IsValid",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C12",
+      "stage": "P6C-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.FailedSlide_AfterDepartureGateClosed_TimeoutRollback_KeepsCounter_FrozenThenTicks",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C12",
+      "stage": "P6C-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.FastTravel_FailAfterDepartureGateClosed_KeepsCounter_SuccessClears",
+      "requirementIds": [],
       "implemented": true,
       "supportingTests": []
     }

@@ -148,6 +148,19 @@ namespace Momotaro.Tests.EditMode
             Object.DestroyImmediate(normal);
         }
 
+        /// <summary>レビュー a24d92c R2：理由つきの例外は Steppable=false も定義できる（ステップ無敵の可否は攻撃定義に従う）。</summary>
+        [Test]
+        public void P6C_Exception_SteppableFalse_IsValid()
+        {
+            var a = MakeAttack(EnemyAttackClass.Unblockable, 0.75f, guardable: false, jg: false, step: false);
+            SetField(a, "_telegraph", AttackTelegraph.Unblockable);
+            SetField(a, "_justGuardExceptionReason", "地形攻撃（P6C 検証 fixture）");
+            var report = new DataValidationReport();
+            a.Validate(report);
+            Assert.IsFalse(report.HasErrors, string.Join(", ", report.Errors));
+            Object.DestroyImmediate(a);
+        }
+
         [Test]
         public void P6C_Exception_TelegraphMustBeUnblockable()
         {

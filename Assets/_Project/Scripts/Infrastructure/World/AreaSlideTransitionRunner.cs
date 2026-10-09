@@ -608,6 +608,9 @@ namespace Momotaro.Infrastructure.World
                 yield break;
             }
 
+            // P6C（レビュー a24d92c R1）：成功が確定したので、出発側の主人公の反撃強化を消す（失敗・Rollback では残す）。
+            departure?.TransferPort?.ClearShortLivedCombatOnCommittedDeparture();
+
             preloader.TryHandOffStaged(connection.ToAreaId, out _, out _);
             _residency.TrySetPhase(destinationHandle, AreaActivationPhase.Active);
 
@@ -754,6 +757,9 @@ namespace Momotaro.Infrastructure.World
             {
                 yield break;
             }
+
+            // P6C（レビュー a24d92c R1）：成功が確定したので、同じ Area の主人公の反撃強化を消す（失敗・Rollback では残す）。
+            area?.TransferPort?.ClearShortLivedCombatOnCommittedDeparture();
 
             _owner.NoteArrival(connection.ToAreaId, connection.EntryId);
             IAreaCameraOwner camera = AreaCameraOwnerProvider.Current;
@@ -1285,6 +1291,9 @@ namespace Momotaro.Infrastructure.World
                 display?.Release();
                 yield break;
             }
+
+            // P6C（レビュー a24d92c R1）：成功が確定したので、出発側の主人公の反撃強化を消す（失敗・Rollback では残す）。
+            departure?.TransferPort?.ClearShortLivedCombatOnCommittedDeparture();
 
             // 先読みから所有を引き取る。<b>Commit まで引き取らない</b>のは、
             // ここより前の失敗で到着 Area を撤去する役を先読みに任せておくため。

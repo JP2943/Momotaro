@@ -128,5 +128,5 @@ P6A の保存・campaign・ノード定義は変えない。P6A → P6B の camp
 
 **保存しない（P6C）**：ジャスト回避の反撃強化（未使用の権利・残時間・攻撃段へ移した倍率）、当該ステップの受付状態。保存形式は変えない（版 3 のまま、新しい DTO・
 恒久成長 ID なし）。強化の付与・失効は保存契機にしない。保存の採取は強化を消さない。Continue・New Game・死亡再開・休息（成長・払い戻しを含む）・
-旅立ちの成功・通常エリア移動の成功（入場の中立化 `PlayerStateController.ResetForAreaEntry`）で消える。失敗した移動要求では消えない。
+旅立ちの成功・通常エリア移動の成功（遷移の成功 Commit で出発側の主人公の権利を消す `AreaActorTransferPort.ClearShortLivedCombatOnCommittedDeparture`）で消える。失敗した移動要求・受理後に出発側を閉じてからの準備失敗／タイムアウトによる Rollback では消えない（凍結中は減らない。レビュー a24d92c R1）。
 保存先は P6C 専用（`p6c_slot0`。P6A の `slot0`・P6B の `p6b_slot0` とは別）。強化攻撃で生まれた撃破報酬は P6A の既存処理で一度だけ保存される。

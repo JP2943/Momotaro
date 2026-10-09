@@ -639,23 +639,100 @@ namespace Momotaro.Tests.EditMode
             Assert.IsFalse(d.Player.CanJustEvade);
         }
 
-        // ================================================================ P6C 12（EditMode 部分）：消去の口
+        // ================================================================ P6C 12（EditMode 部分）：消去の口と一時的な Disable
 
-        /// <summary>入場・死亡再開・休息（共通の中立化）で消える。消去は付与回数の記録を変えない。</summary>
+        /// <summary>
+        /// レビュー a24d92c R1 で変更（旧 <c>Clear_OnAreaEntryAndRespawnReset</c>）。死亡再開・休息（共通の中立化）では消える。
+        /// 一方、遷移の準備で起きる<b>一時的な Disable</b>（出発側の活動ゲートの閉鎖 → <c>ResetToNeutral</c>）と
+        /// <b>入場の準備</b>（<c>ResetForAreaEntry</c>。Commit より前に走る）では消さない——準備の失敗で同じ主人公へ戻るため。
+        /// 成功の Commit での消去は遷移役が行う（PlayMode <c>P6CWorldPlayTests.FailedMove_*</c> が実際の遷移で確かめる）。
+        /// 消去は付与回数の記録を変えない。
+        /// </summary>
         [Test]
-        public void Clear_OnAreaEntryAndRespawnReset()
+        public void Clear_OnRespawnRest_Kept_OnTemporaryDisableAndEntryPreparation()
         {
             Rig r = NewRig();
             Succeed(r);
+            float remaining = r.Player.JustEvadeCounterRemaining;
+            r.Player.ResetToNeutral(); // 活動ゲートの閉鎖による OnDisable と同じ経路
+            Assert.IsTrue(r.Player.HasJustEvadeCounter, "一時的な Disable では消さない。");
+            Assert.AreEqual(remaining, r.Player.JustEvadeCounterRemaining, 1e-6f, "残時間もそのまま。");
             r.Player.ResetForAreaEntry();
-            Assert.IsFalse(r.Player.HasJustEvadeCounter, "入場（通常移動・旅立ち）で消す。");
-            Assert.AreEqual(0f, r.Player.JustEvadeCounterRemaining);
+            Assert.IsTrue(r.Player.HasJustEvadeCounter, "入場の準備（Commit 前）では消さない。");
+            Assert.IsFalse(r.Player.IsCurrentSwingCountered);
 
-            RunUntil(r, () => true, 0.02f);
-            Succeed(r);
             r.Player.ResetForCampaignRespawn();
-            Assert.IsFalse(r.Player.HasJustEvadeCounter, "死亡再開・休息（成長・払い戻しを含む）で消す。");
+            Assert.IsFalse(r.Player.HasJustEvadeCounter, "死亡再開・休息（成長・払い戻し・旅立ちの到着後を含む）で消す。");
+            Assert.AreEqual(0f, r.Player.JustEvadeCounterRemaining);
+            Assert.AreEqual(1, r.Player.JustEvadeSuccessCount);
+
+            PlayerInputProvider.Current = r.Input; // ResetToNeutral が入力の参照を捨てたので掴み直させる
+            Frame(r, 0.02f);
+            PlayerInputProvider.Current = null;
+            Succeed(r);
+            r.Player.ClearJustEvadeCounter(); // 成功 Commit で遷移役が呼ぶ口
+            Assert.IsFalse(r.Player.HasJustEvadeCounter);
             Assert.AreEqual(2, r.Player.JustEvadeSuccessCount);
+        }
+
+        // ================================================================ P6C 10：ジャスガも不可の例外とステップ可否（レビュー a24d92c R2）
+
+        /// <summary>
+        /// 理由つきの例外（ガード不可・ジャスガ不可）は、ステップ無敵の可否を攻撃定義に従う。
+        /// Steppable=false：Validator は通し、Snapshot・命中まで false のまま届き、ステップ無敵を貫通して被弾、ジャスト回避の報酬は出ない。
+        /// Steppable=true：同じく保たれ、受付中なら回避してジャスト回避が成立する。通常のガード不能で Steppable=false は従来どおりエラー。
+        /// </summary>
+        [Test]
+        public void Exception_StepAvailabilityFollowsDefinition_FalsePiercesNoReward_TrueCanJustEvade()
+        {
+            foreach (bool steppable in new[] { false, true })
+            {
+                EnemyAttackData ex = CloneAttack(UnblockablePath, steppable);
+                SetPrivate(ex, "_justGuardable", false);
+                SetPrivate(ex, "_justGuardExceptionReason", "つかみ（P6C 検証 fixture）");
+                var report = new DataValidationReport();
+                ex.Validate(report);
+                Assert.IsFalse(report.HasErrors, "例外 Steppable=" + steppable + "：" + string.Join(", ", report.Errors));
+                Assert.IsTrue(ex.IsJustGuardException);
+
+                EnemyAttackSnapshot snap = EnemyAttackSnapshot.From(ex);
+                Assert.IsFalse(snap.Guardable);
+                Assert.IsFalse(snap.JustGuardable);
+                Assert.AreEqual(steppable, snap.Steppable, "Snapshot が保つ。");
+
+                Rig r = NewRig();
+                HitInfo hit = EnemyHitFactory.Build(snap, 30f, NewAttacker(r), r.Vitals, -r.Player.GuardForward,
+                    r.Go.transform.position, HitId.Single(++_hitSeq + 9000));
+                Assert.AreEqual(steppable, hit.Steppable, "命中が保つ。");
+                Assert.IsFalse(hit.JustGuardable);
+                BeginStep(r);
+                Frame(r, 0.06f);
+                Assert.IsTrue(r.Player.CanJustEvade, "前提：受付中のステップ。");
+                r.Vitals.ReceiveHit(hit); // 実際の被弾入口
+                if (steppable)
+                {
+                    Assert.AreEqual(HitResultKind.JustEvade, r.Results.Last, "Steppable=true の例外は回避でき、ジャスト回避が成立する。");
+                    Assert.AreEqual(1, r.Player.JustEvadeSuccessCount);
+                }
+                else
+                {
+                    Assert.AreEqual(HitResultKind.Damage, r.Results.Last, "Steppable=false の例外はステップ無敵を貫通する。");
+                    Assert.AreEqual(0, r.Player.JustEvadeSuccessCount, "ジャスト回避の報酬は出ない。");
+                    Assert.IsFalse(r.Player.HasJustEvadeCounter);
+                }
+            }
+
+            // 通常のガード不能（例外でない）は Steppable=false を許さない。
+            EnemyAttackData normal = CloneAttack(UnblockablePath, steppable: false);
+            var report2 = new DataValidationReport();
+            normal.Validate(report2);
+            Assert.IsTrue(report2.HasErrors, "通常のガード不能は Steppable 必須。");
+            // 理由なしの例外は引き続きエラー。
+            EnemyAttackData noReason = CloneAttack(UnblockablePath, steppable: false);
+            SetPrivate(noReason, "_justGuardable", false);
+            var report3 = new DataValidationReport();
+            noReason.Validate(report3);
+            Assert.IsTrue(report3.HasErrors, "理由なしの例外は拒否。");
         }
 
         // ================================================================ P6C 13：きびだんご

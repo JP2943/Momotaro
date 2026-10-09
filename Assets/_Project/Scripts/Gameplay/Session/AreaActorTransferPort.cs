@@ -288,6 +288,16 @@ namespace Momotaro.Gameplay.Session
         /// <see cref="RestoreForCampaignRespawn"/> の「Scene が作り直されることを当てにしない」と
         /// <b>同じ理由</b>で、ここにも 1 か所だけ置く。
         /// </summary>
+        /// <summary>
+        /// 遷移の<b>成功 Commit</b> で、出発側の主人公の短時間の戦闘状態（ジャスト回避の反撃強化）を消す（P6C 仕様 §8。レビュー a24d92c R1）。
+        /// 準備中の一時的な非 Active（活動ゲートの閉鎖）では消さず、Rollback では残す。旧 Area を在留させても、
+        /// 再入場・Load で権利が復活しないよう、Commit の同期区間で遷移役が呼ぶ。
+        /// </summary>
+        public void ClearShortLivedCombatOnCommittedDeparture()
+        {
+            ResolvePlayerState()?.ClearJustEvadeCounter();
+        }
+
         public void ResetForAreaEntry()
         {
             AreaEntryResetCount++;

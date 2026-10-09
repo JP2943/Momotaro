@@ -52,6 +52,7 @@ namespace Momotaro.Tests.PlayMode
         private static readonly StableId EncounterBSouth = new StableId("encounter_p6c_b_south");
         private static readonly StableId EncounterCBoss = new StableId("encounter_p6c_c_boss");
         private static readonly StableId ShrineA = new StableId("shrine_p6_a");
+        private static readonly StableId ShrineC = new StableId("shrine_p6_c");
 
         private static readonly System.Reflection.FieldInfo MachineField = typeof(EnemyAttackController).GetField("_machine",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
@@ -581,6 +582,153 @@ namespace Momotaro.Tests.PlayMode
             yield return ContinueAndWait(AreaA);
             Assert.IsFalse(Active().state.HasJustEvadeCounter, "Continue の後は強化なし（保存しない）。");
             Assert.AreEqual(virtue, Session().Progress.AvailableVirtue, "徳は保たれる。");
+        }
+
+        // ================================================================ 5. 出発側を閉じた後の失敗（レビュー a24d92c R1）
+
+        /// <summary>
+        /// P6C 12（レビュー a24d92c R1）：強化を持ったまま<b>通常エリア移動を受理</b>させ、出発側の活動ゲートが閉じて主人公が非 Active になった後に
+        /// <b>到着側の準備がタイムアウト</b>して Rollback する（B を在留させてから B の初期化担当を取り除く。P55 のスライド試験と同じ作り方）。
+        /// Rollback 後も権利が残り、残時間は凍結中（実時間 1 秒以上）に減らず、再開後は通常どおり減る。
+        /// 成功の Commit で消えることは <see cref="Lifecycle_SaveKeeps_FailedMoveKeeps_SlideClears_HudOnlyActiveArea_Kibidango_RestRespawnContinue"/> が見る。
+        /// </summary>
+        [UnityTest, Timeout(540000)]
+        public IEnumerator FailedSlide_AfterDepartureGateClosed_TimeoutRollback_KeepsCounter_FrozenThenTicks()
+        {
+            yield return NewGame();
+            yield return WaitSaved("New Game");
+            QuietFieldEnemies();
+            yield return SlideTo(ExitAEast, Key.D, Vector3.left, "A→B");
+            yield return SlideTo(new StableId("exit_p6_b_west"), Key.A, Vector3.right, "B→A（B を在留させる）");
+            AreaTransitionService transitions = Transitions();
+
+            // 到着側（在留している B）の初期化担当を取り除く → 到着準備の報告が来ず、BindTimeoutSeconds で Rollback する。
+            int removed = 0;
+            foreach (AreaInitializer initializer in Object.FindObjectsByType<AreaInitializer>(
+                         FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (initializer != null && initializer.AreaId.Equals(AreaB))
+                {
+                    Object.DestroyImmediate(initializer);
+                    removed++;
+                }
+            }
+
+            Assert.AreEqual(1, removed, "前提：在留している B の初期化担当を 1 つ取り除いた。");
+            transitions.BindTimeoutSeconds = 1.2f;
+
+            var (root, player, vitals, _) = Active();
+            Place(root, new Vector3(-3f, 0f, -3f));
+            yield return new WaitForFixedUpdate();
+            yield return GrantByStep("スライド失敗の前");
+            Assert.IsTrue(player.HasJustEvadeCounter);
+
+            AreaExitGate gate = FindExitGate(ExitAEast);
+            Place(root, gate.transform.position + Vector3.left * 0.4f);
+            yield return new WaitForFixedUpdate();
+            int rolledBefore = transitions.SlideRolledBackCount;
+            int committedBefore = transitions.SlideCommittedCount;
+            float remainingAtFreeze = -1f;
+            float realAtFreeze = 0f;
+            bool playerWasInactive = false;
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.SlideRolledBackCount == rolledBefore && Time.realtimeSinceStartup < deadline)
+            {
+                InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.D));
+                if (GameplayClockProvider.IsFrozen && remainingAtFreeze < 0f)
+                {
+                    remainingAtFreeze = player.JustEvadeCounterRemaining;
+                    realAtFreeze = Time.realtimeSinceStartup;
+                }
+
+                playerWasInactive |= !player.isActiveAndEnabled;
+                yield return null;
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            float frozenReal = Time.realtimeSinceStartup - realAtFreeze;
+            _log.Add("スライド失敗：受理時の残り=" + remainingAtFreeze.ToString("0.000") + " Rollback 後の残り="
+                     + player.JustEvadeCounterRemaining.ToString("0.000") + " 凍結の実時間=" + frozenReal.ToString("0.00")
+                     + " 主人公が非 Active になった=" + playerWasInactive + " 理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(rolledBefore + 1, transitions.SlideRolledBackCount, "到着準備のタイムアウトで戻した。理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(committedBefore, transitions.SlideCommittedCount, "成功扱いにしない。");
+            Assert.AreEqual(AreaA.Value, CurrentAreaProvider.Current.AreaId.Value, "A へ戻った。");
+            Assert.IsTrue(playerWasInactive, "前提：出発側の活動ゲートが閉じ、主人公が一時的に非 Active になった。");
+            Assert.Greater(remainingAtFreeze, 0f, "前提：受理の時点で強化を持っていた。");
+            Assert.GreaterOrEqual(frozenReal, 1.0f, "前提：凍結は実時間で 1 秒以上続いた。");
+            Assert.IsTrue(player.HasJustEvadeCounter, "Rollback 後も権利が残る。");
+            Assert.AreEqual(remainingAtFreeze, player.JustEvadeCounterRemaining, 0.02f, "凍結中の実時間では減らない。");
+            float before = player.JustEvadeCounterRemaining;
+            yield return WaitUntilOrTimeout(() => player.JustEvadeCounterRemaining < before - 0.1f || !player.HasJustEvadeCounter, 2f);
+            Assert.Less(player.JustEvadeCounterRemaining, before - 0.1f + 1e-4f, "再開後は通常どおり減る。");
+        }
+
+        /// <summary>
+        /// P6C 12（レビュー a24d92c R1）：旅立ち（お地蔵様からの遠隔移動）でも、強化を持ったまま受理 → 出発側の活動ゲートが閉じた後に
+        /// 到着側の準備・配置が失敗（既存の故障注入 <c>FastTravelPrepareFault</c>）→ Rollback で権利が残り、凍結中に減らない。
+        /// 故障を外してもう一度旅立つと成功し、出発側の主人公の権利は Commit で消え、到着側にも無い（到着後の休息）。
+        /// </summary>
+        [UnityTest, Timeout(540000)]
+        public IEnumerator FastTravel_FailAfterDepartureGateClosed_KeepsCounter_SuccessClears()
+        {
+            yield return NewGame();
+            yield return WaitSaved("New Game");
+            QuietFieldEnemies();
+            yield return SlideTo(ExitAEast, Key.D, Vector3.left, "A→B");
+            yield return SlideTo(ExitBEast, Key.D, Vector3.left, "B→C");
+            CampaignShrineService shrines = BootstrapServices.Get<CampaignShrineService>();
+            yield return InteractShrine(ShrineC);
+            shrines.Close();
+            yield return null;
+            yield return WaitSaved("C のお地蔵様");
+
+            AreaTransitionService transitions = Transitions();
+            var (root, player, vitals, _) = Active();
+            yield return GrantByStep("旅立ち失敗の前");
+            yield return InteractShrine(ShrineC);
+            transitions.Slide.FastTravelPrepareFault = _ => "P6C 検証の故障注入（到着準備の後・Commit の前）";
+            int rolledBefore = transitions.Slide.FastTravelRolledBackCount;
+            float remainingAtStart = player.JustEvadeCounterRemaining;
+            Assert.AreEqual(ShrineMenuResult.FastTravelStarted, shrines.FastTravel(ShrineA), shrines.Message);
+            float realAtStart = Time.realtimeSinceStartup;
+            bool playerWasInactive = false;
+            float remainingAtFreeze = -1f;
+            float deadline = Time.realtimeSinceStartup + 25f;
+            while (transitions.Slide.FastTravelRolledBackCount == rolledBefore && Time.realtimeSinceStartup < deadline)
+            {
+                if (GameplayClockProvider.IsFrozen && remainingAtFreeze < 0f)
+                {
+                    remainingAtFreeze = player.JustEvadeCounterRemaining;
+                }
+
+                playerWasInactive |= !player.isActiveAndEnabled;
+                yield return null;
+            }
+
+            float remainingAtRollback = player.JustEvadeCounterRemaining; // 戻った直後（再開の Tick より前）
+            transitions.Slide.FastTravelPrepareFault = null;
+            yield return WaitUntilOrTimeout(() => !transitions.Slide.IsTransitioning, 5f);
+            _log.Add("旅立ち失敗：開始時の残り=" + remainingAtStart.ToString("0.000") + " 凍結時の残り=" + remainingAtFreeze.ToString("0.000")
+                     + " 戻った直後の残り=" + remainingAtRollback.ToString("0.000") + " 少し後の残り="
+                     + player.JustEvadeCounterRemaining.ToString("0.000") + " 実時間=" + (Time.realtimeSinceStartup - realAtStart).ToString("0.00")
+                     + " 主人公が非 Active になった=" + playerWasInactive + " 理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(rolledBefore + 1, transitions.Slide.FastTravelRolledBackCount, "旅立ちが戻った。理由=" + transitions.Slide.LastFailure);
+            Assert.AreEqual(AreaC.Value, CurrentAreaProvider.Current.AreaId.Value, "C に留まった。");
+            Assert.IsTrue(playerWasInactive, "前提：出発側の活動ゲートが閉じ、主人公が一時的に非 Active になった。");
+            Assert.IsTrue(player.HasJustEvadeCounter, "旅立ちの失敗では権利が残る。");
+            Assert.Greater(remainingAtFreeze, 0f, "前提：凍結の時点で強化を持っていた。");
+            Assert.AreEqual(remainingAtFreeze, remainingAtRollback, 0.02f, "凍結中に減らない。");
+
+            // 故障を外して旅立つ → 成功。出発側（C）の主人公の権利は Commit で消え、到着（A）にも無い。
+            yield return InteractShrine(ShrineC);
+            Assert.IsTrue(player.HasJustEvadeCounter, "前提：持ったまま旅立つ。");
+            int committedBefore = transitions.Slide.FastTravelCommittedCount;
+            Assert.AreEqual(ShrineMenuResult.FastTravelStarted, shrines.FastTravel(ShrineA), shrines.Message);
+            yield return WaitUntilOrTimeout(() => transitions.Slide.FastTravelCommittedCount > committedBefore, 25f);
+            yield return WaitAreaReady(AreaA);
+            Assert.AreEqual(committedBefore + 1, transitions.Slide.FastTravelCommittedCount, "旅立ちが成立した。");
+            Assert.IsFalse(player != null && player.HasJustEvadeCounter, "出発側の主人公の権利は Commit で消える（在留しても復活しない）。");
+            Assert.IsFalse(Active().state.HasJustEvadeCounter, "到着側の主人公にも無い。");
         }
 
         // ================================================================ 試行

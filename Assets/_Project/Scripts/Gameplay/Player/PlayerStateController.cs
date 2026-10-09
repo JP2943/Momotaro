@@ -484,9 +484,9 @@ namespace Momotaro.Gameplay.Player
         /// </summary>
         public void ResetForAreaEntry()
         {
-            // P6C：反撃強化は短時間の戦闘状態。入場（通常移動・旅立ちの成功）・死亡再開・休息（成長・払い戻しを含む）で消す。
-            // 失敗した移動要求はここを通らないので、権利は通常の時間減少以外では残る（P6C 仕様 §8）。
-            ClearJustEvadeCounter();
+            // P6C（レビュー a24d92c R1）：入場の中立化では反撃強化を<b>消さない</b>。入場の準備は Commit より前に走り
+            // （同じ Area の中の旅立ちでは出発と同じ主人公）、その後に失敗して戻ることがあるため。
+            // 消すのは Commit（出発側の主人公。遷移役が呼ぶ）・死亡再開と休息（下の ResetForCampaignRespawn）・死亡。
             NeutralizeForHurt();
             _machine.Reset();
             _wasHurt = false;
@@ -501,7 +501,12 @@ namespace Momotaro.Gameplay.Player
         /// 違うのは<b>呼び出し側</b>で、再開ではこのあと全回復を適用し、入場では Snapshot を適用する。
         /// 同じ処理を 2 か所に書くと、片方だけ直る。
         /// </summary>
-        public void ResetForCampaignRespawn() => ResetForAreaEntry();
+        public void ResetForCampaignRespawn()
+        {
+            // P6C：死亡再開・休息（成長・払い戻し・旅立ちの到着後の休息を含む）で反撃強化を消す。
+            ClearJustEvadeCounter();
+            ResetForAreaEntry();
+        }
 
         /// <summary>状態・攻撃・ロック・移動抑制・先行入力を中立へ戻す（Disable 時）。</summary>
         public void ResetToNeutral()
@@ -525,7 +530,11 @@ namespace Momotaro.Gameplay.Player
             _specialRequiresRelease = false;
             _prevGuardHeld = false;
             _hitTracker.Clear();
-            ClearJustEvadeCounter(); // Disable（Area を離れる・Scene 破棄）で短時間の戦闘状態を残さない。
+            // P6C（レビュー a24d92c R1）：Disable では反撃強化の<b>権利は消さない</b>。遷移の準備で出発側の活動ゲートが
+            // 主人公を一時的に非 Active にし、準備の失敗・タイムアウトで Rollback すると同じ主人公へ戻るため。
+            // 成功の Commit では遷移役が出発側の権利を消す（AreaActorTransferPort.ClearShortLivedCombatOnCommittedDeparture）。
+            // 攻撃段へ移した倍率だけは攻撃の中断とともに解放する。
+            ReleaseSwingCounter();
 
             if (_facing != null)
             {

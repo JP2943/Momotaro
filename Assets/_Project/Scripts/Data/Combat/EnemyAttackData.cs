@@ -286,7 +286,9 @@ namespace Momotaro.Data.Combat
                     report.Error(name + ": a no-JustGuard exception must use the Unblockable telegraph (distinct from normal attacks).");
                 }
 
-                if (!_steppable)
+                // 通常のガード不能（ジャスガ可）は回避が対処手段なので Steppable 必須。
+                // ジャスガも不可の明示された例外（理由つき）は、ステップ無敵の可否を攻撃定義に従わせる（P6C 仕様 §6 の表。レビュー a24d92c R2）。
+                if (!_steppable && !IsJustGuardException)
                 {
                     report.Error(name + ": Unblockable attack must be Steppable (Step is the counter-play).");
                 }
