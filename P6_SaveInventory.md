@@ -35,6 +35,10 @@
 | 訪問済み Area | `GameSessionState` 訪問集合 | AreaId | 空 | 遷移 Commit（`NoteArrival`）／直開き | 同上。**Load では到着報酬を出さない** | RoundTrip |
 | 加入済み仲間 | `GameSessionState` 加入集合 | CompanionId（**campaign の既知仲間**＝`AreaCatalogData.CompanionIds`。R4） | 空 | 加入（P8） | 同上。未知 ID は Load 拒否 | RoundTrip／Validator |
 | クエストの段階（**P7 の接続口**） | `GameSessionState` のクエスト段階（ID → 0 以上の整数） | QuestId（campaign の既知クエスト＝`AreaCatalogData.QuestIds`。P6A は接続 fixture `quest_p6a_fixture` だけ） | 空（未設定は 0） | P7 の進行確定（`TrySetQuestStage`。保存要求つき）。**死亡・休息・周期では戻らない** | 同上。未知 ID・負数は Load 拒否 | RoundTrip／Validator／PlayMode（死亡を跨いで保持・保存） |
+| 依頼の状態（**P7**） | 上の「クエストの段階」を P7 の依頼に使う：0＝未受注、1＝受注済み、2＝報酬受領済み（「進行中」「報告可能」は受注済み＋条件の成立から**導出して保存しない**） | QuestId（P7 の依頼定義） | 0 | 受注の確定（0→1）・報告の確定（1→2。依頼報酬の GrantOnce と同じ更新）。断りは変えない | 同上。P7 の依頼は 0〜2、段階 2 ⇔ 依頼報酬 ID が付与済み（矛盾は Load 拒否） | RoundTrip／Validator／P7 02 |
+| 完了した必須イベント（**P7**） | `GameSessionState` のイベント集合 | EventId（P7 の既知イベント） | 空 | 会話の最後の決定（1 回だけ。開通する門の FlagId を同じ更新で記録） | 同上。未知 ID・重複は拒否。イベント完了 ⇔ 対応する開通の一致を検証。版 1〜3 は空 | RoundTrip／Validator／P7 03 |
+| 経路の記録（**P7**） | `GameSessionState` の章ごとの経路記録 | ChapterId ＋ 経路（標準／困難） | 未記録 | 通常の移動の到着確定（到着した Area と入口 ID）。FT・死亡再開・復旧・Load では更新しない | 同上。未知の章・経路値は拒否。版 1〜3 は未記録 | RoundTrip／P7 03 |
+| 章クリア（**P7**） | `GameSessionState` の章クリア記録（章 ID → クリア時の経路） | ChapterId（ボスの定義がある章） | 空 | 章ボスの遭遇戦の勝利（クリア・ボス撃破・権利追加と同じ更新） | 同上。章クリア ⇒ 処理済み章とボス撃破があることを検証。版 1〜3 は空 | RoundTrip／Validator／P7 04 |
 | 普通敵の復活周期 | `GameSessionState.RespawnCycle` | — | 0 | 休息・成長・死亡・旅立ちの成功（各 1 回） | 同上 | RoundTrip |
 | 調査済み地点 | `AreaRuntimeState` の調査記録 | 調査点 StableId（Area ごと） | 空 | 調査完了 | 同上。到着時に Holder へ Bind | RoundTrip |
 | 開通済みの仕掛け | `AreaRuntimeState` の FlagId 集合 | FlagId（Area ごと） | 空 | レバー・遭遇戦クリアの開通 | 同上。到着時に門へ `TryApplyOpened` | RoundTrip |
@@ -90,7 +94,7 @@ P5 の `P5_ActorTransferInventory.md` で「保持」に分類した値を土台
 
 Load では回復・周期更新・到着報酬・獲得演出を**発生させない**。
 
-## 5. DTO 対応（schemaVersion 3。P6B で 2 → 3）
+## 5. DTO 対応（schemaVersion 3。P6B で 2 → 3。**P7 で 3 → 4 の予定**）
 
 | DTO の欄 | 表の行 |
 |---|---|
@@ -106,6 +110,7 @@ Load では回復・周期更新・到着報酬・獲得演出を**発生させ�
 | `party.player {...}`／`party.companion {...}` | §2 |
 | `questStages[] {questId, stage}` | クエストの段階（版 2 で追加） |
 | `refund {rights, chapters[]}` | 払い戻し権利／権利を追加済みの章（版 3 で追加。P6B） |
+| `story {events[], routes[] {chapterId, standardReached, standardCompleted, hardReached, hardCompleted, lastRoute, bossRoute}, chapters[] {chapterId, clearedRoute}}` | 必須イベント／経路の記録／章クリア（**版 4 で追加予定。P7**） |
 | Envelope `schemaVersion`／`contentVersion`／`campaignId`／`adventureId`／`generation`／`savedAtUtc`／`checksum` | 仕様 §10 |
 
 **版 1 → 2 の読み替え**（2026-10-02、受入 P6A 08 の接続 fixture）：版 1 は `questStages` を持たない。読むときは欄の一覧を版で分け
@@ -130,3 +135,11 @@ P6A の保存・campaign・ノード定義は変えない。P6A → P6B の camp
 恒久成長 ID なし）。強化の付与・失効は保存契機にしない。保存の採取は強化を消さない。Continue・New Game・死亡再開・休息（成長・払い戻しを含む）・
 旅立ちの成功・通常エリア移動の成功（遷移の成功 Commit で出発側の主人公の権利を消す `AreaActorTransferPort.ClearShortLivedCombatOnCommittedDeparture`）で消える。失敗した移動要求・受理後に出発側を閉じてからの準備失敗／タイムアウトによる Rollback では消えない（凍結中は減らない。レビュー a24d92c R1）。
 保存先は P6C 専用（`p6c_slot0`。P6A の `slot0`・P6B の `p6b_slot0` とは別）。強化攻撃で生まれた撃破報酬は P6A の既存処理で一度だけ保存される。
+
+**版 3 → 4 の読み替え（P7。2026-10-09 の着手時に方針を記録。`P7_統合受入結果.md` 記録 001 §6）**：版 1〜3 は `story` を持たない（版 1〜3 に `story` があれば未知の欄として拒否）。
+`SaveSnapshot.HasStoryData = false` として持ち、候補 Session の構築が**明示的な移行**としてイベント・経路・章クリアを空にする（P6 までに章クリアの本番の確定は無いので遡及しない）。
+処理済み章（`refund.chapters`）がある保存では、同じ章のボスを後から倒しても権利は追加しない（既存の処理済み判定）。版 5 以上・0 以下は拒否する。
+保存先は P7 専用（`p7_slot0`）。
+
+**保存しない（P7）**：会話ウィンドウ・表示中の行・選択カーソル・会話の停止の保持・入力の解放待ち・未確定の受注／報告／イベント・通知の待ち行列。
+会話中の正常終了の Continue は ResumeAnchor の中立状態から始まり、会話は閉じている。
