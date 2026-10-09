@@ -60,11 +60,49 @@ namespace Momotaro.Gameplay.Session
     /// </summary>
     public static class GameplayClockProvider
     {
+        private static readonly System.Collections.Generic.List<object> _holds = new System.Collections.Generic.List<object>(2);
+
         /// <summary>現在の供給元（未設定なら null）。</summary>
         public static IGameplayClockSource Current { get; set; }
 
-        /// <summary>いま Gameplay 時計が止まっているか。供給元が無ければ false。</summary>
-        public static bool IsFrozen => Current != null && Current.IsFrozen;
+        /// <summary>
+        /// いま Gameplay 時計が止まっているか。<b>遷移の凍結</b>（供給元）か、<b>保持</b>（会話など。<see cref="Hold"/>）のどちらかがあれば true。
+        /// 供給元も保持も無ければ false。
+        /// </summary>
+        public static bool IsFrozen => (Current != null && Current.IsFrozen) || _holds.Count > 0;
+
+        /// <summary>遷移の凍結だけを見る（保持を含めない。診断・テスト用）。</summary>
+        public static bool IsTransitionFrozen => Current != null && Current.IsFrozen;
+
+        /// <summary>保持の数（診断・テスト用）。</summary>
+        public static int HoldCount => _holds.Count;
+
+        /// <summary>
+        /// Gameplay 時計を保持で止める（P7 01。会話中の停止。仕様 §3）。
+        ///
+        /// <b>遷移の凍結とは別に持つ。</b> 遷移の凍結は単一の真偽値で所有者は遷移サービスなので、会話がそれを
+        /// <c>Freeze</c>／<c>Thaw</c> すると、遷移側の <c>Thaw</c> が会話の停止を外してしまう（逆も同じ）。
+        /// 保持は所有者ごとに 1 件で、同じ所有者の二重保持は 1 件のまま。外すのは <see cref="Release"/> だけ。
+        /// </summary>
+        public static bool Hold(object owner)
+        {
+            if (owner == null || _holds.Contains(owner))
+            {
+                return false;
+            }
+
+            _holds.Add(owner);
+            return true;
+        }
+
+        /// <summary>保持を外す。持っていなければ何もしない。</summary>
+        public static bool Release(object owner) => owner != null && _holds.Remove(owner);
+
+        /// <summary>その所有者が保持しているか。</summary>
+        public static bool IsHeldBy(object owner) => owner != null && _holds.Contains(owner);
+
+        /// <summary>保持をすべて外す（テストの後始末・常駐の作り直し用）。</summary>
+        public static void ClearHolds() => _holds.Clear();
 
         /// <summary>供給元が差さっているか（診断・テスト用）。</summary>
         public static bool HasSource => Current != null;

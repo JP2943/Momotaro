@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
+using Momotaro.Data.Story;
 using Momotaro.Gameplay.Session;
+using Momotaro.Gameplay.Story;
 
 namespace Momotaro.Gameplay.Save
 {
@@ -49,9 +51,10 @@ namespace Momotaro.Gameplay.Save
     {
         /// <summary>
         /// 保存形式の版（Envelope の schemaVersion）。2：クエスト段階の接続口（questStages）を足した（受入 P6A 08）。3：払い戻し権利と処理済み章（refund）を足した（P6B 02）。
+        /// 4：必須イベント・経路の記録・章クリア（story）を足した（P7）。
         /// 1 の保存はクエスト段階が空のものとして読む（<see cref="OldestReadableSchemaVersion"/>）。
         /// </summary>
-        public const int CurrentSchemaVersion = 3;
+        public const int CurrentSchemaVersion = 4;
 
         /// <summary>読める最も古い保存形式の版。</summary>
         public const int OldestReadableSchemaVersion = 1;
@@ -63,8 +66,14 @@ namespace Momotaro.Gameplay.Save
             KeyValuePair<string, int>[] inventory, int kibidango,
             string[] registeredShrines, string checkpoint, ResumeAnchorKind resumeKind, string resumeAreaId,
             string resumePointId, PartySaveValues party, KeyValuePair<string, int>[] questStages = null,
-            bool hasRefundData = false, int refundRights = 0, string[] processedChapters = null)
+            bool hasRefundData = false, int refundRights = 0, string[] processedChapters = null,
+            bool hasStoryData = false, string[] completedEvents = null,
+            KeyValuePair<string, ChapterRouteRecord>[] routes = null, KeyValuePair<string, StoryRoute>[] clearedChapters = null)
         {
+            HasStoryData = hasStoryData;
+            CompletedEvents = completedEvents ?? Array.Empty<string>();
+            Routes = routes ?? Array.Empty<KeyValuePair<string, ChapterRouteRecord>>();
+            ClearedChapters = clearedChapters ?? Array.Empty<KeyValuePair<string, StoryRoute>>();
             HasRefundData = hasRefundData;
             RefundRights = refundRights;
             ProcessedChapters = processedChapters ?? Array.Empty<string>();
@@ -131,6 +140,21 @@ namespace Momotaro.Gameplay.Save
         public IReadOnlyList<string> ProcessedChapters { get; }
 
         /// <summary>
+        /// 必須イベント・経路・章クリアを持つか（P7。版 4 以降の保存と採取は true）。版 1〜3 から読んだものは false で、
+        /// 候補 Session の構築が<b>明示的な移行</b>（イベント・経路・章クリアを空）で補う。
+        /// </summary>
+        public bool HasStoryData { get; }
+
+        /// <summary>完了した必須イベント（整列済み）。</summary>
+        public IReadOnlyList<string> CompletedEvents { get; }
+
+        /// <summary>章ごとの経路の記録（章 ID 順。空の記録は書かない）。</summary>
+        public IReadOnlyList<KeyValuePair<string, ChapterRouteRecord>> Routes { get; }
+
+        /// <summary>章クリア（章 ID 順。値はクリア時の経路）。</summary>
+        public IReadOnlyList<KeyValuePair<string, StoryRoute>> ClearedChapters { get; }
+
+        /// <summary>
         /// Session と Actor の値から Snapshot を採る（<b>メインスレッドで</b>。仕様 §9）。
         ///
         /// 呼び出し側の責任：状態更新の途中で呼ばない（命中・死亡・報酬・クリアの調停が終わった区切りで）。
@@ -185,6 +209,18 @@ namespace Momotaro.Gameplay.Save
             session.Progress.CopyProcessedChaptersTo(chapters);
             chapters.Sort(StringComparer.Ordinal);
 
+            var events = new List<string>();
+            session.Story.CopyEventsTo(events);
+            events.Sort(StringComparer.Ordinal);
+
+            var routes = new List<KeyValuePair<string, ChapterRouteRecord>>();
+            session.Story.CopyRoutesTo(routes);
+            routes.Sort((a, b) => string.CompareOrdinal(a.Key, b.Key));
+
+            var cleared = new List<KeyValuePair<string, StoryRoute>>();
+            session.Story.CopyClearedChaptersTo(cleared);
+            cleared.Sort((a, b) => string.CompareOrdinal(a.Key, b.Key));
+
             ResumeAnchor resume = session.Resume;
             return new SaveSnapshot(
                 campaign.CampaignId.Value, campaign.ContentVersion, session.AdventureId, session.Changes.Revision,
@@ -194,7 +230,8 @@ namespace Momotaro.Gameplay.Save
                 inventory.ToArray(), session.Kibidango,
                 SortedIds(session.RegisteredShrines), session.Checkpoint.Value,
                 resume.Kind, resume.AreaId.Value, resume.PointId.Value, party, quests.ToArray(),
-                true, session.Progress.RefundRights, chapters.ToArray());
+                true, session.Progress.RefundRights, chapters.ToArray(),
+                true, events.ToArray(), routes.ToArray(), cleared.ToArray());
         }
 
         private static int ByKey(KeyValuePair<string, int> a, KeyValuePair<string, int> b) =>

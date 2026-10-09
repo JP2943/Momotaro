@@ -174,6 +174,201 @@ namespace Momotaro.Gameplay.Session
             }
         }
 
+        // ---- 会話・依頼・必須イベント・経路・章（P7）----
+
+        private readonly Momotaro.Gameplay.Story.StoryProgressState _story = new Momotaro.Gameplay.Story.StoryProgressState();
+
+        /// <summary>必須イベント・経路・章クリアの記録（P7）。変更はこのクラスの確定入口からだけ。</summary>
+        public Momotaro.Gameplay.Story.StoryProgressState Story => _story;
+
+        /// <summary>
+        /// 依頼の受注を確定する（P7 02。仕様 §6）。<b>未受注のときだけ</b>段階を 1 にして保存を要求する。
+        /// 既知 ID・受注可能かの検証は呼び出し側（<c>StoryProcedures</c>）が Data と照らして行う。不成立は無変更。
+        /// </summary>
+        public Momotaro.Gameplay.Story.QuestAcceptResult CommitQuestAccepted(Momotaro.Gameplay.Story.QuestInfo quest)
+        {
+            if (quest == null || quest.QuestId.IsEmpty)
+            {
+                return Momotaro.Gameplay.Story.QuestAcceptResult.Unknown;
+            }
+
+            int stage = QuestStageOf(quest.QuestId);
+            if (stage >= Momotaro.Gameplay.Story.QuestStage.Rewarded)
+            {
+                return Momotaro.Gameplay.Story.QuestAcceptResult.AlreadyRewarded;
+            }
+
+            if (stage == Momotaro.Gameplay.Story.QuestStage.Accepted)
+            {
+                return Momotaro.Gameplay.Story.QuestAcceptResult.AlreadyAccepted;
+            }
+
+            _log.BeginBatch("quest_accepted");
+            try
+            {
+                _questStages[quest.QuestId.Value] = Momotaro.Gameplay.Story.QuestStage.Accepted;
+                _log.Touch("quest_accepted", autosave: true);
+            }
+            finally
+            {
+                _log.EndBatch();
+            }
+
+            return Momotaro.Gameplay.Story.QuestAcceptResult.Accepted;
+        }
+
+        /// <summary>
+        /// 依頼の報告を確定する（P7 02。仕様 §6）。<b>状態と条件をここで再検証し</b>、受領済みの記録・徳の加算・
+        /// 既存の報酬台帳への記録（GrantOnce の報酬 ID）を<b>1 つの更新</b>で行い、保存要求は最後に 1 件だけ出す。
+        /// 報告可能でなければ何も変えない。重複・再入は段階 2 と報酬 ID の両方で弾かれる（二回分の徳を付けない）。
+        /// 到達・遭遇戦の確定そのもの（とその報酬）は再実行しない。
+        /// </summary>
+        public Momotaro.Gameplay.Story.QuestReportResult CommitQuestReported(Momotaro.Gameplay.Story.QuestInfo quest,
+            out int grantedVirtue)
+        {
+            grantedVirtue = 0;
+            if (quest == null || quest.QuestId.IsEmpty)
+            {
+                return Momotaro.Gameplay.Story.QuestReportResult.Unknown;
+            }
+
+            Momotaro.Data.Story.QuestStateKind state = Momotaro.Gameplay.Story.StoryRules.StateOf(this, quest);
+            switch (state)
+            {
+                case Momotaro.Data.Story.QuestStateKind.Rewarded:
+                    return Momotaro.Gameplay.Story.QuestReportResult.AlreadyRewarded;
+                case Momotaro.Data.Story.QuestStateKind.NotAccepted:
+                    return Momotaro.Gameplay.Story.QuestReportResult.NotAccepted;
+                case Momotaro.Data.Story.QuestStateKind.InProgress:
+                    return Momotaro.Gameplay.Story.QuestReportResult.NotReportable;
+            }
+
+            if (quest.Reward.HasReward && !quest.Reward.RewardId.IsEmpty && _progress.HasGranted(quest.Reward.RewardId))
+            {
+                // 報酬だけ付与済みで段階が 2 でない保存は Load が拒否する。ここに来たら付けずに止める。
+                return Momotaro.Gameplay.Story.QuestReportResult.AlreadyRewarded;
+            }
+
+            _log.BeginBatch("quest_reported");
+            try
+            {
+                _questStages[quest.QuestId.Value] = Momotaro.Gameplay.Story.QuestStage.Rewarded;
+                _log.Touch("quest_reported", autosave: true);
+                if (quest.Reward.HasReward)
+                {
+                    _progress.TryGrant(quest.Reward, out grantedVirtue);
+                }
+            }
+            finally
+            {
+                _log.EndBatch();
+            }
+
+            return Momotaro.Gameplay.Story.QuestReportResult.Reported;
+        }
+
+        /// <summary>
+        /// 必須イベントの完了を確定する（P7 03。仕様 §7）。<b>1 回だけ</b>。同じ更新で、イベントが開ける仕掛けの開通を記録する
+        /// （門 <c>AreaFlagDoor</c> の開通・保存・入場時の復元は既存の仕組み）。既に完了していれば何もしない。
+        /// </summary>
+        public bool CommitEventCompleted(Momotaro.Gameplay.Story.StoryEventInfo storyEvent, out bool flagOpened)
+        {
+            flagOpened = false;
+            if (storyEvent == null || storyEvent.EventId.IsEmpty || _story.IsEventCompleted(storyEvent.EventId))
+            {
+                return false;
+            }
+
+            _log.BeginBatch("event_completed");
+            try
+            {
+                _story.TryCompleteEvent(storyEvent.EventId);
+                _log.Touch("event_completed", autosave: true);
+                if (storyEvent.OpensFlag)
+                {
+                    flagOpened = GetOrCreateArea(storyEvent.OpensAreaId).TryOpen(storyEvent.OpensFlagId);
+                }
+            }
+            finally
+            {
+                _log.EndBatch();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 通常の移動の到着を章の経路へ反映する（P7 03。仕様 §7）。<b>到着の確定と同じまとめの中で</b>呼ぶ（保存を重ねない）。
+        /// FT・死亡再開・移動失敗の復旧・Load の到着では呼ばない（推測で経路を書かない）。変化したら true。
+        /// </summary>
+        public bool NoteStoryArrival(Momotaro.Gameplay.Story.StoryCatalog story, StableId areaId, StableId entryId)
+        {
+            if (story == null || areaId.IsEmpty)
+            {
+                return false;
+            }
+
+            bool changed = false;
+            foreach (Momotaro.Gameplay.Story.ChapterInfo chapter in story.Chapters)
+            {
+                changed |= _story.ApplyArrival(chapter, areaId, entryId);
+            }
+
+            if (changed)
+            {
+                _log.Touch("route_recorded", autosave: true);
+            }
+
+            return changed;
+        }
+
+        /// <summary>
+        /// 章ボスの遭遇戦の勝利を確定する（P7 04。仕様 §8）。<b>遭遇戦のクリア・既存の撃破報酬（初回ボーナス）・開通・ボス撃破・
+        /// 章クリア記録（その時点のボス到達経路）・払い戻し権利の追加と処理済み章</b>を 1 つの更新で行い、保存要求は最後に 1 件だけ出す。
+        /// 既にクリア済みの遭遇戦なら何もしない（通知の再送・Load 後の再通知で二重に付けない）。新たな章クリアの徳ボーナスは無い。
+        /// </summary>
+        public ChapterClearCommit CommitChapterBossVictory(StableId areaId, StableId bossEncounterId,
+            in RewardSnapshot clearBonus, StableId unlockFlagId, StableId chapterId, int rightsPerChapter, int rightsMax)
+        {
+            if (areaId.IsEmpty || bossEncounterId.IsEmpty || chapterId.IsEmpty)
+            {
+                return default;
+            }
+
+            _log.BeginBatch("chapter_cleared");
+            try
+            {
+                EncounterClearCommit encounter = CommitEncounterClear(areaId, bossEncounterId, clearBonus, unlockFlagId);
+                if (!encounter.Recorded)
+                {
+                    return default;
+                }
+
+                bool boss = TryRecordBossDefeat(areaId, bossEncounterId, RewardSnapshot.None, out _);
+                bool cleared = _story.TryMarkChapterCleared(chapterId);
+                if (cleared)
+                {
+                    _log.Touch("chapter_cleared", autosave: true);
+                }
+
+                ChapterRightsResult rights = _progress.TryGrantChapterRefundRights(chapterId, rightsPerChapter, rightsMax,
+                    out int added);
+                return new ChapterClearCommit(encounter, boss, cleared, rights, added);
+            }
+            finally
+            {
+                _log.EndBatch();
+            }
+        }
+
+        /// <summary>保存から会話・章の記録を置く（候補 Session の構築だけ。検証済みの値）。</summary>
+        internal void RestoreStory(IEnumerable<string> events,
+            IEnumerable<KeyValuePair<string, Momotaro.Gameplay.Story.ChapterRouteRecord>> routes,
+            IEnumerable<KeyValuePair<string, Momotaro.Data.Story.StoryRoute>> clearedChapters)
+        {
+            _story.RestoreFrom(events, routes, clearedChapters);
+        }
+
         /// <summary>保存からクエストの段階を置く（候補 Session の構築だけ。検証済みの値）。</summary>
         internal void RestoreQuestStages(IEnumerable<KeyValuePair<string, int>> stages)
         {
@@ -720,6 +915,35 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>この呼び出しで仕掛けを開けたか。</summary>
         public bool FlagOpened { get; }
+    }
+
+    /// <summary>章ボスの勝利の確定結果（P7 04）。</summary>
+    public readonly struct ChapterClearCommit
+    {
+        public ChapterClearCommit(EncounterClearCommit encounter, bool bossRecorded, bool chapterCleared,
+            ChapterRightsResult rights, int rightsAdded)
+        {
+            Encounter = encounter;
+            BossRecorded = bossRecorded;
+            ChapterCleared = chapterCleared;
+            Rights = rights;
+            RightsAdded = rightsAdded;
+        }
+
+        /// <summary>遭遇戦のクリア（初回ボーナス・開通を含む）。<c>Recorded</c> が false なら他も何もしていない。</summary>
+        public EncounterClearCommit Encounter { get; }
+
+        /// <summary>この呼び出しでボス撃破を記録したか。</summary>
+        public bool BossRecorded { get; }
+
+        /// <summary>この呼び出しで章クリアを記録したか。</summary>
+        public bool ChapterCleared { get; }
+
+        /// <summary>払い戻し権利の追加の結果（上限で 0 でも Processed）。</summary>
+        public ChapterRightsResult Rights { get; }
+
+        /// <summary>実際に増えた権利（上限なら 0。通知はこの値を出す）。</summary>
+        public int RightsAdded { get; }
     }
 
     /// <summary>配置物の取得結果（P6A-01）。</summary>

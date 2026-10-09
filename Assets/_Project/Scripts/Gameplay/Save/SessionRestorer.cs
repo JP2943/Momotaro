@@ -59,6 +59,13 @@ namespace Momotaro.Gameplay.Save
             session.Inventory.RestoreFrom(new List<KeyValuePair<string, int>>(snapshot.Inventory));
             session.RestoreVisitsAndRecruits(Ids(snapshot.VisitedAreas), Ids(snapshot.Recruited));
             session.RestoreQuestStages(snapshot.QuestStages);
+
+            // P7：版 1〜3 は会話・章の欄を持たない。明示的な移行としてイベント・経路・章クリアを空にする
+            // （P6 までに章クリアの本番の確定は無いので遡及しない。処理済み章は上の払い戻しの欄のまま）。
+            if (snapshot.HasStoryData)
+            {
+                session.RestoreStory(snapshot.CompletedEvents, snapshot.Routes, snapshot.ClearedChapters);
+            }
             session.RestoreAdventure(
                 snapshot.AdventureId, Ids(snapshot.RegisteredShrines), new StableId(snapshot.Checkpoint),
                 ResumeAnchor.From(snapshot.ResumeKind, new StableId(snapshot.ResumeAreaId), new StableId(snapshot.ResumePointId)),

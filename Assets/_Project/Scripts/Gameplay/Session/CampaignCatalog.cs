@@ -132,6 +132,7 @@ namespace Momotaro.Gameplay.Session
         private readonly HashSet<string> _knownCompanions = new HashSet<string>();
         private readonly HashSet<string> _knownQuests = new HashSet<string>();
         private readonly HashSet<string> _knownChapters = new HashSet<string>();
+        private readonly HashSet<string> _storyQuests = new HashSet<string>();
 
         private CampaignCatalog(StableId campaignId, int contentVersion, StableId initialShrineId, int kibidangoBaseCapacity)
         {
@@ -204,6 +205,19 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>この campaign の保存が持ちうるクエストの ID か（P7 の接続口。受入 P6A 08）。</summary>
         public bool IsKnownQuest(StableId questId) => !questId.IsEmpty && _knownQuests.Contains(questId.Value);
+
+        /// <summary>
+        /// P7 の依頼（段階が 0＝未受注・1＝受注済み・2＝受領済みの意味を持つ）か。P6A の接続 fixture のような
+        /// 段階の意味を持たないクエストは false（保存の検証で「0 以上の整数」のまま扱う）。
+        /// </summary>
+        public bool IsStoryQuest(StableId questId) => !questId.IsEmpty && _storyQuests.Contains(questId.Value);
+
+        /// <summary>会話・依頼・必須イベント・章（P7。Data に無ければ null）。</summary>
+        public Momotaro.Gameplay.Story.StoryCatalog Story { get; private set; }
+
+        /// <summary>エリアの保存対象 ID 一覧（未知エリアは null）。</summary>
+        private AreaContentIds ContentOf(StableId areaId) =>
+            !areaId.IsEmpty && _content.TryGetValue(areaId.Value, out AreaContentIds ids) ? ids : null;
 
         /// <summary>エリアの保存対象 ID 一覧（未知エリアは false）。</summary>
         public bool TryGetContent(StableId areaId, out AreaContentIds content)
@@ -503,6 +517,29 @@ namespace Momotaro.Gameplay.Session
             AddKnown(built._knownQuests, data.QuestIds, "quest", errors);
             AddKnown(built._knownChapters, data.ChapterIds, "chapter", errors);
             SkillGraphCheck.Check(data.GrowthNodes, errors);
+
+            // P7：会話・依頼・必須イベント・章。依頼 ID・依頼報酬 ID・章 ID は既知 ID に加える（Data へ二重に書かせない）。
+            if (data.Story != null)
+            {
+                built.Story = Momotaro.Gameplay.Story.StoryCatalog.Build(data.Story, areas, built.ContentOf, errors);
+                if (built.Story != null)
+                {
+                    foreach (Momotaro.Gameplay.Story.QuestInfo quest in built.Story.Quests)
+                    {
+                        built._knownQuests.Add(quest.QuestId.Value);
+                        built._storyQuests.Add(quest.QuestId.Value);
+                        if (quest.Reward.GrantOnce && !quest.Reward.RewardId.IsEmpty)
+                        {
+                            built._knownRewards.Add(quest.Reward.RewardId.Value);
+                        }
+                    }
+
+                    foreach (Momotaro.Gameplay.Story.ChapterInfo chapter in built.Story.Chapters)
+                    {
+                        built._knownChapters.Add(chapter.ChapterId.Value);
+                    }
+                }
+            }
 
             return errors.Count == before ? built : null;
         }

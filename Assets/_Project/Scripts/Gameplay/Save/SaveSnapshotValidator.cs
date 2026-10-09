@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
+using Momotaro.Data.Story;
 using Momotaro.Gameplay.Session;
+using Momotaro.Gameplay.Story;
 
 namespace Momotaro.Gameplay.Save
 {
@@ -264,8 +266,183 @@ namespace Momotaro.Gameplay.Save
             // ---- Actor ----
             ValidateParty(snapshot.Party, errors);
 
+            // ---- 依頼・必須イベント・経路・章クリア（P7）----
+            ValidateStory(snapshot, campaign, errors);
+
             return errors.Count == before;
         }
+
+        /// <summary>
+        /// P7 の検査。<b>黙って直さない</b>：依頼の段階と報酬台帳の矛盾、イベントと開通の矛盾、経路の値の矛盾、
+        /// 章クリアと処理済み章・ボス撃破の矛盾を拒否する。版 1〜3（<see cref="SaveSnapshot.HasStoryData"/> が false）は
+        /// 欄が無いので移行で空にする——空でない値があれば不正。
+        /// </summary>
+        private static void ValidateStory(SaveSnapshot snapshot, CampaignCatalog campaign, List<string> errors)
+        {
+            StoryCatalog story = campaign.Story;
+
+            // 依頼（段階の意味を持つ P7 の依頼だけ）：0〜2、段階 2 ⇔ 依頼報酬が付与済み。
+            var granted = new HashSet<string>(snapshot.GrantedRewards);
+            var stages = new Dictionary<string, int>();
+            foreach (KeyValuePair<string, int> pair in snapshot.QuestStages)
+            {
+                stages[pair.Key] = pair.Value;
+            }
+
+            if (story != null)
+            {
+                foreach (QuestInfo quest in story.Quests)
+                {
+                    stages.TryGetValue(quest.QuestId.Value, out int stage);
+                    if (stage > QuestStage.Max)
+                    {
+                        errors.Add("依頼 '" + quest.QuestId.Value + "' の段階 " + stage + " が範囲外です（0〜" + QuestStage.Max + "）。");
+                    }
+
+                    if (quest.Reward.GrantOnce && !quest.Reward.RewardId.IsEmpty)
+                    {
+                        bool rewarded = granted.Contains(quest.Reward.RewardId.Value);
+                        if (stage == QuestStage.Rewarded && !rewarded)
+                        {
+                            errors.Add("依頼 '" + quest.QuestId.Value + "' が受領済みなのに報酬 '" + quest.Reward.RewardId.Value + "' がありません。");
+                        }
+                        else if (stage != QuestStage.Rewarded && rewarded)
+                        {
+                            errors.Add("依頼 '" + quest.QuestId.Value + "' の報酬が付与済みなのに受領済みではありません。");
+                        }
+                    }
+                }
+            }
+
+            if (!snapshot.HasStoryData)
+            {
+                if (snapshot.CompletedEvents.Count != 0 || snapshot.Routes.Count != 0 || snapshot.ClearedChapters.Count != 0)
+                {
+                    errors.Add("会話・章の欄が無い保存に、イベント・経路・章クリアの値があります。");
+                }
+
+                return;
+            }
+
+            var opened = new Dictionary<string, HashSet<string>>();
+            var bosses = new Dictionary<string, HashSet<string>>();
+            var clears = new Dictionary<string, HashSet<string>>();
+            foreach (AreaSaveRecord area in snapshot.Areas)
+            {
+                opened[area.AreaId] = new HashSet<string>(area.OpenedFlags);
+                bosses[area.AreaId] = new HashSet<string>(area.DefeatedBosses);
+                clears[area.AreaId] = new HashSet<string>(area.ClearedEncounters);
+            }
+
+            var seenEvents = new HashSet<string>();
+            foreach (string id in snapshot.CompletedEvents)
+            {
+                if (story == null || !story.TryGetEvent(new StableId(id), out StoryEventInfo info))
+                {
+                    errors.Add("未知の必須イベント '" + id + "'。");
+                    continue;
+                }
+
+                if (!seenEvents.Add(id))
+                {
+                    errors.Add("必須イベント '" + id + "' が重複しています。");
+                    continue;
+                }
+
+                if (info.OpensFlag && !(opened.TryGetValue(info.OpensAreaId.Value, out HashSet<string> flags)
+                                        && flags.Contains(info.OpensFlagId.Value)))
+                {
+                    errors.Add("必須イベント '" + id + "' が完了しているのに門 '" + info.OpensFlagId.Value + "' が開いていません。");
+                }
+            }
+
+            if (story != null)
+            {
+                foreach (StoryEventInfo info in story.Events)
+                {
+                    if (info.OpensFlag && !seenEvents.Contains(info.EventId.Value)
+                        && opened.TryGetValue(info.OpensAreaId.Value, out HashSet<string> flags) && flags.Contains(info.OpensFlagId.Value))
+                    {
+                        errors.Add("門 '" + info.OpensFlagId.Value + "' が開いているのに必須イベント '" + info.EventId.Value + "' が未完了です。");
+                    }
+                }
+            }
+
+            var seenRoutes = new HashSet<string>();
+            var routeOf = new Dictionary<string, ChapterRouteRecord>();
+            foreach (KeyValuePair<string, ChapterRouteRecord> pair in snapshot.Routes)
+            {
+                if (story == null || !story.TryGetChapter(new StableId(pair.Key), out _))
+                {
+                    errors.Add("経路の記録に未知の章 '" + pair.Key + "'。");
+                    continue;
+                }
+
+                if (!seenRoutes.Add(pair.Key))
+                {
+                    errors.Add("章 '" + pair.Key + "' の経路の記録が重複しています。");
+                    continue;
+                }
+
+                ChapterRouteRecord r = pair.Value;
+                routeOf[pair.Key] = r;
+                if (!IsCompletedOrNone(r, r.LastRoute) || !IsCompletedOrNone(r, r.BossRoute))
+                {
+                    errors.Add("章 '" + pair.Key + "' の直前の経路・ボス到達経路が、踏破の記録と一致しません。");
+                }
+            }
+
+            var processed = new HashSet<string>(snapshot.ProcessedChapters);
+            var seenCleared = new HashSet<string>();
+            foreach (KeyValuePair<string, StoryRoute> pair in snapshot.ClearedChapters)
+            {
+                if (story == null || !story.TryGetChapter(new StableId(pair.Key), out ChapterInfo chapter))
+                {
+                    errors.Add("未知の章のクリア記録 '" + pair.Key + "'。");
+                    continue;
+                }
+
+                if (!seenCleared.Add(pair.Key))
+                {
+                    errors.Add("章 '" + pair.Key + "' のクリア記録が重複しています。");
+                    continue;
+                }
+
+                if (snapshot.HasRefundData && !processed.Contains(pair.Key))
+                {
+                    errors.Add("章 '" + pair.Key + "' がクリア済みなのに払い戻し権利の処理済みではありません。");
+                }
+
+                string bossArea = chapter.BossAreaId.Value;
+                if (!(bosses.TryGetValue(bossArea, out HashSet<string> b) && b.Contains(chapter.BossId.Value))
+                    || !(clears.TryGetValue(bossArea, out HashSet<string> c) && c.Contains(chapter.BossId.Value)))
+                {
+                    errors.Add("章 '" + pair.Key + "' がクリア済みなのに章ボス '" + chapter.BossId.Value + "' の撃破・クリアの記録がありません。");
+                }
+
+                if (pair.Value != StoryRoute.None
+                    && !(routeOf.TryGetValue(pair.Key, out ChapterRouteRecord rr) && rr.Completed(pair.Value)))
+                {
+                    errors.Add("章 '" + pair.Key + "' のクリア時の経路が踏破の記録と一致しません。");
+                }
+            }
+
+            // 章ボスを倒した記録があるのに章クリアが無い（同じ更新で確定するので、片方だけの保存は作られない）。
+            if (story != null)
+            {
+                foreach (ChapterInfo chapter in story.Chapters)
+                {
+                    if (!seenCleared.Contains(chapter.ChapterId.Value)
+                        && bosses.TryGetValue(chapter.BossAreaId.Value, out HashSet<string> b) && b.Contains(chapter.BossId.Value))
+                    {
+                        errors.Add("章ボス '" + chapter.BossId.Value + "' の撃破記録があるのに章 '" + chapter.ChapterId.Value + "' がクリアされていません。");
+                    }
+                }
+            }
+        }
+
+        private static bool IsCompletedOrNone(in ChapterRouteRecord record, StoryRoute route) =>
+            route == StoryRoute.None || record.Completed(route);
 
         private static void ValidateResume(SaveSnapshot snapshot, AreaCatalog catalog, CampaignCatalog campaign,
             HashSet<string> registered, List<string> errors)

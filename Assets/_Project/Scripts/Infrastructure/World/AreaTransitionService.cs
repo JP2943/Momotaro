@@ -296,7 +296,13 @@ namespace Momotaro.Infrastructure.World
         /// 初期化の時点で記録すると、隔離された Prepared や、タイムアウト後に遅れて着いた Scene が
         /// 「訪問済み」を残してしまう（§11 の E06）。
         /// </summary>
-        internal void NoteArrival(StableId areaId, StableId entryId)
+        internal void NoteArrival(StableId areaId, StableId entryId) => NoteArrival(areaId, entryId, recordRoute: true);
+
+        /// <summary>
+        /// 到着を進行へ記録する。<paramref name="recordRoute"/> が false なら章の経路を記録しない（P7 03：移動に失敗して
+        /// 出発 Area へ戻した復旧の到着は「通過の成功」ではないので、経路の推測に使わない）。
+        /// </summary>
+        internal void NoteArrival(StableId areaId, StableId entryId, bool recordRoute)
         {
             GameSessionState session = GameSessionProvider.Current;
             if (session == null)
@@ -320,7 +326,22 @@ namespace Momotaro.Infrastructure.World
                 session.SetResumeAnchor(ResumeAnchor.AtEntry(areaId, entryId));
             }
 
-            LastArrivalCommit = session.CommitArrival(areaId, campaign.ArrivalRewardOf(areaId));
+            // P7 03：到着の確定と章の経路の記録を<b>1 つのまとめ</b>にする（保存要求は 1 件。依頼ごとに Snapshot を量産しない）。
+            // FT・死亡再開はお地蔵様の入口に着くので経路の終端・ボス前に当たらない（推測しない）。Load の到着はここを通らない。
+            session.Changes.BeginBatch("area_arrival");
+            try
+            {
+                LastArrivalCommit = session.CommitArrival(areaId, campaign.ArrivalRewardOf(areaId));
+                if (recordRoute && campaign.Story != null)
+                {
+                    session.NoteStoryArrival(campaign.Story, areaId, entryId);
+                }
+            }
+            finally
+            {
+                session.Changes.EndBatch();
+            }
+
             ArrivalCommitted?.Invoke(areaId, LastArrivalCommit);
         }
 
@@ -1053,7 +1074,7 @@ namespace Momotaro.Infrastructure.World
 
             _slideRunner?.NotifySingleLoadCompleted();
 
-            NoteArrival(_pendingTransfer.OriginAreaId, _pendingTransfer.OriginEntryId);
+            NoteArrival(_pendingTransfer.OriginAreaId, _pendingTransfer.OriginEntryId, recordRoute: false);
             recovered.Activate();
             _coordinator.NotifyFailed(transitionId, oldSceneUsable: true);
             GameModeProvider.Current?.ChangeMode(GameMode.Exploration);

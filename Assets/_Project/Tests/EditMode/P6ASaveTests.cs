@@ -179,10 +179,13 @@ namespace Momotaro.Tests.EditMode
             AssertRejected(json.Replace("\"kibidango\": 1,", "\"kibidango\": \"1\","), "型違い");
             AssertRejected(json.Replace("\"total\": ", "\"total\": 1"), "改ざん（checksum 不一致）");
             AssertRejected(json + "{}", "後ろの余計な内容");
-            // P6B で現行の版は 3（払い戻しの欄を追加）。
-            AssertRejected(json.Replace("\"schemaVersion\": 3", "\"schemaVersion\": 4"), "未対応の版");
-            AssertRejected(json.Replace("\"schemaVersion\": 3", "\"schemaVersion\": 1"), "版 1 に questStages・refund は無い（未知の欄）");
-            AssertRejected(json.Replace("\"schemaVersion\": 3", "\"schemaVersion\": 2"), "版 2 に refund は無い（未知の欄）");
+            // P6B で版 3（払い戻しの欄を追加）、P7 で版 4（会話・章の欄 story を追加）。現行の版は SaveSnapshot.CurrentSchemaVersion。
+            string current = "\"schemaVersion\": " + SaveSnapshot.CurrentSchemaVersion;
+            StringAssert.Contains(current, json);
+            AssertRejected(json.Replace(current, "\"schemaVersion\": " + (SaveSnapshot.CurrentSchemaVersion + 1)), "未対応の版");
+            AssertRejected(json.Replace(current, "\"schemaVersion\": 1"), "版 1 に questStages・refund は無い（未知の欄）");
+            AssertRejected(json.Replace(current, "\"schemaVersion\": 2"), "版 2 に refund は無い（未知の欄）");
+            AssertRejected(json.Replace(current, "\"schemaVersion\": 3"), "版 3 に story は無い（未知の欄。P7）");
             AssertRejected(string.Empty, "空");
 
             // 0 は欠損と区別される（0 は正当な値）。

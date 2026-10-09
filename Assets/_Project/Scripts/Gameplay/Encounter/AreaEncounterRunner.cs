@@ -446,8 +446,18 @@ namespace Momotaro.Gameplay.Encounter
             }
 
             bool defeat = _defeatPending || (_conditions != null && !_conditions.IsPlayerAlive);
+            bool victory = _victoryPending;
             _victoryPending = false;
             _defeatPending = false;
+
+            // P7 04（仕様 §8）：章ボスの遭遇戦に限り、勝利待ち（予定数を生成済みで全滅＝正規の撃破確定）と主人公の死亡が
+            // 同じフレームに揃ったら<b>勝利の記録を先に</b>行う。主人公は既存の死亡再開へ（モードは死亡側に任せる）。
+            // 章ボス以外は従来どおり死亡優先（P5 §8.3）。
+            if (defeat && victory && IsChapterBoss(out _))
+            {
+                ResolveVictory(playerDefeated: true);
+                return;
+            }
 
             if (defeat)
             {
@@ -455,8 +465,21 @@ namespace Momotaro.Gameplay.Encounter
                 return;
             }
 
-            ResolveVictory();
+            ResolveVictory(playerDefeated: false);
         }
+
+        /// <summary>この遭遇戦が campaign の章ボスか（P7 04。受け口が無い構成・Session が無い構成では false）。</summary>
+        private bool IsChapterBoss(out Momotaro.Gameplay.Story.ChapterBossInfo chapter)
+        {
+            chapter = default;
+            Momotaro.Gameplay.Story.IChapterProgress progress = Momotaro.Gameplay.Story.ChapterProgressProvider.Current;
+            AreaRuntimeState area = _areaState?.Invoke();
+            return progress != null && area != null && _sessionSource?.Invoke() != null && _encounter != null
+                && _encounter.IsBossEncounter && progress.TryGetChapterBoss(area.AreaId, _plan.EncounterId, out chapter);
+        }
+
+        /// <summary>章ボスの勝利の確定結果（P7 04。診断・テスト用。章ボスでなければ既定値）。</summary>
+        public ChapterClearCommit LastChapterCommit { get; private set; }
 
         /// <summary>登録した敵が全滅した（<c>CombatSessionController.AllEnemiesDefeated</c> の購読）。</summary>
         private void OnAllEnemiesDefeated()
@@ -486,7 +509,7 @@ namespace Momotaro.Gameplay.Encounter
             _defeatPending = true;
         }
 
-        private void ResolveVictory()
+        private void ResolveVictory(bool playerDefeated)
         {
             int runId = _machine.RunId;
             if (!_machine.BeginResolve(runId))
@@ -503,7 +526,27 @@ namespace Momotaro.Gameplay.Encounter
             // Session が無い構成（単体テスト・旧配線）は従来どおり記録だけ。
             AreaRuntimeState area = _areaState?.Invoke();
             GameSessionState session = _sessionSource?.Invoke();
-            if (area != null && session != null)
+            if (area != null && session != null && IsChapterBoss(out Momotaro.Gameplay.Story.ChapterBossInfo chapter))
+            {
+                // P7 04：章ボスは、クリア・既存の撃破報酬・開通・ボス撃破・章クリア・権利追加を<b>1 つの更新</b>で確定する。
+                ChapterClearCommit chapterCommit = session.CommitChapterBossVictory(
+                    area.AreaId, _plan.EncounterId,
+                    Momotaro.Gameplay.Progression.RewardSnapshot.From(_encounter.ClearReward),
+                    _encounter.UnlockFlagId, chapter.ChapterId, chapter.RightsPerChapter, chapter.RightsMax);
+                LastChapterCommit = chapterCommit;
+                LastClearCommit = chapterCommit.Encounter;
+                if (chapterCommit.Encounter.Recorded)
+                {
+                    ClearedCount++;
+                    Momotaro.Gameplay.Story.ChapterProgressProvider.Current?.OnChapterBossVictory(chapter, chapterCommit);
+                }
+
+                if (chapterCommit.Encounter.FlagOpened)
+                {
+                    ApplyOpenedDoors(area, _encounter.UnlockFlagId);
+                }
+            }
+            else if (area != null && session != null)
             {
                 EncounterClearCommit commit = session.CommitEncounterClear(
                     area.AreaId, _plan.EncounterId,
@@ -536,8 +579,12 @@ namespace Momotaro.Gameplay.Encounter
             ReleaseRuntime();
 
             // ---- 手順 6：活動中 Encounter なしへ戻し、探索へ復帰する ----
+            // 章ボスと同時に主人公が倒れた（P7 04）ときは探索へ戻さない——死亡再開がモードを持つ（GameOver を上書きしない）。
             _machine.MarkCleared(runId);
-            GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
+            if (!playerDefeated)
+            {
+                GameModeProvider.Current?.ChangeMode(GameMode.Exploration);
+            }
 
             // ---- 手順 8：短文。結果パネルや Enter 待ちで止めない ----
             ResultMessage = "戦闘終了";

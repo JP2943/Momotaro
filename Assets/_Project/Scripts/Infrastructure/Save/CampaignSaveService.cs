@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using Momotaro.Core.Logging;
 using Momotaro.Gameplay.Modes;
@@ -204,6 +205,31 @@ namespace Momotaro.Infrastructure.Save
         // ---------------------------------------------------------------- ゲーム内メニュー（仮 UI。P6A-05）
 
         private bool _menuOpen;
+        private bool _journalOpen;
+
+        /// <summary>依頼一覧を開いているか（P7 02。メニューの中）。</summary>
+        public bool IsJournalOpen => _menuOpen && _journalOpen;
+
+        /// <summary>この campaign は依頼一覧を持つか（会話 Data がある）。</summary>
+        private bool HasJournal => Story != null;
+
+        private Momotaro.Gameplay.Story.StoryCatalog Story =>
+            _transitions != null && _transitions.Catalog != null && _transitions.Catalog.Campaign != null
+                ? _transitions.Catalog.Campaign.Story
+                : null;
+
+        /// <summary>依頼一覧を開く（メニューの中だけ。テスト・パッド以外の操作用）。</summary>
+        public bool OpenJournal()
+        {
+            if (!_menuOpen || !HasJournal)
+            {
+                return false;
+            }
+
+            _journalOpen = true;
+            _navigator.Reset(0);
+            return true;
+        }
 
         /// <summary>ゲーム内メニュー（タイトルへ・終了）が開いているか。</summary>
         public bool IsMenuOpen => _menuOpen;
@@ -238,6 +264,7 @@ namespace Momotaro.Infrastructure.Save
             }
 
             _menuOpen = false;
+            _journalOpen = false;
             ResumeGameplayInput();
         }
 
@@ -303,6 +330,10 @@ namespace Momotaro.Infrastructure.Save
                 // お地蔵様のメニューを Esc で閉じた同じフレームでは開かない。
                 CampaignShrineService shrines = BootstrapServices.Get<CampaignShrineService>();
                 bool shrineJustClosed = shrines != null && (shrines.IsMenuOpen || shrines.LastClosedFrame == Time.frameCount);
+
+                // 会話を Esc で閉じた同じフレームでも開かない（P7 01）。
+                CampaignDialogueService dialogue = BootstrapServices.Get<CampaignDialogueService>();
+                shrineJustClosed |= dialogue != null && (dialogue.IsOpen || dialogue.LastClosedFrame == Time.frameCount);
                 bool open = (keyboard != null && keyboard.escapeKey.wasPressedThisFrame) || AnyStartPressed();
                 if (open && !shrineJustClosed && OpenMenu())
                 {
@@ -312,8 +343,28 @@ namespace Momotaro.Infrastructure.Save
                 return;
             }
 
-            // 0：タイトルへ戻る 1：終了する 2：ゲームへ戻る
-            int item = _navigator.Poll(3, null, out bool cancelled);
+            // 依頼一覧（P7 02）。戻る（B／Esc／決定）でメニューへ。
+            if (_journalOpen)
+            {
+                int any = _navigator.Poll(1, null, out bool back);
+                if (any >= 0 || back || (keyboard != null && keyboard.escapeKey.wasPressedThisFrame))
+                {
+                    _journalOpen = false;
+                    _navigator.Reset(3);
+                }
+
+                return;
+            }
+
+            // 0：タイトルへ戻る 1：終了する 2：ゲームへ戻る 3：依頼一覧（会話 Data を持つ campaign だけ）
+            int item = _navigator.Poll(HasJournal ? 4 : 3, null, out bool cancelled);
+            if (item == 3 && HasJournal)
+            {
+                _journalOpen = true;
+                _navigator.Reset(0);
+                return;
+            }
+
             bool toTitle = item == 0 || (keyboard != null && keyboard.tKey.wasPressedThisFrame);
             bool quit = item == 1 || (keyboard != null && keyboard.qKey.wasPressedThisFrame);
             bool close = item == 2 || cancelled
@@ -634,6 +685,12 @@ namespace Momotaro.Infrastructure.Save
                     return;
                 }
 
+                if (_menuOpen && _journalOpen)
+                {
+                    DrawJournal();
+                    return;
+                }
+
                 if (_menuOpen)
                 {
                     DrawMenu();
@@ -693,7 +750,7 @@ namespace Momotaro.Infrastructure.Save
         private void DrawMenu()
         {
             const float width = 400f;
-            const float height = 220f;
+            float height = HasJournal ? 256f : 220f;
             var area = new Rect((PadMenuNavigator.VirtualWidth - width) * 0.5f,
                 (PadMenuNavigator.VirtualHeight - height) * 0.5f, width, height);
             GUI.Box(area, "メニュー");
@@ -716,8 +773,53 @@ namespace Momotaro.Infrastructure.Save
                 CloseMenu();
             }
 
+            if (HasJournal && _navigator.DrawItem(3, "依頼一覧"))
+            {
+                OpenJournal();
+            }
+
             GUILayout.FlexibleSpace();
             GUILayout.Label(PadMenuNavigator.Hint);
+            GUILayout.EndArea();
+        }
+
+        /// <summary>依頼一覧と章の進行（P7 02／04。仮 UI）。表示は確定済みの状態から毎回導く。</summary>
+        private void DrawJournal()
+        {
+            Momotaro.Gameplay.Story.StoryCatalog story = Story;
+            GameSessionState session = _coordinator.Session;
+            float width = Mathf.Min(PadMenuNavigator.VirtualWidth - 32f, 760f);
+            float height = Mathf.Min(PadMenuNavigator.VirtualHeight - 32f, 520f);
+            var area = new Rect((PadMenuNavigator.VirtualWidth - width) * 0.5f, 16f, width, height);
+            GUI.Box(area, "依頼一覧");
+            GUILayout.BeginArea(new Rect(area.x + 14f, area.y + 28f, area.width - 28f, area.height - 36f));
+            var wrap = new GUIStyle(GUI.skin.label) { wordWrap = true };
+            foreach (Momotaro.Gameplay.Story.JournalChapterEntry c in Momotaro.Gameplay.Story.StoryJournal.Chapters(session, story))
+            {
+                GUILayout.Label("■ " + c.Chapter.DisplayName + "：" + (c.Cleared
+                    ? "クリア済み（" + Momotaro.Gameplay.Story.StoryJournal.RouteLabel(c.ClearedRoute) + "）"
+                    : "未クリア"));
+            }
+
+            List<Momotaro.Gameplay.Story.JournalQuestEntry> quests = Momotaro.Gameplay.Story.StoryJournal.Quests(session, story);
+            if (quests.Count == 0)
+            {
+                GUILayout.Label("受けている依頼はありません。");
+            }
+
+            foreach (Momotaro.Gameplay.Story.JournalQuestEntry q in quests)
+            {
+                GUILayout.Label("「" + q.Quest.DisplayName + "」　依頼主：" + q.GiverName + "　報酬：徳 " + q.Quest.Reward.VirtueAmount
+                    + "　［" + q.StateLabel + "］");
+                GUILayout.Label("　目的：" + q.Quest.ObjectiveText, wrap);
+                for (int i = 0; i < q.Quest.Objectives.Count; i++)
+                {
+                    GUILayout.Label("　　" + (q.ObjectivesMet[i] ? "済" : "□") + " " + q.Quest.Objectives[i].Label);
+                }
+            }
+
+            GUILayout.FlexibleSpace();
+            GUILayout.Label("戻る：B（○）／Esc／決定");
             GUILayout.EndArea();
         }
 

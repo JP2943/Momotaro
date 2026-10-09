@@ -4,7 +4,9 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Momotaro.Core.Identification;
+using Momotaro.Data.Story;
 using Momotaro.Gameplay.Save;
+using Momotaro.Gameplay.Story;
 using Momotaro.Gameplay.Session;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -62,8 +64,22 @@ namespace Momotaro.Infrastructure.Save
         private static readonly string[] PayloadKeys =
         {
             "revision", "respawnCycle", "virtue", "grantedRewards", "growth", "visitedAreas", "recruited", "areas",
+            "inventory", "kibidango", "shrines", "resume", "party", "questStages", "refund", "story",
+        };
+
+        // 版 3：必須イベント・経路・章クリア（P7）の欄が無い。
+        private static readonly string[] PayloadKeysV3 =
+        {
+            "revision", "respawnCycle", "virtue", "grantedRewards", "growth", "visitedAreas", "recruited", "areas",
             "inventory", "kibidango", "shrines", "resume", "party", "questStages", "refund",
         };
+
+        private static readonly string[] StoryKeys = { "events", "routes", "chapters" };
+
+        private static readonly string[] RouteKeys =
+            { "chapterId", "standardReached", "standardCompleted", "hardReached", "hardCompleted", "lastRoute", "bossRoute" };
+
+        private static readonly string[] ClearedChapterKeys = { "chapterId", "clearedRoute" };
 
         // 版 2：払い戻し（P6B）の欄が無い。
         private static readonly string[] PayloadKeysV2 =
@@ -171,9 +187,11 @@ namespace Momotaro.Infrastructure.Save
 
             // 版 1 は questStages を持たない（クエスト段階の接続口は版 2 から）。欠けた欄を黙って補わず、版で分ける。
             // 版 2 は払い戻しの欄を持たない（P6B）。どちらも版ごとの鍵の一覧で厳密に見る。
+            // 版 3 は会話・章の欄を持たない（P7）。
             bool v1 = info.SchemaVersion == 1;
             bool v2 = info.SchemaVersion == 2;
-            r.ExpectExactly(v1 ? PayloadKeysV1 : (v2 ? PayloadKeysV2 : PayloadKeys));
+            bool v3 = info.SchemaVersion == 3;
+            r.ExpectExactly(v1 ? PayloadKeysV1 : (v2 ? PayloadKeysV2 : (v3 ? PayloadKeysV3 : PayloadKeys)));
             long revision = r.Long("revision");
             int cycle = r.Int("respawnCycle");
 
@@ -214,6 +232,29 @@ namespace Momotaro.Infrastructure.Save
                 chapters = refund.Strings("chapters");
             }
 
+            bool hasStory = !v1 && !v2 && !v3;
+            string[] events = Array.Empty<string>();
+            KeyValuePair<string, ChapterRouteRecord>[] routes = Array.Empty<KeyValuePair<string, ChapterRouteRecord>>();
+            KeyValuePair<string, StoryRoute>[] clearedChapters = Array.Empty<KeyValuePair<string, StoryRoute>>();
+            if (hasStory)
+            {
+                Reader story = r.Child("story", StoryKeys);
+                if (story.Failed)
+                {
+                    error = story.Error;
+                    return false;
+                }
+
+                events = story.Strings("events");
+                routes = ReadRoutes(story);
+                clearedChapters = ReadClearedChapters(story);
+                if (story.Failed)
+                {
+                    error = story.Error;
+                    return false;
+                }
+            }
+
             if (r.Failed || virtue.Failed || shrines.Failed || resume.Failed || (refund != null && refund.Failed))
             {
                 error = refund != null && refund.Failed && !(r.Failed || virtue.Failed || shrines.Failed || resume.Failed)
@@ -231,7 +272,7 @@ namespace Momotaro.Infrastructure.Save
             snapshot = new SaveSnapshot(info.CampaignId, info.ContentVersion, info.AdventureId, revision, cycle,
                 total, spent, granted, growth, visited, recruited, areas, inventory, kibidango,
                 registered, checkpoint, kind, resumeArea, resumePoint, party, quests,
-                hasRefund, refundRights, chapters);
+                hasRefund, refundRights, chapters, hasStory, events, routes, clearedChapters);
             error = null;
             return true;
         }
@@ -336,7 +377,157 @@ namespace Momotaro.Infrastructure.Save
                     ["rights"] = s.RefundRights,
                     ["chapters"] = new JArray(s.ProcessedChapters),
                 },
+                ["story"] = BuildStory(s),
             };
+        }
+
+        private static JObject BuildStory(SaveSnapshot s)
+        {
+            var routes = new JArray();
+            foreach (KeyValuePair<string, ChapterRouteRecord> pair in s.Routes)
+            {
+                ChapterRouteRecord r = pair.Value;
+                routes.Add(new JObject
+                {
+                    ["chapterId"] = pair.Key,
+                    ["standardReached"] = r.StandardReached,
+                    ["standardCompleted"] = r.StandardCompleted,
+                    ["hardReached"] = r.HardReached,
+                    ["hardCompleted"] = r.HardCompleted,
+                    ["lastRoute"] = RouteText(r.LastRoute),
+                    ["bossRoute"] = RouteText(r.BossRoute),
+                });
+            }
+
+            var chapters = new JArray();
+            foreach (KeyValuePair<string, StoryRoute> pair in s.ClearedChapters)
+            {
+                chapters.Add(new JObject { ["chapterId"] = pair.Key, ["clearedRoute"] = RouteText(pair.Value) });
+            }
+
+            return new JObject
+            {
+                ["events"] = new JArray(s.CompletedEvents),
+                ["routes"] = routes,
+                ["chapters"] = chapters,
+            };
+        }
+
+        /// <summary>経路の値の文字列（保存の表現。列挙の数値を書かない）。</summary>
+        private static string RouteText(StoryRoute route)
+        {
+            switch (route)
+            {
+                case StoryRoute.Standard:
+                    return "standard";
+                case StoryRoute.Hard:
+                    return "hard";
+                default:
+                    return "none";
+            }
+        }
+
+        private static bool TryParseRoute(string text, out StoryRoute route)
+        {
+            switch (text)
+            {
+                case "none":
+                    route = StoryRoute.None;
+                    return true;
+                case "standard":
+                    route = StoryRoute.Standard;
+                    return true;
+                case "hard":
+                    route = StoryRoute.Hard;
+                    return true;
+                default:
+                    route = StoryRoute.None;
+                    return false;
+            }
+        }
+
+        private static KeyValuePair<string, ChapterRouteRecord>[] ReadRoutes(Reader story)
+        {
+            JArray array = story.Arr("routes");
+            if (array == null)
+            {
+                return Array.Empty<KeyValuePair<string, ChapterRouteRecord>>();
+            }
+
+            var list = new List<KeyValuePair<string, ChapterRouteRecord>>();
+            for (int i = 0; i < array.Count; i++)
+            {
+                if (!(array[i] is JObject o))
+                {
+                    story.Fail("story.routes[" + i + "] がオブジェクトではありません。");
+                    continue;
+                }
+
+                var x = new Reader(o, "story.routes[" + i + "]");
+                x.ExpectExactly(RouteKeys);
+                string chapterId = x.Str("chapterId");
+                bool sr = x.Bool("standardReached");
+                bool sc = x.Bool("standardCompleted");
+                bool hr = x.Bool("hardReached");
+                bool hc = x.Bool("hardCompleted");
+                string last = x.Str("lastRoute");
+                string boss = x.Str("bossRoute");
+                if (x.Failed)
+                {
+                    story.Fail(x.Error);
+                    continue;
+                }
+
+                if (!TryParseRoute(last, out StoryRoute lastRoute) || !TryParseRoute(boss, out StoryRoute bossRoute))
+                {
+                    story.Fail("story.routes[" + i + "] の経路の値が不正です（" + last + "／" + boss + "）。");
+                    continue;
+                }
+
+                list.Add(new KeyValuePair<string, ChapterRouteRecord>(chapterId,
+                    new ChapterRouteRecord(sr, sc, hr, hc, lastRoute, bossRoute)));
+            }
+
+            return list.ToArray();
+        }
+
+        private static KeyValuePair<string, StoryRoute>[] ReadClearedChapters(Reader story)
+        {
+            JArray array = story.Arr("chapters");
+            if (array == null)
+            {
+                return Array.Empty<KeyValuePair<string, StoryRoute>>();
+            }
+
+            var list = new List<KeyValuePair<string, StoryRoute>>();
+            for (int i = 0; i < array.Count; i++)
+            {
+                if (!(array[i] is JObject o))
+                {
+                    story.Fail("story.chapters[" + i + "] がオブジェクトではありません。");
+                    continue;
+                }
+
+                var x = new Reader(o, "story.chapters[" + i + "]");
+                x.ExpectExactly(ClearedChapterKeys);
+                string chapterId = x.Str("chapterId");
+                string routeText = x.Str("clearedRoute");
+                if (x.Failed)
+                {
+                    story.Fail(x.Error);
+                    continue;
+                }
+
+                if (!TryParseRoute(routeText, out StoryRoute route))
+                {
+                    story.Fail("story.chapters[" + i + "] の経路の値が不正です（" + routeText + "）。");
+                    continue;
+                }
+
+                list.Add(new KeyValuePair<string, StoryRoute>(chapterId, route));
+            }
+
+            return list.ToArray();
         }
 
         private static JArray Pairs(IReadOnlyList<KeyValuePair<string, int>> pairs, string keyName, string valueName)

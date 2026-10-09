@@ -197,6 +197,11 @@ namespace Momotaro.Infrastructure.Bootstrap
             var shrines = gameObject.AddComponent<CampaignShrineService>();
             shrines.Bind(transitions);
             _registry.Register(shrines);
+
+            // 会話・依頼（P7 01）。会話 Data を持つ campaign の Scene が置いた VillagerPoint の受け口。それ以外では呼ばれない。
+            var dialogue = gameObject.AddComponent<CampaignDialogueService>();
+            dialogue.Bind(transitions);
+            _registry.Register(dialogue);
         }
     }
 }

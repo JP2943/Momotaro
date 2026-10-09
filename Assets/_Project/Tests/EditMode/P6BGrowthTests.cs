@@ -450,7 +450,8 @@ namespace Momotaro.Tests.EditMode
             s.TryConsumeKibidango(1);
 
             string json = Serialize(s);
-            StringAssert.Contains("\"schemaVersion\": 3", json);
+            // P7 で現行の版は 4（版 3 の欄に会話・章の story を足した）。払い戻しの欄の往復はこのまま検査する。
+            StringAssert.Contains("\"schemaVersion\": " + SaveSnapshot.CurrentSchemaVersion, json);
             Assert.IsTrue(SaveJsonCodec.TryDeserialize(json, out _, out SaveSnapshot read, out string error), error);
             Assert.IsTrue(read.HasRefundData);
             Assert.IsTrue(SessionRestorer.TryBuildCandidate(read, _catalog, out GameSessionState c, out error), error);

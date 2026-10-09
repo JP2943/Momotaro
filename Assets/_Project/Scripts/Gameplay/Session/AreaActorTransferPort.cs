@@ -494,6 +494,9 @@ namespace Momotaro.Gameplay.Session
         /// <summary>主人公の Vitals（P6B：成長 UI・HUD の表示用。読み取りに使う）。</summary>
         public PlayerVitalsHolder PlayerVitals => _playerVitals;
 
+        /// <summary>主人公の被弾反応（P7 01：会話の開始条件「被弾処理中でない」に使う。無ければ null）。</summary>
+        public PlayerHitReaction PlayerHitReaction => _playerHitReaction;
+
         /// <summary>主人公の状態（P6B：HUD の使用表示用）。</summary>
         public PlayerStateController PlayerState => ResolvePlayerState();
 

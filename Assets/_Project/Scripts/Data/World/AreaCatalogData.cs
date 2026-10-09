@@ -81,6 +81,9 @@ namespace Momotaro.Data.World
         [Tooltip("この campaign の保存が段階を持ちうるクエストの ID（P7 の接続口。P6A は接続 fixture だけ）。")]
         [SerializeField] private List<StableId> _questIds = new List<StableId>();
 
+        [Tooltip("会話・依頼・必須イベント・章の定義（P7）。無ければ会話・依頼・章進行を持たない campaign。")]
+        [SerializeField] private Momotaro.Data.Story.CampaignStoryData _story;
+
         [Header("テスト専用の調整（P6 の検証 campaign だけ。本編の数値ではない）")]
         [Tooltip("敵の攻撃力の倍率（死亡を何度も試すための措置）。0 以下は未設定＝1 として扱う。")]
         [SerializeField] private float _testEnemyAttackScale = 1f;
@@ -150,6 +153,12 @@ namespace Momotaro.Data.World
 
         /// <summary>この campaign の保存が段階を持ちうるクエストの ID（P7 の接続口）。</summary>
         public IReadOnlyList<StableId> QuestIds => _questIds;
+
+        /// <summary>
+        /// 会話・依頼・必須イベント・章の定義（P7。無ければ null）。依頼の ID と報酬 ID、章 ID は campaign の既知 ID に自動で加わる
+        /// （<see cref="QuestIds"/>・<see cref="ChapterIds"/> へ重ねて書く必要は無い）。
+        /// </summary>
+        public Momotaro.Data.Story.CampaignStoryData Story => _story;
 
         /// <summary>保存・お地蔵様を持つ P6 campaign か（恒久クリア規則で判定する）。</summary>
         public bool IsP6Campaign => _encounterClearPolicy == EncounterClearPolicy.Permanent;
@@ -434,6 +443,12 @@ namespace Momotaro.Data.World
             _refundRightsMax = refundMax;
             _chapterIds = chapterIds ?? new List<StableId>();
             _saveSlotName = saveSlotName;
+        }
+
+        /// <summary>会話・依頼・章の定義の設定入口（Editor 専用。P7）。</summary>
+        public void EditorSetStory(Momotaro.Data.Story.CampaignStoryData story)
+        {
+            _story = story;
         }
 
         /// <summary>テスト専用の調整の設定入口（Editor 専用。P6A の Builder）。</summary>
