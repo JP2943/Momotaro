@@ -325,6 +325,95 @@ namespace Momotaro.Editor.Phase6
             return new BuildResult(ok, ok ? "P6C の実ビルド別プロセス確認が終わりました。" : "P6C の実ビルド確認に失敗があります。", outputs);
         }
 
+        /// <summary>
+        /// P7 の実ビルド確認（P7 18）：P7 の 5 Scene（タイトル・A・B・C・H）で Windows ビルドを作り、画面ありで <c>story</c>
+        /// （実キーで会話・受注・門の確定・標準ルート・章ボスの実撃破・旅立ち・報告・成長 → 正常終了の保存）→
+        /// 別プロセスで <c>continue</c>（徳・依頼・イベント・経路・章・権利・成長が戻る。会話は開いていない）を突き合わせる。
+        /// </summary>
+        public static BuildResult BuildAllP7()
+        {
+            Phase6Profile previous = Phase6WorldIds.Profile;
+            Phase6WorldIds.Profile = Phase6Profile.P7;
+            try
+            {
+                return BuildP7Current();
+            }
+            finally
+            {
+                Phase6WorldIds.Profile = previous;
+            }
+        }
+
+        private static BuildResult BuildP7Current()
+        {
+            var outputs = new List<string>();
+            string root = Directory.GetParent(Application.dataPath).FullName;
+            string work = Path.Combine(root, "_bridge/p7_smoke");
+            Directory.CreateDirectory(work);
+            string saves = Path.Combine(work, "saves_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss"));
+            Directory.CreateDirectory(saves);
+            string exe = Path.Combine(root, "Builds/P7", "Momotaro_P7.exe");
+
+            var options = new BuildPlayerOptions
+            {
+                scenes = new[]
+                {
+                    Phase6WorldIds.TitleScenePath, Phase6WorldIds.AreaAScenePath,
+                    Phase6WorldIds.AreaBScenePath, Phase6WorldIds.AreaCScenePath,
+                    Momotaro.Editor.Phase7.Phase7WorldIds.AreaHScenePath,
+                },
+                locationPathName = exe,
+                target = BuildTarget.StandaloneWindows64,
+                options = BuildOptions.None,
+            };
+
+            var watch = Stopwatch.StartNew();
+            BuildReport report = BuildPipeline.BuildPlayer(options);
+            watch.Stop();
+            outputs.Add("ビルド: " + report.summary.result + "（" + watch.Elapsed.TotalSeconds.ToString("0") + " 秒、"
+                + (report.summary.totalSize / (1024 * 1024)) + " MB、エラー " + report.summary.totalErrors + "）→ " + exe);
+            if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
+            {
+                return new BuildResult(false, "ビルドに失敗しました。", outputs);
+            }
+
+            bool ok = RunPlayer(exe, "story", saves, work, 0, batch: false, outputs, out Dictionary<string, string> played);
+            ok &= RunPlayer(exe, "continue", saves, work, 0, batch: true, outputs, out Dictionary<string, string> continued,
+                tag: "continue_after_story");
+            if (ok)
+            {
+                ok &= Expect(outputs, "実キーで依頼を受けた", "Accepted", Get(played, "acceptResult"));
+                ok &= Expect(outputs, "門の会話の確定で門が開いた", "true", Get(played, "gateOpened"));
+                ok &= Expect(outputs, "合流点で報告可能になった", "true", Get(played, "reportableAtC"));
+                ok &= Expect(outputs, "章クリアの通知は 1 回", "1", Get(played, "chapterNoticeCount"));
+                ok &= Expect(outputs, "章クリアの通知が表示され、実際の増加量を示す", "true",
+                    Get(played, "chapterNotice").Contains("クリア") && Get(played, "chapterNotice").Contains("払い戻し権利 +" + Get(played, "rightsAdded"))
+                        ? "true" : "false");
+                ok &= Expect(outputs, "章クリアの権利の増加（上限 6）", Get(played, "expectedRightsAdded"), Get(played, "rightsAdded"));
+                ok &= Expect(outputs, "報告が成立", "Reported", Get(played, "reportResult"));
+                ok &= Expect(outputs, "報告の徳は 30 が一度だけ", "30", Get(played, "reportVirtueDelta"));
+                ok &= Expect(outputs, "正常終了の保存が成功", "Saved", Get(played, "exitOutcome"));
+                ok &= Expect(outputs, "プロセスが別", "different",
+                    Get(played, "processId") != Get(continued, "processId") ? "different" : "same");
+                ok &= Expect(outputs, "別プロセスの Continue が同じ冒険", Get(played, "adventureId"), Get(continued, "adventureId"));
+                ok &= Expect(outputs, "再開エリア", Get(played, "area"), Get(continued, "area"));
+                ok &= Expect(outputs, "徳の総量", Get(played, "beforeTotalVirtue"), Get(continued, "afterTotalVirtue"));
+                ok &= Expect(outputs, "使用可能な徳", Get(played, "beforeVirtue"), Get(continued, "afterVirtue"));
+                ok &= Expect(outputs, "成長", Get(played, "beforeGrowth"), Get(continued, "afterGrowth"));
+                ok &= Expect(outputs, "払い戻し権利", Get(played, "beforeRefundRights"), Get(continued, "afterRefundRights"));
+                ok &= Expect(outputs, "依頼の段と状態", Get(played, "beforeQuests"), Get(continued, "afterQuests"));
+                ok &= Expect(outputs, "完了イベント", Get(played, "beforeEvents"), Get(continued, "afterEvents"));
+                ok &= Expect(outputs, "経路の記録", Get(played, "beforeRoutes"), Get(continued, "afterRoutes"));
+                ok &= Expect(outputs, "章クリアと処理済み", Get(played, "beforeChapters"), Get(continued, "afterChapters"));
+                ok &= Expect(outputs, "章ボスの撃破", Get(played, "beforeBosses"), Get(continued, "afterBosses"));
+                ok &= Expect(outputs, "Continue の後は会話が開いていない", "false", Get(continued, "afterDialogueOpen"));
+                ok &= Expect(outputs, "Continue で過去の達成を通知しない", "0", Get(continued, "afterNoticeCount"));
+                ok &= Expect(outputs, "Continue 直後は未保存なし", "false", Get(continued, "dirtyAfterContinue"));
+            }
+
+            return new BuildResult(ok, ok ? "P7 の実ビルド別プロセス確認が終わりました。" : "P7 の実ビルド確認に失敗があります。", outputs);
+        }
+
         private static bool ExpectPositive(List<string> outputs, string label, string actual)
         {
             bool ok = int.TryParse(actual, out int n) && n > 0;

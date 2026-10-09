@@ -1,0 +1,428 @@
+{
+  "version": 1,
+  "phase": "P7",
+  "note": "P7（会話と依頼と章進行）の必須テスト一覧。P7 仕様 v1.0 §12 の ID（P7 01〜P7 18）を実際の完全修飾テスト名へ対応させる。テストランナーの外で確認する要求（P7 17：Builder 再生成 build-phase7-world と検査 validate-phase7-world、既存必須一覧 P4／P5／P5.5／P6A／P6B／P6C の再照合、既存戦闘音と VFX の配線検査＝validate-phase6c 相当を validate-phase7-world が内包。P7 18：Windows 実ビルドの一連の試遊と別プロセス Continue＝ブリッジ op p7-player-smoke）は requirements に載せず、P7_受入条件対応表.md と P7_統合受入結果.md に証跡を記録する。",
+  "stages": [
+    "P7-01",
+    "P7-02",
+    "P7-03",
+    "P7-04",
+    "P7-05"
+  ],
+  "requirements": [
+    {
+      "id": "P701",
+      "summary": "実入力で会話開始・全文閲覧・選択・終了。長押しや決定連打で行飛ばしとGameplay入力漏れがない",
+      "stage": "P7-01"
+    },
+    {
+      "id": "P702",
+      "summary": "禁止状態で会話を開始せず、会話中は敵・弾・仲間・P6Cタイマーが停止。他のPauseと競合しても正しく復帰",
+      "stage": "P7-01"
+    },
+    {
+      "id": "P703",
+      "summary": "状態別セリフ・両ルート会話・フォールバックの選択。章クリア後も報告可能な依頼が隠れない",
+      "stage": "P7-01"
+    },
+    {
+      "id": "P704",
+      "summary": "受注・拒否・再訪・重複入力。未受注の条件達成だけでは自動受注しない",
+      "stage": "P7-02"
+    },
+    {
+      "id": "P705",
+      "summary": "三条件とAND条件の成立。受注前の到達・発見・遭遇戦クリアを後から認識",
+      "stage": "P7-02"
+    },
+    {
+      "id": "P706",
+      "summary": "未完遭遇戦の撤退では未達。完了済み遭遇戦を再戦せず報告できる",
+      "stage": "P7-02"
+    },
+    {
+      "id": "P707",
+      "summary": "報告で30徳が一度だけ。既存の到達・遭遇戦報酬を再実行せず、使用済み徳は不変",
+      "stage": "P7-02"
+    },
+    {
+      "id": "P708",
+      "summary": "死亡・休息・FT・非活動Area再入場・Scene再ロードで依頼進行と受領済み状態を保持",
+      "stage": "P7-02"
+    },
+    {
+      "id": "P709",
+      "summary": "経路の到達・踏破・ボス到達経路の区別。両道・合流・別道再到達・FT・章クリア後固定",
+      "stage": "P7-03"
+    },
+    {
+      "id": "P710",
+      "summary": "必須会話の途中終了は無変更。最終決定で一回確定し、門の開通が保存される",
+      "stage": "P7-03"
+    },
+    {
+      "id": "P711",
+      "summary": "仮ボスの実撃破で章クリア。普通敵や不正IDの通知でクリアせず、撃破後に復活しない",
+      "stage": "P7-04"
+    },
+    {
+      "id": "P712",
+      "summary": "章権利+3・上限6・実増加0の処理済み記録。再通知とLoadでも二重付与なし",
+      "stage": "P7-04"
+    },
+    {
+      "id": "P713",
+      "summary": "ボスと主人公の同時死亡で撃破成立を保持。章通知中の終了でも進行と報酬が整合",
+      "stage": "P7-04"
+    },
+    {
+      "id": "P714",
+      "summary": "受注・報告・章クリアの保存単位。書込失敗と再試行、書込中の追加更新で重複・欠落なし",
+      "stage": "P7-02"
+    },
+    {
+      "id": "P715",
+      "summary": "会話中の正常終了とContinueでUI停止を残さず、未決定処理を実行せず、回復や普通敵復活も起こさない",
+      "stage": "P7-01"
+    },
+    {
+      "id": "P716",
+      "summary": "新規項目の非初期値RoundTrip、旧版移行、不正データ検証、旧campaignの保存維持",
+      "stage": "P7-02"
+    }
+  ],
+  "tests": [
+    {
+      "requirementId": "P703",
+      "stage": "P7-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Dialogue_SelectsHighestPriorityMatching_AndFallsBackToUnconditional",
+      "requirementIds": [
+        "P716"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P703",
+      "stage": "P7-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Dialogue_HardOnly_SelectsHardOnlyLine",
+      "requirementIds": [
+        "P709"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P703",
+      "stage": "P7-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Dialogue_ContentIsFixedAtOpen_AndReportChoiceIsNeverHidden",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P701",
+      "stage": "P7-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Dialogue_PagesAdvance_AndLastPageShowsChoices",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P704",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_AcceptDeclineRevisitAndDuplicate",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P704",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_ConditionsMetBeforeAccept_DoNotAutoAccept_ButCountAfterAccepting",
+      "requirementIds": [
+        "P705"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P705",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_ThreeObjectiveKinds_AndConjunction",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P705",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_DiscoveryByInvestigationPoint_IsRecognized",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P706",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_UnfinishedEncounter_IsNotMet_AndRetreatKeepsItUnmet",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P707",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_ReportGrants30Once_KeepsSpent_AndDoesNotRerunExistingRewards",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P707",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_ReportBeforeConditions_OrBeforeAccept_ChangesNothing",
+      "requirementIds": [
+        "P704"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P707",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_TwoQuestsSharingATarget_ReportIndependently",
+      "requirementIds": [
+        "P706"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P708",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Quest_AndEvent_SurviveRespawnCycleAndRest",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P709",
+      "stage": "P7-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Route_ReachedVsCompleted_BossRoute_Reroute_FastTravelKeeps_AndFixedAtClear",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P714",
+      "stage": "P7-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Route_ArrivalUpdate_IsMergedIntoArrivalSave",
+      "requirementIds": [
+        "P709"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P710",
+      "stage": "P7-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.Event_CompletesOnce_OpensFlagInSameUpdate_AndOnlyFromItsDialogue",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P716",
+      "stage": "P7-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.DataCheck_DetectsDuplicatesUnknownsEmptyFallbackAmbiguityNegativeEmptyObjectivesAndSelfDependency",
+      "requirementIds": [
+        "P703"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P711",
+      "stage": "P7-04",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7StoryTests.CatalogBuild_DetectsUnknownAreasTargetsAndBossMapping",
+      "requirementIds": [
+        "P716"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P711",
+      "stage": "P7-04",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Chapter_BossVictory_CommitsClearBossChapterAndRightsInOneUpdate",
+      "requirementIds": [
+        "P714"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P712",
+      "stage": "P7-04",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Chapter_RightsAtCap_AddZero_ButMarkProcessed_AndNeverRegrantAfterUseAndReload",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P716",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Save_V4_RoundTripsNonInitialStoryValues",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P716",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Save_V3_MigratesToEmptyStory_AndStoryFieldInV3IsRejected",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P716",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Save_RejectsInvalidStoryData",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P714",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Report_WriteFailure_KeepsRuntime_RetrySavesLatestWithoutRegrant",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P714",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7SaveTests.UpdatesDuringWrite_AreSavedAfterwards_WithoutDuplication",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P701",
+      "stage": "P7-01",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_RealKeys_ReadAllChooseAndClose_NoSkipNoLeak",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P702",
+      "stage": "P7-01",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_FreezesPlayerCompanionAndCounter_AndRespectsExitPause",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P702",
+      "stage": "P7-01",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_RefusedWhileBusyOrHitSameFrame_AndNotCarriedOver",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P704",
+      "stage": "P7-02",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Quest_AcceptReachReportOnce_GrowWithReward_SurvivesContinue",
+      "requirementIds": [
+        "P703",
+        "P705",
+        "P707",
+        "P708"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P710",
+      "stage": "P7-03",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Quest_PreAcceptCompletion_GateEvent_HardRoute_Discovery_SurvivesContinue",
+      "requirementIds": [
+        "P703",
+        "P705",
+        "P706",
+        "P708",
+        "P709"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P711",
+      "stage": "P7-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Chapter_RealBossKill_ClearsOnceWithRights_NoReviveAfterContinue",
+      "requirementIds": [
+        "P703",
+        "P712",
+        "P713",
+        "P714"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P713",
+      "stage": "P7-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Chapter_SimultaneousDeath_KeepsClear_NoticeAfterRespawn",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P715",
+      "stage": "P7-01",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_QuitMidDecision_ContinueIsNeutral_NoPendingAction",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    }
+  ],
+  "allowedSkips": []
+}

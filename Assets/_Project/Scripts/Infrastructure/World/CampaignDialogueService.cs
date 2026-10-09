@@ -716,7 +716,7 @@ namespace Momotaro.Infrastructure.World
 
         // ---------------------------------------------------------------- 章（P7 04）
 
-        /// <summary>章クリアの通知を出した回数（診断・テスト用）。</summary>
+        /// <summary>章クリアの通知を積んだ回数（保留中を含む。実際に表示したかは <see cref="HasDeferredNotice"/> で見る。診断・テスト用）。</summary>
         public int ChapterNoticeCount { get; private set; }
 
         /// <summary>まだ出していない通知があるか（死亡再開と重なった章クリアなど。テスト用）。</summary>

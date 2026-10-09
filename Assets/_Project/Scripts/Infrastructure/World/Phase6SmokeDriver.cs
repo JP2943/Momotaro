@@ -137,7 +137,7 @@ namespace Momotaro.Infrastructure.World
 
     /// <summary>自動操作の本体（タイトルの <see cref="Phase6CampaignLauncher"/> が起動する）。</summary>
     [DisallowMultipleComponent]
-    public sealed class Phase6SmokeDriver : MonoBehaviour
+    public sealed partial class Phase6SmokeDriver : MonoBehaviour
     {
         private Phase6CampaignLauncher _launcher;
         private readonly Dictionary<string, string> _result = new Dictionary<string, string>();
@@ -190,6 +190,9 @@ namespace Momotaro.Infrastructure.World
                     break;
                 case "justevade":
                     yield return JustEvadeThenExit();
+                    break;
+                case "story":
+                    yield return StoryThenExit();
                     break;
                 default:
                     _result["error"] = "unknown mode";
@@ -308,6 +311,7 @@ namespace Momotaro.Infrastructure.World
             _result["dirtyAfterContinue"] = Saves.Coordinator.IsDirty ? "true" : "false";
             WriteParty("after");
             WriteProgress("after");
+            WriteStory("after");
             if (TryPort(out AreaActorTransferPort after) && after.PlayerState != null)
             {
                 _result["afterUsingItem"] = after.PlayerState.IsUsingItem ? "true" : "false";
@@ -1114,7 +1118,7 @@ namespace Momotaro.Infrastructure.World
             return n;
         }
 
-        private IEnumerator KillWithAttacks(Momotaro.Gameplay.Enemy.EnemyActor enemy, Action<bool> done)
+        private IEnumerator KillWithAttacks(Momotaro.Gameplay.Enemy.EnemyActor enemy, Action<bool> done, float seconds = 8f)
         {
             AreaRuntimeBundle bundle = CurrentAreaProvider.Current;
             if (bundle == null || !bundle.TryResolve(out Momotaro.Gameplay.Player.PlayerRoot root))
@@ -1125,7 +1129,7 @@ namespace Momotaro.Infrastructure.World
 
             var facing = root.GetComponentInChildren<Momotaro.Gameplay.Player.PlayerFacing>();
             var vitals = root.GetComponentInChildren<Momotaro.Gameplay.Player.PlayerVitalsHolder>();
-            float deadline = Time.realtimeSinceStartup + 8f;
+            float deadline = Time.realtimeSinceStartup + seconds;
             float nextPress = 0f;
             bool pressed = false;
             while (Time.realtimeSinceStartup < deadline && enemy != null && !enemy.IsDefeated)
