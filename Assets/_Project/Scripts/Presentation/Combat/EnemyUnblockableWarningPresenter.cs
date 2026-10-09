@@ -146,6 +146,9 @@ namespace Momotaro.Presentation.Combat
             }
         }
 
+        /// <summary>いま表示している予告の数（読み取りのみ。P6C の文言表示が参照する）。</summary>
+        public int ActiveWarningCount => _active.Count;
+
         /// <summary>全予告を消す（Disable・Scene 離脱・Retry）。</summary>
         public void HideAll()
         {

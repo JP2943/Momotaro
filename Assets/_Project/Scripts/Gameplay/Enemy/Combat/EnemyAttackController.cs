@@ -76,6 +76,12 @@ namespace Momotaro.Gameplay.Enemy.Combat
         /// <summary>現在段階（Debug/テスト用）。</summary>
         public EnemyAttackMachine.Phase Phase => _machine.Current;
 
+        /// <summary>攻撃開始からの経過秒（攻撃中だけ意味を持つ。読み取りのみ。P6C の実ビルド確認が回避の時機を測る）。</summary>
+        public float AttackElapsed => _machine.IsAttacking ? _machine.Elapsed : 0f;
+
+        /// <summary>現在の攻撃の予兆秒（攻撃中だけ意味を持つ。読み取りのみ）。</summary>
+        public float CurrentPrepareSeconds => _machine.IsAttacking ? _machine.Snapshot.PrepareSeconds : 0f;
+
         /// <summary>実行中の攻撃分類（非攻撃中は Normal）。表示（分類別攻撃モーション）解決に用いる。</summary>
         public EnemyAttackClass CurrentAttackClass => _machine.IsAttacking ? _machine.Snapshot.AttackClass : EnemyAttackClass.Normal;
 

@@ -83,6 +83,15 @@ namespace Momotaro.EditorBridge
         /// <summary>P6B の Windows 実ビルドで成長・権利・残数・HP の別プロセス復元を確かめる（P6B 19）。</summary>
         public const string P6BPlayerSmoke = "p6b-player-smoke";
 
+        /// <summary>P6C の検証 campaign（P6B と同じ構成を設定で再利用）を再生成する（P6C 15）。</summary>
+        public const string BuildPhase6CWorld = "build-phase6c-world";
+
+        /// <summary>P6C の検証 campaign を検査する（P6B と同じ検査＋ジャスト回避の Data・ガード不能の可否・表示と音の配線。P6C 15）。</summary>
+        public const string ValidatePhase6CWorld = "validate-phase6c-world";
+
+        /// <summary>P6C の Windows 実ビルドで実入力のジャスト回避・反撃・別プロセス Continue を確かめる（P6C 15）。</summary>
+        public const string P6CPlayerSmoke = "p6c-player-smoke";
+
         /// <summary>実行できる操作の一覧（エラーメッセージにそのまま出す）。</summary>
         public static readonly string[] All =
         {
@@ -91,6 +100,7 @@ namespace Momotaro.EditorBridge
             ValidateExplorationTrial, BuildPhase55World, ValidatePhase55World,
             BuildPhase6World, ValidatePhase6World, P6APlayerSmoke,
             BuildPhase6BWorld, ValidatePhase6BWorld, P6BPlayerSmoke,
+            BuildPhase6CWorld, ValidatePhase6CWorld, P6CPlayerSmoke,
         };
 
         /// <summary>実行結果。</summary>
@@ -121,7 +131,8 @@ namespace Momotaro.EditorBridge
                 || op == ValidateExplorationTrial || op == BuildPhase55World
                 || op == ValidatePhase55World || op == BuildPhase6World || op == ValidatePhase6World
                 || op == P6APlayerSmoke || op == BuildPhase6BWorld || op == ValidatePhase6BWorld
-                || op == P6BPlayerSmoke;
+                || op == P6BPlayerSmoke || op == BuildPhase6CWorld || op == ValidatePhase6CWorld
+                || op == P6CPlayerSmoke;
         }
 
         /// <summary>操作を実行する。未知の操作・呼び出し失敗は <see cref="OperationResult.Success"/> false で返す。</summary>
@@ -177,6 +188,15 @@ namespace Momotaro.EditorBridge
 
                     case P6BPlayerSmoke:
                         return RunBuilder(Phase6PlayerSmokeType, "BuildAllP6B");
+
+                    case BuildPhase6CWorld:
+                        return RunBuilder(Phase6WorldBuilderType, "BuildP6C");
+
+                    case ValidatePhase6CWorld:
+                        return RunWorldValidation(Phase6WorldValidatorType, "P6C 検証ワールド", "ValidateP6C");
+
+                    case P6CPlayerSmoke:
+                        return RunBuilder(Phase6PlayerSmokeType, "BuildAllP6C");
 
                     case BuildCompanionField:
                         return RunBuildCompanionField();

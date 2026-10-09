@@ -22,6 +22,14 @@ namespace Momotaro.Data.Combat
         [Tooltip("終了直前の先行入力窓秒（連続ステップ／通常攻撃 1 段目への接続）。")]
         [SerializeField] private float _chainBufferSeconds = 0.12f;
 
+        [Header("Just Evade (P6C)")]
+        [Tooltip("ジャスト回避の受付終端（ステップ開始からの秒。この秒数未満）。成功が起きるのは受付と無敵区間の重なりだけ。P6C 仕様 §3（0.12）。")]
+        [SerializeField] private float _justEvadeWindowSeconds = 0.12f;
+        [Tooltip("ジャスト回避成功で得る反撃強化の倍率。次に開始した通常攻撃の一段の HP ダメージ系統に 1 回掛ける。P6C 仕様 §3（1.5）。")]
+        [SerializeField] private float _justEvadeCounterHpMultiplier = 1.5f;
+        [Tooltip("反撃強化の有効時間（成功時からの Gameplay 秒。満了時刻未満に開始した段だけ強化）。P6C 仕様 §3（2.0）。")]
+        [SerializeField] private float _justEvadeCounterSeconds = 2.0f;
+
         /// <summary>移動距離。</summary>
         public float Distance => _distance;
 
@@ -45,6 +53,53 @@ namespace Momotaro.Data.Combat
 
         /// <summary>終了直前の先行入力窓秒。</summary>
         public float ChainBufferSeconds => _chainBufferSeconds;
+
+        /// <summary>ジャスト回避の受付終端（ステップ開始からの秒。この秒数未満）。</summary>
+        public float JustEvadeWindowSeconds => _justEvadeWindowSeconds;
+
+        /// <summary>反撃強化の倍率（通常攻撃一段の HP 系統）。</summary>
+        public float JustEvadeCounterHpMultiplier => _justEvadeCounterHpMultiplier;
+
+        /// <summary>反撃強化の有効時間（Gameplay 秒）。</summary>
+        public float JustEvadeCounterSeconds => _justEvadeCounterSeconds;
+
+        /// <summary>
+        /// ジャスト回避の設定が成立するか（P6C 仕様 §3）。受付終端は無敵開始より後・無敵終了以下（無敵開始前をジャスト扱いにしない、
+        /// 通常無敵を広げない）。時間・倍率は有限、時間は正、倍率は 1 以上。成立しなければ理由を返す。
+        /// </summary>
+        public static bool TryValidateJustEvade(float invincibleStart, float invincibleEnd, float window, float multiplier,
+            float seconds, out string reason)
+        {
+            if (!IsFinite(window) || !IsFinite(multiplier) || !IsFinite(seconds) || !IsFinite(invincibleStart) || !IsFinite(invincibleEnd))
+            {
+                reason = "JustEvade values must be finite.";
+                return false;
+            }
+
+            if (window <= invincibleStart || window > invincibleEnd)
+            {
+                reason = "JustEvadeWindowSeconds (" + window + ") must satisfy InvincibleStart (" + invincibleStart
+                    + ") < window <= InvincibleEnd (" + invincibleEnd + ").";
+                return false;
+            }
+
+            if (multiplier < 1f)
+            {
+                reason = "JustEvadeCounterHpMultiplier must be >= 1.";
+                return false;
+            }
+
+            if (seconds <= 0f)
+            {
+                reason = "JustEvadeCounterSeconds must be > 0.";
+                return false;
+            }
+
+            reason = string.Empty;
+            return true;
+        }
+
+        private static bool IsFinite(float v) => !float.IsNaN(v) && !float.IsInfinity(v);
 
         /// <inheritdoc />
         public override void Validate(DataValidationReport report)
@@ -73,6 +128,12 @@ namespace Momotaro.Data.Combat
             if (_staminaCost < 0f)
             {
                 report.Error(name + ": StaminaCost must be >= 0.");
+            }
+
+            if (!TryValidateJustEvade(_invincibleStartSeconds, _invincibleEndSeconds, _justEvadeWindowSeconds,
+                    _justEvadeCounterHpMultiplier, _justEvadeCounterSeconds, out string reason))
+            {
+                report.Error(name + ": " + reason);
             }
         }
     }

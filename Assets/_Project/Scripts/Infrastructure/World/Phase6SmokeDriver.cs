@@ -188,6 +188,9 @@ namespace Momotaro.Infrastructure.World
                 case "useclose":
                     yield return UseThenWindowClose();
                     break;
+                case "justevade":
+                    yield return JustEvadeThenExit();
+                    break;
                 default:
                     _result["error"] = "unknown mode";
                     Finish();
@@ -308,6 +311,7 @@ namespace Momotaro.Infrastructure.World
             if (TryPort(out AreaActorTransferPort after) && after.PlayerState != null)
             {
                 _result["afterUsingItem"] = after.PlayerState.IsUsingItem ? "true" : "false";
+                _result["afterHasCounter"] = after.PlayerState.HasJustEvadeCounter ? "true" : "false";
             }
 
             Finish();
@@ -463,6 +467,296 @@ namespace Momotaro.Infrastructure.World
             _result["error"] = "the normal quit did not finish (outcome=" + Saves.LastExitOutcome
                 + " awaitingChoice=" + Saves.AwaitingExitChoice + ")";
             Finish();
+        }
+
+        // ---------------------------------------------------------------- P6C 15：実入力のジャスト回避と反撃・別プロセス Continue
+
+        /// <summary>
+        /// P6C の実ビルド確認（<c>-p6a-smoke justevade</c>）：New Game → A の普通敵（近接）の通常の攻撃に、<b>仮想キーボードの Space＋方向キー</b>で
+        /// 合わせてジャスト回避 → 方向キー＋J で反撃（強化された段の HP）→ 早い通常回避の後の反撃（通常の HP）と比べる →
+        /// もう一度ジャスト回避して強化を持ったまま正常終了の保存 → 終了。別プロセスの <c>continue</c> で強化が無いこと・徳が戻ることを確かめる。
+        /// 時機を細かく測るため、試行の間だけ timeScale を 0.5 にする（自動確認だけの措置）。
+        /// </summary>
+        private IEnumerator JustEvadeThenExit()
+        {
+            yield return StartNewGame();
+            if (_result.ContainsKey("error"))
+            {
+                Finish();
+                yield break;
+            }
+
+            if (!TryPort(out AreaActorTransferPort port) || port.PlayerVitals == null || port.PlayerState == null)
+            {
+                _result["error"] = "no player";
+                Finish();
+                yield break;
+            }
+
+            _keyboard = InputSystem.AddDevice<Keyboard>("P6CSmokeKeyboard");
+            yield return null;
+            port.PlayerVitals.SetGuardianResolver(null); // 犬丸の「かばう」は対象外（主人公の回避を見る）
+
+            int justDamage = -1;
+            int normalDamage = -1;
+            int justAttempts = 0;
+            int normalAttempts = 0;
+            var lines = new List<string>();
+            for (int i = 0; i < 16 && (justDamage < 0 || normalDamage < 0); i++)
+            {
+                bool wantJust = justDamage < 0 && (normalDamage >= 0 || i % 2 == 0);
+                if (wantJust)
+                {
+                    justAttempts++;
+                }
+                else
+                {
+                    normalAttempts++;
+                }
+
+                string outcome = null;
+                int damage = -1;
+                bool boosted = false;
+                yield return EvadeAndCounter(port, wantJust ? 0.085f : 0.17f, true, (o, d, b) => { outcome = o; damage = d; boosted = b; });
+                lines.Add((wantJust ? "just" : "early") + ":" + outcome + ":" + damage + ":" + (boosted ? "boosted" : "normal"));
+                if (wantJust && outcome == "JustEvade" && boosted && damage > 0)
+                {
+                    justDamage = damage;
+                }
+                else if (!wantJust && outcome != "JustEvade" && outcome != "Damage" && !boosted && damage > 0)
+                {
+                    normalDamage = damage;
+                }
+            }
+
+            _result["attempts"] = string.Join(" ", lines);
+            _result["justEvadeSuccess"] = port.PlayerState.JustEvadeSuccessCount.ToString(CultureInfo.InvariantCulture);
+            _result["counterConsumed"] = port.PlayerState.JustEvadeCounterConsumeCount.ToString(CultureInfo.InvariantCulture);
+            _result["boostedHits"] = port.PlayerState.CounterBoostedHitCount.ToString(CultureInfo.InvariantCulture);
+            _result["justCounterDamage"] = justDamage.ToString(CultureInfo.InvariantCulture);
+            _result["normalCounterDamage"] = normalDamage.ToString(CultureInfo.InvariantCulture);
+            _result["counterHarder"] = justDamage > normalDamage && normalDamage > 0 ? "true" : "false";
+
+            // 強化を持ったまま正常終了（保存しない一時状態であることを別プロセスで確かめる）。
+            for (int i = 0; i < 8 && !port.PlayerState.HasJustEvadeCounter; i++)
+            {
+                yield return EvadeAndCounter(port, 0.085f, false, (o, d, b) => { });
+            }
+
+            _result["holdingCounterAtExit"] = port.PlayerState.HasJustEvadeCounter ? "true" : "false";
+            Time.timeScale = 1f;
+            GameSessionState session = GameSessionProvider.Current;
+            _result["adventureId"] = session.AdventureId;
+            _result["area"] = CurrentAreaProvider.Current.AreaId.Value;
+            WriteParty("before");
+            WriteProgress("before");
+            SaveExitOutcome exit = SaveExitOutcome.TimedOut;
+            yield return Saves.SaveBeforeExit(o => exit = o);
+            _result["exitOutcome"] = exit.ToString();
+            Finish();
+        }
+
+        /// <summary>
+        /// 近接の 1 試行：敵の東西南北いずれかの 1.9m に立ち、背を向けて J（音）で気付かせ、予兆の残りが <paramref name="lead"/> 秒で
+        /// Space＋敵の方向キー。<paramref name="counter"/> なら回避の後に方向キー＋J で反撃し、敵へ与えた HP を返す。
+        /// </summary>
+        private IEnumerator EvadeAndCounter(AreaActorTransferPort port, float lead, bool counter, Action<string, int, bool> done)
+        {
+            Momotaro.Gameplay.Player.PlayerStateController player = port.PlayerState;
+            Momotaro.Gameplay.Player.PlayerVitalsHolder vitals = port.PlayerVitals;
+            AreaRuntimeBundle bundle = CurrentAreaProvider.Current;
+            if (bundle == null || !bundle.TryResolve(out Momotaro.Gameplay.Player.PlayerRoot root))
+            {
+                done("no-root", -1, false);
+                yield break;
+            }
+
+            var facing = root.GetComponentInChildren<Momotaro.Gameplay.Player.PlayerFacing>();
+            Momotaro.Gameplay.Enemy.EnemyActor enemy = null;
+            float best = float.MaxValue;
+            foreach (Momotaro.Gameplay.Enemy.EnemyActor e in FindObjectsByType<Momotaro.Gameplay.Enemy.EnemyActor>(FindObjectsSortMode.None))
+            {
+                if (e == null || e.IsDefeated || !e.gameObject.activeInHierarchy || e.gameObject.scene != bundle.gameObject.scene
+                    || !e.name.Contains("Melee"))
+                {
+                    continue;
+                }
+
+                float d = Vector3.Distance(e.transform.position, root.transform.position);
+                if (d < best)
+                {
+                    best = d;
+                    enemy = e;
+                }
+            }
+
+            if (enemy == null)
+            {
+                done("no-enemy", -1, false);
+                yield break;
+            }
+
+            enemy.ResetState();
+            enemy.SetAttackPowerScale(0.3f);
+            var attack = enemy.GetComponentInChildren<Momotaro.Gameplay.Enemy.Combat.EnemyAttackController>();
+            Time.timeScale = 1f;
+            float deadline = Time.realtimeSinceStartup + 12f;
+            float nextTap = 0f;
+            while (Time.realtimeSinceStartup < deadline
+                   && !(attack.IsAttacking && attack.Phase == Momotaro.Gameplay.Enemy.Combat.EnemyAttackMachine.Phase.Prepare))
+            {
+                vitals.RestoreForWaveRecovery();
+                Vector3 toPlayer = root.transform.position - enemy.transform.position;
+                toPlayer.y = 0f;
+                Vector3 axis = AxisOf(toPlayer);
+                if (toPlayer.magnitude > 2.35f || toPlayer.magnitude < 1.55f || Vector3.Angle(toPlayer, axis) > 10f)
+                {
+                    Vector3 stand = enemy.transform.position + axis * 1.9f;
+                    root.transform.position = new Vector3(stand.x, root.transform.position.y, stand.z);
+                    if (root.Body != null)
+                    {
+                        root.Body.position = root.transform.position;
+                        root.Body.linearVelocity = Vector3.zero;
+                    }
+                }
+
+                facing?.ConfirmFromInput(new Vector2(axis.x, axis.z));
+                if (Time.realtimeSinceStartup >= nextTap)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.J));
+                    nextTap = Time.realtimeSinceStartup + 2.5f;
+                }
+                else
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                }
+
+                yield return null;
+            }
+
+            if (!(attack.IsAttacking && attack.Phase == Momotaro.Gameplay.Enemy.Combat.EnemyAttackMachine.Phase.Prepare))
+            {
+                done("no-attack", -1, false);
+                yield break;
+            }
+
+            Time.timeScale = 0.5f;
+            Vector3 off = root.transform.position - enemy.transform.position;
+            off.y = 0f;
+            Key stepKey = KeyOf(-AxisOf(off));
+            var rec = new FirstResult();
+            vitals.Results.AddListener(rec);
+            bool pressed = false;
+            while (attack.IsAttacking && attack.Phase == Momotaro.Gameplay.Enemy.Combat.EnemyAttackMachine.Phase.Prepare)
+            {
+                float remaining = attack.CurrentPrepareSeconds - attack.AttackElapsed;
+                if (!pressed && remaining <= lead + Time.deltaTime)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState(Key.Space, stepKey));
+                    pressed = true;
+                }
+                else if (pressed)
+                {
+                    InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+                }
+
+                yield return null;
+            }
+
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            float activeDeadline = Time.realtimeSinceStartup + 2f;
+            while (attack.Phase == Momotaro.Gameplay.Enemy.Combat.EnemyAttackMachine.Phase.Active && Time.realtimeSinceStartup < activeDeadline)
+            {
+                yield return null;
+            }
+
+            yield return null;
+            vitals.Results.RemoveListener(rec);
+            string outcome = rec.Kind.HasValue ? rec.Kind.Value.ToString() : "None";
+            if (!counter)
+            {
+                Time.timeScale = 1f;
+                done(outcome, -1, false);
+                yield break;
+            }
+
+            float stepDeadline = Time.realtimeSinceStartup + 2f;
+            while ((player.IsStepping || player.Current == Momotaro.Gameplay.Player.PlayerState.Hurt) && Time.realtimeSinceStartup < stepDeadline)
+            {
+                yield return null;
+            }
+
+            int boostedBefore = player.CounterBoostedHitCount;
+            var enemyRec = new EnemyDamage(player);
+            enemy.Results.AddListener(enemyRec);
+            Vector3 now = root.transform.position - enemy.transform.position;
+            now.y = 0f;
+            Key toward = KeyOf(-AxisOf(now));
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState(toward, Key.J));
+            yield return null;
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState(toward));
+            yield return null;
+            InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
+            float hitDeadline = Time.realtimeSinceStartup + 2f;
+            while (enemyRec.Damage < 0 && Time.realtimeSinceStartup < hitDeadline)
+            {
+                yield return null;
+            }
+
+            enemy.Results.RemoveListener(enemyRec);
+            Time.timeScale = 1f;
+            bool boosted = player.CounterBoostedHitCount > boostedBefore;
+            float settle = Time.realtimeSinceStartup + 3f;
+            while ((attack.IsAttacking || player.Current == Momotaro.Gameplay.Player.PlayerState.Attack) && Time.realtimeSinceStartup < settle)
+            {
+                yield return null;
+            }
+
+            done(outcome, enemyRec.Damage, boosted);
+        }
+
+        private static Vector3 AxisOf(Vector3 v)
+        {
+            if (v.sqrMagnitude < 1e-6f)
+            {
+                return Vector3.back;
+            }
+
+            return Mathf.Abs(v.x) > Mathf.Abs(v.z) ? new Vector3(Mathf.Sign(v.x), 0f, 0f) : new Vector3(0f, 0f, Mathf.Sign(v.z));
+        }
+
+        private static Key KeyOf(Vector3 axis) =>
+            Mathf.Abs(axis.x) > Mathf.Abs(axis.z) ? (axis.x > 0f ? Key.D : Key.A) : (axis.z > 0f ? Key.W : Key.S);
+
+        private sealed class FirstResult : Momotaro.Gameplay.Combat.IHitResultListener
+        {
+            public Momotaro.Gameplay.Combat.HitResultKind? Kind;
+
+            public void OnHitResult(in Momotaro.Gameplay.Combat.HitResult result)
+            {
+                if (Kind == null)
+                {
+                    Kind = result.Kind;
+                }
+            }
+        }
+
+        private sealed class EnemyDamage : Momotaro.Gameplay.Combat.IHitResultListener
+        {
+            private readonly Momotaro.Gameplay.Player.PlayerStateController _player;
+
+            public EnemyDamage(Momotaro.Gameplay.Player.PlayerStateController player) => _player = player;
+
+            public int Damage = -1;
+
+            public void OnHitResult(in Momotaro.Gameplay.Combat.HitResult result)
+            {
+                if (Damage < 0 && ReferenceEquals(result.Attacker, _player)
+                    && result.Kind == Momotaro.Gameplay.Combat.HitResultKind.Damage)
+                {
+                    Damage = Mathf.RoundToInt(result.AppliedDamage.Hp);
+                }
+            }
         }
 
         /// <summary>成長・権利・徳・上限・能力（P6B 19）を書き出す。</summary>

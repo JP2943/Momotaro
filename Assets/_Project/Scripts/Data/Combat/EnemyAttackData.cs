@@ -72,8 +72,10 @@ namespace Momotaro.Data.Combat
         [Header("Defense Interaction")]
         [Tooltip("ガード可能か。")]
         [SerializeField] private bool _guardable = true;
-        [Tooltip("ジャストガード可能か。")]
+        [Tooltip("ジャストガード可能か。ガード不能（Unblockable）でも打撃・斬撃は原則 true（P6C 仕様 §6）。")]
         [SerializeField] private bool _justGuardable = true;
+        [Tooltip("ジャスガも不可にする例外の理由（つかみ・地形等）。Unblockable で JustGuardable=false にするときだけ必須。未分類を自動で例外にしない（P6C 仕様 §6）。")]
+        [SerializeField] private string _justGuardExceptionReason = "";
         [Tooltip("ステップ回避可能か。")]
         [SerializeField] private bool _steppable = true;
         [Tooltip("攻撃中のひるみ無効（この攻撃実行中は自身がひるまない）。")]
@@ -173,6 +175,10 @@ namespace Momotaro.Data.Combat
         public bool JustGuardable => _justGuardable;
         /// <summary>ステップ回避可能か。</summary>
         public bool Steppable => _steppable;
+        /// <summary>ジャスガも不可にする例外の理由（例外でなければ空）。</summary>
+        public string JustGuardExceptionReason => _justGuardExceptionReason;
+        /// <summary>ジャスガも不可の例外か（ガード不能かつ JG 不可）。</summary>
+        public bool IsJustGuardException => _attackClass == EnemyAttackClass.Unblockable && !_justGuardable;
         /// <summary>攻撃中ひるみ無効か。</summary>
         public bool AttackPoiseImmune => _attackPoiseImmune;
 
@@ -259,18 +265,37 @@ namespace Momotaro.Data.Combat
                 report.Error(name + ": TrackingStopSeconds must be within [0, PrepareSeconds].");
             }
 
-            // ガード不能は Guard／JG を無効化していること（表示と防御規則の整合）。Step は可能であること。
+            // ガード不能は通常ガードを無効化していること（表示と防御規則の整合）。Step は可能であること。
+            // P6C 仕様 §6：打撃・斬撃のガード不能は原則ジャスガ可能（false／true／true）。旧「JustGuardable=false 必須」は撤去した。
+            // ジャスガも不可にするのは理由を明記した例外だけ（未分類の Data を黙って例外にしない）。例外の予兆は通常の攻撃と区別する（Unblockable）。
             if (_attackClass == EnemyAttackClass.Unblockable)
             {
-                if (_guardable || _justGuardable)
+                if (_guardable)
                 {
-                    report.Error(name + ": Unblockable attack must set Guardable=false and JustGuardable=false.");
+                    report.Error(name + ": Unblockable attack must set Guardable=false.");
+                }
+
+                if (!_justGuardable && string.IsNullOrWhiteSpace(_justGuardExceptionReason))
+                {
+                    report.Error(name + ": Unblockable attack is JustGuardable by default (P6C). "
+                        + "Set JustGuardExceptionReason to make it a no-JustGuard exception.");
+                }
+
+                if (!_justGuardable && _telegraph != AttackTelegraph.Unblockable)
+                {
+                    report.Error(name + ": a no-JustGuard exception must use the Unblockable telegraph (distinct from normal attacks).");
                 }
 
                 if (!_steppable)
                 {
                     report.Error(name + ": Unblockable attack must be Steppable (Step is the counter-play).");
                 }
+            }
+
+            // 例外の理由は Unblockable で JG 不可のときだけ意味を持つ（ほかで書かれていたら設定の取り違え）。
+            if (!string.IsNullOrWhiteSpace(_justGuardExceptionReason) && !IsJustGuardException)
+            {
+                report.Error(name + ": JustGuardExceptionReason is only for Unblockable attacks with JustGuardable=false.");
             }
 
             // Projectile は弾パラメータが有効であること。

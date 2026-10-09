@@ -319,6 +319,14 @@ namespace Momotaro.Editor.Phase5
         /// </summary>
         public bool IncludeCombatVfx { get; set; }
 
+        /// <summary>
+        /// 命中結果の SE（ジャスト回避・ジャスガ・ガードの既存素材）を手応え演出に繋ぐか（P6C）。P6A／P6B／P5／P5.5 の試遊は false で出力は変わらない。
+        /// </summary>
+        public bool IncludeCombatSe { get; set; }
+
+        /// <summary>ジャスト回避・反撃強化の試遊表示（<c>JustEvadeHudPresenter</c>）を Area に置くか（P6C）。既定 false。</summary>
+        public bool IncludeJustEvadeHud { get; set; }
+
         /// <summary>B の 2 つ目の接続口（P6A：B → C）。無ければ None。</summary>
         public Phase5SeamOpening AreaBExtraSeam { get; set; } = Phase5SeamOpening.None;
 

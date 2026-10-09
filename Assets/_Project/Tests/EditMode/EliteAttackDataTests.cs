@@ -49,13 +49,20 @@ namespace Momotaro.Tests.EditMode
             Assert.IsTrue(heavy.Steppable, "強は Step 可。");
         }
 
+        /// <summary>
+        /// P6C で期待値を変更（旧 <c>Unblockable_NotGuardable_NotJustGuardable_ButSteppable</c>）。
+        /// P6C 仕様 §6：打撃・斬撃のガード不能は通常ガード不可・ジャスガ可・ステップ可（false／true／true）。
+        /// 精鋭の「刀の突き」は打撃・斬撃に当たるので JG 可へ変更した（P6C 記録 001 §4）。例外ではない。
+        /// </summary>
         [Test]
-        public void Unblockable_NotGuardable_NotJustGuardable_ButSteppable()
+        public void Unblockable_NotGuardable_ButJustGuardable_AndSteppable()
         {
             EnemyAttackData unb = Attack("Unblockable");
-            Assert.IsFalse(unb.Guardable, "ガード不能は Guard 不可。");
-            Assert.IsFalse(unb.JustGuardable, "ガード不能は JG 不可。");
-            Assert.IsTrue(unb.Steppable, "ガード不能は Step 可（唯一の対処）。");
+            Assert.IsFalse(unb.Guardable, "ガード不能は通常ガード不可。");
+            Assert.IsTrue(unb.JustGuardable, "P6C：打撃・斬撃のガード不能はジャスガ可。");
+            Assert.IsTrue(unb.Steppable, "ガード不能は Step 可。");
+            Assert.IsFalse(unb.IsJustGuardException, "例外ではない。");
+            Assert.Greater(unb.JustGuardPoiseReturn, 0f, "JG の体幹反射が成立する値を持つ（既存規則どおり反射する）。");
         }
 
         [Test]

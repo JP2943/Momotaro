@@ -251,6 +251,87 @@ namespace Momotaro.Editor.Phase6
                 outputs);
         }
 
+        /// <summary>
+        /// P6C の実ビルド確認（P6C 15）：P6C の Windows ビルドを作り、画面ありで <c>justevade</c>（実入力のジャスト回避・反撃・早い通常回避との比較・
+        /// 強化を持ったままの正常終了）→ 別プロセスで <c>continue</c>（強化なし・同じ冒険・徳と HP が戻る）を突き合わせる。
+        /// </summary>
+        public static BuildResult BuildAllP6C()
+        {
+            Phase6Profile previous = Phase6WorldIds.Profile;
+            Phase6WorldIds.Profile = Phase6Profile.P6C;
+            try
+            {
+                return BuildP6CCurrent();
+            }
+            finally
+            {
+                Phase6WorldIds.Profile = previous;
+            }
+        }
+
+        private static BuildResult BuildP6CCurrent()
+        {
+            var outputs = new List<string>();
+            string root = Directory.GetParent(Application.dataPath).FullName;
+            string work = Path.Combine(root, "_bridge/p6c_smoke");
+            Directory.CreateDirectory(work);
+            string saves = Path.Combine(work, "saves_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss"));
+            Directory.CreateDirectory(saves);
+            string exe = Path.Combine(root, "Builds/P6C", "Momotaro_P6C.exe");
+
+            var options = new BuildPlayerOptions
+            {
+                scenes = new[]
+                {
+                    Phase6WorldIds.TitleScenePath, Phase6WorldIds.AreaAScenePath,
+                    Phase6WorldIds.AreaBScenePath, Phase6WorldIds.AreaCScenePath,
+                },
+                locationPathName = exe,
+                target = BuildTarget.StandaloneWindows64,
+                options = BuildOptions.None,
+            };
+
+            var watch = Stopwatch.StartNew();
+            BuildReport report = BuildPipeline.BuildPlayer(options);
+            watch.Stop();
+            outputs.Add("ビルド: " + report.summary.result + "（" + watch.Elapsed.TotalSeconds.ToString("0") + " 秒、"
+                + (report.summary.totalSize / (1024 * 1024)) + " MB、エラー " + report.summary.totalErrors + "）→ " + exe);
+            if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
+            {
+                return new BuildResult(false, "ビルドに失敗しました。", outputs);
+            }
+
+            bool ok = RunPlayer(exe, "justevade", saves, work, 0, batch: false, outputs, out Dictionary<string, string> played);
+            ok &= RunPlayer(exe, "continue", saves, work, 0, batch: true, outputs, out Dictionary<string, string> continued,
+                tag: "continue_after_justevade");
+            if (ok)
+            {
+                outputs.Add("試行: " + Get(played, "attempts"));
+                ok &= ExpectPositive(outputs, "実入力でジャスト回避が成立した回数", Get(played, "justEvadeSuccess"));
+                ok &= ExpectPositive(outputs, "強化された段が当たった数", Get(played, "boostedHits"));
+                ok &= Expect(outputs, "ジャスト回避の反撃の方が大きい（強化 " + Get(played, "justCounterDamage") + "／通常 "
+                    + Get(played, "normalCounterDamage") + "）", "true", Get(played, "counterHarder"));
+                ok &= Expect(outputs, "強化を持ったまま終了した", "true", Get(played, "holdingCounterAtExit"));
+                ok &= Expect(outputs, "正常終了の保存が成功", "Saved", Get(played, "exitOutcome"));
+                ok &= Expect(outputs, "別プロセスの Continue が同じ冒険", Get(played, "adventureId"), Get(continued, "adventureId"));
+                ok &= Expect(outputs, "プロセスが別", "different",
+                    Get(played, "processId") != Get(continued, "processId") ? "different" : "same");
+                ok &= Expect(outputs, "Continue の後は強化なし（保存しない一時状態）", "false", Get(continued, "afterHasCounter"));
+                ok &= Expect(outputs, "使用可能な徳（撃破報酬など）", Get(played, "beforeVirtue"), Get(continued, "afterVirtue"));
+                ok &= Expect(outputs, "HP", Get(played, "beforePlayerHp"), Get(continued, "afterPlayerHp"));
+                ok &= Expect(outputs, "Continue 直後は未保存なし", "false", Get(continued, "dirtyAfterContinue"));
+            }
+
+            return new BuildResult(ok, ok ? "P6C の実ビルド別プロセス確認が終わりました。" : "P6C の実ビルド確認に失敗があります。", outputs);
+        }
+
+        private static bool ExpectPositive(List<string> outputs, string label, string actual)
+        {
+            bool ok = int.TryParse(actual, out int n) && n > 0;
+            outputs.Add((ok ? "[OK] " : "[NG] ") + label + "：" + actual);
+            return ok;
+        }
+
         private static string Get(Dictionary<string, string> d, string key) =>
             d != null && d.TryGetValue(key, out string v) ? v : "(なし)";
 

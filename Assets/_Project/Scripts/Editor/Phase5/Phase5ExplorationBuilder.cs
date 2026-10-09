@@ -287,6 +287,20 @@ namespace Momotaro.Editor.Phase5
 
         // ---------------------------------------------------------------- Scene
 
+        /// <summary>
+        /// 命中結果の SE（JG・ガード・ジャスト回避の既存素材）を手応え演出へ繋ぐ（P6C。<see cref="Phase5BuildTargets.IncludeCombatSe"/> のときだけ）。
+        /// 再生役は P3.5 の試遊と同じ部品・同じ素材（新しい音の経路を作らない）。
+        /// </summary>
+        private static void AttachResultSe(GameObject feedbackGo, CombatFeedbackPresenter feedback, Phase5BuildTargets t)
+        {
+            if (t == null || !t.IncludeCombatSe)
+            {
+                return;
+            }
+
+            feedback.Se = Momotaro.Editor.Phase35.Phase35CombatTrialBuilder.AddResultSePlayer(feedbackGo);
+        }
+
         internal static bool TryFindDirtyScene(out string sceneName)
         {
             for (int i = 0; i < EditorSceneManager.sceneCount; i++)
@@ -1548,6 +1562,14 @@ namespace Momotaro.Editor.Phase5
                 Momotaro.Editor.Phase35.Phase35CombatTrialBuilder.BuildVfx(systems.transform, player, null);
             }
 
+            // ジャスト回避・反撃強化の試遊表示（P6C 仕様 §7）。この Area の主人公・予告にだけ結び、活動中の Area のときだけ描く。
+            if (t != null && t.IncludeJustEvadeHud)
+            {
+                var hudGo = new GameObject("JustEvadeHud");
+                hudGo.transform.SetParent(systems.transform, false);
+                hudGo.AddComponent<Momotaro.Presentation.Combat.JustEvadeHudPresenter>();
+            }
+
             // ---- Interact の単一選択窓口（§7.1）----
             //
             // 押下を消費するのはこの 1 本だけ。P4 の InvestigationInteractInput は<b>置かない</b>
@@ -1659,6 +1681,7 @@ namespace Momotaro.Editor.Phase5
                 CombatFeedbackPresenter feedback = feedbackGo.AddComponent<CombatFeedbackPresenter>();
                 feedback.HitStop = hitStop;
                 feedback.Flash = flash;
+                AttachResultSe(feedbackGo, feedback, t);
 
                 // 生成直後の最初の命中を取りこぼさない（周期の再探索を待たせない）。
                 EncounterFeedbackBinder feedbackBinder = feedbackGo.AddComponent<EncounterFeedbackBinder>();
@@ -1700,6 +1723,7 @@ namespace Momotaro.Editor.Phase5
                 CombatFeedbackPresenter fieldFeedback = fieldFeedbackGo.AddComponent<CombatFeedbackPresenter>();
                 fieldFeedback.HitStop = fieldHitStop;
                 fieldFeedback.Flash = fieldFlash;
+                AttachResultSe(fieldFeedbackGo, fieldFeedback, t);
             }
 
             AreaEncounterGroup encounterGroup = null;
@@ -1713,6 +1737,7 @@ namespace Momotaro.Editor.Phase5
                 CombatFeedbackPresenter feedback = feedbackGo.AddComponent<CombatFeedbackPresenter>();
                 feedback.HitStop = hitStop;
                 feedback.Flash = flash;
+                AttachResultSe(feedbackGo, feedback, t);
 
                 var runners = new List<AreaEncounterRunner>();
                 var triggers = new List<AreaEncounterTrigger>();

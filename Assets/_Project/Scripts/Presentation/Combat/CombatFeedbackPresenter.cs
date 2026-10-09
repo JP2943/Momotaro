@@ -75,6 +75,9 @@ namespace Momotaro.Presentation.Combat
         /// <summary>仮 SE 再生（Scene 構築 P3.5-06・テストが設定）。</summary>
         public CombatSePlayer Se { get => _se; set => _se = value; }
 
+        /// <summary>ジャスト回避の手応え（点滅・揺れ・音）を出した回数（読み取りのみ。P6C の表示確認用）。</summary>
+        public int JustEvadeFeedbackCount { get; private set; }
+
         /// <summary>購読チャネルを差し替える（テスト・Scene 構築）。</summary>
         public void Bind(CombatFeedbackChannel channel)
         {
@@ -163,6 +166,8 @@ namespace Momotaro.Presentation.Combat
 
                 case HitResultKind.JustEvade:
                     // ジャスト回避（P3.5-09）：回避成功の中でも「弾き回避」。点滅＋控えめのカメラ揺れで手応えを出す（ヒットストップ・SE は Cue で処理済み）。
+                    // P6C：表示だけ。報酬（強化・反射）はここで再実行しない。
+                    JustEvadeFeedbackCount++;
                     if (_flash != null) _flash.Trigger(r.Target, _justEvadeFlash);
                     Shake(_justEvadeShake);
                     break;

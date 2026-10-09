@@ -1,0 +1,92 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 11c7d9068ea9b8b1e372f64e911563b9, type: 3}
+  m_Name: SO_AreaCatalog_P6C
+  m_EditorClassIdentifier: Momotaro.Data::Momotaro.Data.World.AreaCatalogData
+  _id:
+    _value: campaign_p6c
+  _displayName: "P6C \u691C\u8A3C campaign"
+  _description: 
+  _version: 1
+  _debugNote: 
+  _areas:
+  - {fileID: 11400000, guid: 599efd365677b2f49b48030141fa8f8a, type: 2}
+  - {fileID: 11400000, guid: 4509ce8edf9beb845b0bc4ad53c5ce22, type: 2}
+  - {fileID: 11400000, guid: bc5c44600ce2f2d46b12207c4b800e19, type: 2}
+  _respawnAreaId:
+    _value: area_p6c_a
+  _respawnEntryId:
+    _value: area_p5_a_start
+  _encounterClearPolicy: 1
+  _contentVersion: 1
+  _shrines:
+  - _shrineId:
+      _value: shrine_p6_a
+    _areaId:
+      _value: area_p6c_a
+    _entryId:
+      _value: entry_p6_a_shrine
+    _displayName: "A \u306E\u304A\u5730\u8535\u69D8"
+  - _shrineId:
+      _value: shrine_p6_c
+    _areaId:
+      _value: area_p6c_c
+    _entryId:
+      _value: entry_p6_c_shrine
+    _displayName: "C \u306E\u304A\u5730\u8535\u69D8\uFF08\u30DC\u30B9\u524D\uFF09"
+  - _shrineId:
+      _value: shrine_p6_c_2
+    _areaId:
+      _value: area_p6c_c
+    _entryId:
+      _value: entry_p6_c_shrine_2
+    _displayName: "C \u306E\u304A\u5730\u8535\u69D8\uFF082\uFF09"
+  _initialShrineId:
+    _value: shrine_p6_a
+  _kibidangoBaseCapacity: 3
+  _kibidangoBaseHeal: 50
+  _kibidangoUseSeconds: 2
+  _kibidangoCommitSeconds: 1.5
+  _kibidangoMoveSpeedMultiplier: 0.2
+  _refundRightsInitial: 3
+  _refundRightsPerChapter: 3
+  _refundRightsMax: 6
+  _chapterIds:
+  - _value: chapter_p6b_fixture
+  - _value: chapter_p6b_fixture_2
+  _saveSlotName: p6c_slot0
+  _items:
+  - _itemId:
+      _value: item_p6_tonic
+    _maxStack: 3
+    _displayName: "\u5F37\u58EE\u85AC\uFF08\u691C\u8A3C\u7528\uFF09"
+  _growthNodes:
+  - {fileID: 11400000, guid: 90cf3cfbb5a2fc949a91ed9a75943b9c, type: 2}
+  - {fileID: 11400000, guid: 584c9e56a097f8a4b8904974a9a405f8, type: 2}
+  - {fileID: 11400000, guid: d2aab49c5ae121c409a2564a5f2e0d6c, type: 2}
+  - {fileID: 11400000, guid: 7de0185f25950584fa860e7468dc990d, type: 2}
+  - {fileID: 11400000, guid: b76d7fa2efad13b4bb76f0fe702ff070, type: 2}
+  - {fileID: 11400000, guid: e301fe1b5ea68234994bc3ac3e09bbe7, type: 2}
+  - {fileID: 11400000, guid: 7aaa60fe1c53d5f4699b193aa21431d5, type: 2}
+  - {fileID: 11400000, guid: 3827eafeb585ad24d804a74b7ed78cfd, type: 2}
+  - {fileID: 11400000, guid: a9e59b42c5f764848b96c5d8e6987f3a, type: 2}
+  _grantOnceRewardIds:
+  - _value: reward_p6c_clear_b_north
+  - _value: reward_p6c_clear_b_south
+  - _value: reward_p6c_clear_c_boss
+  - _value: reward_p6c_find_scroll
+  _companionIds:
+  - _value: companion_inumaru
+  _questIds:
+  - _value: quest_p6a_fixture
+  _testEnemyAttackScale: 1
+  _testPlayerMaxHpScale: 1

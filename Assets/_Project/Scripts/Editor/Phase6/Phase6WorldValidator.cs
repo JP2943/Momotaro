@@ -134,6 +134,117 @@ namespace Momotaro.Editor.Phase6
             }
         }
 
+        [MenuItem("Momotaro/Phase 6C/Validate Just Evade World")]
+        private static void ValidateP6CInteractive()
+        {
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            ValidateP6C(errors, warnings);
+            EditorUtility.DisplayDialog("P6C 検証ワールドの検査",
+                errors.Count == 0
+                    ? "検査を通りました（警告 " + warnings.Count + " 件）。"
+                    : "エラー " + errors.Count + " 件。\n" + string.Join("\n", errors), "OK");
+        }
+
+        /// <summary>
+        /// P6C の検証ワールドを見る（P6C 15）。P6B と同じ配置・campaign・成長・きびだんごの検査に加え、
+        /// ジャスト回避の Data（受付・倍率・時間と無敵区間の関係）、ガード不能攻撃の可否（通常ガード不可・ジャスガ可）、
+        /// 各 Area の試遊表示（1 個・同じ Scene）と命中結果 SE（ジャスト回避の音が配線されている）を検査する。
+        /// </summary>
+        public static void ValidateP6C(List<string> errors, List<string> warnings)
+        {
+            Phase6Profile previous = Phase6WorldIds.Profile;
+            Phase6WorldIds.Profile = Phase6Profile.P6C;
+            try
+            {
+                Validate(errors, warnings);
+                int start = errors.Count;
+                ValidateP6BCampaign(errors);
+                ValidateP6CCombat(errors);
+                for (int i = start; i < errors.Count; i++)
+                {
+                    errors[i] = "【P6C】" + errors[i];
+                }
+            }
+            finally
+            {
+                Phase6WorldIds.Profile = previous;
+            }
+        }
+
+        /// <summary>P6C だけの検査（Data の値の関係と、生成した Scene の表示・音の配線）。</summary>
+        private static void ValidateP6CCombat(List<string> errors)
+        {
+            var step = AssetDatabase.LoadAssetAtPath<Momotaro.Data.Combat.StepData>("Assets/_Project/Data/Combat/SO_Step_Momotaro.asset");
+            if (step == null)
+            {
+                errors.Add("SO_Step_Momotaro がありません。");
+            }
+            else if (!Momotaro.Data.Combat.StepData.TryValidateJustEvade(step.InvincibleStartSeconds, step.InvincibleEndSeconds,
+                         step.JustEvadeWindowSeconds, step.JustEvadeCounterHpMultiplier, step.JustEvadeCounterSeconds, out string reason))
+            {
+                errors.Add("ジャスト回避の設定: " + reason);
+            }
+
+            // 試遊で使う敵の攻撃（A・B の普通敵・遠距離、C の精鋭）の可否。ガード不能は通常ガード不可・ジャスガ可・ステップ可。
+            string[] attackFolders = { "Assets/_Project/Data/Enemies" };
+            foreach (string guid in AssetDatabase.FindAssets("t:EnemyAttackData", attackFolders))
+            {
+                var attack = AssetDatabase.LoadAssetAtPath<Momotaro.Data.Combat.EnemyAttackData>(AssetDatabase.GUIDToAssetPath(guid));
+                if (attack == null || attack.AttackClass != Momotaro.Data.Combat.EnemyAttackClass.Unblockable)
+                {
+                    continue;
+                }
+
+                if (attack.Guardable || !attack.Steppable || (!attack.JustGuardable && !attack.IsJustGuardException))
+                {
+                    errors.Add(attack.name + ": ガード不能の可否が P6C の規則（通常ガード不可・ジャスガ可・ステップ可、例外は理由つき）に合いません。");
+                }
+
+                if (attack.JustGuardable && attack.JustGuardPoiseReturn <= 0f)
+                {
+                    errors.Add(attack.name + ": ジャスガ可なのに体幹反射が 0 です（ジャスガで体幹を崩せない）。");
+                }
+            }
+
+            foreach (string scenePath in new[] { Phase6WorldIds.AreaAScenePath, Phase6WorldIds.AreaBScenePath, Phase6WorldIds.AreaCScenePath })
+            {
+                if (AssetDatabase.LoadAssetAtPath<Object>(scenePath) == null)
+                {
+                    errors.Add("Scene がありません: " + scenePath);
+                    continue;
+                }
+
+                Scene scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
+                RequireExactlyOne<Momotaro.Presentation.Combat.JustEvadeHudPresenter>(scene, "ジャスト回避の試遊表示", errors);
+                bool anyJustEvadeSe = false;
+                foreach (var feedback in Phase5ExplorationValidator.Components<Momotaro.Presentation.Combat.CombatFeedbackPresenter>(scene))
+                {
+                    var se = feedback.Se;
+                    if (se == null || se.gameObject.scene != scene || se.Slots == null)
+                    {
+                        errors.Add(scenePath + ": 手応え演出に命中結果 SE が繋がっていません。");
+                        continue;
+                    }
+
+                    foreach (var slot in se.Slots)
+                    {
+                        if (slot != null && slot.seId == "SE_JustEvade" && slot.clip != null)
+                        {
+                            anyJustEvadeSe = true;
+                        }
+                    }
+                }
+
+                if (!anyJustEvadeSe)
+                {
+                    errors.Add(scenePath + ": ジャスト回避の音（SE_JustEvade）が配線されていません。");
+                }
+            }
+
+            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        }
+
         /// <summary>P6B だけの検査（生成された Data から採る。Builder の表とも突き合わせる）。</summary>
         private static void ValidateP6BCampaign(List<string> errors)
         {
@@ -161,9 +272,11 @@ namespace Momotaro.Editor.Phase6
             int total = 0;
             foreach (Phase6BTrialValues.Node n in Phase6BTrialValues.Nodes)
             {
-                if (!byId.TryGetValue(n.Id, out SkillNodeData node))
+                string nodeId = Phase6WorldIds.GrowthNodeId(n.Id); // P6C は growth_p6c_*（Data の ID はプロジェクト一意）
+                string prerequisiteId = Phase6WorldIds.GrowthNodeId(n.Prerequisite);
+                if (!byId.TryGetValue(nodeId, out SkillNodeData node))
                 {
-                    errors.Add("成長ノード '" + n.Id + "' がカタログにありません。");
+                    errors.Add("成長ノード '" + nodeId + "' がカタログにありません。");
                     continue;
                 }
 
@@ -179,7 +292,7 @@ namespace Momotaro.Editor.Phase6
                 bool expectRoot = string.IsNullOrEmpty(n.Prerequisite);
                 if (expectRoot ? node.Prerequisites.Count != 0
                         : node.Prerequisites.Count != 1 || node.Prerequisites[0] == null
-                          || node.Prerequisites[0].Id.Value != n.Prerequisite)
+                          || node.Prerequisites[0].Id.Value != prerequisiteId)
                 {
                     errors.Add("成長ノード '" + n.Id + "' の前提が仕様表と一致しません。");
                 }
@@ -227,9 +340,9 @@ namespace Momotaro.Editor.Phase6
                 errors.Add("章の接続 fixture がありません。");
             }
 
-            if (data.SaveSlotName == "slot0")
+            if (data.SaveSlotName == "slot0" || data.SaveSlotName != Phase6WorldIds.SaveSlot)
             {
-                errors.Add("P6B の保存スロットが P6A と同じ slot0 です。");
+                errors.Add("保存スロットが '" + data.SaveSlotName + "' です（" + Phase6WorldIds.SaveSlot + " のはず。P6A の slot0 と分ける）。");
             }
 
             if (!Mathf.Approximately(data.TestEnemyAttackScale, 1f) || !Mathf.Approximately(data.TestPlayerMaxHpScale, 1f))

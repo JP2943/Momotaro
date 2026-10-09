@@ -513,20 +513,15 @@ namespace Momotaro.Gameplay.Player
             IEvadeState evade = ResolveEvadeState();
             if (evade != null && evade.IsInvincible && hit.Steppable)
             {
-                // ジャスト回避（P3.5-09）：ステップ開始直後のタイト窓（CanJustEvade）で無敵回避したときは、JG と対称の報酬を与える。
-                // 攻撃者の体幹へ固定反射＋近接攻撃者へ強制ひるみ（反撃猶予）を付与し、専用フィードバック（JustEvade）を発行する。
-                // ガード不能は Guardable/JustGuardable=false・Steppable=true のため、この経路が「回避が正解」の報酬窓になる。
-                // 窓外（無敵だが窓を過ぎた）の回避は従来どおりダメージ 0 のみの通常回避（Evade）。
+                // ジャスト回避（P6C 仕様 §4）：敵の攻撃・ステップ回避可能・ステップ無敵中・受付終端より前・このステップで未成功のときだけ成功。
+                // 成功の原因はここ（実際の被弾入口）で確定し、受付を閉じて反撃強化を付与する通知を<b>一度だけ</b>出す。
+                // P6C で旧報酬（攻撃者への体幹反射・近接攻撃者への強制ひるみ）は撤去した。敵の攻撃は中断しない。
+                // 環境接触・反射・テスト生成など敵の攻撃でない命中は、無敵で避けても通常の回避（Evade）。
+                // 成功・通常回避とも、主人公に届かなかった一撃を守護（犬丸）へ転送しない（ここで return）。
                 IJustEvadeState je = ResolveJustEvadeState();
-                if (je != null && je.CanJustEvade)
+                if (je != null && hit.IsEnemyAttack && je.CanJustEvade)
                 {
-                    ReflectPoiseCounter(hit, je.JustEvadeCounterPoise);
                     je.NotifyJustEvadeSuccess();
-                    if (!hit.Reaction.IsProjectile && hit.Attacker is IForcedFlinchReceiver flinchTarget)
-                    {
-                        flinchTarget.ForceFlinch(ForcedFlinchSeconds);
-                    }
-
                     Results.Publish(HitResult.JustEvade(hit.HitId, hit.Attacker, this, HitDamage.None, hit.HitPoint, hit.AttackDirection));
                     return;
                 }

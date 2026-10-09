@@ -1,0 +1,372 @@
+{
+  "version": 1,
+  "phase": "P6C",
+  "note": "P6C（ジャスト回避と防御反撃）の必須テスト一覧。P6C 仕様 v1.0 §10 の ID を実際の完全修飾テスト名へ対応させる。テストランナーの外で確認する要求（P6C15：Builder 再生成 build-phase6c-world、検査 validate-phase6c-world、既存必須一覧 P4／P5／P5.5／P6A／P6B の再照合、Windows 実ビルドの実入力と別プロセス Continue＝ブリッジ op p6c-player-smoke）は requirements に載せず、P6C_受入条件対応表.md と P6C_統合受入結果.md に証跡を記録する。",
+  "stages": [
+    "P6C-01",
+    "P6C-02",
+    "P6C-03",
+    "P6C-04"
+  ],
+  "requirements": [
+    {
+      "id": "P6C01",
+      "summary": "実接触・敵攻撃・ステップ無敵と受付の重なりでのみ成功。離れて回避、窓外、被弾後無敵だけでは報酬なし",
+      "stage": "P6C-01"
+    },
+    {
+      "id": "P6C02",
+      "summary": "無敵開始・受付終端・無敵終端の境界、異なるdeltaTime、Pause・ヒットストップで一貫した判定",
+      "stage": "P6C-01"
+    },
+    {
+      "id": "P6C03",
+      "summary": "1ステップ1回、同HitId・複数Collider・複数フレーム・再入通知で重複成功しない",
+      "stage": "P6C-01"
+    },
+    {
+      "id": "P6C04",
+      "summary": "多段・複数敵・飛び道具で無敵の範囲だけ回避。成功による後続攻撃の無料無効化や旧反射・強制ひるみなし",
+      "stage": "P6C-01"
+    },
+    {
+      "id": "P6C05",
+      "summary": "強化1.5倍・2秒、別成功で時間更新、蓄積なし、通常攻撃以外に倍率が混入しない",
+      "stage": "P6C-02"
+    },
+    {
+      "id": "P6C06",
+      "summary": "開始受理時に消費。拒否入力では残る。空振り・被弾取消で返還なし、満了前開始なら満了後命中も強化",
+      "stage": "P6C-02"
+    },
+    {
+      "id": "P6C07",
+      "summary": "一段の複数対象は強化、次段と再利用Hitboxは通常。既存重複命中防止を維持",
+      "stage": "P6C-02"
+    },
+    {
+      "id": "P6C08",
+      "summary": "成長倍率との積、防御・スタン・丸めを含む計算例。体幹・ひるみ・仲間・必殺への非適用",
+      "stage": "P6C-02"
+    },
+    {
+      "id": "P6C09",
+      "summary": "通常ガード不可の実敵攻撃で通常ガード失敗・ジャスガ成功。正面・受付・ブレイク等の既存条件維持",
+      "stage": "P6C-03"
+    },
+    {
+      "id": "P6C10",
+      "summary": "防御可否を近接・Projectile・Builder・Validatorまで保持。例外fixtureの不可条件と予告整合",
+      "stage": "P6C-03"
+    },
+    {
+      "id": "P6C11",
+      "summary": "かばう・被弾後無敵・同フレーム死亡との優先関係、二重反応と死亡後強化なし",
+      "stage": "P6C-01"
+    },
+    {
+      "id": "P6C12",
+      "summary": "Save非破壊、Continueで強化なし、報酬保持。休息等と通常遷移成功で消去、移動失敗では保持",
+      "stage": "P6C-02"
+    },
+    {
+      "id": "P6C13",
+      "summary": "きびだんご中の回避・ガード禁止と被弾中断。成長効果の累積・消失なし",
+      "stage": "P6C-02"
+    },
+    {
+      "id": "P6C14",
+      "summary": "実成功の音・表示、強化消費・期限、二Areaの配信元、遷移後表示、既存VFX維持",
+      "stage": "P6C-04"
+    }
+  ],
+  "tests": [
+    {
+      "requirementId": "P6C02",
+      "stage": "P6C-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Data_ShippedValues_AndValidatorBounds",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C01",
+      "stage": "P6C-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Boundaries_ConsistentAcrossDeltaTimes",
+      "requirementIds": [
+        "P6C02",
+        "P6C04"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C01",
+      "stage": "P6C-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.NoReward_NotStepping_NonEnemy_NotSteppable_PostHitInvincibleOnly_AndClockStops",
+      "requirementIds": [
+        "P6C02",
+        "P6C11"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C01",
+      "stage": "P6C-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.JustEvade_Window_NoReflectNoFlinch_NotifiesOnce_AndPublishesJustEvade",
+      "requirementIds": [
+        "P6C04"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C01",
+      "stage": "P6C-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.JustEvade_NonEnemyContact_IsPlainEvade",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C01",
+      "stage": "P6C-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.Invincible_ButOutsideJustWindow_IsPlainEvade_NoCounter",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C03",
+      "stage": "P6C-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.OncePerStep_NoDuplicateFromSameHitCollidersFramesOrReentry",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C04",
+      "stage": "P6C-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.MultiHitMultiEnemyProjectile_OnlyIFramesAvoid_NoFreeInvalidation",
+      "requirementIds": [
+        "P6C03"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C05",
+      "stage": "P6C-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Counter_OnePointFive_TwoSeconds_NoStack_OnlyNextNormalStage",
+      "requirementIds": [
+        "P6C08"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C06",
+      "stage": "P6C-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Consume_OnAcceptedStart_RejectedKeeps_NoRefund_LateHitKeepsBoost",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C07",
+      "stage": "P6C-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.OneStage_AllTargetsBoosted_NextStageAndReusedHitboxNormal",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C08",
+      "stage": "P6C-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Damage_ProductWithGrowth_DefenseStunRounding_PoiseFlinchUnaffected",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C09",
+      "stage": "P6C-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Unblockable_NormalGuardFails_JustGuardSucceeds_ExistingConditionsKept",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C09",
+      "stage": "P6C-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EliteAttackDataTests.Unblockable_NotGuardable_ButJustGuardable_AndSteppable",
+      "requirementIds": [
+        "P6C10"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C10",
+      "stage": "P6C-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.DefenseFlags_PreservedThroughSnapshotAndHitFactory",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C10",
+      "stage": "P6C-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Attack_Unblockable_MustDisableNormalGuard",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C10",
+      "stage": "P6C-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Attack_Unblockable_MustBeSteppable",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C10",
+      "stage": "P6C-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.P6C_Unblockable_FalseTrueTrue_IsValid",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C10",
+      "stage": "P6C-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.P6C_Unblockable_NoJustGuard_WithoutReason_IsError",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C10",
+      "stage": "P6C-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.P6C_Exception_WithReasonAndDistinctTelegraph_IsValid_AndNoticeDiffers",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C10",
+      "stage": "P6C-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.P6C_Exception_TelegraphMustBeUnblockable",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C10",
+      "stage": "P6C-03",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.P6C_ExceptionReason_OnNonException_IsError",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C11",
+      "stage": "P6C-01",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Priority_NoGuardianTransfer_NoDoubleReaction_DeathClearsSameFrame",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C12",
+      "stage": "P6C-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Clear_OnAreaEntryAndRespawnReset",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C13",
+      "stage": "P6C-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Kibidango_NoStepOrGuardDuringUse_HitInterrupts_CounterUntouched_GrowthKept",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C01",
+      "stage": "P6C-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.Melee_RealAttack_RealKeys_JustEvadeCounterHitsHarder_NormalEvadeDoesNot",
+      "requirementIds": [
+        "P6C03",
+        "P6C05",
+        "P6C06",
+        "P6C14"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C04",
+      "stage": "P6C-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.Projectile_RealArrow_RealKeys_JustEvade_NoReflectToArcher",
+      "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C09",
+      "stage": "P6C-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.Unblockable_RealEliteAttack_NormalGuardFails_JustGuardSucceeds_NoticeShown",
+      "requirementIds": [
+        "P6C10",
+        "P6C14"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P6C12",
+      "stage": "P6C-04",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.Lifecycle_SaveKeeps_FailedMoveKeeps_SlideClears_HudOnlyActiveArea_Kibidango_RestRespawnContinue",
+      "requirementIds": [
+        "P6C13",
+        "P6C14"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    }
+  ],
+  "allowedSkips": []
+}

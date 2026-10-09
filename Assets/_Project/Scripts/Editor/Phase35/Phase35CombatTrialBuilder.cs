@@ -394,6 +394,22 @@ namespace Momotaro.Editor.Phase35
             var flash = go.AddComponent<HitFlashPresenter>();
             var shake = go.AddComponent<CameraShakePresenter>();
             shake.Target = cameraTransform; // 揺れは子カメラの localPosition に当てる（follow と非競合）。
+            CombatSePlayer se = AddResultSePlayer(go);
+
+            var coordinator = go.AddComponent<CombatFeedbackPresenter>();
+            coordinator.HitStop = hitStop;
+            coordinator.Flash = flash;
+            coordinator.CameraShake = shake;
+            coordinator.Se = se;
+
+            go.AddComponent<EnemyDefeatFadePresenter>();
+        }
+
+        /// <summary>
+        /// 命中結果 SE の再生役（JG・ガード・ジャスト回避の既存素材）を足す（P3.5-08B。P6C で P6 の Scene からも使う）。
+        /// </summary>
+        public static CombatSePlayer AddResultSePlayer(GameObject go)
+        {
             var se = go.AddComponent<CombatSePlayer>();
             // ヒット結果 SE（P3.5-08B）。CombatFeedbackMap が種別→SeId を解決し、CombatFeedbackPresenter が Play する。
             // 実素材（OGG）をスロットへ差し込む。未 Import でも clip=null で無音・無例外（Play 側が安全）。ヒット音は後日追加予定。
@@ -418,14 +434,7 @@ namespace Momotaro.Editor.Phase35
                     volume = 1f,
                 },
             };
-
-            var coordinator = go.AddComponent<CombatFeedbackPresenter>();
-            coordinator.HitStop = hitStop;
-            coordinator.Flash = flash;
-            coordinator.CameraShake = shake;
-            coordinator.Se = se;
-
-            go.AddComponent<EnemyDefeatFadePresenter>();
+            return se;
         }
 
         /// <summary>

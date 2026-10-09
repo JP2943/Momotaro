@@ -51,6 +51,14 @@ namespace Momotaro.Editor.Phase6
                 result.Message, "OK");
         }
 
+        [MenuItem("Momotaro/Phase 6C/Generate Just Evade World")]
+        private static void GenerateP6CInteractive()
+        {
+            BuildResult result = BuildP6C();
+            EditorUtility.DisplayDialog(result.Success ? "P6C 検証ワールド" : "P6C 検証ワールド（失敗）",
+                result.Message, "OK");
+        }
+
         [MenuItem("Momotaro/Phase 6B/Generate Growth World")]
         private static void GenerateP6BInteractive()
         {
@@ -67,6 +75,13 @@ namespace Momotaro.Editor.Phase6
         /// P6A の生成物には触れない。
         /// </summary>
         public static BuildResult BuildP6B() => Build(Phase6Profile.P6B);
+
+        /// <summary>
+        /// P6C の検証ワールドを作る（P6C 仕様 §9。P6B の構成を設定で再利用し、専用 campaign・Data・Scene・保存スロットを生成）。
+        /// 通常攻撃（A の普通敵・B 北の 2 体）、射撃（B 南）、通常ガード不可（C の精鋭）を既存の敵 AI・Data のまま置く。
+        /// P6A・P6B の生成物には触れない。
+        /// </summary>
+        public static BuildResult BuildP6C() => Build(Phase6Profile.P6C);
 
         /// <summary>指定の設定で全部作る（Data → A・B → C → カタログ → タイトル → Build Settings）。</summary>
         public static BuildResult Build(Phase6Profile profile)
@@ -308,7 +323,7 @@ namespace Momotaro.Editor.Phase6
             foreach (Phase6BTrialValues.Node n in Phase6BTrialValues.Nodes)
             {
                 SkillNodeData asset = created[n.Id];
-                Phase5ExplorationBuilder.SetIdentity(asset, new StableId(n.Id), n.Name);
+                Phase5ExplorationBuilder.SetIdentity(asset, new StableId(Phase6WorldIds.GrowthNodeId(n.Id)), n.Name);
                 var so = new SerializedObject(asset);
                 so.FindProperty("_description").stringValue = n.Description;
                 so.ApplyModifiedPropertiesWithoutUndo();
@@ -460,7 +475,7 @@ namespace Momotaro.Editor.Phase6
                     Phase6BTrialValues.RefundRightsInitial, Phase6BTrialValues.RefundRightsPerChapter,
                     Phase6BTrialValues.RefundRightsMax,
                     new List<StableId> { Phase6BTrialValues.ChapterFixture, Phase6BTrialValues.ChapterFixture2 },
-                    Phase6BTrialValues.SaveSlot);
+                    Phase6WorldIds.SaveSlot);
             }
             else
             {
@@ -524,6 +539,8 @@ namespace Momotaro.Editor.Phase6
                 // ---- P6A の拡張 ----
                 IncludeLegacyEncounter = false,
                 IncludeCombatVfx = true,
+                IncludeCombatSe = Phase6WorldIds.Profile.IsP6C, // P6C：ジャスト回避・ジャスガ・ガードの既存の音を鳴らす
+                IncludeJustEvadeHud = Phase6WorldIds.Profile.IsP6C, // P6C：成功・保有中の残時間・予告の文言（活動中の Area だけ表示）
                 AreaBExtraSeam = seamBEast,
                 ExtraSeamForwardId = Phase6WorldIds.ConnectionBToC,
                 ExtraSeamReverseId = Phase6WorldIds.ConnectionCToB,

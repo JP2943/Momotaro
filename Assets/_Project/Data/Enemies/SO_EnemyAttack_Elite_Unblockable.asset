@@ -33,12 +33,12 @@ MonoBehaviour:
   _flinchPower: 60
   _guardStaminaCost: 0
   _knockback: 0
-  _justGuardPoiseReturn: 0
+  _justGuardPoiseReturn: 18
   _projectileSpeed: 0
   _projectileMaxDistance: 0
   _projectileLifetimeSeconds: 0
   _guardable: 0
-  _justGuardable: 0
+  _justGuardable: 1
   _steppable: 1
   _attackPoiseImmune: 0
   _aimingMode: 0
