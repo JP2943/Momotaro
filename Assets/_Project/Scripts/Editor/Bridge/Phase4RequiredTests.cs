@@ -34,6 +34,9 @@ namespace Momotaro.EditorBridge
         /// <summary>P6C（ジャスト回避と防御反撃）の必須テスト一覧。</summary>
         public const string Phase6CFileName = "P6CRequiredTests.json";
 
+        /// <summary>P7（会話と依頼と章進行）の必須テスト一覧。</summary>
+        public const string Phase7FileName = "P7RequiredTests.json";
+
         /// <summary>
         /// 選べる一覧は<b>ここに書いたものだけ</b>（§16.1「ユーザー入力の任意パスをそのまま読み込む仕組みにしない」）。
         /// 鍵は大文字小文字を区別しない短い名前にする。空・未指定は既定（P4）。
@@ -54,10 +57,12 @@ namespace Momotaro.EditorBridge
                 { Phase6BFileName, Phase6BFileName },
                 { "p6c", Phase6CFileName },
                 { Phase6CFileName, Phase6CFileName },
+                { "p7", Phase7FileName },
+                { Phase7FileName, Phase7FileName },
             };
 
         /// <summary>選べる一覧の鍵（エラーメッセージにそのまま出す）。</summary>
-        public static readonly string[] KnownManifestKeys = { "P4", "P5", "P5.5", "P6A", "P6B" };
+        public static readonly string[] KnownManifestKeys = { "P4", "P5", "P5.5", "P6A", "P6B", "P6C", "P7" };
 
         /// <summary>1 件の必須テスト。</summary>
         [Serializable]

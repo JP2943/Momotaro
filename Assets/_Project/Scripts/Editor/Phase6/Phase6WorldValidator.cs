@@ -173,7 +173,7 @@ namespace Momotaro.Editor.Phase6
         }
 
         /// <summary>P6C だけの検査（Data の値の関係と、生成した Scene の表示・音の配線）。</summary>
-        private static void ValidateP6CCombat(List<string> errors)
+        internal static void ValidateP6CCombat(List<string> errors)
         {
             var step = AssetDatabase.LoadAssetAtPath<Momotaro.Data.Combat.StepData>("Assets/_Project/Data/Combat/SO_Step_Momotaro.asset");
             if (step == null)
@@ -246,7 +246,7 @@ namespace Momotaro.Editor.Phase6
         }
 
         /// <summary>P6B だけの検査（生成された Data から採る。Builder の表とも突き合わせる）。</summary>
-        private static void ValidateP6BCampaign(List<string> errors)
+        internal static void ValidateP6BCampaign(List<string> errors)
         {
             var data = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase6WorldIds.CatalogDataPath);
             if (data == null)

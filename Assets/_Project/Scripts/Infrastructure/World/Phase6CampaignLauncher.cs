@@ -203,6 +203,103 @@ namespace Momotaro.Infrastructure.World
         /// <summary>仮 UI の文字の先描きが済んだか（実ビルド確認が待つ）。</summary>
         public bool PrewarmDone => _prewarmFrames >= 3;
 
+        private string _storyCharacters;
+
+        /// <summary>
+        /// 会話 Data の文字も先に描く（P7。会話の初回表示で日本語の文字の準備に止まらないように。P6A F04 と同じ理由）。
+        /// </summary>
+        private void DrawStoryPrewarm()
+        {
+            Momotaro.Data.Story.CampaignStoryData story = _catalog != null ? _catalog.Story : null;
+            if (story == null)
+            {
+                return;
+            }
+
+            if (_storyCharacters == null)
+            {
+                var seen = new System.Collections.Generic.HashSet<char>();
+                var sb = new System.Text.StringBuilder();
+                void Add(string text)
+                {
+                    if (string.IsNullOrEmpty(text))
+                    {
+                        return;
+                    }
+
+                    foreach (char c in text)
+                    {
+                        if (seen.Add(c))
+                        {
+                            sb.Append(c);
+                        }
+                    }
+                }
+
+                foreach (Momotaro.Data.Story.VillagerDefinition v in story.Villagers)
+                {
+                    Add(v?.DisplayName);
+                }
+
+                foreach (Momotaro.Data.Story.DialogueDefinition d in story.Dialogues)
+                {
+                    Add(d?.Speaker);
+                    Add(d?.ConfirmLabel);
+                    if (d != null)
+                    {
+                        foreach (string page in d.Pages)
+                        {
+                            Add(page);
+                        }
+                    }
+                }
+
+                foreach (Momotaro.Data.Story.QuestDefinition q in story.Quests)
+                {
+                    if (q == null)
+                    {
+                        continue;
+                    }
+
+                    Add(q.DisplayName);
+                    Add(q.ObjectiveText);
+                    Add(q.ProgressText);
+                    Add(q.ReportText);
+                    foreach (string page in q.OfferPages)
+                    {
+                        Add(page);
+                    }
+
+                    foreach (Momotaro.Data.Story.QuestObjective o in q.Objectives)
+                    {
+                        Add(o?.Label);
+                    }
+                }
+
+                foreach (Momotaro.Data.Story.StoryEventDefinition e in story.Events)
+                {
+                    Add(e?.DisplayName);
+                    Add(e?.LockedNotice);
+                }
+
+                foreach (Momotaro.Data.Story.ChapterDefinition c in story.Chapters)
+                {
+                    Add(c?.DisplayName);
+                }
+
+                Add("依頼の話を聞く受ける今は受けない報告して報酬を受け取る閉じる目的報酬徳次へ一覧進行中報告できる受領済み未受注章クリア済み未クリア標準困難な道記録なし払い戻し権利上限のため増えません");
+                _storyCharacters = sb.ToString();
+            }
+
+            Color previous = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, 0f);
+            var rect = new Rect(0f, 0f, 4000f, 40f);
+            GUI.Label(rect, _storyCharacters);
+            GUI.Button(rect, _storyCharacters);
+            GUI.Box(rect, _storyCharacters);
+            GUI.color = previous;
+        }
+
         private void OnGUI()
         {
             if (_started)
@@ -216,6 +313,7 @@ namespace Momotaro.Infrastructure.World
             if (_prewarmFrames < 3)
             {
                 PadMenuNavigator.DrawPrewarm();
+                DrawStoryPrewarm();
                 if (Event.current.type == EventType.Repaint)
                 {
                     _prewarmFrames++;

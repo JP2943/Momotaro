@@ -59,6 +59,19 @@ namespace Momotaro.Editor.Phase6
                 result.Message, "OK");
         }
 
+        [MenuItem("Momotaro/Phase 7/Generate Dialogue Quest World")]
+        private static void GenerateP7Interactive()
+        {
+            BuildResult result = BuildP7();
+            EditorUtility.DisplayDialog(result.Success ? "P7 検証ワールド" : "P7 検証ワールド（失敗）", result.Message, "OK");
+        }
+
+        /// <summary>
+        /// P7 の検証ワールドを作る（P7 仕様 §11。P6C の構成を設定で再利用し、住民・依頼・門・困難ルート H・章ボスを足す。
+        /// 専用 campaign・Data・Scene・保存スロット）。P6A／P6B／P6C の生成物には触れない。
+        /// </summary>
+        public static BuildResult BuildP7() => Build(Phase6Profile.P7);
+
         [MenuItem("Momotaro/Phase 6B/Generate Growth World")]
         private static void GenerateP6BInteractive()
         {
@@ -122,8 +135,10 @@ namespace Momotaro.Editor.Phase6
 
             // ---- 1. Data（Scene が参照するので先に作る） ----
             // P6B は A の初到達で 300（全取得 270 が可能。仕様 §10）。ほかの探索報酬は P6A と同じ値（実報酬の経路の確認用）。
+            bool p7 = Phase6WorldIds.Profile.IsP7;
             EnsureReward("ArriveA", Phase6WorldIds.RewardId("arrive_a"), "A 初到達",
-                p6b ? Phase6BTrialValues.ArrivalA : Phase6TrialValues.ArrivalA, true);
+                p7 ? Momotaro.Editor.Phase7.Phase7TrialValues.ArrivalA
+                    : (p6b ? Phase6BTrialValues.ArrivalA : Phase6TrialValues.ArrivalA), true);
             EnsureReward("ArriveB", Phase6WorldIds.RewardId("arrive_b"), "B 初到達", Phase6TrialValues.ArrivalB, true);
             EnsureReward("ArriveC", Phase6WorldIds.RewardId("arrive_c"), "C 初到達", Phase6TrialValues.ArrivalC, true);
             EnsureReward("Kill", Phase6WorldIds.RewardId("kill"), "個別撃破", Phase6TrialValues.Kill, false);
@@ -131,6 +146,11 @@ namespace Momotaro.Editor.Phase6
             EnsureReward("ClearBSouth", Phase6WorldIds.RewardId("clear_b_south"), "B 南の殲滅", Phase6TrialValues.EncounterClear, true);
             EnsureReward("ClearCBoss", Phase6WorldIds.RewardId("clear_c_boss"), "C 仮ボス", Phase6TrialValues.EncounterClear, true);
             EnsureReward("FindScroll", Phase6WorldIds.RewardId("find_scroll"), "発見（巻物）", Phase6TrialValues.Discovery, true);
+            if (p7)
+            {
+                Momotaro.Editor.Phase7.Phase7World.EnsureRewards();
+            }
+
             AssetDatabase.SaveAssets();
             var data = new WorldData();
 
@@ -168,12 +188,20 @@ namespace Momotaro.Editor.Phase6
             AreaDefinition areaC = Phase5ExplorationBuilder.EnsureAreaDefinition(
                 Phase6WorldIds.AreaCDataPath, Phase6WorldIds.AreaC, "エリア C（" + tag + " 検証）",
                 Phase6WorldIds.AreaCScenePath,
-                new[]
-                {
-                    (Phase6WorldIds.EntryCFromB, CardinalDirection.East),
-                    (Phase6WorldIds.EntryCShrine, CardinalDirection.North),
-                    (Phase6WorldIds.EntryCShrine2, CardinalDirection.North),
-                },
+                p7
+                    ? new[]
+                    {
+                        (Phase6WorldIds.EntryCFromB, CardinalDirection.East),
+                        (Phase6WorldIds.EntryCShrine, CardinalDirection.North),
+                        (Phase6WorldIds.EntryCShrine2, CardinalDirection.North),
+                        (Momotaro.Editor.Phase7.Phase7WorldIds.EntryCFromH, CardinalDirection.South),
+                    }
+                    : new[]
+                    {
+                        (Phase6WorldIds.EntryCFromB, CardinalDirection.East),
+                        (Phase6WorldIds.EntryCShrine, CardinalDirection.North),
+                        (Phase6WorldIds.EntryCShrine2, CardinalDirection.North),
+                    },
                 Phase6WorldIds.EntryCFromB);
             AssetDatabase.SaveAssets();
             Phase5ExplorationBuilder.EnsureResidentCameraRigPrefab();
@@ -188,12 +216,37 @@ namespace Momotaro.Editor.Phase6
 
             outputs.Add(Phase6WorldIds.AreaCScenePath);
 
+            // ---- 3b. P7：困難ルートの Area H（扉で A・C と繋ぐ） ----
+            if (p7)
+            {
+                Momotaro.Editor.Phase7.Phase7World.EnsureAreaHDefinition();
+                AssetDatabase.SaveAssets();
+                if (!Phase5ExplorationBuilder.BuildScene(Momotaro.Editor.Phase7.Phase7WorldIds.AreaHScenePath,
+                        root => Momotaro.Editor.Phase7.Phase7World.PopulateAreaH(root,
+                            AssetDatabase.LoadAssetAtPath<AreaDefinition>(Momotaro.Editor.Phase7.Phase7WorldIds.AreaHDataPath),
+                            Phase5ExplorationBuilder.EnsureResidentCameraRigPrefab(), t),
+                        isStartupScene: false, out string errorH))
+                {
+                    return new BuildResult(false, "エリア H の生成に失敗: " + errorH, outputs);
+                }
+
+                outputs.Add(Momotaro.Editor.Phase7.Phase7WorldIds.AreaHScenePath);
+            }
+
             // ---- 4. Area Data の報酬・保存対象一覧、カタログ（campaign） ----
             AreaDefinition areaA = AssetDatabase.LoadAssetAtPath<AreaDefinition>(Phase6WorldIds.AreaADataPath);
             AreaDefinition areaB = AssetDatabase.LoadAssetAtPath<AreaDefinition>(Phase6WorldIds.AreaBDataPath);
             areaC = AssetDatabase.LoadAssetAtPath<AreaDefinition>(Phase6WorldIds.AreaCDataPath);
             ConfigureAreaData(areaA, areaB, areaC, data);
-            AreaCatalogData catalog = EnsureCatalog(areaA, areaB, areaC, data);
+            AreaDefinition areaH = p7
+                ? AssetDatabase.LoadAssetAtPath<AreaDefinition>(Momotaro.Editor.Phase7.Phase7WorldIds.AreaHDataPath)
+                : null;
+            if (areaH != null)
+            {
+                Momotaro.Editor.Phase7.Phase7World.ConfigureAreaH(areaH);
+            }
+
+            AreaCatalogData catalog = EnsureCatalog(areaA, areaB, areaC, areaH, data);
             outputs.Add(Phase6WorldIds.CatalogDataPath);
             AssetDatabase.SaveAssets();
 
@@ -206,18 +259,25 @@ namespace Momotaro.Editor.Phase6
 
             outputs.Add(Phase6WorldIds.TitleScenePath);
 
-            int added = Phase5ExplorationBuilder.EnsureBuildSettings(new[]
+            var scenes = new List<string>
             {
                 Phase6WorldIds.TitleScenePath, Phase6WorldIds.AreaAScenePath,
                 Phase6WorldIds.AreaBScenePath, Phase6WorldIds.AreaCScenePath,
-            });
+            };
+            if (p7)
+            {
+                scenes.Add(Momotaro.Editor.Phase7.Phase7WorldIds.AreaHScenePath);
+            }
+
+            int added = Phase5ExplorationBuilder.EnsureBuildSettings(scenes.ToArray());
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             return new BuildResult(true,
-                tag + " 検証ワールド：Scene 4 件（タイトル／A／B／C）、接続 " + connections.Connections.Count
+                tag + " 検証ワールド：Scene " + scenes.Count + " 件（タイトル／A／B／C" + (p7 ? "／H" : string.Empty) + "）、接続 "
+                + connections.Connections.Count
                 + " 件、Build Settings へ " + added + " 件を追加。", outputs);
         }
 
@@ -267,7 +327,7 @@ namespace Momotaro.Editor.Phase6
             public EncounterData EncounterCBoss => AssetDatabase.LoadAssetAtPath<EncounterData>(Phase6WorldIds.EncounterCBossPath);
         }
 
-        private static RewardData EnsureReward(string file, string id, string displayName, int virtue, bool grantOnce)
+        internal static RewardData EnsureReward(string file, string id, string displayName, int virtue, bool grantOnce)
         {
             string path = Phase6WorldIds.RewardPath(file);
             var asset = AssetDatabase.LoadAssetAtPath<RewardData>(path);
@@ -406,10 +466,14 @@ namespace Momotaro.Editor.Phase6
             b.EditorSetArrivalReward(data.ArrivalB);
             c.EditorSetArrivalReward(data.ArrivalC);
 
+            bool p7 = Phase6WorldIds.Profile.IsP7;
             var ma = new AreaContentManifest();
             ma.EditorSet(new List<StableId>(), new List<StableId>(),
-                new List<StableId> { Phase6WorldIds.FieldA1, Phase6WorldIds.FieldA2 },
-                new List<StableId>(), new List<StableId> { Phase5AreaIds.FlagAGate },
+                p7 ? new List<StableId>() : new List<StableId> { Phase6WorldIds.FieldA1, Phase6WorldIds.FieldA2 },
+                new List<StableId>(),
+                p7
+                    ? new List<StableId> { Phase5AreaIds.FlagAGate, Momotaro.Editor.Phase7.Phase7WorldIds.FlagACliffGate }
+                    : new List<StableId> { Phase5AreaIds.FlagAGate },
                 new List<StableId> { Phase5AreaIds.PointAOpen, Phase5AreaIds.PointABlocked });
             a.EditorSetContent(ma);
 
@@ -433,7 +497,8 @@ namespace Momotaro.Editor.Phase6
             EditorUtility.SetDirty(c);
         }
 
-        private static AreaCatalogData EnsureCatalog(AreaDefinition a, AreaDefinition b, AreaDefinition c, WorldData data)
+        private static AreaCatalogData EnsureCatalog(AreaDefinition a, AreaDefinition b, AreaDefinition c, AreaDefinition h,
+            WorldData data)
         {
             var asset = AssetDatabase.LoadAssetAtPath<AreaCatalogData>(Phase6WorldIds.CatalogDataPath);
             if (asset == null)
@@ -444,7 +509,13 @@ namespace Momotaro.Editor.Phase6
 
             bool p6b = Phase6WorldIds.Profile.IsP6B;
             Phase5ExplorationBuilder.SetIdentity(asset, Phase6WorldIds.Campaign, Phase6WorldIds.Profile.Tag + " 検証 campaign");
-            asset.EditorSet(new List<AreaDefinition> { a, b, c }, Phase6WorldIds.AreaA, Phase5AreaIds.AreaAStart);
+            var areas = new List<AreaDefinition> { a, b, c };
+            if (h != null)
+            {
+                areas.Add(h);
+            }
+
+            asset.EditorSet(areas, Phase6WorldIds.AreaA, Phase5AreaIds.AreaAStart);
 
             var shrineA = new ShrineDefinition();
             shrineA.EditorSet(Phase6WorldIds.ShrineA, Phase6WorldIds.AreaA, Phase6WorldIds.EntryAShrine, "A のお地蔵様");
@@ -459,23 +530,35 @@ namespace Momotaro.Editor.Phase6
                 new List<ShrineDefinition> { shrineA, shrineC, shrineC2 }, Phase6WorldIds.ShrineA,
                 p6b ? Phase6BTrialValues.KibidangoCapacity : Phase6TrialValues.KibidangoCapacity,
                 new List<ItemDefinition> { tonic }, data.GrowthNodes);
+            var knownRewards = new List<StableId>
+            {
+                data.ClearBNorth.Id, data.ClearBSouth.Id, data.ClearCBoss.Id, data.FindScroll.Id,
+            };
+            if (Phase6WorldIds.Profile.IsP7)
+            {
+                knownRewards.Add(Momotaro.Editor.Phase7.Phase7World.Reward(Momotaro.Editor.Phase7.Phase7WorldIds.RewardFindCliff).Id);
+            }
+
             asset.EditorSetKnownIds(
-                new List<StableId>
-                {
-                    data.ClearBNorth.Id, data.ClearBSouth.Id, data.ClearCBoss.Id, data.FindScroll.Id,
-                },
+                knownRewards,
                 new List<StableId> { Momotaro.Gameplay.Companion.CompanionIds.Inumaru },
                 new List<StableId> { Phase6WorldIds.QuestFixture });
             if (p6b)
             {
                 // P6B：効果を実定義で測るためテスト用の倍率は掛けない（記録 001 §3）。使用・払い戻し・章・専用スロット。
                 asset.EditorSetTestTuning(1f, 1f);
+                bool p7 = Phase6WorldIds.Profile.IsP7;
                 asset.EditorSetP6B(Phase6BTrialValues.KibidangoBaseHeal, Phase6BTrialValues.KibidangoUseSeconds,
                     Phase6BTrialValues.KibidangoCommitSeconds, Phase6BTrialValues.KibidangoMoveSpeedMultiplier,
                     Phase6BTrialValues.RefundRightsInitial, Phase6BTrialValues.RefundRightsPerChapter,
                     Phase6BTrialValues.RefundRightsMax,
-                    new List<StableId> { Phase6BTrialValues.ChapterFixture, Phase6BTrialValues.ChapterFixture2 },
+                    p7
+                        ? new List<StableId> { Momotaro.Editor.Phase7.Phase7WorldIds.Chapter }
+                        : new List<StableId> { Phase6BTrialValues.ChapterFixture, Phase6BTrialValues.ChapterFixture2 },
                     Phase6WorldIds.SaveSlot);
+
+                // P7：会話・依頼・必須イベント・章（P6A／P6B／P6C は持たない）。
+                asset.EditorSetStory(p7 ? Momotaro.Editor.Phase7.Phase7World.EnsureStory() : null);
             }
             else
             {
@@ -544,7 +627,13 @@ namespace Momotaro.Editor.Phase6
                 AreaBExtraSeam = seamBEast,
                 ExtraSeamForwardId = Phase6WorldIds.ConnectionBToC,
                 ExtraSeamReverseId = Phase6WorldIds.ConnectionCToB,
-                ExtraEntriesA = new[] { (Phase6WorldIds.EntryAShrine, CardinalDirection.North) },
+                ExtraEntriesA = Phase6WorldIds.Profile.IsP7
+                    ? new[]
+                    {
+                        (Phase6WorldIds.EntryAShrine, CardinalDirection.North),
+                        (Momotaro.Editor.Phase7.Phase7WorldIds.EntryAFromH, CardinalDirection.South),
+                    }
+                    : new[] { (Phase6WorldIds.EntryAShrine, CardinalDirection.North) },
                 ExtraEntriesB = new[] { (Phase6WorldIds.EntryBFromC, CardinalDirection.West) },
                 ExtendA = data != null ? (System.Action<Phase5AreaExtension>)(ext => ExtendA(ext, data)) : null,
                 ExtendB = data != null ? (System.Action<Phase5AreaExtension>)(ext => ExtendB(ext, data)) : null,
@@ -557,6 +646,13 @@ namespace Momotaro.Editor.Phase6
             AddShrine(ext.FixtureRoot, Phase6WorldIds.ShrineA, Phase6WorldIds.AreaA, Phase6WorldLayout.ShrineA, "お地蔵様");
             ext.EntryPoints.Add(Phase5ExplorationBuilder.CreateEntryPoint(ext.Entries, Phase6WorldIds.EntryAShrine,
                 Phase6WorldLayout.EntryAShrine, Phase6WorldLayout.EntryAShrineAlternates, "お地蔵様の前"));
+
+            // P7：A は安全な拠点（住民・門・崖道への扉）。普通敵は置かない（仕様 §3「住民は安全な拠点に配置」）。
+            if (Phase6WorldIds.Profile.IsP7)
+            {
+                Momotaro.Editor.Phase7.Phase7World.ExtendA(ext);
+                return;
+            }
 
             // 普通敵 2 体（同じ敵種・別の配置 ID）。
             ext.Fixtures.FieldPlacements.Add(FieldPlacement(ext.FixtureRoot, Phase6WorldIds.FieldA1, Phase6WorldLayout.FieldA1));
@@ -652,9 +748,17 @@ namespace Momotaro.Editor.Phase6
             fixtures.Points.Add(Phase5ExplorationBuilder.CreateInvestigationPoint(fixtureRoot.transform, "Investigation",
                 Phase6WorldIds.PointCOpen, Phase6WorldIds.DiscoveryCOpen, Phase6WorldLayout.PointC));
 
+            var cEntries = new List<AreaEntryPoint> { fromB, shrineEntry, shrine2Entry };
+            var cDoors = new List<AreaTransitionDoor>();
+            if (Phase6WorldIds.Profile.IsP7)
+            {
+                // P7：崖道（困難ルート）からの入口＝困難ルートの終端、崖道への扉。
+                Momotaro.Editor.Phase7.Phase7World.ExtendC(fixtureRoot.transform, entries.transform, cEntries, cDoors);
+            }
+
             var ext = new Phase5AreaExtension(root, env.transform, fixtureRoot.transform, markers.transform,
                 entries.transform, definition, t, fixtures,
-                new List<AreaEntryPoint> { fromB, shrineEntry, shrine2Entry }, new List<AreaExitGate> { toB }, null, null, null);
+                cEntries, new List<AreaExitGate> { toB }, null, cDoors.Count > 0 ? cDoors : null, null);
             AddEncounter(ext, data.EncounterCBoss, Phase6WorldLayout.CBossArenaCenter, Phase6WorldLayout.CBossArenaSize,
                 Phase6WorldLayout.CBossTrigger, Phase6WorldLayout.CBossSpawns, data.Kill);
 
@@ -664,7 +768,7 @@ namespace Momotaro.Editor.Phase6
                 Phase6WorldIds.RegionCDefault, 0, Vector3.zero, Phase5Layout.FollowRegionSize(w, d));
 
             AreaRoot areaRoot = root.gameObject.AddComponent<AreaRoot>();
-            areaRoot.EditorSet(definition, ext.EntryPoints, ext.ExitGates, null, null, null,
+            areaRoot.EditorSet(definition, ext.EntryPoints, ext.ExitGates, null, ext.TransitionDoors, null,
                 new List<AreaSeamBarrier>(fixtures.SeamBarriers));
 
             Phase5ExplorationBuilder.CreateAreaSystems(root, areaRoot, definition, fixtures, residentRig, t);
@@ -688,7 +792,7 @@ namespace Momotaro.Editor.Phase6
 
         // ================================================================ 部品
 
-        private static List<Momotaro.Gameplay.Encounter.EnemyPrefabTable.Entry> EnemyTable()
+        internal static List<Momotaro.Gameplay.Encounter.EnemyPrefabTable.Entry> EnemyTable()
         {
             var table = Phase5ExplorationBuilder.BuildEnemyPrefabEntries();
             table.Add(new Momotaro.Gameplay.Encounter.EnemyPrefabTable.Entry
@@ -699,7 +803,7 @@ namespace Momotaro.Editor.Phase6
             return table;
         }
 
-        private static AreaFieldEnemyDirector.Placement FieldPlacement(Transform parent, StableId id, Vector3 position)
+        internal static AreaFieldEnemyDirector.Placement FieldPlacement(Transform parent, StableId id, Vector3 position)
         {
             var go = new GameObject("FieldSpawn_" + id.Value);
             go.transform.SetParent(parent, false);
@@ -736,7 +840,7 @@ namespace Momotaro.Editor.Phase6
             point.Bind(shrineId, areaId, 1.6f);
         }
 
-        private static void AddPickup(Transform parent, StableId placementId, StableId areaId, StableId itemId, int count,
+        internal static void AddPickup(Transform parent, StableId placementId, StableId areaId, StableId itemId, int count,
             int maxStack, RewardData reward, Vector3 position, string prompt, string label)
         {
             var go = new GameObject("Pickup_" + placementId.Value);

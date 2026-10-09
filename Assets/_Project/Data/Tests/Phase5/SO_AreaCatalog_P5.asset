@@ -45,5 +45,6 @@ MonoBehaviour:
   _grantOnceRewardIds: []
   _companionIds: []
   _questIds: []
+  _story: {fileID: 0}
   _testEnemyAttackScale: 1
   _testPlayerMaxHpScale: 1

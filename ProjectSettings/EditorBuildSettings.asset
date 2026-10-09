@@ -89,6 +89,21 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/_Project/Scenes/Tests/Phase6C/SCN_Phase6C_AreaC.unity
     guid: dbdd144e631f02d49a1c97a975241090
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase7/SCN_Phase7_Title.unity
+    guid: c141b8e6a788bb9468a1a274e7c7ae90
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase7/SCN_Phase7_AreaA.unity
+    guid: 2e7eb6beb375e3142b578c8376f26e1d
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase7/SCN_Phase7_AreaB.unity
+    guid: 7397850cf7cbe5a4cb25137a22acaeca
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase7/SCN_Phase7_AreaC.unity
+    guid: 464c56cb58ace52428e8c14c194d41cd
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase7/SCN_Phase7_AreaH.unity
+    guid: c433984defae6324f8e2ced0d7abc1bf
   m_configObjects:
     com.unity.dt.app-ui: {fileID: 11400000, guid: 1b1c20d82303e4b5781c3ef50ac1449f, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 5845c308206dc98448a2c7febabb71aa, type: 3}

@@ -1420,7 +1420,7 @@ namespace Momotaro.Editor.Phase5
         internal static AreaTransitionDoor CreateTransitionDoor(
             Transform parent, string name, StableId doorId, StableId areaId,
             StableId destinationArea, StableId destinationEntry, Vector3 position,
-            Phase5SeamAxis seamAxis)
+            Phase5SeamAxis seamAxis, string label = "A へ（扉）")
         {
             var go = new GameObject("Door_" + name);
             go.transform.SetParent(parent, false);
@@ -1431,7 +1431,7 @@ namespace Momotaro.Editor.Phase5
             Phase5Placeholder.CreateBox("Body", go.transform,
                 position + new Vector3(0f, MarkerPlateHeight * 0.5f, 0f),
                 AcrossSeam(seamAxis, 0.6f, MarkerPlateHeight, 2.4f), mat, solid: false);
-            Phase5Placeholder.CreateLabel("A へ（扉）", go.transform,
+            Phase5Placeholder.CreateLabel(label, go.transform,
                 position + new Vector3(0f, MarkerPlateHeight + 0.2f, 0f),
                 Phase5Placeholder.EntryColor, 0.16f);
 

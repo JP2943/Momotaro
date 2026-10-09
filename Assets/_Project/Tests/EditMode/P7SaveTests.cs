@@ -164,6 +164,134 @@ namespace Momotaro.Tests.EditMode
             AssertInvalid(With(ok, hasStory: false), "story の無い保存に値がある");
         }
 
+        // ================================================================ 保存単位・失敗と再試行（P7 14）
+
+        /// <summary>
+        /// P7 14：報告の確定後に書込が失敗しても Runtime（受領済み・30 徳）は巻き戻さず、dirty を残す。再試行で報酬処理をやり直さず、
+        /// 最新の Runtime（受領済み）がそのまま保存される。再報告は受領済みで無変更。
+        /// </summary>
+        [Test]
+        public void Report_WriteFailure_KeepsRuntime_RetrySavesLatestWithoutRegrant()
+        {
+            string dir = TempDir();
+            var fs = new P6ASaveTests.FaultyFileSystem();
+            var exec = new ManualSaveExecutor();
+            var coordinator = new SaveCoordinator(new SaveFileStore(dir, "p7_test_slot", fs), exec) { ActorSource = () => new Actors() };
+            try
+            {
+                GameSessionState s = _f.NewSession();
+                coordinator.Bind(s, _f.Campaign, -1);
+                StoryProcedures.AcceptQuest(s, _f.StoryCatalog, F.Giver, F.QuestReach);
+                _f.Arrive(s, F.Merge, F.MergeFromStd);
+                Drain(coordinator, exec);
+                Assert.AreEqual(SaveStatus.Saved, coordinator.Status);
+
+                fs.FailAt = P6ASaveTests.FaultyFileSystem.Stage.Write;
+                int total = s.Progress.TotalVirtue;
+                Assert.AreEqual(QuestReportResult.Reported, StoryProcedures.ReportQuest(s, _f.StoryCatalog, F.Giver, F.QuestReach, out _));
+                Drain(coordinator, exec);
+                Assert.AreEqual(SaveStatus.Failed, coordinator.Status);
+                Assert.IsTrue(coordinator.IsDirty);
+                Assert.AreEqual(total + F.QuestVirtue, s.Progress.TotalVirtue, "保存失敗で Runtime を巻き戻さない。");
+                Assert.AreEqual(QuestStateKind.Rewarded, StoryRules.StateOf(s, _f.Quest(F.QuestReach)));
+
+                fs.FailAt = P6ASaveTests.FaultyFileSystem.Stage.None;
+                coordinator.RetryNow();
+                Drain(coordinator, exec);
+                Assert.AreEqual(SaveStatus.Saved, coordinator.Status);
+                Assert.AreEqual(total + F.QuestVirtue, s.Progress.TotalVirtue, "再試行で報酬処理をやり直さない。");
+                Assert.IsTrue(SaveJsonCodec.TryDeserialize(coordinator.Store.DecideLoad().Chosen.Json, out _, out SaveSnapshot disk,
+                    out string e), e);
+                Assert.AreEqual(total + F.QuestVirtue, disk.TotalVirtue);
+                CollectionAssert.Contains(disk.GrantedRewards, F.RewardReach.Value);
+                Assert.AreEqual(QuestReportResult.AlreadyRewarded,
+                    StoryProcedures.ReportQuest(s, _f.StoryCatalog, F.Giver, F.QuestReach, out _));
+            }
+            finally
+            {
+                coordinator.Dispose();
+                TryDelete(dir);
+            }
+        }
+
+        /// <summary>
+        /// P7 14：書込中に受注・章クリアが追加で確定しても捨てずに後続の保存へ。古い版の完了で dirty を消さず、最後は最新の版
+        /// （受注・章クリア・権利）が 1 回分だけ保存される（重複・欠落なし）。
+        /// </summary>
+        [Test]
+        public void UpdatesDuringWrite_AreSavedAfterwards_WithoutDuplication()
+        {
+            string dir = TempDir();
+            var exec = new ManualSaveExecutor();
+            var coordinator = new SaveCoordinator(new SaveFileStore(dir, "p7_test_slot"), exec) { ActorSource = () => new Actors() };
+            try
+            {
+                GameSessionState s = _f.NewSession();
+                coordinator.Bind(s, _f.Campaign, -1);
+                StoryProcedures.AcceptQuest(s, _f.StoryCatalog, F.Giver, F.QuestReach);
+                coordinator.Pump();
+                Assert.AreEqual(SaveStatus.Writing, coordinator.Status);
+
+                // 書込中の追加更新。
+                StoryProcedures.AcceptQuest(s, _f.StoryCatalog, F.Giver, F.QuestFind);
+                Assert.IsTrue(Clear(s).ChapterCleared);
+                long latest = s.Changes.Revision;
+                int rights = s.Progress.RefundRights;
+                coordinator.Pump();
+                Assert.AreEqual(1, coordinator.SubmitCount, "書込中は重ねて出さない。");
+                Drain(coordinator, exec);
+                Assert.AreEqual(latest, coordinator.SavedRevision, "最新の版まで保存した。");
+                Assert.IsFalse(coordinator.IsDirty);
+                Assert.IsTrue(SaveJsonCodec.TryDeserialize(coordinator.Store.DecideLoad().Chosen.Json, out _, out SaveSnapshot disk,
+                    out string e), e);
+                Assert.AreEqual(1, disk.ClearedChapters.Count);
+                Assert.AreEqual(rights, disk.RefundRights, "権利は 1 回分だけ。");
+                Assert.AreEqual(2, disk.QuestStages.Count, "受注 2 件。");
+            }
+            finally
+            {
+                coordinator.Dispose();
+                TryDelete(dir);
+            }
+        }
+
+        private static void Drain(SaveCoordinator coordinator, ManualSaveExecutor exec)
+        {
+            for (int i = 0; i < 6; i++)
+            {
+                coordinator.Pump();
+                exec.RunPending();
+            }
+
+            coordinator.Pump();
+        }
+
+        private static string TempDir()
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "momotaro_p7_tests", Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            return dir;
+        }
+
+        private static void TryDelete(string dir)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            try
+            {
+                System.IO.Directory.Delete(dir, true);
+            }
+            catch (System.IO.IOException)
+            {
+            }
+        }
+
+        private sealed class Actors : ISaveActorSource
+        {
+            public bool CanExportForSave => true;
+            public PartySaveValues ExportForSave() => Party();
+        }
+
         // ================================================================ 補助
 
         private ChapterClearCommit Clear(GameSessionState s) =>

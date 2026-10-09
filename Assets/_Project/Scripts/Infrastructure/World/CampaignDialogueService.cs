@@ -27,6 +27,9 @@ namespace Momotaro.Infrastructure.World
         WrongArea = 9,
         JustClosed = 10,
         Pending = 11,
+
+        /// <summary>調べたのと同じフレームに被弾が確定した（その解決を優先して開かない）。</summary>
+        HitThisFrame = 12,
     }
 
     /// <summary>
@@ -44,8 +47,11 @@ namespace Momotaro.Infrastructure.World
     /// <b>保存しない</b>：会話ウィンドウ・表示中の行・選択カーソル・停止の保持・入力の解放待ち（仕様 §9）。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class CampaignDialogueService : MonoBehaviour, IGameService, IDialogueOperations, IChapterProgress
+    public sealed class CampaignDialogueService : MonoBehaviour, IGameService, IDialogueOperations, IChapterProgress,
+        Momotaro.Gameplay.Combat.IHitResultListener
     {
+        private Momotaro.Gameplay.Player.PlayerVitalsHolder _pendingVitals;
+        private bool _hitDuringPending;
         private readonly List<string> _deferredNotices = new List<string>();
         private readonly PadMenuNavigator _navigator = new PadMenuNavigator();
         private readonly List<QuestInfo> _questBuffer = new List<QuestInfo>();
@@ -229,9 +235,13 @@ namespace Momotaro.Infrastructure.World
             }
 
             // 開くのはこのフレームの後（LateUpdate）。同じフレームの被弾・死亡の解決を先にする。
+            // 被弾は硬直を伴わない小さな命中もあるので、状態ではなく<b>このフレームの命中結果</b>を主人公の結果通知で見る。
             _pendingVillager = villagerId;
             _pendingArea = areaId;
             _pendingFrame = Time.frameCount;
+            _hitDuringPending = false;
+            _pendingVitals = bundle.TransferPort != null ? bundle.TransferPort.PlayerVitals : null;
+            _pendingVitals?.Results.AddListener(this);
             LastRejection = DialogueStartRejection.None;
             return AreaInteractionOutcome.Accepted(villager.DisplayName + "に話しかけた");
         }
@@ -248,11 +258,19 @@ namespace Momotaro.Infrastructure.World
 
             StableId villagerId = _pendingVillager;
             StableId areaId = _pendingArea;
+            bool hit = _hitDuringPending;
+            ReleasePendingHitWatch();
             _pendingVillager = default;
             _pendingArea = default;
             _pendingFrame = -1;
 
             // 見直し：崩れていたら開かない（押下は捨てる。動作終了後に自動で開かない）。
+            if (hit)
+            {
+                LastRejection = DialogueStartRejection.HitThisFrame;
+                return;
+            }
+
             if (!CanStart(out DialogueStartRejection rejection, out _))
             {
                 LastRejection = rejection;
@@ -274,6 +292,24 @@ namespace Momotaro.Infrastructure.World
             }
 
             OpenConversation(conversation);
+        }
+
+        /// <inheritdoc />
+        public void OnHitResult(in Momotaro.Gameplay.Combat.HitResult result)
+        {
+            if (result.Kind == Momotaro.Gameplay.Combat.HitResultKind.Damage
+                || result.Kind == Momotaro.Gameplay.Combat.HitResultKind.Guard
+                || result.Kind == Momotaro.Gameplay.Combat.HitResultKind.JustGuard)
+            {
+                _hitDuringPending = true;
+            }
+        }
+
+        private void ReleasePendingHitWatch()
+        {
+            _pendingVitals?.Results.RemoveListener(this);
+            _pendingVitals = null;
+            _hitDuringPending = false;
         }
 
         private void OpenConversation(DialogueConversation conversation)
@@ -414,6 +450,7 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         private void ForceClose()
         {
+            ReleasePendingHitWatch();
             _pendingVillager = default;
             _pendingArea = default;
             if (_open == null)

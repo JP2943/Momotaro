@@ -92,6 +92,15 @@ namespace Momotaro.EditorBridge
         /// <summary>P6C の Windows 実ビルドで実入力のジャスト回避・反撃・別プロセス Continue を確かめる（P6C 15）。</summary>
         public const string P6CPlayerSmoke = "p6c-player-smoke";
 
+        /// <summary>P7 の検証 campaign（P6C の構成＋住民・依頼・門・困難ルート・章ボス）を再生成する（P7 05）。</summary>
+        public const string BuildPhase7World = "build-phase7-world";
+
+        /// <summary>P7 の検証 campaign を検査する（P6C と同じ検査＋会話 Data・住民・門・扉の配線。P7 17）。</summary>
+        public const string ValidatePhase7World = "validate-phase7-world";
+
+        /// <summary>P7 の Windows 実ビルドで会話・依頼・章クリア・別プロセス Continue を確かめる（P7 18）。</summary>
+        public const string P7PlayerSmoke = "p7-player-smoke";
+
         /// <summary>実行できる操作の一覧（エラーメッセージにそのまま出す）。</summary>
         public static readonly string[] All =
         {
@@ -101,6 +110,7 @@ namespace Momotaro.EditorBridge
             BuildPhase6World, ValidatePhase6World, P6APlayerSmoke,
             BuildPhase6BWorld, ValidatePhase6BWorld, P6BPlayerSmoke,
             BuildPhase6CWorld, ValidatePhase6CWorld, P6CPlayerSmoke,
+            BuildPhase7World, ValidatePhase7World, P7PlayerSmoke,
         };
 
         /// <summary>実行結果。</summary>
@@ -132,7 +142,7 @@ namespace Momotaro.EditorBridge
                 || op == ValidatePhase55World || op == BuildPhase6World || op == ValidatePhase6World
                 || op == P6APlayerSmoke || op == BuildPhase6BWorld || op == ValidatePhase6BWorld
                 || op == P6BPlayerSmoke || op == BuildPhase6CWorld || op == ValidatePhase6CWorld
-                || op == P6CPlayerSmoke;
+                || op == P6CPlayerSmoke || op == BuildPhase7World || op == ValidatePhase7World || op == P7PlayerSmoke;
         }
 
         /// <summary>操作を実行する。未知の操作・呼び出し失敗は <see cref="OperationResult.Success"/> false で返す。</summary>
@@ -197,6 +207,15 @@ namespace Momotaro.EditorBridge
 
                     case P6CPlayerSmoke:
                         return RunBuilder(Phase6PlayerSmokeType, "BuildAllP6C");
+
+                    case BuildPhase7World:
+                        return RunBuilder(Phase6WorldBuilderType, "BuildP7");
+
+                    case ValidatePhase7World:
+                        return RunWorldValidation(Phase7WorldValidatorType, "P7 検証ワールド");
+
+                    case P7PlayerSmoke:
+                        return RunBuilder(Phase6PlayerSmokeType, "BuildAllP7");
 
                     case BuildCompanionField:
                         return RunBuildCompanionField();
@@ -382,6 +401,7 @@ namespace Momotaro.EditorBridge
         private const string Phase6WorldBuilderType = "Momotaro.Editor.Phase6.Phase6WorldBuilder";
         private const string Phase6WorldValidatorType = "Momotaro.Editor.Phase6.Phase6WorldValidator";
         private const string Phase6PlayerSmokeType = "Momotaro.Editor.Phase6.Phase6PlayerSmoke";
+        private const string Phase7WorldValidatorType = "Momotaro.Editor.Phase7.Phase7WorldValidator";
 
         private static OperationResult RunBuildInumaru()
         {

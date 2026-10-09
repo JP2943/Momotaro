@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5152508106514f1e8a21adbdc9a5ef0c, type: 3}
+  m_Name: SO_Growth_P7_sta_posture_01
+  m_EditorClassIdentifier: Momotaro.Data::Momotaro.Data.Progression.SkillNodeData
+  _id:
+    _value: growth_p7_sta_posture_01
+  _displayName: "\u5D29\u3057"
+  _description: "\u901A\u5E38\u653B\u6483\u306E\u4F53\u5E79\u524A\u308A\u500D\u7387
+    +0.10"
+  _version: 1
+  _debugNote: 
+  _virtueCost: 40
+  _tier: 1
+  _prerequisites:
+  - {fileID: 11400000, guid: 4d0e78c46fdcc834dadc2615b5cd55e8, type: 2}
+  _mutuallyExclusive: []
+  _maxHpBonus: 0
+  _attackHpMultiplierBonus: 0
+  _maxStaminaBonus: 0
+  _normalPoiseMultiplierBonus: 0.1
+  _kibidangoHealBonus: 0
+  _kibidangoCapacityBonus: 0

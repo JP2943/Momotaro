@@ -12,8 +12,9 @@ namespace Momotaro.Editor.Phase6
     public sealed class Phase6Profile
     {
         private Phase6Profile(string tag, string sceneFolder, string dataFolder, string campaignId, string connectionsId,
-            string title, bool isP6B, bool isP6C = false)
+            string title, bool isP6B, bool isP6C = false, bool isP7 = false)
         {
+            IsP7 = isP7;
             IsP6C = isP6C;
             Tag = tag;
             SceneFolder = sceneFolder;
@@ -39,7 +40,14 @@ namespace Momotaro.Editor.Phase6
         public static readonly Phase6Profile P6C = new Phase6Profile("P6C", "Assets/_Project/Scenes/Tests/Phase6C",
             "Assets/_Project/Data/Tests/Phase6C", "campaign_p6c", "area_connections_p6c", "P6C ジャスト回避・防御反撃試遊", true, true);
 
-        /// <summary>名前の札（"P6A"／"P6B"／"P6C"）。Scene・Data のファイル名に入る。</summary>
+        /// <summary>
+        /// P7（会話・依頼・章進行の試遊。P7 仕様 §11）。P6C の構成（成長・きびだんご・ジャスト回避）を<b>設定で</b>再利用し、
+        /// 住民・依頼・必須イベントの門・困難ルートの Area・章ボスを足す。専用 campaign・Data・Scene・保存スロット（p7_slot0）。
+        /// </summary>
+        public static readonly Phase6Profile P7 = new Phase6Profile("P7", "Assets/_Project/Scenes/Tests/Phase7",
+            "Assets/_Project/Data/Tests/Phase7", "campaign_p7", "area_connections_p7", "P7 会話・依頼・章進行試遊", true, true, true);
+
+        /// <summary>名前の札（"P6A"／"P6B"／"P6C"／"P7"）。Scene・Data のファイル名に入る。</summary>
         public string Tag { get; }
 
         public string SceneFolder { get; }
@@ -56,14 +64,20 @@ namespace Momotaro.Editor.Phase6
         /// <summary>P6B の拡張（9 ノード・きびだんご使用・払い戻し・専用スロット）を持つか（P6C も持つ）。</summary>
         public bool IsP6B { get; }
 
-        /// <summary>P6C の拡張（ジャスト回避の試遊表示・戦闘 SE）を持つか。</summary>
+        /// <summary>P6C の拡張（ジャスト回避の試遊表示・戦闘 SE）を持つか（P7 も持つ）。</summary>
         public bool IsP6C { get; }
 
-        /// <summary>プロジェクト一意の Data ID に入れる札（P6A は空、P6B は "b"、P6C は "c"）。</summary>
+        /// <summary>P7 の拡張（住民・依頼・門・困難ルート・章ボス・会話 Data）を持つか。</summary>
+        public bool IsP7 { get; }
+
+        /// <summary>プロジェクト一意の Data ID に入れる札（P6A は空、P6B は "b"、P6C は "c"）。P7 は <see cref="IdStem"/> を使う。</summary>
         public string IdSuffix => IsP6C ? "c" : (IsP6B ? "b" : string.Empty);
 
-        /// <summary>Scene 名の札（"Phase6A"／"Phase6B"）。</summary>
-        public string SceneTag => "Phase6" + Tag.Substring(2);
+        /// <summary>Area・遭遇戦の Data ID の幹（"p6"／"p6b"／"p6c"／"p7"）。</summary>
+        public string IdStem => IsP7 ? "p7" : "p6" + IdSuffix;
+
+        /// <summary>Scene 名の札（"Phase6A"／"Phase6B"／"Phase6C"／"Phase7"）。</summary>
+        public string SceneTag => IsP7 ? "Phase7" : "Phase6" + Tag.Substring(2);
     }
 
     /// <summary>
@@ -101,16 +115,18 @@ namespace Momotaro.Editor.Phase6
 
         /// <summary>P6B／P6C の成長ノードの Data パス（ID の接頭辞 growth_ を除いた名前で）。P6B は従来どおり。</summary>
         public static string GrowthNodePath(string name) =>
-            DataFolder + "/SO_Growth_" + (Profile.IsP6C ? "P6C" : "P6B") + "_" + name + ".asset";
+            DataFolder + "/SO_Growth_" + (Profile.IsP7 ? "P7" : (Profile.IsP6C ? "P6C" : "P6B")) + "_" + name + ".asset";
 
         /// <summary>
         /// 成長ノードの ID（P6B は表の ID のまま。P6C は Data の StableId がプロジェクト全体で一意である必要があるので growth_p6c_ に置き換える）。
         /// </summary>
         public static string GrowthNodeId(string tableId) =>
-            Profile.IsP6C && tableId != null && tableId.StartsWith("growth_") ? "growth_p6c_" + tableId.Substring("growth_".Length) : tableId;
+            Profile.IsP6C && tableId != null && tableId.StartsWith("growth_")
+                ? (Profile.IsP7 ? "growth_p7_" : "growth_p6c_") + tableId.Substring("growth_".Length)
+                : tableId;
 
-        /// <summary>保存スロット（P6B は p6b_slot0、P6C は p6c_slot0）。</summary>
-        public static string SaveSlot => Profile.IsP6C ? "p6c_slot0" : Phase6BTrialValues.SaveSlot;
+        /// <summary>保存スロット（P6B は p6b_slot0、P6C は p6c_slot0、P7 は p7_slot0）。</summary>
+        public static string SaveSlot => Profile.IsP7 ? "p7_slot0" : (Profile.IsP6C ? "p6c_slot0" : Phase6BTrialValues.SaveSlot);
 
         /// <summary>報酬 ID（P6A は従来の reward_p6a_*）。</summary>
         public static string RewardId(string name) => "reward_" + Profile.Tag.ToLowerInvariant() + "_" + name;
@@ -129,9 +145,9 @@ namespace Momotaro.Editor.Phase6
         // Area と遭遇戦は Data（GameDataAsset）なので、StableId はプロジェクト全体で一意でなければならない
         // （出荷前の Data 検証が重複を拒否する）。P6B は別 ID（area_p6b_*／encounter_p6b_*）にする。
         // 入口・出入口・お地蔵様・配置物は Area の中の ID なので共通のまま。
-        public static StableId AreaA => new StableId("area_p6" + Profile.IdSuffix + "_a");
-        public static StableId AreaB => new StableId("area_p6" + Profile.IdSuffix + "_b");
-        public static StableId AreaC => new StableId("area_p6" + Profile.IdSuffix + "_c");
+        public static StableId AreaA => new StableId("area_" + Profile.IdStem + "_a");
+        public static StableId AreaB => new StableId("area_" + Profile.IdStem + "_b");
+        public static StableId AreaC => new StableId("area_" + Profile.IdStem + "_c");
 
         // ---- 入口（A・B の既定入口は P5 と同じ ID を使う：Builder の生成手順が同じ） ----
         public static readonly StableId EntryAShrine = new StableId("entry_p6_a_shrine");
@@ -160,9 +176,9 @@ namespace Momotaro.Editor.Phase6
         public static readonly StableId ShrineC2 = new StableId("shrine_p6_c_2");
 
         // ---- 遭遇戦・普通敵・配置物・仕掛け・調査 ----
-        public static StableId EncounterBNorth => new StableId("encounter_p6" + Profile.IdSuffix + "_b_north");
-        public static StableId EncounterBSouth => new StableId("encounter_p6" + Profile.IdSuffix + "_b_south");
-        public static StableId EncounterCBoss => new StableId("encounter_p6" + Profile.IdSuffix + "_c_boss");
+        public static StableId EncounterBNorth => new StableId("encounter_" + Profile.IdStem + "_b_north");
+        public static StableId EncounterBSouth => new StableId("encounter_" + Profile.IdStem + "_b_south");
+        public static StableId EncounterCBoss => new StableId("encounter_" + Profile.IdStem + "_c_boss");
         public static readonly StableId FieldA1 = new StableId("field_p6_a_01");
         public static readonly StableId FieldA2 = new StableId("field_p6_a_02");
         public static readonly StableId PickupTonic = new StableId("pickup_p6_b_tonic");
