@@ -1,0 +1,264 @@
+{
+    "id": "re1",
+    "mode": "EditMode",
+    "filter": "(P6CJustEvadeTests|PlayerEvadeTests|EnemyDataValidationTests|EliteAttackDataTests)",
+    "startedAt": "2026-10-09T03:51:15.3833585Z",
+    "finishedAt": "2026-10-09T03:51:26.4013248Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 41,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.EditMode.EliteAttackDataTests.EliteArchetype_HighHpPoise_Stun3s_FourAttacks",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EliteAttackDataTests.FourAttacks_Classes_AndPrepareMinimums",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EliteAttackDataTests.Heavy_IsGuardableAndJustGuardable_AndSteppable",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EliteAttackDataTests.Unblockable_NotGuardable_ButJustGuardable_AndSteppable",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Archetype_ImplementsVitalsConfig",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Archetype_InvalidViewAngle_IsError",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Archetype_MissingAttackReference_IsError",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Archetype_NoAttacks_IsError",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Archetype_ValidWithOneAttack_HasNoErrors",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Attack_MinimumPrepareSeconds_MatchesTable5",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Attack_PrepareBelowClassMinimum_IsError",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Attack_Projectile_RequiresProjectileParams",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Attack_Unblockable_MustBeSteppable",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Attack_Unblockable_MustDisableNormalGuard",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.Attack_ValidNormal_HasNoErrors",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.P6C_Exception_SteppableFalse_IsValid",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.P6C_Exception_TelegraphMustBeUnblockable",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.P6C_Exception_WithReasonAndDistinctTelegraph_IsValid_AndNoticeDiffers",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.P6C_ExceptionReason_OnNonException_IsError",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.P6C_Unblockable_FalseTrueTrue_IsValid",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.EnemyDataValidationTests.P6C_Unblockable_NoJustGuard_WithoutReason_IsError",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Boundaries_ConsistentAcrossDeltaTimes",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Clear_OnRespawnRest_Kept_OnTemporaryDisableAndEntryPreparation",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Consume_OnAcceptedStart_RejectedKeeps_NoRefund_LateHitKeepsBoost",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Counter_OnePointFive_TwoSeconds_NoStack_OnlyNextNormalStage",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Damage_ProductWithGrowth_DefenseStunRounding_PoiseFlinchUnaffected",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Data_ShippedValues_AndValidatorBounds",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.DefenseFlags_PreservedThroughSnapshotAndHitFactory",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Exception_StepAvailabilityFollowsDefinition_FalsePiercesNoReward_TrueCanJustEvade",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Kibidango_NoStepOrGuardDuringUse_HitInterrupts_CounterUntouched_GrowthKept",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.MultiHitMultiEnemyProjectile_OnlyIFramesAvoid_NoFreeInvalidation",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.NoReward_NotStepping_NonEnemy_NotSteppable_PostHitInvincibleOnly_AndClockStops",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.OncePerStep_NoDuplicateFromSameHitCollidersFramesOrReentry",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.OneStage_AllTargetsBoosted_NextStageAndReusedHitboxNormal",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Priority_NoGuardianTransfer_NoDoubleReaction_DeathClearsSameFrame",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Unblockable_NormalGuardFails_JustGuardSucceeds_ExistingConditionsKept",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.Invincible_ButOutsideJustWindow_IsPlainEvade_NoCounter",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.Invincible_EvadesHit_NoHpNoStamina",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.JustEvade_NonEnemyContact_IsPlainEvade",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.JustEvade_Window_NoReflectNoFlinch_NotifiesOnce_AndPublishesJustEvade",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.NotInvincible_TakesDamage",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

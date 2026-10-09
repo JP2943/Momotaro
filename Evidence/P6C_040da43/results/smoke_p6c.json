@@ -1,0 +1,32 @@
+{
+    "id": "hsc",
+    "command": "run-op",
+    "status": "ok",
+    "message": "P6C の実ビルド別プロセス確認が終わりました。",
+    "startedAt": "2026-10-09T04:24:35.5281407Z",
+    "finishedAt": "2026-10-09T04:25:32.3434229Z",
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "expected": 0,
+    "termination": "",
+    "runLogPath": "",
+    "details": [
+        "ビルド: Succeeded（32 秒、267 MB、エラー 0）→ C:\\Users\\naked\\Momotaro\\Builds/P6C\\Momotaro_P6C.exe",
+        "justevade（21.1 秒）: {   \"mode\": \"justevade\",   \"platform\": \"WindowsPlayer\",   \"unity\": \"6000.3.20f1\",   \"isEditor\": \"false\",   \"processId\": \"13228\",   \"device\": \"X570-PG4 (MouseComputer Co.,Ltd.) / AMD Ryzen 7 3700X 8-Core Processor  / NVIDIA GeForce RTX 3060 Ti\",   \"slowIoMs\": \"0\",   \"titlePrewarmDone\": \"true\",   \"attempts\": \"just:JustEvade:14:boosted early:Evade:9:normal\",   \"justEvadeSuccess\": \"1\",   \"counterConsumed\": \"1\",   \"boostedHits\": \"1\",   \"justCounterDamage\": \"14\",   \"normalCounterDamage\": \"9\",   \"counterHarder\": \"true\",   \"holdingCounterAtExit\": \"true\",   \"adventureId\": \"09ff14bf520d45a1b80a0df1c34207f0\",   \"area\": \"area_p6c_a\",   \"beforePlayerHp\": \"100\",   \"beforeCompanionDown\": \"false\",   \"beforeCompanionRecovery\": \"0\",   \"beforeGrowth\": \"\",   \"beforeRefundRights\": \"3\",   \"be …(省略)",
+        "continue_after_justevade（3.6 秒）: {   \"mode\": \"continue\",   \"platform\": \"WindowsPlayer\",   \"unity\": \"6000.3.20f1\",   \"isEditor\": \"false\",   \"processId\": \"11588\",   \"device\": \"X570-PG4 (MouseComputer Co.,Ltd.) / AMD Ryzen 7 3700X 8-Core Processor  / Null Device\",   \"slowIoMs\": \"0\",   \"adventureId\": \"09ff14bf520d45a1b80a0df1c34207f0\",   \"kibidango\": \"3\",   \"area\": \"area_p6c_a\",   \"checkpoint\": \"shrine_p6_a\",   \"resume\": \"Entry:area_p6c_a/entry_p6_a_shrine\",   \"savedRevision\": \"5\",   \"dirtyAfterContinue\": \"false\",   \"afterPlayerHp\": \"100\",   \"afterCompanionDown\": \"false\",   \"afterCompanionRecovery\": \"0\",   \"afterGrowth\": \"\",   \"afterRefundRights\": \"3\",   \"afterVirtue\": \"300\",   \"afterCapacity\": \"3\",   \"afterMaxHp\": \"100\",   \"afterAttackMultiplier\": \"1.00\",   \"afterUsingItem\": \"false\",   \"after …(省略)",
+        "試行: just:JustEvade:14:boosted early:Evade:9:normal",
+        "[OK] 実入力でジャスト回避が成立した回数：1",
+        "[OK] 強化された段が当たった数：1",
+        "[OK] ジャスト回避の反撃の方が大きい（強化 14／通常 9）：期待=true 実際=true",
+        "[OK] 強化を持ったまま終了した：期待=true 実際=true",
+        "[OK] 正常終了の保存が成功：期待=Saved 実際=Saved",
+        "[OK] 別プロセスの Continue が同じ冒険：期待=09ff14bf520d45a1b80a0df1c34207f0 実際=09ff14bf520d45a1b80a0df1c34207f0",
+        "[OK] プロセスが別：期待=different 実際=different",
+        "[OK] Continue の後は強化なし（保存しない一時状態）：期待=false 実際=false",
+        "[OK] 使用可能な徳（撃破報酬など）：期待=300 実際=300",
+        "[OK] HP：期待=100 実際=100",
+        "[OK] Continue 直後は未保存なし：期待=false 実際=false"
+    ]
+}

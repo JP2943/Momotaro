@@ -127,3 +127,83 @@ Builder の生成（`build-phase6c-world`）1 回。EditMode 全件が作り直�
 - 仮数値：受付 0.12 秒・1.5 倍・2.0 秒（仕様の試作初期設定）、精鋭の突きの JG 体幹反射 **18**（新規に置いた値）。
 - 防御可否を変更した攻撃：`SO_EnemyAttack_Elite_Unblockable`（精鋭の刀の突き）1 件だけ。ほかの攻撃は変更なし（記録 001 §4）。
 - 未実施：人間確認 3 点（README §5）。仕様の試遊項目の「複数対象・成長ありの反撃・空振り・時間切れ」は EditMode と実ビルドで確認、実敵の複数対象は未確認。
+
+## 記録 003：レビュー `a24d92c` の R1・R2 の修正と再受入
+
+**対象コード SHA `040da43`**（親 `a24d92c`）。証跡は `Evidence/P6C_040da43/`。実行はすべて Unity 6000.3.20f1 の Editor 常駐ブリッジから、
+作業ツリーを `040da43` と同じ内容にした状態で行った（コミット前に変更 10 ファイルの md5 をクラウド側の正本と照合して一致）。
+
+### 1. R1：受付後に失敗した移動で反撃強化が消えていた
+
+- **原因**：移動の受付後、出発側の `ActivityGate.Close()` が主人公を一時的に Disable し、`PlayerStateController.ResetToNeutral` が
+  強化を消していた。入場準備（`ResetForAreaEntry`）も Commit より前に走るため消していた。準備失敗・タイムアウトで Rollback して
+  ゲートが開き直っても、強化は戻らなかった。
+- **修正**（記録 002 §1 P6C 02 の「`ResetForAreaEntry`・Disable で消去」を次へ置き換える）：
+  - `ResetToNeutral`（一時 Disable）と `ResetForAreaEntry`（入場準備）では**消さない**。凍結中は入力が閉じて Tick されないので減らない。
+  - 移動の **Commit が成功した直後**に出発側の主人公から消す。`AreaSlideTransitionRunner` の `TryCommit` 成功 3 か所
+    （Area をまたぐ旅立ち・同じ Area 内の旅立ち・スライド）から `AreaActorTransferPort.ClearShortLivedCombatOnCommittedDeparture` を呼ぶ。
+    出発側の Area は在留するが、強化はもう無いので戻っても復活しない。
+  - 死亡・休息（成長・払い戻しの成功を含む）・死亡再開は `PlayerStateController.ResetForCampaignRespawn` で消す（従来どおり）。
+  - 保存 DTO には入れない（従来どおり）。
+- **テスト**：
+  - PlayMode `FailedSlide_AfterDepartureGateClosed_TimeoutRollback_KeepsCounter_FrozenThenTicks`：A→B→A のあと B の
+    `AreaInitializer` を消して準備タイムアウト（1.2 秒）にする。D を押し続けてスライドを受け付けさせ、Rollback を確認する。
+    結果は、強化が残る、凍結中（実時間 1.23 秒）の残りが 1.595→1.595 で変わらない、主人公が非 Active だった、その後は減る。
+  - PlayMode `FastTravel_FailAfterDepartureGateClosed_KeepsCounter_SuccessClears`：A→B→C で C の祠を登録し、
+    `FastTravelPrepareFault` で到着準備の後・Commit の前に失敗させる。結果は、残りが凍結時・Rollback 直後とも 1.731、0.12 秒後に 1.715（減る）。
+    続けて故障なしで旅立つと成功し、出発側の主人公は強化なし、到着側の主人公も強化なし。
+  - EditMode `Clear_OnRespawnRest_Kept_OnTemporaryDisableAndEntryPreparation`（旧 `Clear_OnAreaEntryAndRespawnReset`。期待値を変えた）：
+    一時 Disable と入場準備では残り、死亡再開・休息では消える。
+  - 既存 `Lifecycle_…`（スライド成功で出発側からも消える）はそのまま合格。
+
+### 2. R2：理由付きの JG 例外がステップ不可を選べなかった
+
+- **修正**：`EnemyAttackData.Validate` のステップの検査を `!_steppable && !IsJustGuardException` に変更した。
+  - ガード不能は原則 `Steppable=true` のまま。
+  - 理由付きの例外（`JustGuardable=false`）だけは `Steppable=false` を許す。
+  - 理由の無い例外は、従来どおり不合格にする。
+- **テスト**：
+  - EditMode `P6C_Exception_SteppableFalse_IsValid`：Validator を通す。
+  - EditMode `Exception_StepAvailabilityFollowsDefinition_FalsePiercesNoReward_TrueCanJustEvade`：
+    Validator・Snapshot・`HitInfo`・実際の命中入口（`PlayerVitalsHolder.ReceiveHit`）を通して確認する。
+    - 例外かつ `Steppable=false`：ステップの無敵中でも貫通して Damage、ジャスト回避の報酬なし。
+    - 例外かつ `Steppable=true`：ジャスト回避が成立する。
+
+### 3. 修正を外して落ちることの確認
+
+| 実行 | 外したもの | 結果 |
+|---|---|---|
+| `me1`（EditMode） | Disable で消す処理を戻し、例外のステップ検査を元へ戻した | 3 件失敗：一時 Disable で消える、例外 `Steppable=false` が Validator で不合格（2 件） |
+| `mp1`（PlayMode） | 同上 | 新しい PlayMode 2 件が失敗：受付時点で強化が消えている、旅立ち失敗で権利が消える |
+| `mp2`（PlayMode） | Commit で消す処理だけ外した | 2 件失敗：旅立ちの出発側に強化が残る、`Lifecycle` の「移動元の主人公にも残さない」 |
+
+外した版はすべて元に戻し、md5 で正本と一致することを確かめた。
+
+### 4. 最終確認（`040da43`）
+
+| 実行 | 内容 | 結果 |
+|---|---|---|
+| `he` | EditMode 全件 | **1918／1918**（+2） |
+| `hp1`〜`hp7` | PlayMode 7 分割 | 64・13・72・115・20・9・**6** ＝ **299／299** |
+| `vfP4`〜`vfP6C` | `verify-required-tests`（`he,hp1,…,hp7`） | 226・93・293・73・33・**33**、すべて Passed、未説明の Skip なし |
+| `validate_phase6c_world`・`6b`・`6` | 世界検査 | すべて合格（警告 1 件は既存の「遭遇戦の無い Area」） |
+| `p6c-player-smoke` | P6C の Windows 実ビルドで、`justevade` → 別プロセス `continue` | 反撃 14 対 通常 9。強化を持ったまま終了して保存。Continue 後は強化なし、徳 300、HP 100。すべて OK |
+| `p6b-player-smoke`・`p6a-player-smoke` | 移動処理を変えたので回帰 | すべて OK |
+
+途中で実行したもの：
+
+- コンパイルは変更のたびに実行（警告 0）。
+- `re1`：EditMode の P6C 関連 41／41。
+- `rp1`：PlayMode 2 件のうち、旅立ちのテストが 1 件失敗。テストが `FastTravel()` 呼び出し前からの減りを見ていて、受付前の 0.06 秒を拾っていた。凍結の最初のフレームで測るように直した。
+- `rp2`：直した旅立ちのテストが合格。
+- EditMode 全件が作り直した P5 の Scene 3 つは HEAD へ戻した。
+
+### 5. 変えた必須テスト・証跡の注記
+
+- 必須一覧 `P6CRequiredTests.json` は 29 → **33** 件。
+  - 名前の変更が 1 件（`Clear_OnAreaEntryAndRespawnReset` → `Clear_OnRespawnRest_Kept_OnTemporaryDisableAndEntryPreparation`）。
+  - 追加が 4 件。PlayMode 2 件は P6C12、EditMode 2 件は P6C10。
+  - 対応表 `P6C_受入条件対応表.md` を更新した。
+- `p6c_just_evade_timeline.txt`：PC で書かれたファイルは改行が CRLF。証跡には **CR を除いた LF の版**を置き、sha256 はその保存されたバイトで採った。
+  `.gitattributes` で `*.txt` は `text` 扱いなので、git には LF で保存される。今回の版は作業ツリーとリポジトリで同じバイトになる。
+  記録 002 の README の値 `57a6b65a…` は、作業ツリーにある CRLF のバイトで採っていた。リポジトリに保存された LF の blob で採ると `8c196caf2a98fc222138eb3cd0cc8a7de6276306e25e70006bcfd8a4fc1afb7c` になる（中身は同じで、改行だけが違う）。
