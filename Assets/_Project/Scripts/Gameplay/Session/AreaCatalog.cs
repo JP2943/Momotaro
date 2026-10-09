@@ -52,6 +52,14 @@ namespace Momotaro.Gameplay.Session
         /// <summary>死亡再開する入口。</summary>
         public StableId RespawnEntryId { get; }
 
+        /// <summary>
+        /// P6 campaign の定義（P6A）。P5／P5.5 のカタログでは null——保存・お地蔵様・初到達報酬を持たない。
+        /// </summary>
+        public CampaignCatalog Campaign { get; private set; }
+
+        /// <summary>遭遇戦のクリア規則（P6A。P5 は再出現周期つき）。</summary>
+        public EncounterClearPolicy EncounterPolicy { get; private set; } = EncounterClearPolicy.PerRespawnCycle;
+
         /// <summary>登録エリア数。</summary>
         public int AreaCount => _scenePaths.Count;
 
@@ -162,6 +170,13 @@ namespace Momotaro.Gameplay.Session
             {
                 found.Add("Respawn point '" + data.RespawnAreaId.Value + "/" + data.RespawnEntryId.Value
                     + "' cannot be resolved.");
+            }
+
+            // P6 campaign（P6A）。<b>Area と入口が全部解決できてから</b>組む（お地蔵様は入口を指すため）。
+            built.EncounterPolicy = data.EncounterClearPolicy;
+            if (found.Count == 0 && data.IsP6Campaign)
+            {
+                built.Campaign = CampaignCatalog.Build(data, built, found);
             }
 
             errors = found;

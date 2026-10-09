@@ -1,0 +1,66 @@
+{
+    "id": "gp6",
+    "mode": "PlayMode",
+    "filter": "P6BWorldPlayTests",
+    "startedAt": "2026-10-03T07:52:58.6465730Z",
+    "finishedAt": "2026-10-03T07:53:58.8596793Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.GrowthMultipliers_RealHitWindow_SwordAndSpecialScaled_PoiseOnlyNormal",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_AtBoundary_NoTransitionWhileUsing_ThenTransitionsWithoutRelease",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_ExitSaveFailsMidUse_BackToGame_ResumesSameUseState",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_HitInterrupts_DeathTakesPrecedence",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_NormalExitMidUse_BeforeAndAfterCommit_ContinueMatchesThatMoment",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_RealKeyAndTrigger_CommitSaves_ContinueRestoresWithoutReheal",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.SaveFailure_GrowthRefundAndUseStay_RetryWritesLatest",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Tree_RealInput_AcquireAllRefundLeaf_EffectsOnPlayer_ContinueRestores",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

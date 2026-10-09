@@ -66,8 +66,16 @@ namespace Momotaro.Gameplay.Session
         public bool IsAreaReady => _area != null && _area.IsAreaReady;
 
         /// <inheritdoc />
-        public GameMode Mode =>
-            GameModeProvider.Current != null ? GameModeProvider.Current.Current : GameMode.Loading;
+        public GameMode Mode
+        {
+            get
+            {
+                GameMode mode = GameModeProvider.Current != null ? GameModeProvider.Current.Current : GameMode.Loading;
+
+                // 撤退できる戦闘中は、遷移の受付にとって「探索中」と同じ（P6A-04。仕様 §4「撤退口は移動可能」）。
+                return mode == GameMode.Combat && IsRetreatAllowedNow ? GameMode.Exploration : mode;
+            }
+        }
 
         /// <inheritdoc />
         public bool IsPlayerAlive => _vitals != null && !_vitals.IsDefeated;
@@ -95,7 +103,21 @@ namespace Momotaro.Gameplay.Session
 
                 // P5-07 で Encounter を載せるまでは未配線が正常なので、
                 // 「配線が無い＝戦闘していない」で通す。配線があるのに壊れている場合だけ安全側へ倒す。
-                return _encounter != null && _encounter.IsEncounterActive;
+                return _encounter != null && _encounter.IsEncounterActive && !IsRetreatAllowedNow;
+            }
+        }
+
+        /// <summary>
+        /// 戦闘中だが撤退してよいか（P6A-04）。P6 campaign の遭遇戦だけが許す。進行リセットの確定は退出の成功時。
+        /// </summary>
+        public bool IsRetreatAllowedNow
+        {
+            get
+            {
+                ResolveEncounter();
+                return _encounter is IRetreatableEncounterState retreatable
+                    && _encounter.IsEncounterActive
+                    && retreatable.AllowsRetreatNow;
             }
         }
 
@@ -119,5 +141,14 @@ namespace Momotaro.Gameplay.Session
     {
         /// <summary>開始予約中・戦闘中・勝敗処理中のいずれかか（§8.2 の Starting〜Resolving）。</summary>
         bool IsEncounterActive { get; }
+    }
+
+    /// <summary>
+    /// 撤退できる遭遇戦（P6A-04。コアループ「遭遇戦はエリア移動で撤退できる」）。
+    /// </summary>
+    public interface IRetreatableEncounterState : IAreaEncounterState
+    {
+        /// <summary>いま撤退してよいか（戦闘中で、撤退を許す構成のときだけ true）。</summary>
+        bool AllowsRetreatNow { get; }
     }
 }

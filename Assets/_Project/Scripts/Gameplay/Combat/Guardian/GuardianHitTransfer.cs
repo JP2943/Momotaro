@@ -48,7 +48,8 @@ namespace Momotaro.Gameplay.Combat.Guardian
                 original.StunHpMultiplierOverride,
                 original.Steppable,
                 original.HitId,
-                original.Reaction);
+                original.Reaction,
+                original.IsEnemyAttack); // P6C：出所の印も保つ（守護者側では使わないが、情報を落とさない）。
         }
 
         /// <summary>攻撃者 → 守護者の方向を World XZ 平面で求める。攻撃者不明・方向不定なら <see cref="Vector3.zero"/>。</summary>

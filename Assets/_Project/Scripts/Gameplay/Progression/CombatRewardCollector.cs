@@ -24,6 +24,15 @@ namespace Momotaro.Gameplay.Progression
         [Tooltip("付与先の進行データ（Scene 構築・テストが注入）。")]
         [SerializeField] private PlayerProgressHolder _progress;
 
+        [Tooltip("撃破報酬の差し替え（P6A の検証用。未設定なら敵の RewardData をそのまま使う＝P5 と同じ）。")]
+        [SerializeField] private Momotaro.Data.Progression.RewardData _rewardOverride;
+
+        /// <summary>撃破報酬の差し替えを設定する（P6A の Builder）。</summary>
+        public void SetRewardOverride(Momotaro.Data.Progression.RewardData reward)
+        {
+            _rewardOverride = reward;
+        }
+
         private bool _subscribed;
 
         /// <summary>購読元 Session（配線確認・Validator・テスト用）。</summary>
@@ -100,7 +109,8 @@ namespace Momotaro.Gameplay.Progression
         /// <summary>撃破 1 件を受け取り、載っている報酬要求を付与する。素材・Data 未設定でも例外なく継続する。</summary>
         private void OnEnemyDefeated(EnemyDefeatedEvent defeated)
         {
-            RewardSnapshot reward = RewardSnapshot.From(defeated.Reward.Reward);
+            RewardSnapshot reward = RewardSnapshot.From(
+                _rewardOverride != null ? _rewardOverride : defeated.Reward.Reward);
             if (!reward.HasReward)
             {
                 // 報酬未設定の敵（Archetype に RewardData 未割当）。試遊では正常系として無視する。

@@ -1,0 +1,18 @@
+{
+    "id": "u3",
+    "command": "run-op",
+    "status": "ok",
+    "message": "P5 探索試遊の検査を通りました（警告 1 件）。",
+    "startedAt": "2026-10-02T11:45:51.6381980Z",
+    "finishedAt": "2026-10-02T11:45:52.9240745Z",
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "expected": 0,
+    "termination": "",
+    "runLogPath": "",
+    "details": [
+        "[警告] Assets/_Project/Scenes/Tests/Phase5/SCN_Phase5_AreaA.unity: 遭遇戦がありません（この Area に置かない構成なら想定どおり）。"
+    ]
+}

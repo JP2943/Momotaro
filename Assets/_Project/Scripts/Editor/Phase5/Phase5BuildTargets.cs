@@ -306,6 +306,50 @@ namespace Momotaro.Editor.Phase5
         /// <summary>統合起動 Scene に置く見出し。</summary>
         public string TrialHeadline { get; set; } = "P5 探索試遊（起動）";
 
+        // ---- P6A の拡張（P5／P5.5 は既定のまま。出力は変わらない）----
+
+        /// <summary>
+        /// B に P5 の遭遇戦（区域・出現点・目印・調停）を置くか。P6A は自前の遭遇戦を拡張で置くので false。
+        /// </summary>
+        public bool IncludeLegacyEncounter { get; set; } = true;
+
+        /// <summary>
+        /// 戦闘 VFX（剣閃・敵の剣閃・ガード不能警告・JG 閃光）とスイング SE を Area に置くか（P6A 27）。
+        /// P5／P5.5 の受入済み Scene は変えないため既定は false。P6A の検証 campaign だけ true。
+        /// </summary>
+        public bool IncludeCombatVfx { get; set; }
+
+        /// <summary>
+        /// 命中結果の SE（ジャスト回避・ジャスガ・ガードの既存素材）を手応え演出に繋ぐか（P6C）。P6A／P6B／P5／P5.5 の試遊は false で出力は変わらない。
+        /// </summary>
+        public bool IncludeCombatSe { get; set; }
+
+        /// <summary>ジャスト回避・反撃強化の試遊表示（<c>JustEvadeHudPresenter</c>）を Area に置くか（P6C）。既定 false。</summary>
+        public bool IncludeJustEvadeHud { get; set; }
+
+        /// <summary>B の 2 つ目の接続口（P6A：B → C）。無ければ None。</summary>
+        public Phase5SeamOpening AreaBExtraSeam { get; set; } = Phase5SeamOpening.None;
+
+        /// <summary>2 つ目の接続口の往路の接続 ID（見えない境界がどの接続のものか）。</summary>
+        public Core.Identification.StableId ExtraSeamForwardId { get; set; }
+
+        /// <summary>2 つ目の接続口の復路の接続 ID。</summary>
+        public Core.Identification.StableId ExtraSeamReverseId { get; set; }
+
+        /// <summary>A の Data に足す入口（P6A：お地蔵様の復帰点など）。</summary>
+        public (Core.Identification.StableId id, Core.World.CardinalDirection facing)[] ExtraEntriesA { get; set; }
+            = System.Array.Empty<(Core.Identification.StableId, Core.World.CardinalDirection)>();
+
+        /// <summary>B の Data に足す入口（P6A：C からの入口など）。</summary>
+        public (Core.Identification.StableId id, Core.World.CardinalDirection facing)[] ExtraEntriesB { get; set; }
+            = System.Array.Empty<(Core.Identification.StableId, Core.World.CardinalDirection)>();
+
+        /// <summary>A の中身を足す口（P6A）。AreaRoot と常駐配線より前に呼ばれる。</summary>
+        public System.Action<Phase5AreaExtension> ExtendA { get; set; }
+
+        /// <summary>B の中身を足す口（P6A）。</summary>
+        public System.Action<Phase5AreaExtension> ExtendB { get; set; }
+
         /// <summary>P5 の受入用 Scene（従来配置。原点も接続口も無し）。</summary>
         public static Phase5BuildTargets Phase5() => new Phase5BuildTargets
         {

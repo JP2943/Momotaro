@@ -1,0 +1,19 @@
+{
+  "mode": "close",
+  "platform": "WindowsPlayer",
+  "unity": "6000.3.20f1",
+  "isEditor": "false",
+  "processId": "11644",
+  "device": "X570-PG4 (MouseComputer Co.,Ltd.) / AMD Ryzen 7 3700X 8-Core Processor  / Null Device",
+  "slowIoMs": "0",
+  "titlePrewarmDone": "false",
+  "appliedRecovery": "5",
+  "adventureId": "f55870f7f7364e82aab3f7fa5631caf2",
+  "area": "area_p6_a",
+  "revisionUnchanged": "true",
+  "dirtyBeforeClose": "false",
+  "beforePlayerHp": "43",
+  "beforeCompanionDown": "true",
+  "beforeCompanionRecovery": "4.983",
+  "closeRequested": "true"
+}

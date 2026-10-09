@@ -25,3 +25,11 @@ MonoBehaviour:
     _value: area_p55_s
   _respawnEntryId:
     _value: area_p5_a_start
+  _encounterClearPolicy: 0
+  _contentVersion: 1
+  _shrines: []
+  _initialShrineId:
+    _value: 
+  _kibidangoBaseCapacity: 3
+  _items: []
+  _growthNodes: []

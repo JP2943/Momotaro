@@ -57,16 +57,14 @@ namespace Momotaro.Tests.EditMode
             public void OnHitResult(in HitResult result) => Received.Add(result);
         }
 
-        // 無敵とジャスト回避受付を独立に制御できるフェイク（P3.5-09）。
+        // 無敵とジャスト回避受付を独立に制御できるフェイク（P3.5-09。P6C で体幹反射量の項目を撤去）。
         private sealed class FakeJustEvade : MonoBehaviour, IEvadeState, IJustEvadeState
         {
             public bool Inv;
             public bool JustWindow;
-            public float CounterPoise = 20f;
             public int SuccessNotified;
             public bool IsInvincible => Inv;
             public bool CanJustEvade => JustWindow;
-            public float JustEvadeCounterPoise => CounterPoise;
             public void NotifyJustEvadeSuccess() => SuccessNotified++;
         }
 
@@ -113,10 +111,11 @@ namespace Momotaro.Tests.EditMode
             return (holder, je, rec);
         }
 
-        private static HitInfo HitFrom(ICombatActor attacker, IDamageable target)
+        // P6C：ジャスト回避の成功対象は敵の攻撃（命中に印を持つもの）だけ。
+        private static HitInfo HitFrom(ICombatActor attacker, IDamageable target, bool enemyAttack = true)
         {
             return new HitInfo(attacker, target, -Vector3.forward, Vector3.zero, new HitDamage(10f, 0f, 0f),
-                true, true, HitId.Single(2));
+                true, true, HitId.Single(2)).AsEnemyAttack(enemyAttack);
         }
 
         private (PlayerVitalsHolder holder, FakeEvade evade, Recorder rec) MakePlayer(bool invincible)
@@ -170,25 +169,38 @@ namespace Momotaro.Tests.EditMode
             Assert.AreEqual(92, holder.Vitals.Health.Current, "10×防御20 → 8 減で 92。");
         }
 
-        // ---- ジャスト回避（P3.5-09。無敵かつタイト窓での回避＝弾き回避。体幹反射＋強制ひるみ＋専用結果） ----
+        // ---- ジャスト回避（P3.5-09。P6C で報酬を置換：体幹反射・強制ひるみは無し、成功通知 1 回だけ） ----
 
+        /// <summary>
+        /// P6C で期待値を変更（旧 <c>JustEvade_Window_ReflectsPoise_ForcesFlinch_AndPublishesJustEvade</c>）。
+        /// 旧仕様の「攻撃者へ体幹反射 25・近接攻撃者へ強制ひるみ 0.35 秒」は P6C 仕様 §1・§2 で置換された（反撃強化だけ）。
+        /// </summary>
         [Test]
-        public void JustEvade_Window_ReflectsPoise_ForcesFlinch_AndPublishesJustEvade()
+        public void JustEvade_Window_NoReflectNoFlinch_NotifiesOnce_AndPublishesJustEvade()
         {
             var (holder, je, rec) = MakePlayerJustEvade(invincible: true, justWindow: true);
-            je.CounterPoise = 25f;
             int hp0 = holder.Vitals.Health.Current;
             var attacker = new FakeAttacker();
 
             holder.ReceiveHit(HitFrom(attacker, holder));
 
             Assert.AreEqual(HitResultKind.JustEvade, rec.Received[0].Kind, "無敵かつ受付窓中はジャスト回避。");
+            Assert.AreEqual(1, rec.Received.Count, "結果は 1 回。");
             Assert.AreEqual(hp0, holder.Vitals.Health.Current, "HP は減らない。");
-            Assert.AreEqual(1, je.SuccessNotified, "成立を 1 回通知（窓クローズ）。");
-            Assert.AreEqual(1, attacker.ReceivedCount, "攻撃者へ反射カウンターが 1 回。");
-            Assert.AreEqual(25f, attacker.ReflectedPoise, 1e-4f, "設定した体幹反射量を反射。");
-            Assert.IsTrue(attacker.ReflectedIsCounter, "反射はカウンター扱い（再ガード不可・回復待機）。");
-            Assert.AreEqual(0.35f, attacker.FlinchSeconds, 1e-4f, "近接攻撃者へ強制ひるみ（反撃猶予）。");
+            Assert.AreEqual(1, je.SuccessNotified, "成立を 1 回通知（窓クローズ＋強化付与）。");
+            Assert.AreEqual(0, attacker.ReceivedCount, "P6C：攻撃者へ体幹反射しない。");
+            Assert.AreEqual(-1f, attacker.FlinchSeconds, 1e-4f, "P6C：強制ひるみしない。");
+        }
+
+        [Test]
+        public void JustEvade_NonEnemyContact_IsPlainEvade()
+        {
+            // 環境接触・反射・テスト生成など、敵の攻撃の印が無い命中は無敵で避けても通常回避（P6C 仕様 §4）。
+            var (holder, je, rec) = MakePlayerJustEvade(invincible: true, justWindow: true);
+            holder.ReceiveHit(HitFrom(null, holder, enemyAttack: false));
+
+            Assert.AreEqual(HitResultKind.Evade, rec.Received[0].Kind);
+            Assert.AreEqual(0, je.SuccessNotified, "成功しない。");
         }
 
         [Test]

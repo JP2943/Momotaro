@@ -57,6 +57,22 @@ namespace Momotaro.Gameplay.Scenes
             }
         }
 
+        /// <summary>
+        /// 挑戦をやり直す（P6A-04。撤退した遭遇戦を最初の Wave から）。Preparing へ戻す。
+        /// P3.5／P4 の Retry（Scene 再読込）とは別で、Scene を作り直さない再挑戦にだけ使う。
+        /// </summary>
+        public bool ResetForRetry()
+        {
+            if (Current == CombatSessionState.Preparing)
+            {
+                return false;
+            }
+
+            Current = CombatSessionState.Preparing;
+            StateChanged?.Invoke(Current);
+            return true;
+        }
+
         private bool TryMove(CombatSessionState to, CombatSessionState from0)
         {
             if (Current != from0)

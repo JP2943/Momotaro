@@ -102,6 +102,21 @@ namespace Momotaro.Gameplay.Enemy
         /// <summary>アーキタイプ Data（読み取り専用。認識・移動・攻撃の各サービスが設定値を参照する）。</summary>
         public EnemyArchetypeData Archetype => _archetype;
 
+        /// <summary>
+        /// 攻撃力の倍率（実行時だけ。既定 1）。生成役（遭遇戦・普通敵）が campaign の<b>テスト専用の調整</b>を渡す（P6A）。
+        /// Data（<see cref="EnemyArchetypeData"/>）は書き換えない。
+        /// </summary>
+        public float AttackPowerScale { get; private set; } = 1f;
+
+        /// <summary>攻撃に使う攻撃力（Data の値 × <see cref="AttackPowerScale"/>）。</summary>
+        public float EffectiveAttackPower => (_archetype != null ? _archetype.AttackPower : 0f) * AttackPowerScale;
+
+        /// <summary>攻撃力の倍率を設定する（0 以下・非数は 1 として扱う）。</summary>
+        public void SetAttackPowerScale(float scale)
+        {
+            AttackPowerScale = scale > 0f && !float.IsInfinity(scale) ? scale : 1f;
+        }
+
         /// <summary>ボス（大型敵）か（役割由来）。ボスはノックバック無効。</summary>
         public bool IsBoss => _archetype != null && _archetype.Role == EnemyRole.Boss;
 

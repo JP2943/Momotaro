@@ -54,6 +54,14 @@ namespace Momotaro.Tests.EditMode
                 + "配線・見た目の不在・Trigger でないことは P5.5 世界検査（Phase55WorldValidator）が見る。"
             },
 
+            // --- P6C の試遊にだけ置く ---
+            {
+                "JustEvadeHudPresenter",
+                "ジャスト回避・反撃強化の試遊表示（P6C。Phase5BuildTargets.IncludeJustEvadeHud）。P5／P5.5／P6A／P6B の Scene には"
+                + "置かれないので P5 の Scene 検査が見る相手が居ない。各 Area に 1 個あることは P6C 世界検査"
+                + "（Phase6WorldValidator.ValidateP6C）が見る。"
+            },
+
             // --- 間接的に必ず検出される ---
             {
                 "CombatSessionController",

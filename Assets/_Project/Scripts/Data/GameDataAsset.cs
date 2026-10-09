@@ -28,6 +28,9 @@ namespace Momotaro.Data
         /// <summary>データ移行・診断用のバージョン。</summary>
         public int Version => _version;
 
+        /// <summary>説明文（表示用。P6B の成長 UI が使う）。</summary>
+        public string Description => _description ?? string.Empty;
+
         /// <inheritdoc />
         public virtual void Validate(DataValidationReport report)
         {

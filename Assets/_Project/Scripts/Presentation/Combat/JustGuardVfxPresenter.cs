@@ -61,6 +61,9 @@ namespace Momotaro.Presentation.Combat
         /// <summary>プール（テスト・検証用）。</summary>
         public SlashVfxPool Pool => EnsurePool();
 
+        /// <summary>購読中の配信チャネル（無ければ null。診断・テスト用）。</summary>
+        public CombatFeedbackChannel BoundChannel => _channel;
+
         /// <summary>再生中インスタンス数（テスト・検証用）。</summary>
         public int ActiveCount => EnsurePool().ActiveCount;
 
@@ -91,10 +94,10 @@ namespace Momotaro.Presentation.Combat
             }
         }
 
-        /// <summary>Scene 内の <see cref="CombatFeedbackDispatcher"/> を探して購読し直す。</summary>
+        /// <summary>Scene 内の <see cref="CombatFeedbackDispatcher"/> を探して購読し直す（同じ Scene のものを優先。F06）。</summary>
         public void Rescan()
         {
-            CombatFeedbackDispatcher dispatcher = FindFirstObjectByType<CombatFeedbackDispatcher>();
+            CombatFeedbackDispatcher dispatcher = SceneLocalLookup.FindPreferSameScene<CombatFeedbackDispatcher>(this);
             Bind(dispatcher != null ? dispatcher.Feedback : null);
         }
 

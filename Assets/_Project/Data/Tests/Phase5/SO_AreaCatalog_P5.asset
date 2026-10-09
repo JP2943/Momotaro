@@ -25,3 +25,25 @@ MonoBehaviour:
     _value: area_p5_a
   _respawnEntryId:
     _value: area_p5_a_start
+  _encounterClearPolicy: 0
+  _contentVersion: 1
+  _shrines: []
+  _initialShrineId:
+    _value: 
+  _kibidangoBaseCapacity: 3
+  _kibidangoBaseHeal: 0
+  _kibidangoUseSeconds: 2
+  _kibidangoCommitSeconds: 1.5
+  _kibidangoMoveSpeedMultiplier: 0.2
+  _refundRightsInitial: 3
+  _refundRightsPerChapter: 3
+  _refundRightsMax: 6
+  _chapterIds: []
+  _saveSlotName: slot0
+  _items: []
+  _growthNodes: []
+  _grantOnceRewardIds: []
+  _companionIds: []
+  _questIds: []
+  _testEnemyAttackScale: 1
+  _testPlayerMaxHpScale: 1

@@ -1,0 +1,16 @@
+{
+    "id": "up5",
+    "command": "run-tests",
+    "status": "ok",
+    "message": "成功 20 / 失敗 0 / スキップ 0（108.3 秒）",
+    "startedAt": "2026-10-02T12:02:16.7187987Z",
+    "finishedAt": "2026-10-02T12:04:21.7791763Z",
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "expected": 0,
+    "termination": "completed",
+    "runLogPath": "_bridge/runs/up5.json",
+    "details": []
+}

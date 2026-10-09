@@ -1,0 +1,450 @@
+{
+    "id": "up3",
+    "mode": "PlayMode",
+    "filter": "P55(ActivityGate|AreaBundle|AreaScope|CameraSlide|ConnectionInput|DisplayProxy|NorthSouthSlide|Preload|ReentryPreparation|RenderCapture|ResidentCamera|Uniqueness)PlayTests",
+    "startedAt": "2026-10-02T11:54:03.6547315Z",
+    "finishedAt": "2026-10-02T11:58:32.0213840Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 72,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ActivityGatePlayTests.AStagingRequestForAnotherArea_DoesNotHoldThisOneBack",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ActivityGatePlayTests.WithAStagingRequest_NothingWakesUpUntilTheGateOpens",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ActivityGatePlayTests.WithoutAStagingRequest_TheGateOpensOnLoad",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55AreaBundlePlayTests.DirectOpen_RegistersTheBundleAndResidentUsesItWithoutSearching",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55AreaBundlePlayTests.Travel_MovesTheCurrentAreaDesignationWithoutFallingBack",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55AreaBundlePlayTests.TwoScenesLoaded_IndexSeparatesThemAndBundlesDoNotReachAcross",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.BelongsTo_TellsApartTheTwoAreas",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.InteractablesAndInvestigationPoints_AreLimitedToTheActiveArea",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.Perception_DoesNotSeeTargetsInTheNeighbouringArea",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.Perception_StillSeesTargetsOutsideAnyArea",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55AreaScopePlayTests.Perception_WithoutAnActiveArea_SeesEverything",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55CameraSlidePlayTests.AfterTheSlide_ThePositionDoesNotSpringBack",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55CameraSlidePlayTests.CancellingTheSlide_ReturnsToTheDeparturePositionAndResumesFollow",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55CameraSlidePlayTests.DuringTheSlide_OnlyTheSlideWritesTheRigPosition",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55CameraSlidePlayTests.TheDisplayProxy_TravelsOnTheSameProgressAsTheCamera",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55CameraSlidePlayTests.TheHoldAfterTheSlide_IsReleasedWhenTheAreaIsRebound",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.EnteringTheSeamOffCentre_KeepsTheCameraInsideTheConnectionBand(1.0f)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.EnteringTheSeamOffCentre_KeepsTheCameraInsideTheConnectionBand(-1.0f)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.FromTheCorridorCentreAndEdges_TheSlideStaysInsideTheBand(0.0f)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.FromTheCorridorCentreAndEdges_TheSlideStaysInsideTheBand(1.5f)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.FromTheCorridorCentreAndEdges_TheSlideStaysInsideTheBand(-1.5f)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.TheP5Area_StillTravelsWithoutAnyConnectionRecord",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.WalkingEastIntoTheSeam_ResolvesTheEastwardSlideConnection",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ConnectionInputPlayTests.WalkingWestIntoTheSeam_ResolvesTheWestwardSlideConnection",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55DisplayProxyPlayTests.ADownedCompanion_KeepsItsPostureAndStartsWhereItStands",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55DisplayProxyPlayTests.AnAwayCompanion_GetsNoProxyAtAll",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55DisplayProxyPlayTests.BuildingProxies_ChangesNothingInTheWorld",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(0.0f,True)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(0.0f,False)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(1.5f,True)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(1.5f,False)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(-1.5f,True)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.FromTheCorridorCentreAndEdges_TheNorthSouthSlideStaysInsideTheBand(-1.5f,False)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.WalkingEastIntoTheSeam_PutsTheDestinationToTheRightOfTheScreen",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.WalkingNorthIntoTheSeam_SlidesUpToTheNorthernArea",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55NorthSouthSlidePlayTests.WalkingSouthIntoTheSeam_SlidesDownToTheSouthernArea",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55PreloadPlayTests.ClearingThePreload_UnloadsTheNeighbourAndLeavesTheActiveAreaAlone",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55PreloadPlayTests.PreloadingTheNeighbour_DoesNotAddASecondCameraOrListener",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55PreloadPlayTests.PreloadingTheNeighbour_DoesNotChangeTheActiveAreaNavMesh",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55PreloadPlayTests.PreloadingTheNeighbour_LoadsItAsleepAndKeepsItOutOfTheRegistries",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.EachEntry_DisarmsTheExitGatesAgain",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.EachEntry_DoesNotGrantAnythingTwice",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.EachEntry_DropsTheStaleActionButKeepsTheValues",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.EachEntry_PlacesThePlayerAtTheEntryAgain",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.EachEntry_ReportsPreparedAgain",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.OpeningTheGate_LeavesTheArenaBlockersDisabled",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.PreparingTheEntryTwice_BuildsTheSceneOnce",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.TheFirstOpen_RestoresTheShippedState(\"A\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ReentryPreparationPlayTests.TheFirstOpen_RestoresTheShippedState(\"B\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.AgainstTheWalls_TheHeroIsStillDrawn(\"North\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.AgainstTheWalls_TheHeroIsStillDrawn(\"South\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.NearTheSeam_ShowsNoVoidWhileTheNeighbourIsMissing(\"EastWest\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.NearTheSeam_ShowsNoVoidWhileTheNeighbourIsMissing(\"NorthSouth\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.NearTheSeam_ShowsNoVoidWhileTheNeighbourIsReleased(\"EastWest\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.NearTheSeam_ShowsNoVoidWhileTheNeighbourIsReleased(\"NorthSouth\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheArrival_ShowsNoVoidAcrossTheWholeRoundTrip(\"EastWest\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheArrival_ShowsNoVoidAcrossTheWholeRoundTrip(\"NorthSouth\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheDiagonalSlide_FromTheCorridorEdge_ShowsNoVoid(\"EastWest\",1.5f)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheDiagonalSlide_FromTheCorridorEdge_ShowsNoVoid(\"EastWest\",-1.5f)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheDiagonalSlide_FromTheCorridorEdge_ShowsNoVoid(\"NorthSouth\",1.5f)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheDiagonalSlide_FromTheCorridorEdge_ShowsNoVoid(\"NorthSouth\",-1.5f)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheOutsideOfTheArea_ReadsAsADistantView_NotADrawingDefect(\"EastWest\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheOutsideOfTheArea_ReadsAsADistantView_NotADrawingDefect(\"NorthSouth\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheSlide_DrawsConnectedGroundWithOneHeroAndNoBlackout(\"EastWest\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RenderCapturePlayTests.TheSlide_DrawsConnectedGroundWithOneHeroAndNoBlackout(\"NorthSouth\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.AreaScenes_OwnNoCameraOrListenerOrLightOfTheirOwn",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.ComputingTheDestinationArrivalPoint_UsesTheDestinationRegionsAndChangesNothing",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.DirectOpen_PlacesTheCameraAtTheEntryEvenWhenTheSavedPositionIsFarAway",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.OpeningAreaBDirectly_StandsUpTheResidentRigOnce",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55ResidentCameraPlayTests.RoundTrip_KeepsTheSameCameraAndDoesNotJumpTheFrameAfterCommit",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55UniquenessPlayTests.TheSlide_KeepsOneHudOneListenerAndTheSameInput(\"EastWest\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55UniquenessPlayTests.TheSlide_KeepsOneHudOneListenerAndTheSameInput(\"NorthSouth\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

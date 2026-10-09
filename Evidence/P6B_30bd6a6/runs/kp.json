@@ -1,0 +1,72 @@
+{
+    "id": "kp",
+    "mode": "PlayMode",
+    "filter": "P6BWorldPlayTests",
+    "startedAt": "2026-10-03T11:17:23.8605934Z",
+    "finishedAt": "2026-10-03T11:19:40.1800538Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "failed",
+    "termination": "completed",
+    "rootResultState": "Failed(Child)",
+    "expected": 0,
+    "passed": 8,
+    "failed": 1,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.GrowthMultipliers_RealHitWindow_SwordAndSpecialScaled_PoiseOnlyNormal",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_AtBoundary_NoTransitionWhileUsing_ThenTransitionsWithoutRelease",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "終了後は離れ直さずに遷移する（失敗= 範囲内=True）。\r\n  Expected: greater than 0\r\n  But was:  0\n  at Momotaro.Tests.PlayMode.P6BWorldPlayTests+<Kibidango_AtBoundary_NoTransitionWhileUsing_ThenTransitionsWithoutRelease>d__40.MoveNext () [0x003fe] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\PlayMode\\P6BWorldPlayTests.cs:453"
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_ExitSaveFailsMidUse_BackToGame_ResumesSameUseState",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_HitInterrupts_DeathTakesPrecedence",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_NormalExitMidUse_BeforeAndAfterCommit_ContinueMatchesThatMoment",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_RealEnemyAttack_Timeline_InterruptsBeforeCommit",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Kibidango_RealKeyAndTrigger_CommitSaves_ContinueRestoresWithoutReheal",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.SaveFailure_GrowthRefundAndUseStay_RetryWritesLatest",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6BWorldPlayTests.Tree_RealInput_AcquireAllRefundLeaf_EffectsOnPlayer_ContinueRestores",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

@@ -1,0 +1,138 @@
+{
+    "id": "hp5",
+    "mode": "PlayMode",
+    "filter": "P6AWorldPlayTests",
+    "startedAt": "2026-10-09T04:16:14.2147291Z",
+    "finishedAt": "2026-10-09T04:18:09.5483332Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 20,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ABC_FastTravel_Death_EachAdvancesCycleOnce",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.AttackVfx_RecordsShownTiersAndDirections",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.AttackVfx_ShowsInA_AndAfterSlideInB",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.Capture_DuringAttack_DoesNotDisturbThePlayer",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.Encounter_SaveMidFight_Continue_Retreat_Rechallenge_ClearCommitsAtomically",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.EnemySideVfx_ShowFromRealAttacks_InAAndAfterTransitionInC",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ExitChoice_RetryByDecideInput_KeepsTheTitleDestination",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.FailedTravelAndFastTravel_CommitNothing",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.FastTravel_KeepsDeparture_UntilPrepared_FailuresStayAndRetry",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.FastTravel_WithinTheSameArea_FailureKeepsEverything_SuccessCommitsOnce",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.FeedbackPresenters_BindTheirOwnScenesDispatcher_WithTwoAreasLoaded",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.NewGame_Progress_Restart_Continue_RestoresEverything",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ReturnToTitle_FromMenu_SavesLatestThenLoadsTitle",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ReturnToTitle_SaveFails_OffersChoices_RetryWritesLatest",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ReturnToTitle_WhileDead_ResolvesRespawnBeforeSaving",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.SameFrameKillAndDeath_RespawnFailsDuringExit_NoHpZeroSave_ThenRecovers",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.ShrineAndGameMenu_PadNavigation",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.TestTuning_HalfPlayerHp_DoubleEnemyAttack",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.Title_PadDecideStartsNewGame",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6AWorldPlayTests.WindowClose_HpOnlyChange_IsNotPassedThrough_FailureStaysUnsaved",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

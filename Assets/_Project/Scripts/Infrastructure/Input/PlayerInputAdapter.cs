@@ -22,6 +22,7 @@ namespace Momotaro.Infrastructure.Input
         private const string StepAction = "Step";
         private const string SpecialAttackAction = "SpecialAttack";
         private const string InteractAction = "Interact";
+        private const string UseKibidangoAction = "UseKibidango";
         private const string UiMap = "UI";
         private const string SubmitAction = "Submit";
 
@@ -32,12 +33,14 @@ namespace Momotaro.Infrastructure.Input
         private UnityEngine.InputSystem.Controls.ButtonControl _attackControl;
         private UnityEngine.InputSystem.Controls.ButtonControl _stepControl;
         private UnityEngine.InputSystem.Controls.ButtonControl _interactControl;
+        private UnityEngine.InputSystem.Controls.ButtonControl _useItemControl;
         private readonly InputAction _move;
         private readonly InputAction _guard;
         private readonly InputAction _attack;
         private readonly InputAction _step;
         private readonly InputAction _special;
         private readonly InputAction _interact;
+        private readonly InputAction _useItem;
         private bool _disposed;
 
         /// <summary>Gameplay 層へ渡す入力。</summary>
@@ -68,6 +71,12 @@ namespace Momotaro.Infrastructure.Input
             {
                 _stepControl = null;
                 _state.SetStep(false);
+            }
+
+            if (!IsPressed(_useItemControl))
+            {
+                _useItemControl = null;
+                _state.SetUseItem(false);
             }
 
             if (!IsPressed(_interactControl))
@@ -157,6 +166,15 @@ namespace Momotaro.Infrastructure.Input
                 _interact.canceled += OnInteractCanceled;
             }
 
+            // きびだんご（F／LT）は任意接続（P6B 03）。押下エッジをラッチし、主人公の状態が 1 回消費する。
+            // 既存の Gameplay・UI・Dialogue の割当とは重ならない（P6B_統合受入結果 記録 001 §4）。
+            _useItem = map.FindAction(UseKibidangoAction, throwIfNotFound: false);
+            if (_useItem != null)
+            {
+                _useItem.started += OnUseItemStarted;
+                _useItem.canceled += OnUseItemCanceled;
+            }
+
             // 再開操作は UI マップの Submit（P5-08。§9.1 手順 3）。GameOver では Gameplay マップが
             // 閉じているので、Gameplay 側の入力とは別の口で読む。
             _submit = asset.FindActionMap(UiMap, throwIfNotFound: false)?.FindAction(SubmitAction, throwIfNotFound: false);
@@ -210,6 +228,23 @@ namespace Momotaro.Infrastructure.Input
         {
             _interactControl = context.control as UnityEngine.InputSystem.Controls.ButtonControl;
             _state.SetInteract(true);
+        }
+
+        private void OnUseItemStarted(InputAction.CallbackContext context)
+        {
+            _useItemControl = context.control as UnityEngine.InputSystem.Controls.ButtonControl;
+            _state.SetUseItem(true);
+        }
+
+        private void OnUseItemCanceled(InputAction.CallbackContext context)
+        {
+            if (IsStillPressed(context, _useItemControl))
+            {
+                return; // Map を閉じただけ。押しっぱなしを「離した」にしない。
+            }
+
+            _useItemControl = null;
+            _state.SetUseItem(false);
         }
 
         private void OnInteractCanceled(InputAction.CallbackContext context)
@@ -342,6 +377,12 @@ namespace Momotaro.Infrastructure.Input
             {
                 _special.started -= OnSpecialStarted;
                 _special.canceled -= OnSpecialCanceled;
+            }
+
+            if (_useItem != null)
+            {
+                _useItem.started -= OnUseItemStarted;
+                _useItem.canceled -= OnUseItemCanceled;
             }
 
             if (_interact != null)

@@ -1,0 +1,21 @@
+{
+    "id": "vlP6B",
+    "command": "run-op",
+    "status": "ok",
+    "message": "必須 33/33 件すべて Passed。未説明の Skip なし。",
+    "startedAt": "2026-10-03T11:56:53.2408625Z",
+    "finishedAt": "2026-10-03T11:56:53.2500840Z",
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "expected": 0,
+    "termination": "",
+    "runLogPath": "",
+    "details": [
+        "必須一覧: P6BRequiredTests.json",
+        "工程: （全工程）",
+        "実行記録: le（EditMode、filter=P6B(Growth|KibidangoUse)Tests、24 件）",
+        "実行記録: lp（PlayMode、filter=P6BWorldPlayTests、9 件）"
+    ]
+}

@@ -1,0 +1,132 @@
+{
+    "id": "em2",
+    "mode": "EditMode",
+    "filter": "(P6CJustEvadeTests|PlayerEvadeTests)",
+    "startedAt": "2026-10-09T00:44:12.9240861Z",
+    "finishedAt": "2026-10-09T00:44:18.5946310Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Boundaries_ConsistentAcrossDeltaTimes",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Clear_OnAreaEntryAndRespawnReset",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Consume_OnAcceptedStart_RejectedKeeps_NoRefund_LateHitKeepsBoost",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Counter_OnePointFive_TwoSeconds_NoStack_OnlyNextNormalStage",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Damage_ProductWithGrowth_DefenseStunRounding_PoiseFlinchUnaffected",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Data_ShippedValues_AndValidatorBounds",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.DefenseFlags_PreservedThroughSnapshotAndHitFactory",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Kibidango_NoStepOrGuardDuringUse_HitInterrupts_CounterUntouched_GrowthKept",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.MultiHitMultiEnemyProjectile_OnlyIFramesAvoid_NoFreeInvalidation",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.NoReward_NotStepping_NonEnemy_NotSteppable_PostHitInvincibleOnly_AndClockStops",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.OncePerStep_NoDuplicateFromSameHitCollidersFramesOrReentry",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.OneStage_AllTargetsBoosted_NextStageAndReusedHitboxNormal",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Priority_NoGuardianTransfer_NoDoubleReaction_DeathClearsSameFrame",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Unblockable_NormalGuardFails_JustGuardSucceeds_ExistingConditionsKept",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.Invincible_ButOutsideJustWindow_IsPlainEvade_NoCounter",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.Invincible_EvadesHit_NoHpNoStamina",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.JustEvade_NonEnemyContact_IsPlainEvade",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.JustEvade_Window_NoReflectNoFlinch_NotifiesOnce_AndPublishesJustEvade",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.NotInvincible_TakesDamage",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

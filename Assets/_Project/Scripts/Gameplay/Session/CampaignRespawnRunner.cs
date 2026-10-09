@@ -251,7 +251,8 @@ namespace Momotaro.Gameplay.Session
                 _catalog = built;
             }
 
-            return _catalog.TryGetRespawnEntry(out entry);
+            // P6 campaign は最後に登録したお地蔵様（P6A-03）。P5 はカタログの固定点。
+            return CampaignRespawnPoint.TryResolve(_catalog, ResolveSession(), out entry);
         }
 
         /// <summary>

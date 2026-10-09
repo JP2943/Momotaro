@@ -69,6 +69,13 @@ namespace Momotaro.Gameplay.Combat
         /// </summary>
         public HitReaction Reaction { get; }
 
+        /// <summary>
+        /// 敵の攻撃（敵の近接 Hitbox・敵の飛び道具）による命中か（P6C 仕様 §4）。ジャスト回避の成功対象はこれが true の命中だけ。
+        /// 環境接触・味方の攻撃・反射（JG カウンター）・テスト生成の命中は false。攻撃インスタンスに載せるので、射手が退場した矢でも判断できる。
+        /// 生成は <see cref="AsEnemyAttack"/> で付ける（既定 false）。
+        /// </summary>
+        public bool IsEnemyAttack { get; }
+
         /// <summary>ガードスタミナ／JG 反射 0 で生成する（HP/体幹/ひるみのみの命中）。</summary>
         public HitInfo(
             ICombatActor attacker,
@@ -202,6 +209,30 @@ namespace Momotaro.Gameplay.Combat
             bool steppable,
             HitId hitId,
             HitReaction reaction)
+            : this(attacker, target, attackDirection, hitPoint, damage, guardStaminaDamage, justGuardPoiseDamage,
+                   guardable, justGuardable, isJustGuardCounter, defenseIgnoreRatio, stunHpMultiplierOverride,
+                   steppable, hitId, reaction, isEnemyAttack: false)
+        {
+        }
+
+        /// <summary>敵の攻撃である印（<see cref="IsEnemyAttack"/>）まで指定する最上位コンストラクタ（P6C）。</summary>
+        public HitInfo(
+            ICombatActor attacker,
+            IDamageable target,
+            Vector3 attackDirection,
+            Vector3 hitPoint,
+            HitDamage damage,
+            float guardStaminaDamage,
+            float justGuardPoiseDamage,
+            bool guardable,
+            bool justGuardable,
+            bool isJustGuardCounter,
+            float defenseIgnoreRatio,
+            float stunHpMultiplierOverride,
+            bool steppable,
+            HitId hitId,
+            HitReaction reaction,
+            bool isEnemyAttack)
         {
             Attacker = attacker;
             Target = target;
@@ -218,6 +249,7 @@ namespace Momotaro.Gameplay.Combat
             Steppable = steppable;
             HitId = hitId;
             Reaction = reaction;
+            IsEnemyAttack = isEnemyAttack;
         }
 
         /// <summary>
@@ -228,7 +260,15 @@ namespace Momotaro.Gameplay.Combat
         {
             return new HitInfo(Attacker, Target, AttackDirection, HitPoint, Damage, GuardStaminaDamage,
                 JustGuardPoiseDamage, Guardable, JustGuardable, IsJustGuardCounter, DefenseIgnoreRatio,
-                StunHpMultiplierOverride, Steppable, HitId, reaction);
+                StunHpMultiplierOverride, Steppable, HitId, reaction, IsEnemyAttack);
+        }
+
+        /// <summary>敵の攻撃である印を付けた（または外した）複製を返す（P6C）。他フィールドは不変。</summary>
+        public HitInfo AsEnemyAttack(bool isEnemyAttack = true)
+        {
+            return new HitInfo(Attacker, Target, AttackDirection, HitPoint, Damage, GuardStaminaDamage,
+                JustGuardPoiseDamage, Guardable, JustGuardable, IsJustGuardCounter, DefenseIgnoreRatio,
+                StunHpMultiplierOverride, Steppable, HitId, Reaction, isEnemyAttack);
         }
     }
 }

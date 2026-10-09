@@ -1,0 +1,30 @@
+{
+    "id": "mp2",
+    "mode": "PlayMode",
+    "filter": "P6CWorldPlayTests.(FastTravel|Lifecycle)",
+    "startedAt": "2026-10-09T03:58:39.3048690Z",
+    "finishedAt": "2026-10-09T03:59:00.6961544Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "failed",
+    "termination": "completed",
+    "rootResultState": "Failed(Child)",
+    "expected": 0,
+    "passed": 0,
+    "failed": 2,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.FastTravel_FailAfterDepartureGateClosed_KeepsCounter_SuccessClears",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "出発側の主人公の権利は Commit で消える（在留しても復活しない）。\r\n  Expected: False\r\n  But was:  True\n  at Momotaro.Tests.PlayMode.P6CWorldPlayTests+<FastTravel_FailAfterDepartureGateClosed_KeepsCounter_SuccessClears>d__24.MoveNext () [0x00707] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\PlayMode\\P6CWorldPlayTests.cs:730"
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.Lifecycle_SaveKeeps_FailedMoveKeeps_SlideClears_HudOnlyActiveArea_Kibidango_RestRespawnContinue",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "移動元の主人公にも残さない。\r\n  Expected: False\r\n  But was:  True\n  at Momotaro.Tests.PlayMode.P6CWorldPlayTests+<Lifecycle_SaveKeeps_FailedMoveKeeps_SlideClears_HudOnlyActiveArea_Kibidango_RestRespawnContinue>d__22.MoveNext () [0x00702] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\PlayMode\\P6CWorldPlayTests.cs:518"
+        }
+    ]
+}

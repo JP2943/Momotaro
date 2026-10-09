@@ -67,24 +67,120 @@ namespace Momotaro.Tests.EditMode
             Object.DestroyImmediate(a);
         }
 
+        /// <summary>
+        /// P6C で変更（旧 <c>Attack_Unblockable_MustDisableGuardAndJustGuard</c>）：ガード不能は通常ガード不可だけを要求する。
+        /// 旧「JustGuardable=false 必須」は P6C 仕様 §6 で撤去（打撃・斬撃は原則ジャスガ可）。
+        /// </summary>
         [Test]
-        public void Attack_Unblockable_MustDisableGuardAndJustGuard()
+        public void Attack_Unblockable_MustDisableNormalGuard()
         {
-            // ガード不能なのに Guardable=true はエラー。
-            var a = MakeAttack(EnemyAttackClass.Unblockable, 0.75f, guardable: true, jg: false, step: true);
+            var a = MakeAttack(EnemyAttackClass.Unblockable, 0.75f, guardable: true, jg: true, step: true);
             var report = new DataValidationReport();
             a.Validate(report);
-            Assert.IsTrue(report.HasErrors, "ガード不能は Guardable/JustGuardable=false 必須。");
+            Assert.IsTrue(report.HasErrors, "ガード不能は Guardable=false 必須。");
+            StringAssert.Contains("Guardable=false", string.Join(", ", report.Errors));
+            Object.DestroyImmediate(a);
+        }
+
+        /// <summary>P6C で変更：JG 可（新しい既定）にして、Step 不可だけがエラーの原因になるようにした。</summary>
+        [Test]
+        public void Attack_Unblockable_MustBeSteppable()
+        {
+            var a = MakeAttack(EnemyAttackClass.Unblockable, 0.75f, guardable: false, jg: true, step: false);
+            var report = new DataValidationReport();
+            a.Validate(report);
+            Assert.IsTrue(report.HasErrors, "ガード不能は Step 可（対処手段）必須。");
+            StringAssert.Contains("Steppable", string.Join(", ", report.Errors));
+            Object.DestroyImmediate(a);
+        }
+
+        // ---- P6C 仕様 §6：通常ガード不可・ジャスガ可が原則、ジャスガも不可は理由を明記した例外だけ ----
+
+        [Test]
+        public void P6C_Unblockable_FalseTrueTrue_IsValid()
+        {
+            var a = MakeAttack(EnemyAttackClass.Unblockable, 0.75f, guardable: false, jg: true, step: true);
+            SetField(a, "_telegraph", AttackTelegraph.Unblockable);
+            var report = new DataValidationReport();
+            a.Validate(report);
+            Assert.IsFalse(report.HasErrors, string.Join(", ", report.Errors));
+            Assert.IsFalse(a.IsJustGuardException);
             Object.DestroyImmediate(a);
         }
 
         [Test]
-        public void Attack_Unblockable_MustBeSteppable()
+        public void P6C_Unblockable_NoJustGuard_WithoutReason_IsError()
         {
-            var a = MakeAttack(EnemyAttackClass.Unblockable, 0.75f, guardable: false, jg: false, step: false);
+            // 未分類の Data を黙って例外にしない。
+            var a = MakeAttack(EnemyAttackClass.Unblockable, 0.75f, guardable: false, jg: false, step: true);
+            SetField(a, "_telegraph", AttackTelegraph.Unblockable);
             var report = new DataValidationReport();
             a.Validate(report);
-            Assert.IsTrue(report.HasErrors, "ガード不能は Step 可（対処手段）必須。");
+            Assert.IsTrue(report.HasErrors);
+            StringAssert.Contains("JustGuardExceptionReason", string.Join(", ", report.Errors));
+            Object.DestroyImmediate(a);
+        }
+
+        [Test]
+        public void P6C_Exception_WithReasonAndDistinctTelegraph_IsValid_AndNoticeDiffers()
+        {
+            // 例外 fixture（つかみ）：理由を書き、予兆はガード不能の印。通常攻撃・通常のガード不能とは文言と記号で区別する。
+            var a = MakeAttack(EnemyAttackClass.Unblockable, 0.75f, guardable: false, jg: false, step: true);
+            SetField(a, "_telegraph", AttackTelegraph.Unblockable);
+            SetField(a, "_justGuardExceptionReason", "つかみ（P6C 検証 fixture）");
+            var report = new DataValidationReport();
+            a.Validate(report);
+            Assert.IsFalse(report.HasErrors, string.Join(", ", report.Errors));
+            Assert.IsTrue(a.IsJustGuardException);
+
+            var normalUnblockable = MakeAttack(EnemyAttackClass.Unblockable, 0.75f, guardable: false, jg: true, step: true);
+            var normal = MakeAttack(EnemyAttackClass.Normal, 0.30f, true, true, true);
+            string ex = EnemyAttackDefenseNotice.Describe(a);
+            string ub = EnemyAttackDefenseNotice.Describe(normalUnblockable);
+            string nm = EnemyAttackDefenseNotice.Describe(normal);
+            Assert.AreEqual("通常ガード不可・ジャスガ可能", ub);
+            StringAssert.Contains("ジャスガ不可", ex);
+            Assert.AreNotEqual(EnemyAttackDefenseNotice.Symbol(a), EnemyAttackDefenseNotice.Symbol(normalUnblockable),
+                "色だけに頼らず記号も変える。");
+            Assert.AreEqual(string.Empty, nm, "通常攻撃は注意書きなし。");
+            Object.DestroyImmediate(a);
+            Object.DestroyImmediate(normalUnblockable);
+            Object.DestroyImmediate(normal);
+        }
+
+        /// <summary>レビュー a24d92c R2：理由つきの例外は Steppable=false も定義できる（ステップ無敵の可否は攻撃定義に従う）。</summary>
+        [Test]
+        public void P6C_Exception_SteppableFalse_IsValid()
+        {
+            var a = MakeAttack(EnemyAttackClass.Unblockable, 0.75f, guardable: false, jg: false, step: false);
+            SetField(a, "_telegraph", AttackTelegraph.Unblockable);
+            SetField(a, "_justGuardExceptionReason", "地形攻撃（P6C 検証 fixture）");
+            var report = new DataValidationReport();
+            a.Validate(report);
+            Assert.IsFalse(report.HasErrors, string.Join(", ", report.Errors));
+            Object.DestroyImmediate(a);
+        }
+
+        [Test]
+        public void P6C_Exception_TelegraphMustBeUnblockable()
+        {
+            var a = MakeAttack(EnemyAttackClass.Unblockable, 0.75f, guardable: false, jg: false, step: true);
+            SetField(a, "_justGuardExceptionReason", "つかみ");
+            SetField(a, "_telegraph", AttackTelegraph.Normal);
+            var report = new DataValidationReport();
+            a.Validate(report);
+            Assert.IsTrue(report.HasErrors, "例外の予兆は通常攻撃と区別する。");
+            Object.DestroyImmediate(a);
+        }
+
+        [Test]
+        public void P6C_ExceptionReason_OnNonException_IsError()
+        {
+            var a = MakeAttack(EnemyAttackClass.Normal, 0.30f, true, true, true);
+            SetField(a, "_justGuardExceptionReason", "取り違え");
+            var report = new DataValidationReport();
+            a.Validate(report);
+            Assert.IsTrue(report.HasErrors);
             Object.DestroyImmediate(a);
         }
 

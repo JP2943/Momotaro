@@ -27,6 +27,9 @@ namespace Momotaro.Gameplay.Encounter
         [Tooltip("内側と認める余白（m）。封鎖 Collider に食い込んだ位置を「内側」にしない。")]
         [SerializeField] private float _margin = 1.0f;
 
+        [Tooltip("戦闘中に封鎖 Collider で出口を塞ぐか（P5 は塞ぐ。P6A は撤退口を塞がない。仕様 §4）。")]
+        [SerializeField] private bool _sealsExits = true;
+
         [Tooltip("主人公の根。")]
         [SerializeField] private Transform _player;
 
@@ -67,7 +70,14 @@ namespace Momotaro.Gameplay.Encounter
         public int BlockerCount => _blockers.Count;
 
         /// <summary>配線されているか（Validator・テスト用）。</summary>
-        public bool IsWired => _blockers.Count > 0 && _player != null;
+        public bool IsWired => (_blockers.Count > 0 || !_sealsExits) && _player != null;
+
+        /// <summary>戦闘中に出口を塞ぐか（P6A。撤退できる遭遇戦では false）。</summary>
+        public bool SealsExits
+        {
+            get => _sealsExits;
+            set => _sealsExits = value;
+        }
 
         /// <summary>安全に居られる内側の範囲（余白ぶん狭めた矩形）。</summary>
         public Bounds SafeBounds
@@ -173,11 +183,13 @@ namespace Momotaro.Gameplay.Encounter
 
         private void SetBlockers(bool enabled)
         {
+            // 塞がない構成（撤退できる遭遇戦）では、封鎖 Collider を有効にしない（無効化は常に行う）。
+            bool apply = enabled && _sealsExits;
             for (int i = 0; i < _blockers.Count; i++)
             {
                 if (_blockers[i] != null)
                 {
-                    _blockers[i].enabled = enabled;
+                    _blockers[i].enabled = apply;
                 }
             }
         }

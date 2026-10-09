@@ -2,6 +2,7 @@ using System;
 using Momotaro.Core.Logging;
 using Momotaro.Gameplay.Player;
 using Momotaro.Infrastructure.Input;
+using Momotaro.Infrastructure.Save;
 using Momotaro.Infrastructure.SceneFlow;
 using Momotaro.Infrastructure.World;
 using UnityEngine;
@@ -186,6 +187,16 @@ namespace Momotaro.Infrastructure.Bootstrap
             var respawnView = gameObject.AddComponent<CampaignRespawnResidentView>();
             respawnView.Bind(transitions);
             RespawnResidentView = respawnView;
+
+            // オートセーブ（P6A-02／05）。P6 campaign の冒険を結ぶまで何もしない（試遊へ影響を出さない）。
+            var saves = gameObject.AddComponent<CampaignSaveService>();
+            saves.BindServices(transitions, sessions);
+            _registry.Register(saves);
+
+            // お地蔵様（P6A-03）。P6 campaign の Scene が置いた ShrinePoint の受け口。それ以外では呼ばれない。
+            var shrines = gameObject.AddComponent<CampaignShrineService>();
+            shrines.Bind(transitions);
+            _registry.Register(shrines);
         }
     }
 }

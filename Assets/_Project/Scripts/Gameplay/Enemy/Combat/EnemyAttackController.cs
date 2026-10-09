@@ -76,6 +76,12 @@ namespace Momotaro.Gameplay.Enemy.Combat
         /// <summary>現在段階（Debug/テスト用）。</summary>
         public EnemyAttackMachine.Phase Phase => _machine.Current;
 
+        /// <summary>攻撃開始からの経過秒（攻撃中だけ意味を持つ。読み取りのみ。P6C の実ビルド確認が回避の時機を測る）。</summary>
+        public float AttackElapsed => _machine.IsAttacking ? _machine.Elapsed : 0f;
+
+        /// <summary>現在の攻撃の予兆秒（攻撃中だけ意味を持つ。読み取りのみ）。</summary>
+        public float CurrentPrepareSeconds => _machine.IsAttacking ? _machine.Snapshot.PrepareSeconds : 0f;
+
         /// <summary>実行中の攻撃分類（非攻撃中は Normal）。表示（分類別攻撃モーション）解決に用いる。</summary>
         public EnemyAttackClass CurrentAttackClass => _machine.IsAttacking ? _machine.Snapshot.AttackClass : EnemyAttackClass.Normal;
 
@@ -220,7 +226,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
                 return; // Launcher 未装備なら発射しない（Gameplay は継続。Presentation 欠如に準ずる）。
             }
 
-            float attackPower = _actor.Archetype != null ? _actor.Archetype.AttackPower : 0f;
+            float attackPower = _actor.EffectiveAttackPower;
             _launcher.TryLaunch(snap, _actor.WorldPosition, _aimDir, _actor, attackPower, _currentSwing);
         }
 
@@ -633,7 +639,7 @@ namespace Momotaro.Gameplay.Enemy.Combat
                 return false;
             }
 
-            float attackPower = _actor.Archetype != null ? _actor.Archetype.AttackPower : 0f;
+            float attackPower = _actor.EffectiveAttackPower;
             HitInfo hit = EnemyHitFactory.Build(_machine.Snapshot, attackPower, _actor, target, _aimDir, hitPoint, _currentSwing);
             target.ReceiveHit(hit);
             return true;

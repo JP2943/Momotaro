@@ -42,6 +42,13 @@ namespace Momotaro.Gameplay.Session
         [Tooltip("本編型死亡再開の実行役（§9.1）。載せない構成もある。")]
         [SerializeField] private CampaignRespawnRunner _respawn;
 
+        [Header("P6A")]
+        [Tooltip("普通敵の生成役（休息でその場で作り直す）。普通敵の居ない区画は未割当。")]
+        [SerializeField] private AreaFieldEnemyDirector _fieldEnemies;
+
+        [Tooltip("複数遭遇戦のまとめ（無ければ未割当）。")]
+        [SerializeField] private AreaEncounterGroup _encounterGroup;
+
         [Header("活動ゲート（§4.2）")]
         [Tooltip("活動ゲート。閉じた状態で出荷され、読込時または Commit で開く。")]
         [SerializeField] private AreaActivityGate _activityGate;
@@ -63,6 +70,12 @@ namespace Momotaro.Gameplay.Session
 
         /// <summary>死亡再開の実行役。</summary>
         public CampaignRespawnRunner Respawn => _respawn;
+
+        /// <summary>普通敵の生成役（P6A。未割当なら null）。</summary>
+        public AreaFieldEnemyDirector FieldEnemies => _fieldEnemies;
+
+        /// <summary>複数遭遇戦のまとめ（P6A。未割当なら null）。</summary>
+        public AreaEncounterGroup EncounterGroup => _encounterGroup;
 
         /// <summary>活動ゲート（§4.2）。</summary>
         public AreaActivityGate ActivityGate => _activityGate;
@@ -161,6 +174,13 @@ namespace Momotaro.Gameplay.Session
             _encounter = encounter;
             _respawn = respawn;
             _activityGate = activityGate;
+        }
+
+        /// <summary>P6A の参照を設定する（Editor 専用）。</summary>
+        public void EditorSetP6(AreaFieldEnemyDirector fieldEnemies, AreaEncounterGroup encounterGroup)
+        {
+            _fieldEnemies = fieldEnemies;
+            _encounterGroup = encounterGroup;
         }
 #endif
     }

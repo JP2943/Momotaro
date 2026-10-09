@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Momotaro.Core.Identification;
+using Momotaro.Data.Progression;
 using UnityEngine;
 
 namespace Momotaro.Data.World
@@ -30,6 +31,13 @@ namespace Momotaro.Data.World
         [Tooltip("Scene を直接開いて Play したときの既定入口（§5.2）。")]
         [SerializeField] private StableId _defaultEntryId;
 
+        [Header("報酬（P6A）")]
+        [Tooltip("未到達エリアへの初回到達で一度だけ与える報酬（GrantOnce 推奨）。未設定なら到達報酬なし。")]
+        [SerializeField] private RewardData _arrivalReward;
+
+        [Tooltip("保存される対象の ID 一覧（P6A。Builder が Scene と同時に書く）。")]
+        [SerializeField] private AreaContentManifest _content = new AreaContentManifest();
+
         /// <summary>Scene のアセットパス。</summary>
         public string ScenePath => _scenePath;
 
@@ -41,6 +49,12 @@ namespace Momotaro.Data.World
 
         /// <summary>直接開いたときの既定入口。</summary>
         public StableId DefaultEntryId => _defaultEntryId;
+
+        /// <summary>初到達報酬（P6A。未設定なら null）。遷移の Commit で訪問と同時に確定する（P6 仕様 §4）。</summary>
+        public RewardData ArrivalReward => _arrivalReward;
+
+        /// <summary>保存される対象の ID 一覧（P6A）。</summary>
+        public AreaContentManifest Content => _content ?? (_content = new AreaContentManifest());
 
         /// <inheritdoc />
         public override void Validate(DataValidationReport report)
@@ -114,6 +128,18 @@ namespace Momotaro.Data.World
             _floorId = floorId;
             _entries = entries ?? new List<AreaEntryDefinition>();
             _defaultEntryId = defaultEntryId;
+        }
+
+        /// <summary>初到達報酬を設定する（Editor 専用。P6A の Builder）。</summary>
+        public void EditorSetArrivalReward(RewardData reward)
+        {
+            _arrivalReward = reward;
+        }
+
+        /// <summary>保存対象の ID 一覧を設定する（Editor 専用。P6A の Builder）。</summary>
+        public void EditorSetContent(AreaContentManifest content)
+        {
+            _content = content ?? new AreaContentManifest();
         }
 #endif
     }

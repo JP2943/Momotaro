@@ -78,6 +78,7 @@ namespace Momotaro.Editor.Phase5
             ValidateNavigation(scene, errors, warnings);
             ValidateInitialState(scene, errors);
             ValidateEncounter(scene, errors, warnings);
+            ValidateFieldEnemies(scene, errors);
             ValidateClearance(scene, errors);
             ValidateSceneHygiene(scene, errors);
         }
@@ -861,6 +862,72 @@ namespace Momotaro.Editor.Phase5
 
         // ---------------------------------------------------------------- 遭遇戦（§8）
 
+        /// <summary>
+        /// 普通敵（P6A）。置いてあるなら：1 つだけ・配線済み・配置 ID と出現点が揃い・敵種が表から引けて、
+        /// <b>初期化担当と束がこの配置役を指している</b>こと（指していないと入場ごとの生成・周期の反映が起きない）。
+        /// P5／P5.5 には置かない（0 個なら何もしない）。
+        /// </summary>
+        private static void ValidateFieldEnemies(Scene scene, List<string> errors)
+        {
+            List<AreaFieldEnemyDirector> directors = Components<AreaFieldEnemyDirector>(scene);
+            if (directors.Count == 0)
+            {
+                return;
+            }
+
+            if (directors.Count > 1)
+            {
+                errors.Add("普通敵の配置役（AreaFieldEnemyDirector）が " + directors.Count + " 個あります（1 個であること）。");
+            }
+
+            AreaFieldEnemyDirector director = directors[0];
+            if (!director.IsWired)
+            {
+                errors.Add("普通敵の配置役が配線されていません（AreaId・敵 Prefab 表）。");
+            }
+
+            if (director.PlacementCount == 0)
+            {
+                errors.Add("普通敵の配置役に配置がありません。");
+            }
+
+            var ids = new HashSet<string>();
+            foreach (AreaFieldEnemyDirector.Placement p in director.Placements)
+            {
+                if (p.PlacementId.IsEmpty || p.Point == null)
+                {
+                    errors.Add("普通敵の配置に ID か出現点が欠けています。");
+                    continue;
+                }
+
+                if (!ids.Add(p.PlacementId.Value))
+                {
+                    errors.Add("普通敵の配置 ID が重複しています: " + p.PlacementId.Value);
+                }
+
+                if (director.Table == null || !director.Table.TryResolve(p.EnemyId, out GameObject prefab) || prefab == null)
+                {
+                    errors.Add("普通敵 '" + p.PlacementId.Value + "' の敵種 '" + p.EnemyId.Value + "' を Prefab 表から引けません。");
+                }
+            }
+
+            foreach (AreaInitializer initializer in Components<AreaInitializer>(scene))
+            {
+                if (new SerializedObject(initializer).FindProperty("_fieldEnemies")?.objectReferenceValue != director)
+                {
+                    errors.Add("初期化担当が普通敵の配置役を指していません（入場ごとの生成・周期の反映が起きない）。");
+                }
+            }
+
+            foreach (AreaRuntimeBundle bundle in Components<AreaRuntimeBundle>(scene))
+            {
+                if (bundle.FieldEnemies != director)
+                {
+                    errors.Add("Area の束（AreaRuntimeBundle）が普通敵の配置役を指していません（休息の作り直しが届かない）。");
+                }
+            }
+        }
+
         private static void ValidateEncounter(Scene scene, List<string> errors, List<string> warnings)
         {
             List<AreaEncounterRunner> runners = Components<AreaEncounterRunner>(scene);
@@ -870,16 +937,38 @@ namespace Momotaro.Editor.Phase5
                 return;
             }
 
-            if (runners.Count != 1)
+            // P6A：1 エリアに複数の遭遇戦を置くときは、まとめ（AreaEncounterGroup）が全部を持っていること。
+            // 部品は遭遇戦の数だけ要る（生成役・Trigger・境界・報酬の受け手・受付条件・撤収の通知役・購読し直し・結果表示）。
+            int n = runners.Count;
+            if (n != 1)
             {
-                errors.Add("遭遇戦の調停（AreaEncounterRunner）は 1 つであるべきですが " + runners.Count + " です。");
-                return;
+                List<AreaEncounterGroup> groups = Components<AreaEncounterGroup>(scene);
+                if (groups.Count != 1)
+                {
+                    errors.Add("遭遇戦が " + n + " あるのに、まとめ（AreaEncounterGroup）が " + groups.Count
+                        + " です（1 つであること。P6A）。");
+                    return;
+                }
+
+                foreach (AreaEncounterRunner runner in runners)
+                {
+                    bool contained = false;
+                    foreach (AreaEncounterRunner member in groups[0].Runners)
+                    {
+                        contained |= member == runner;
+                    }
+
+                    if (!contained)
+                    {
+                        errors.Add("遭遇戦 '" + runner.name + "' がまとめ（AreaEncounterGroup）に入っていません。");
+                    }
+                }
             }
 
             RequireWired<AreaEncounterRunner>(scene, "遭遇戦の調停", errors, x => x.IsWired);
-            RequireOne<AreaEncounterSpawner>(scene, "敵の生成役（AreaEncounterSpawner）", errors);
+            RequireCount<AreaEncounterSpawner>(scene, n, "敵の生成役（AreaEncounterSpawner）", errors);
             RequireWired<AreaEncounterSpawner>(scene, "敵の生成役", errors, x => x.IsWired);
-            RequireOne<AreaEncounterTrigger>(scene, "戦闘開始 Trigger（AreaEncounterTrigger）", errors);
+            RequireCount<AreaEncounterTrigger>(scene, n, "戦闘開始 Trigger（AreaEncounterTrigger）", errors);
             RequireWired<AreaEncounterTrigger>(scene, "戦闘開始 Trigger", errors, x => x.IsWired);
 
             // <b>AreaRoot へ登録されていること</b>（工程 P55-15b。付録 C.41）。
@@ -923,12 +1012,12 @@ namespace Momotaro.Editor.Phase5
                     }
                 }
             }
-            RequireOne<AreaArenaBoundary>(scene, "アリーナ境界（AreaArenaBoundary）", errors);
+            RequireCount<AreaArenaBoundary>(scene, n, "アリーナ境界（AreaArenaBoundary）", errors);
             RequireWired<AreaArenaBoundary>(scene, "アリーナ境界", errors, x => x.IsWired);
             // 撃破報酬の受け手（§12.1）。<b>これが居ないと徳が黙って入らなくなる。</b>
             // 配線監査（記録 029）で、置かれているのに誰も検査していない部品として見つかった。
             // 遭遇戦の調停の IsWired には含まれないので、独立して見る。
-            RequireOne<CombatRewardCollector>(scene, "撃破報酬の受け手（CombatRewardCollector）", errors);
+            RequireCount<CombatRewardCollector>(scene, n, "撃破報酬の受け手（CombatRewardCollector）", errors);
             RequireWired<CombatRewardCollector>(scene, "撃破報酬の受け手", errors,
                 x => x.Session != null && x.Progress != null);
 
@@ -938,17 +1027,17 @@ namespace Momotaro.Editor.Phase5
             RequireWired<CombatFeedbackPresenter>(scene, "命中 Feedback（ヒットストップ・点滅）", errors,
                 x => x.HitStop != null && x.Flash != null);
 
-            RequireOne<AreaEncounterConditionsSource>(scene, "戦闘の受付条件", errors);
+            RequireCount<AreaEncounterConditionsSource>(scene, n, "戦闘の受付条件", errors);
             RequireWired<AreaEncounterConditionsSource>(scene, "戦闘の受付条件", errors, x => x.IsWired);
-            RequireOne<EncounterInterruptRelay>(scene, "撤収の通知役（EncounterInterruptRelay）", errors);
+            RequireCount<EncounterInterruptRelay>(scene, n, "撤収の通知役（EncounterInterruptRelay）", errors);
             RequireWired<EncounterInterruptRelay>(scene, "撤収の通知役", errors, x => x.IsWired);
 
             // 手応え（§8.2 手順 7）。配信役だけ置いて購読し直しを忘れると、湧いた直後の命中を取りこぼす。
             RequireOne<CombatFeedbackDispatcher>(scene, "命中 Feedback の配信役", errors);
             RequireOne<CombatFeedbackPresenter>(scene, "手応え演出の調停役", errors);
-            RequireOne<EncounterFeedbackBinder>(scene, "生成直後の購読し直し（EncounterFeedbackBinder）", errors);
+            RequireCount<EncounterFeedbackBinder>(scene, n, "生成直後の購読し直し（EncounterFeedbackBinder）", errors);
             RequireWired<EncounterFeedbackBinder>(scene, "生成直後の購読し直し", errors, x => x.IsWired);
-            RequireOne<AreaEncounterResultView>(scene, "結果の短文の表示", errors);
+            RequireCount<AreaEncounterResultView>(scene, n, "結果の短文の表示", errors);
             RequireWired<AreaEncounterResultView>(scene, "結果の短文の表示", errors, x => x.IsWired);
 
             // 敵 Prefab 表（§13.3 の 8 行目）。表そのものが Scene 側にあるので、ここで解決を確かめる。
@@ -1117,8 +1206,39 @@ namespace Momotaro.Editor.Phase5
                 return;
             }
 
+            // 1 エリアに遭遇戦が複数あるとき（P6A）は、<b>その境界を使う遭遇戦の</b>出現点・Trigger だけを見る。
+            // 全部を全部の境界へ当てると、隣の区域の出現点が「外にある」と読まれる。
+            bool several = Components<AreaArenaBoundary>(scene).Count > 1;
+            var owners = new HashSet<AreaEncounterRunner>();
+            var ownedSpawners = new HashSet<AreaEncounterSpawner>();
+            if (several)
+            {
+                foreach (AreaEncounterRunner runner in Components<AreaEncounterRunner>(scene))
+                {
+                    var so = new SerializedObject(runner);
+                    if (so.FindProperty("_arenaSource")?.objectReferenceValue == arena)
+                    {
+                        owners.Add(runner);
+                        if (so.FindProperty("_spawnerSource")?.objectReferenceValue is AreaEncounterSpawner sp)
+                        {
+                            ownedSpawners.Add(sp);
+                        }
+                    }
+                }
+
+                if (owners.Count == 0)
+                {
+                    errors.Add("アリーナ境界 '" + arena.name + "' を使う遭遇戦がありません。");
+                }
+            }
+
             foreach (AreaEncounterSpawner spawner in Components<AreaEncounterSpawner>(scene))
             {
+                if (several && !ownedSpawners.Contains(spawner))
+                {
+                    continue;
+                }
+
                 IReadOnlyList<Transform> points = spawner.SpawnPoints;
                 for (int i = 0; points != null && i < points.Count; i++)
                 {
@@ -1131,10 +1251,18 @@ namespace Momotaro.Editor.Phase5
 
             foreach (AreaEncounterTrigger trigger in Components<AreaEncounterTrigger>(scene))
             {
-                if (trigger != null)
+                if (trigger == null)
                 {
-                    RequireInsideArena(safe, trigger.transform.position, "戦闘開始 Trigger", errors);
+                    continue;
                 }
+
+                if (several && !(new SerializedObject(trigger).FindProperty("_runner")?.objectReferenceValue
+                        is AreaEncounterRunner r && owners.Contains(r)))
+                {
+                    continue;
+                }
+
+                RequireInsideArena(safe, trigger.transform.position, "戦闘開始 Trigger", errors);
             }
         }
 
@@ -1221,6 +1349,22 @@ namespace Momotaro.Editor.Phase5
 
         /// <summary>Scene の Component 数（検査とテストが同じ走査を使うために公開する）。</summary>
         public static int Count<T>(Scene scene) where T : Component => Components<T>(scene).Count;
+
+        internal static void RequireCount<T>(Scene scene, int expected, string label, List<string> errors)
+            where T : Component
+        {
+            if (expected == 1)
+            {
+                RequireOne<T>(scene, label, errors);
+                return;
+            }
+
+            int count = Count<T>(scene);
+            if (count != expected)
+            {
+                errors.Add(label + " は " + expected + " であるべきですが " + count + " です。");
+            }
+        }
 
         internal static void RequireOne<T>(Scene scene, string label, List<string> errors) where T : Component
         {

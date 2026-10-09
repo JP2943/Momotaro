@@ -89,6 +89,12 @@ namespace Momotaro.Editor.Phase55
         /// <summary>Builder へ渡す設定を作る。</summary>
         public Func<Phase5BuildTargets> Targets { get; set; }
 
+        /// <summary>
+        /// 接続一覧を<b>他の配置と共有している</b>か（P6A の A–B–C は 1 つの接続一覧に 4 レコード）。
+        /// true のとき、検査はこの 2 エリア間のレコードだけを取り出して「往復 2 件」を見る。
+        /// </summary>
+        public bool SharedConnectionList { get; set; }
+
         // ---- 軸の読み替え（検査がここだけを通る）----
 
         /// <summary>接続軸の成分。</summary>

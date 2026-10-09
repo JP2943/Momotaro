@@ -25,6 +25,9 @@ namespace Momotaro.Gameplay.Companion.Investigation
 
         public bool IsInvestigated(StableId pointId) => _investigated.Contains(pointId);
 
+        /// <summary>調査済み地点を列挙する（P6A-02 の保存用。読み取りだけ）。</summary>
+        public IEnumerable<StableId> CopyIds() => _investigated;
+
         /// <summary>調査済みにする。既に済んでいれば false（完了は 1 回だけ。§6.3）。</summary>
         public bool TryMarkInvestigated(StableId pointId)
         {

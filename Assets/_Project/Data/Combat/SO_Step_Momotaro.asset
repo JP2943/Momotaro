@@ -25,3 +25,6 @@ MonoBehaviour:
   _invincibleEndSeconds: 0.2
   _staminaCost: 25
   _chainBufferSeconds: 0.12
+  _justEvadeWindowSeconds: 0.12
+  _justEvadeCounterHpMultiplier: 1.5
+  _justEvadeCounterSeconds: 2

@@ -1,0 +1,24 @@
+{
+    "id": "rp2",
+    "mode": "PlayMode",
+    "filter": "P6CWorldPlayTests.FastTravel",
+    "startedAt": "2026-10-09T03:54:31.6600765Z",
+    "finishedAt": "2026-10-09T03:54:48.0896823Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.FastTravel_FailAfterDepartureGateClosed_KeepsCounter_SuccessClears",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

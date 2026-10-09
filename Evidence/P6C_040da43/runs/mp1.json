@@ -1,0 +1,36 @@
+{
+    "id": "mp1",
+    "mode": "PlayMode",
+    "filter": "P6CWorldPlayTests.(FailedSlide|FastTravel|Lifecycle)",
+    "startedAt": "2026-10-09T03:56:24.4667174Z",
+    "finishedAt": "2026-10-09T03:56:52.2411341Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "failed",
+    "termination": "completed",
+    "rootResultState": "Failed(Child)",
+    "expected": 0,
+    "passed": 1,
+    "failed": 2,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.FailedSlide_AfterDepartureGateClosed_TimeoutRollback_KeepsCounter_FrozenThenTicks",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "前提：受理の時点で強化を持っていた。\r\n  Expected: greater than 0.0f\r\n  But was:  0.0f\n  at Momotaro.Tests.PlayMode.P6CWorldPlayTests+<FailedSlide_AfterDepartureGateClosed_TimeoutRollback_KeepsCounter_FrozenThenTicks>d__23.MoveNext () [0x005ce] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\PlayMode\\P6CWorldPlayTests.cs:657"
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.FastTravel_FailAfterDepartureGateClosed_KeepsCounter_SuccessClears",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "旅立ちの失敗では権利が残る。\r\n  Expected: True\r\n  But was:  False\n  at Momotaro.Tests.PlayMode.P6CWorldPlayTests+<FastTravel_FailAfterDepartureGateClosed_KeepsCounter_SuccessClears>d__24.MoveNext () [0x00588] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\PlayMode\\P6CWorldPlayTests.cs:718"
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P6CWorldPlayTests.Lifecycle_SaveKeeps_FailedMoveKeeps_SlideClears_HudOnlyActiveArea_Kibidango_RestRespawnContinue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

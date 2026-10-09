@@ -106,6 +106,22 @@ namespace Momotaro.Gameplay.Encounter
             State = AreaEncounterState.Cleared;
         }
 
+        /// <summary>
+        /// 挑戦を捨てて開始前へ戻す（P6A-04。撤退・中断）。<b>クリア済みは戻さない</b>（恒久）。
+        /// 世代は進めたまま——後から届く旧世代の通知が新しい挑戦に一致しない。
+        /// </summary>
+        /// <returns>戻したら true。</returns>
+        public bool AbandonToDormant()
+        {
+            if (State == AreaEncounterState.Dormant || State == AreaEncounterState.Cleared)
+            {
+                return false;
+            }
+
+            State = AreaEncounterState.Dormant;
+            return true;
+        }
+
         private bool Advance(int runId, AreaEncounterState from, AreaEncounterState to)
         {
             if (runId == 0 || runId != RunId || State != from)

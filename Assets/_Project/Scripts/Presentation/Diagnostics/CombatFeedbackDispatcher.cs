@@ -51,7 +51,7 @@ namespace Momotaro.Presentation.Diagnostics
         {
             // 主人公の再生成・シーン再読込に追従：購読中と検出結果が変わったら旧購読を解除し、新しい対象へ購読し直す。
             // 参照比較（ReferenceEquals）で判定し、Unity の破棄済み(=fake null)でも取りこぼさず、同一対象への重複購読はしない。
-            PlayerVitalsHolder found = FindFirstObjectByType<PlayerVitalsHolder>();
+            PlayerVitalsHolder found = SceneLocalLookup.FindPreferSameScene<PlayerVitalsHolder>(this);
             if (!ReferenceEquals(found, _playerVitals))
             {
                 if (_playerVitals != null)

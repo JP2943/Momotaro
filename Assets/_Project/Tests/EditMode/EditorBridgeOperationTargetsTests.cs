@@ -188,6 +188,31 @@ namespace Momotaro.Tests.EditMode
         }
 
         [Test]
+        public void Phase6World_TargetsExist()
+        {
+            System.Type builder = typeof(Momotaro.Editor.Phase6.Phase6WorldBuilder);
+            Assert.AreEqual("Momotaro.Editor.Phase6.Phase6WorldBuilder", builder.FullName,
+                "ブリッジは完全修飾名で型を探す。名前空間・型名を変えたらブリッジ側も直すこと。");
+            Assert.IsNotNull(builder.GetMethod(
+                "BuildAll", BindingFlags.Public | BindingFlags.Static, null, System.Type.EmptyTypes, null));
+            System.Type resultType = typeof(Momotaro.Editor.Phase6.Phase6WorldBuilder.BuildResult);
+            Assert.IsNotNull(resultType.GetProperty("Success", BindingFlags.Public | BindingFlags.Instance));
+            Assert.IsNotNull(resultType.GetProperty("Message", BindingFlags.Public | BindingFlags.Instance));
+            Assert.IsNotNull(resultType.GetProperty("Outputs", BindingFlags.Public | BindingFlags.Instance));
+
+            System.Type validator = typeof(Momotaro.Editor.Phase6.Phase6WorldValidator);
+            Assert.AreEqual("Momotaro.Editor.Phase6.Phase6WorldValidator", validator.FullName);
+            Assert.IsNotNull(validator.GetMethod(
+                "Validate", BindingFlags.Public | BindingFlags.Static, null,
+                new[]
+                {
+                    typeof(System.Collections.Generic.List<string>),
+                    typeof(System.Collections.Generic.List<string>),
+                },
+                null), "Validate(List<string>, List<string>) をブリッジが呼ぶ。");
+        }
+
+        [Test]
         public void BuildResult_ExposesSuccessAndMessage()
         {
             System.Type resultType = typeof(Phase4CompanionBuilder.BuildResult);

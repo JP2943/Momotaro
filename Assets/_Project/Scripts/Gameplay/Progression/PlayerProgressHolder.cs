@@ -28,6 +28,12 @@ namespace Momotaro.Gameplay.Progression
         private PlayerProgressState _boundState;
         private bool _used;
 
+        // State の変化通知を中継している先（P6A-01）。Holder を経由しない付与・支出でも HUD が追従するため。
+        private PlayerProgressState _listening;
+
+        // Holder 自身の操作（Grant／ResetProgress）の最中。自分で通知するので中継を重ねない。
+        private bool _selfChange;
+
         /// <summary>進行データ本体（読み取り・テスト用）。未注入ならローカル State。</summary>
         public PlayerProgressState State => _boundState ?? _localState;
 
@@ -81,7 +87,56 @@ namespace Momotaro.Gameplay.Progression
             }
 
             _boundState = state;
+            if (_listening != null)
+            {
+                // 有効な間に差し替わった。中継先を正本へ移す。
+                Listen(state);
+            }
+
             return true;
+        }
+
+        private void OnEnable()
+        {
+            Listen(State);
+        }
+
+        private void OnDisable()
+        {
+            Listen(null);
+        }
+
+        private void Listen(PlayerProgressState state)
+        {
+            if (ReferenceEquals(_listening, state))
+            {
+                return;
+            }
+
+            if (_listening != null)
+            {
+                _listening.Changed -= OnStateChanged;
+            }
+
+            _listening = state;
+            if (_listening != null)
+            {
+                _listening.Changed += OnStateChanged;
+            }
+        }
+
+        /// <summary>
+        /// Holder を経由しない変化（到着報酬・初回クリア・成長の支出など。P6A）を HUD へ中継する。
+        /// Holder 自身の操作中は自分で通知するので重ねない。
+        /// </summary>
+        private void OnStateChanged(int available)
+        {
+            if (_selfChange)
+            {
+                return;
+            }
+
+            VirtueChanged?.Invoke(available);
         }
 
         /// <summary>報酬の付与を試みる（ルールは <see cref="PlayerProgressState.TryGrant"/>）。徳が変化したときだけ通知する。</summary>
@@ -93,7 +148,17 @@ namespace Momotaro.Gameplay.Progression
             _used = true;
 
             PlayerProgressState state = State;
-            RewardGrantResult result = state.TryGrant(reward, out grantedVirtue);
+            RewardGrantResult result;
+            _selfChange = true;
+            try
+            {
+                result = state.TryGrant(reward, out grantedVirtue);
+            }
+            finally
+            {
+                _selfChange = false;
+            }
+
             if (grantedVirtue > 0)
             {
                 VirtueChanged?.Invoke(state.Virtue);
@@ -122,7 +187,16 @@ namespace Momotaro.Gameplay.Progression
             _used = true;
             // 発火条件は P4-00 のまま「徳が実際に変化したときだけ」。GrantOnce 記録だけの消去では通知しない。
             bool changed = _localState.Virtue != 0;
-            _localState.Reset();
+            _selfChange = true;
+            try
+            {
+                _localState.Reset();
+            }
+            finally
+            {
+                _selfChange = false;
+            }
+
             if (changed)
             {
                 VirtueChanged?.Invoke(_localState.Virtue);

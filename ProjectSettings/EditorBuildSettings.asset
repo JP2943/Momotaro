@@ -53,6 +53,42 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/_Project/Scenes/Tests/Phase55NS/SCN_Phase55NS_AreaN.unity
     guid: 3323db5f90060db4c9bcff709eff772c
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase6A/SCN_Phase6A_Title.unity
+    guid: 770f278a770edc74ba712f6a1ac84fbf
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase6A/SCN_Phase6A_AreaA.unity
+    guid: cbffe2e864dae7d458bffac18aa0ddcf
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase6A/SCN_Phase6A_AreaB.unity
+    guid: b816d192d428f21439fe210e9464bd38
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase6A/SCN_Phase6A_AreaC.unity
+    guid: 58f34d9026a136e469e6aef9d8e805ea
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase6B/SCN_Phase6B_Title.unity
+    guid: d1eb5a249b087b04083d5dd0fd996de9
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase6B/SCN_Phase6B_AreaA.unity
+    guid: 205d5374bcf25f148bea0b67e501bc8d
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase6B/SCN_Phase6B_AreaB.unity
+    guid: bfafe1fa9b1be584d9f3b05ba5bc92da
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase6B/SCN_Phase6B_AreaC.unity
+    guid: 5e4db0a781ab905469635c2b8c60a8fc
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase6C/SCN_Phase6C_Title.unity
+    guid: 1339ae403aebd2343ab3c667852e75b2
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase6C/SCN_Phase6C_AreaA.unity
+    guid: 8dae3060de318944e8c4b8800a8d140c
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase6C/SCN_Phase6C_AreaB.unity
+    guid: b92eb44dc7e9b7548a05c8b6cf35b9a0
+  - enabled: 1
+    path: Assets/_Project/Scenes/Tests/Phase6C/SCN_Phase6C_AreaC.unity
+    guid: dbdd144e631f02d49a1c97a975241090
   m_configObjects:
     com.unity.dt.app-ui: {fileID: 11400000, guid: 1b1c20d82303e4b5781c3ef50ac1449f, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 5845c308206dc98448a2c7febabb71aa, type: 3}

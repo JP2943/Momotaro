@@ -212,6 +212,33 @@ namespace Momotaro.Gameplay.Session
             CorridorWidth = c.CorridorWidth;
         }
 
+        private AreaConnectionSnapshot(StableId connectionId, StableId fromAreaId, StableId toAreaId, StableId entryId)
+        {
+            ConnectionId = connectionId;
+            FromAreaId = fromAreaId;
+            ExitId = default;
+            ToAreaId = toAreaId;
+            EntryId = entryId;
+            Style = AreaTransitionStyle.Fade;
+            Direction = default;
+            ReverseConnectionId = default;
+            SlideDuration = 0f;
+            CorridorWidth = 0f;
+        }
+
+        /// <summary>旅立ち（P6A。レビュー D1）の擬似接続の ID。接続 Data には現れない。</summary>
+        public static readonly StableId FastTravelConnectionId = new StableId("fast_travel_jump");
+
+        /// <summary>
+        /// 旅立ちの擬似接続（レビュー D1）。接続 Data を持たない遠隔の移動を、スライドと<b>同じ排他・世代・在留台帳</b>で
+        /// 運ぶための受付票。見せ方は暗転側（<see cref="IsSlide"/> は false）で、境界帯・表示経路の検査は使わない。
+        /// </summary>
+        public static AreaConnectionSnapshot ForFastTravel(StableId fromAreaId, StableId toAreaId, StableId entryId) =>
+            new AreaConnectionSnapshot(FastTravelConnectionId, fromAreaId, toAreaId, entryId);
+
+        /// <summary>旅立ちの擬似接続か。</summary>
+        public bool IsFastTravel => ConnectionId.Equals(FastTravelConnectionId);
+
         /// <summary>接続の安定 ID。</summary>
         public StableId ConnectionId { get; }
 

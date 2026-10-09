@@ -52,7 +52,9 @@ namespace Momotaro.Gameplay.Enemy.Combat
                 snapshot.HitbackSeconds,
                 snapshot.GuardbackDistance,
                 snapshot.AttackClass == EnemyAttackClass.Projectile);
-            return hit.WithReaction(reaction);
+            // P6C：敵の攻撃である印を命中インスタンスに載せる（ジャスト回避の成功対象。射手が退場した矢でも判断できる）。
+            // 防御可否（Guardable／JustGuardable／Steppable）は Snapshot のまま。分類を理由に上書きしない（P6C 仕様 §6）。
+            return hit.WithReaction(reaction).AsEnemyAttack();
         }
     }
 }

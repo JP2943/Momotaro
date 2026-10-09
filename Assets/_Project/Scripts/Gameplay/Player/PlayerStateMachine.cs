@@ -82,6 +82,16 @@ namespace Momotaro.Gameplay.Player
         /// </summary>
         public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken, bool stepping, bool charging, bool specialAttacking, bool hurt, bool defeated)
         {
+            Tick(enabled, isMoving, guarding, attacking, guardBroken, stepping, charging, specialAttacking, hurt, defeated,
+                usingItem: false);
+        }
+
+        /// <summary>
+        /// 道具使用（P6B 03）を含む状態の決定。使用中は Defeated・Hurt・GuardBreak より下、ほかの行動と入力遮断より上
+        /// （Pause で入力が閉じても使用状態のまま止まる）。使用と他の行動は呼び出し側で排他にする。
+        /// </summary>
+        public void Tick(bool enabled, bool isMoving, bool guarding, bool attacking, bool guardBroken, bool stepping, bool charging, bool specialAttacking, bool hurt, bool defeated, bool usingItem)
+        {
             PlayerState next;
             if (defeated)
             {
@@ -94,6 +104,10 @@ namespace Momotaro.Gameplay.Player
             else if (guardBroken)
             {
                 next = PlayerState.GuardBreak;
+            }
+            else if (usingItem)
+            {
+                next = PlayerState.UseItem;
             }
             else if (stepping)
             {

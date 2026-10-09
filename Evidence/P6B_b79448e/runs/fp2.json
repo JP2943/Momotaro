@@ -1,0 +1,96 @@
+{
+    "id": "fp2",
+    "mode": "PlayMode",
+    "filter": "P55RoundTripPlayTests",
+    "startedAt": "2026-10-03T06:08:59.4063372Z",
+    "finishedAt": "2026-10-03T06:11:40.5203872Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 13,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.AfterOpeningTheGateLeavingAndComingBack_TheGateIsStillPassable",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.AfterTheFight_TheArenaReleasesAndWalkingLeavesIt",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.ApproachingTheSeamOffCentre_NeverLeavesTheAreaUntransitioned",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.DodgingIntoTheSeam_NeverLeavesTheAreaUntransitioned",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.FromTheArrivalInB_WalkingEntersTheArenaAndOnlyThenItSeals",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.FromTheStart_WalkingReachesTheLeverTheInvestigationAndTheExit",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheFirstTravelLoadsOnce_AndTheRoundTripReusesIt",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheFollowRegion_LetsTheClampGoAndTheBackdropCoversTheOutside",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheReportedRoute_WinningThenRoundTripsThenWalkingTheArena_NeverForcesATravel",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheWholeRoute_SurvivesFiveRoundTripsAFightAndARespawn(\"EastWest\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.TheWholeRoute_SurvivesFiveRoundTripsAFightAndARespawn(\"NorthSouth\")",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.WalkingAcrossTheOldRoomBoundariesAndTheGate_TheCameraFollowsContinuously",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55RoundTripPlayTests.WalkingInsideTheArea_NeverLoadsOrReleasesAnything",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

@@ -1,0 +1,402 @@
+{
+    "id": "fp1",
+    "mode": "PlayMode",
+    "filter": "P55SlideTransitionPlayTests",
+    "startedAt": "2026-10-03T06:06:00.3431903Z",
+    "finishedAt": "2026-10-03T06:08:54.4945263Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 64,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AfterAFadeTransition_TheLedgerMatchesTheLoadedScenesAndSlidingStillWorks",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AfterAllAreasAreDestroyed_NoReferenceFromTheOldScenesRemains",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AfterArriving_TheHeroAndCompanionAreInsideTheDestinationBarrier",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AfterLeavingAndComingBack_TheExitGateNoLongerThinksTheHeroIsInside",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AfterTheSlide_TheCameraDoesNotReSnapOrJump",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.AnUnclearedEncounter_CanStillStartAfterComingBack",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.ApproachingTheSeam_DoesNotLoadTheNeighbourUntilTheTravelIsAccepted",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.ArrivingInsideTheGate_TheOccupancyIsTrueEvenWhileTheAreaIsClosed",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.BeforeASingleLoad_TheRetainedAreaIsReleasedToo",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.ChangingTheCooldownsInB_ThenReturningToA_RestoresThemInsteadOfTheStaleValues",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.ChangingTheHpInB_ThenReturningToA_KeepsTheDentedValue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.DyingWhileTheNeighbourIsStaged_DiscardsThePreloadAndRespawns",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.DyingWhileTheNeighbourIsStillLoading_WaitsForItToTerminateBeforeTheFade",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.EvenWhileHoldingAFailedRelease_TheSingleLoadStillGoesThrough",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.FadeAndSlide_ShareTheSameTransitionExclusion",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.FadeWhileTheRetireIsStillRunning_WaitsForItToFinish",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.FailingMidSlide_ReversesAlongTheSamePathAndRestoresTheDepartureArea",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.FarFromTheSeam_HoldingTheExitDirection_DoesNotTravel",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.FromAcceptanceToCommit_ExactlyOneHeroIsDrawnEveryFrame",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.LauncherRetreatDuringAStagedLoad_IssuesNoSingleLoad",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.RequestingAFadeInsideTheArrival_DoesNotOverlapTheRetire",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.RequestingBeforeTheNeighbourIsReady_WaitsWithTheDepartureAreaVisible",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.RequestingTheReverseSlideInsideTheArrival_WaitsForTheRetire",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.RetryingTheRetireAfterTheSingleLoadHasBegun_IsRefused",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.RetryingTheRetireWhileAFadeWaits_IssuesNoSingleLoad",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.ReturningImmediately_ReusesTheRetainedAreaWithoutLoading",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingCarriesTheActorValues_WithoutAdvancingThem",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingKeepsTheCompanionState(Follow)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingKeepsTheCompanionState(Down)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingKeepsTheCompanionState(Stagger)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.SlidingKeepsTheCompanionState(Away)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.StoppedByTheBarrier_TheExitGateStillAccepts",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheCompanionProxy_EndsWhereTheRealOneAppears(Follow)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheCompanionProxy_EndsWhereTheRealOneAppears(Down)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheCompanionProxy_EndsWhereTheRealOneAppears(Stagger)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheDisplayRoute_IgnoresExactlyTheBarriersOfThisConnection",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheFocusHost_IsWiredButDoesNotListenToEngineNotificationsInTheEditor",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheObstacleProbe_RestoresOnlyTheRememberedColliders",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheProxy_PlaysTheRealSixFrameMoveCycleWhileSliding",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheRoundTrip_KeepsTheCameraAndTheCompanionContinuous",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TheWaitTimer_StartsBeforeTheLoadIsRequested",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TimingOutTheStagedDiscard_DoesNotIssueTheSingleLoad",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.TravellingAfterAFailedPreload_IsNotBlocked",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.UsingTheInteractDoorWhileTheNeighbourIsStaged_DiscardsThePreloadFirst",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WalkingEastIntoTheSeam_SlidesRightAndArrivesInB",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WalkingWestIntoTheSeam_SlidesLeftAndHoldingDoesNotBounceBack",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheArrivalDoesNotComeUp_TheDepartureStaysOperableAndValuesAreKept",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheArrivalPreparationIsLate_TheWaitNoticeShowsAndThenClears",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheCompanionIsBehindADepartureWall_ItIsNotCarriedButTheSlideSucceeds",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheDepartureCannotBeUnloaded_TheArrivalStaysAndRetireCanBeRetried",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheDepartureSideHasAWallOnTheRoute_ThePreparationFails",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheDestinationSideHasAWallOnTheRoute_ThePreparationFails",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheLoadNeverFinishes_ItReturnsToTheDepartureAndReleasesTheLateArrival",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheNeighbourIsAlreadyStaged_TheWaitNoticeNeverShows",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenThePreloadFails_TheDepartureAreaBecomesPlayableAgain",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheRetainedAreaCannotBeReleased_TheArrivalStaysAndRetryClearsIt",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhenTheRetryFailsToo_TheNeighbourIsNotRequestedAgainWhileStandingStill",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhileTheAppIsNotFocused_TheSlideDoesNotAdvanceAndDoesNotJumpBack",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhileTheAreaIsNotCurrent_ItsExitGatesDoNotCountInput",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhileTheRetainedReleaseIsRunning_NoSingleLoadIsIssued",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WhileTheRetireIsStillRunning_TheWaitNoticeShows",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WithoutTheExitGate_PushingIntoTheSeamNeverLeavesTheArea",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WithTheCompanionDownOrAwayInB_ReturningToTheRetainedArea_KeepsThatState(Down)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P55SlideTransitionPlayTests.WithTheCompanionDownOrAwayInB_ReturningToTheRetainedArea_KeepsThatState(Away)",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

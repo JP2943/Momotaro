@@ -217,6 +217,109 @@ namespace Momotaro.Gameplay.Player
         }
 
         /// <summary>
+        /// 成長による最大 HP の加算を適用する（P6A-03。仕様 §7「既存 Max へ加算を繰り返さない。基礎値と取得 ID から再計算」）。
+        ///
+        /// <b>何度呼んでも同じ結果</b>——最大値は「Data の基礎値 ＋ 加算」で置き直す。現在 HP は回復しない
+        /// （上限を超える分だけ切り詰める）。回復は休息が行う。
+        /// </summary>
+        public void ApplyMaxHpBonus(int bonus)
+        {
+            EnsureVitals();
+            if (_vitals == null || _data == null)
+            {
+                return;
+            }
+
+            int baseMax = Mathf.Max(1, Mathf.RoundToInt(_data.MaxHp * MaxHpScale));
+            int target = baseMax + (bonus < 0 ? 0 : bonus);
+            if (_vitals.Health.Max != target)
+            {
+                _vitals.Health.SetMax(target);
+            }
+
+            MaxHpBonus = bonus < 0 ? 0 : bonus;
+        }
+
+        /// <summary>
+        /// 成長による最大 HP・最大スタミナの加算を置き直す（P6B 01。何度呼んでも同じ結果）。現在値は回復せず、
+        /// 新しい上限を超えた分だけ切り詰める（回復は休息）。Data の基礎値は書き換えない。
+        /// </summary>
+        public void ApplyGrowth(int maxHpBonus, int maxStaminaBonus)
+        {
+            ApplyMaxHpBonus(maxHpBonus);
+            EnsureVitals();
+            if (_data == null || _stamina == null || _vitals == null)
+            {
+                return;
+            }
+
+            int bonus = maxStaminaBonus < 0 ? 0 : maxStaminaBonus;
+            int target = _data.MaxStamina + bonus;
+            _stamina.SetMax(target);
+            if (_vitals.Stamina.Max != target)
+            {
+                _vitals.Stamina.SetMax(target);
+            }
+
+            MaxStaminaBonus = bonus;
+            SyncStaminaVital();
+        }
+
+        /// <summary>適用中の最大スタミナ加算（診断・テスト用。P6B）。</summary>
+        public int MaxStaminaBonus { get; private set; }
+
+        /// <summary>現在の最大 HP（成長込み。診断・テスト・HUD 用）。</summary>
+        public int MaxHp
+        {
+            get { EnsureVitals(); return _vitals != null ? _vitals.Health.Max : 0; }
+        }
+
+        /// <summary>現在の最大スタミナ（成長込み。正本は StaminaState）。</summary>
+        public float MaxStaminaValue
+        {
+            get { EnsureVitals(); return _stamina != null ? _stamina.Max : 0f; }
+        }
+
+        /// <summary>現在 HP。</summary>
+        public int CurrentHp
+        {
+            get { EnsureVitals(); return _vitals != null ? _vitals.Health.Current : 0; }
+        }
+
+        /// <summary>
+        /// きびだんごの回復を HP へ適用する（P6B 03）。最大値で頭打ち。死亡確定後は何もしない。実際に増えた量を返す。
+        /// 確定の手順（残数 -1 と同じ更新）は呼び出し側が持つ。
+        /// </summary>
+        public int HealFromItem(int amount)
+        {
+            EnsureVitals();
+            if (_vitals == null || _defeated || amount <= 0)
+            {
+                return 0;
+            }
+
+            int before = _vitals.Health.Current;
+            _vitals.Health.Change(amount);
+            return _vitals.Health.Current - before;
+        }
+
+        /// <summary>適用中の最大 HP 加算（診断・テスト用）。</summary>
+        public int MaxHpBonus { get; private set; }
+
+        /// <summary>
+        /// 基礎最大 HP の倍率（実行時だけ。既定 1）。campaign の<b>テスト専用の調整</b>（P6A：死亡を何度も試すため）。
+        /// Data（<c>PlayerData.MaxHp</c>）は書き換えない。成長の加算はこの後に足す。
+        /// </summary>
+        public float MaxHpScale { get; private set; } = 1f;
+
+        /// <summary>基礎最大 HP の倍率を設定し、最大値を置き直す（0 以下・非数は 1）。現在 HP は上限で切り詰めるだけ。</summary>
+        public void SetMaxHpScale(float scale)
+        {
+            MaxHpScale = scale > 0f && !float.IsInfinity(scale) ? scale : 1f;
+            ApplyMaxHpBonus(MaxHpBonus);
+        }
+
+        /// <summary>
         /// 条件付きスタミナ消費（Phase2 P2-09。ステップ等）。残量が <paramref name="amount"/> 以上でブレイク中でないときだけ消費し
         /// true を返す。不足時は消費せず false（ステップ不発）。ステップ消費はガードブレイクを誘発しない（<c>canTriggerBreak:false</c>）。
         /// </summary>
@@ -410,20 +513,15 @@ namespace Momotaro.Gameplay.Player
             IEvadeState evade = ResolveEvadeState();
             if (evade != null && evade.IsInvincible && hit.Steppable)
             {
-                // ジャスト回避（P3.5-09）：ステップ開始直後のタイト窓（CanJustEvade）で無敵回避したときは、JG と対称の報酬を与える。
-                // 攻撃者の体幹へ固定反射＋近接攻撃者へ強制ひるみ（反撃猶予）を付与し、専用フィードバック（JustEvade）を発行する。
-                // ガード不能は Guardable/JustGuardable=false・Steppable=true のため、この経路が「回避が正解」の報酬窓になる。
-                // 窓外（無敵だが窓を過ぎた）の回避は従来どおりダメージ 0 のみの通常回避（Evade）。
+                // ジャスト回避（P6C 仕様 §4）：敵の攻撃・ステップ回避可能・ステップ無敵中・受付終端より前・このステップで未成功のときだけ成功。
+                // 成功の原因はここ（実際の被弾入口）で確定し、受付を閉じて反撃強化を付与する通知を<b>一度だけ</b>出す。
+                // P6C で旧報酬（攻撃者への体幹反射・近接攻撃者への強制ひるみ）は撤去した。敵の攻撃は中断しない。
+                // 環境接触・反射・テスト生成など敵の攻撃でない命中は、無敵で避けても通常の回避（Evade）。
+                // 成功・通常回避とも、主人公に届かなかった一撃を守護（犬丸）へ転送しない（ここで return）。
                 IJustEvadeState je = ResolveJustEvadeState();
-                if (je != null && je.CanJustEvade)
+                if (je != null && hit.IsEnemyAttack && je.CanJustEvade)
                 {
-                    ReflectPoiseCounter(hit, je.JustEvadeCounterPoise);
                     je.NotifyJustEvadeSuccess();
-                    if (!hit.Reaction.IsProjectile && hit.Attacker is IForcedFlinchReceiver flinchTarget)
-                    {
-                        flinchTarget.ForceFlinch(ForcedFlinchSeconds);
-                    }
-
                     Results.Publish(HitResult.JustEvade(hit.HitId, hit.Attacker, this, HitDamage.None, hit.HitPoint, hit.AttackDirection));
                     return;
                 }

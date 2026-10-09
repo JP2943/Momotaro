@@ -26,7 +26,7 @@ namespace Momotaro.Gameplay.Encounter
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class AreaEncounterRunner : MonoBehaviour,
-        IPlayerDefeatListener, IAreaEncounterActivitySource, IAreaEncounterState
+        IPlayerDefeatListener, IAreaEncounterActivitySource, IRetreatableEncounterState
     {
         [Header("構成（Data が正本。§8.1）")]
         [Tooltip("この区画の Encounter 定義。ID と EnemyIds の正本。")]
@@ -59,6 +59,13 @@ namespace Momotaro.Gameplay.Encounter
         private IEncounterInterruptSink _injectedInterrupts;
         private Func<AreaRuntimeState> _areaState;
         private Func<int> _respawnCycle;
+        private Func<GameSessionState> _sessionSource;
+
+        [Tooltip("クリアで開通した門を、その場で開ける先（P6A。未配線なら次の入場で記録から復元される）。")]
+        [SerializeField] private AreaRoot _areaRoot;
+
+        [Tooltip("戦闘中のエリア移動（撤退）を許すか（P6A-04。P5 は許さない）。")]
+        [SerializeField] private bool _allowRetreat;
 
         private IAreaEncounterConditions _conditions =>
             _injectedConditions ?? (_conditionsSource != null ? _conditionsSource : null);
@@ -213,11 +220,72 @@ namespace Momotaro.Gameplay.Encounter
         /// Session の世界状態を注入する（P5-03b の初期化担当が呼ぶ）。
         /// 常駐 Session は Scene に serialize できないので、参照ではなく<b>取り出し口</b>を渡す。
         /// </summary>
-        public void BindSession(Func<AreaRuntimeState> areaState, Func<int> respawnCycle)
+        public void BindSession(Func<AreaRuntimeState> areaState, Func<int> respawnCycle,
+            Func<GameSessionState> session = null)
         {
             _areaState = areaState ?? _areaState;
             _respawnCycle = respawnCycle ?? _respawnCycle;
+            _sessionSource = session ?? _sessionSource;
         }
+
+        /// <summary>この遭遇戦が生成する敵の攻撃力の倍率（campaign のテスト専用の調整。P6A）。</summary>
+        public void SetEnemyAttackPowerScale(float scale)
+        {
+            if (_spawnerSource != null)
+            {
+                _spawnerSource.SetEnemyAttackPowerScale(scale);
+            }
+        }
+
+        /// <summary>クリアで開通した門の所在（P6A。Builder が配線する）。</summary>
+        public void BindAreaRoot(AreaRoot areaRoot)
+        {
+            if (areaRoot != null)
+            {
+                _areaRoot = areaRoot;
+            }
+        }
+
+        /// <summary>撤退を許すか（P6A-04。Builder が設定する）。</summary>
+        public bool AllowRetreat
+        {
+            get => _allowRetreat;
+            set => _allowRetreat = value;
+        }
+
+        /// <inheritdoc />
+        public bool AllowsRetreatNow => _allowRetreat && _machine.State == AreaEncounterState.Playing;
+
+        /// <summary>撤退・中断で挑戦を捨てた回数（診断・テスト用）。</summary>
+        public int AbandonedCount { get; private set; }
+
+        /// <summary>
+        /// 挑戦途中の遭遇戦を捨てて、次回は最初の Wave から（P6A-04。コアループの表「挑戦途中の遭遇戦」）。
+        ///
+        /// <b>呼ぶのはエリア退出が成功したあと</b>（再入場の準備）——移動に失敗したら元の挑戦を続ける（仕様 §4）。
+        /// 生成物・境界を片付け、戦闘セッションを Preparing へ戻す。撃破済みの徳は取り消さない。
+        /// <b>撤去する敵の Disable を撃破として報酬化しない</b>——登録を外してから破棄する。クリア済みは戻さない。
+        /// </summary>
+        /// <returns>捨てたら true。</returns>
+        public bool AbandonChallenge()
+        {
+            if (_machine.State == AreaEncounterState.Dormant || _machine.State == AreaEncounterState.Cleared)
+            {
+                return false;
+            }
+
+            _victoryPending = false;
+            _defeatPending = false;
+            ReleaseRuntime();
+            _session?.ResetForRetry();
+            _machine.AbandonToDormant();
+            ResultMessage = string.Empty;
+            AbandonedCount++;
+            return true;
+        }
+
+        /// <summary>直近のクリア確定の結果（P6A。診断・テスト用）。</summary>
+        public EncounterClearCommit LastClearCommit { get; private set; }
 
         /// <summary>主人公の生存の供給元を配線する（Scene 構築）。</summary>
         public void BindPlayerVitals(PlayerVitalsHolder vitals)
@@ -428,9 +496,38 @@ namespace Momotaro.Gameplay.Encounter
 
             _session.ToVictory();
 
-            // ---- 手順 4：この再出現周期にクリアを記録する ----
+            // ---- 手順 4：クリアを記録する ----
+            //
+            // <b>P6A：記録・初回ボーナス・開通を 1 つの更新として確定する</b>（P6 仕様 §4）。
+            // クリアだけ保存してボーナスを失う状態、ボーナスだけ保存して再取得できる状態を作らない。
+            // Session が無い構成（単体テスト・旧配線）は従来どおり記録だけ。
             AreaRuntimeState area = _areaState?.Invoke();
-            if (area != null && area.TryMarkEncounterCleared(_plan.EncounterId, CurrentRespawnCycle()))
+            GameSessionState session = _sessionSource?.Invoke();
+            if (area != null && session != null)
+            {
+                EncounterClearCommit commit = session.CommitEncounterClear(
+                    area.AreaId, _plan.EncounterId,
+                    Momotaro.Gameplay.Progression.RewardSnapshot.From(_encounter.ClearReward),
+                    _encounter.UnlockFlagId);
+                LastClearCommit = commit;
+                if (commit.Recorded)
+                {
+                    ClearedCount++;
+
+                    // ボス指定（P6 の仮ボス）は恒久撃破としても記録する。
+                    if (_encounter.IsBossEncounter)
+                    {
+                        session.TryRecordBossDefeat(area.AreaId, _plan.EncounterId,
+                            Momotaro.Gameplay.Progression.RewardSnapshot.None, out _);
+                    }
+                }
+
+                if (commit.FlagOpened)
+                {
+                    ApplyOpenedDoors(area, _encounter.UnlockFlagId);
+                }
+            }
+            else if (area != null && area.TryMarkEncounterCleared(_plan.EncounterId, CurrentRespawnCycle()))
             {
                 ClearedCount++;
             }
@@ -461,6 +558,28 @@ namespace Momotaro.Gameplay.Encounter
             ReleaseRuntime();
             _machine.MarkDefeated(runId);
             ResultMessage = string.Empty;
+        }
+
+        /// <summary>クリアで開通した門を、その場で開ける（記録は確定済み。失敗は表面化する）。</summary>
+        private void ApplyOpenedDoors(AreaRuntimeState area, StableId flagId)
+        {
+            if (_areaRoot == null)
+            {
+                return; // 次の入場で記録から復元される。
+            }
+
+            foreach (Momotaro.Gameplay.Interaction.AreaFlagDoor door in _areaRoot.Doors)
+            {
+                if (door == null || !door.FlagId.Equals(flagId) || !area.IsOpen(flagId))
+                {
+                    continue;
+                }
+
+                if (!door.TryApplyOpened(out string error))
+                {
+                    GameLog.Error(LogCategory.Scene, "Encounter cleared but the door did not open: " + error);
+                }
+            }
         }
 
         private EncounterStartDecision FailStart(int runId, EncounterStartRejection rejection, string detail)
@@ -498,7 +617,11 @@ namespace Momotaro.Gameplay.Encounter
                 return false;
             }
 
-            if (_encounter.IsBossEncounter)
+            // P5 は Boss 指定を扱わない（§8.1）。P6 の恒久規則の campaign だけ、既存敵による仮ボスを許す（P6 仕様 §11）。
+            AreaRuntimeState record = _areaState?.Invoke();
+            bool permanent = record != null
+                && record.EncounterPolicy == Momotaro.Data.World.EncounterClearPolicy.Permanent;
+            if (_encounter.IsBossEncounter && !permanent)
             {
                 error = "P5 は Boss 指定の Encounter を扱いません（§8.1）。";
                 return false;

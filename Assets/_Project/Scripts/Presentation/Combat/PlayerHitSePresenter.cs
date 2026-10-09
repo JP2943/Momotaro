@@ -64,10 +64,10 @@ namespace Momotaro.Presentation.Combat
             }
         }
 
-        /// <summary>Scene 内の <see cref="CombatFeedbackDispatcher"/> を探して購読し直す。</summary>
+        /// <summary>Scene 内の <see cref="CombatFeedbackDispatcher"/> を探して購読し直す（同じ Scene のものを優先。F06）。</summary>
         public void Rescan()
         {
-            CombatFeedbackDispatcher dispatcher = FindFirstObjectByType<CombatFeedbackDispatcher>();
+            CombatFeedbackDispatcher dispatcher = SceneLocalLookup.FindPreferSameScene<CombatFeedbackDispatcher>(this);
             Bind(dispatcher != null ? dispatcher.Feedback : null);
         }
 
