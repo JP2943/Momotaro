@@ -536,7 +536,22 @@ namespace Momotaro.Infrastructure.World
             InputSystem.QueueStateEvent(_keyboard, new KeyboardState());
             if (transitions.HasTerminalFailure || transitions.SlideCommittedCount < expected)
             {
-                Fail("slide through " + exitId.Value + " failed: " + transitions.TerminalFailureReason);
+                string where = "?";
+                if (ActivePlayer(out PlayerRoot now, out _))
+                {
+                    var state = now.GetComponentInChildren<PlayerStateController>();
+                    where = "player=" + now.transform.position.ToString("F2") + " gate=" + gate.transform.position.ToString("F2")
+                        + " state=" + (state != null ? state.Current.ToString() : "?");
+                }
+
+                Fail("slide through " + exitId.Value + " failed: " + transitions.TerminalFailureReason + " [" + where
+                    + " inside=" + gate.PlayerInside + " sliding=" + transitions.Slide.IsTransitioning
+                    + " unsettled=" + transitions.IsTransitionUnsettled
+                    + " mode=" + (Momotaro.Gameplay.Modes.GameModeProvider.Current != null
+                        ? Momotaro.Gameplay.Modes.GameModeProvider.Current.Current.ToString() : "null")
+                    + " frozen=" + GameplayClockProvider.IsFrozen + " holds=" + GameplayClockProvider.HoldCount
+                    + " dialogueOpen=" + BootstrapServices.Get<CampaignDialogueService>().IsOpen
+                    + " menu=" + Saves.IsMenuOpen + " slides=" + transitions.SlideCommittedCount + "/" + expected + "]");
                 yield break;
             }
 
