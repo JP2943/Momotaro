@@ -1,0 +1,708 @@
+{
+    "id": "qp4",
+    "mode": "PlayMode",
+    "filter": "(BootstrapRootTests|CombatTrialReloadPlayTests|CompanionActivityGatePlayTests|CompanionActivityStopPlayTests|CompanionAggroReproPlayTests|CompanionCombatIntegrationPlayTests|CompanionFeedbackLifecyclePlayTests|CompanionFollowPlayTests|CompanionTrialScenePlayTests|EnemyChargePlayTests|EnemyDangerSensePlayTests|EnemyDangerUnblockablePlayTests|EnemyDiagnosticsPlayTests|EnemyFloorTraversalPlayTests|EnemyGroundingPlayTests|EnemyMeleeHitPathPlayTests|EnemyProjectilePlayTests|EnemyProjectilePlayerCombatTests|EnemyTestFieldPlayTests|P5ExplorationPlayTests|PlayerStepCollisionTests|PlayerVitalsSmokeTests|ReactionMotorPlayTests|RewardGrantPlayTests|SceneFlowManagerTests|VsFieldSmokeTests)",
+    "startedAt": "2026-10-09T01:02:30.4934877Z",
+    "finishedAt": "2026-10-09T01:05:46.0763538Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 115,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.BootstrapRootTests.DuplicateBootstrapRoot_IsDestroyed_OnlyOneRemains",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.BootstrapRootTests.FirstBootstrapRoot_BecomesInstance_AndSucceeds",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CombatTrialReloadPlayTests.Reload_Reinitializes_And_SurvivesRepeatedRetries",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionActivityGatePlayTests.Dialogue_CancelsAttackAndDoesNotResumeOldActive",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionActivityGatePlayTests.PauseAtTimeScaleOne_StopsBodyAndClocks",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionActivityGatePlayTests.Resume_KeepsSwingAndDoesNotHitAgain",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionActivityStopPlayTests.ContextDestroyedWhileRunning_StopsInPlace",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionActivityStopPlayTests.WiredScene_RunsUnderTheContext",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionActivityStopPlayTests.WithoutContext_RuntimeStaysStopped",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionAggroReproPlayTests.AfterTheCompanionOpens_AFightingPlayerTakesAggroBack_BeforeTheEnemyDies",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionAggroReproPlayTests.OnlyCompanionAttacks_EnemyTurnsOnTheCompanion_AndFightsBack",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionAggroReproPlayTests.RetreatingPlayer_EnemyKeepsChasingHim_AndStillFightsBack",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionCombatIntegrationPlayTests.Companion_AcquiresRegisteredEnemy_WithoutManualRegistration",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionCombatIntegrationPlayTests.Companion_DamagesEnemy_ThroughUpdateAndPhysics",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionCombatIntegrationPlayTests.Companion_IsFoundAsDamageableByPhysicsQuery",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionCombatIntegrationPlayTests.DestroyedCompanion_LeavesNoRegistryResidue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionCombatIntegrationPlayTests.Enemy_ShiftsTargetToCompanion_WhenOnlyCompanionAttacks",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionFeedbackLifecyclePlayTests.DestroyedCompanion_LeavesNoRegistryResidue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionFeedbackLifecyclePlayTests.DisabledCompanion_StopsReachingFeedback",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionFeedbackLifecyclePlayTests.EnabledCompanion_FirstHitReachesFeedbackOnce",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionFollowPlayTests.AwayCompanion_DoesNotMove",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionFollowPlayTests.Companion_ClosesDistanceToFormationSlot",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionFollowPlayTests.Companion_WarpsBackWhenLeftBehind",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionFollowPlayTests.DestroyedCompanion_DoesNotThrow",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionFollowPlayTests.DisabledCompanion_KeepsNoVelocity",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.DownedCompanion_InvestigatesByProxy_WithoutHealing_AndRestoresDisplayOwnership",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.FourWaves_Victory94_Retry_ReturnsToFreeExploration_WithoutResidue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.Load_StartsInFreeExploration_WithoutEnemies_AndShowsPrompts",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.RealCombat_WithRealEnemyHitboxes_NoDuplicateDamagePerHit_NoIllegalTransitions",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.RealKeyE_OnePressOneRequest_AndTheRealCompanionCompletesTheInvestigation",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.RealKeyEnter_DuringInvestigation_StartsCombat_AndReleasesTheInvestigation",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.RealSceneOverlap_BothArrivalOrders_MatchTheAgreedGuardianContract",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.RealWall_RejectsBeforeAcceptance_AndInterruptsAfterAcceptance_WithoutPassingThrough",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.CompanionTrialScenePlayTests.Reload3Times_KeepsSingletons_AndLeavesNoResidue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyChargePlayTests.Charge_MovesForward_WhenNoObstacle",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyChargePlayTests.Charge_StopsAtWall_NoPenetration",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyDangerSensePlayTests.Sense_DetectsAttackingPlayer_Within_NotIdle_NotFar",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyDangerUnblockablePlayTests.BothAbilities_EvadeOnUnblockable_GuardOnBlockable",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyDangerUnblockablePlayTests.DangerSense_ReadsUnblockable_FromAttackContract",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyDiagnosticsPlayTests.Diagnostics_NoException_OnActorDestroy_AndOffCamera",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyFloorTraversalPlayTests.Enemy_BlockedByWall_SetsIsBlocked",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyFloorTraversalPlayTests.Enemy_ChasesAcrossFloor_MaintainsYZero_NotBlocked",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyGroundingPlayTests.GroundLevelHitbox_CatchesMovingEnemy",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyGroundingPlayTests.Motor_AppliesGroundedConstraints_OnAwake",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyGroundingPlayTests.Y_StaysGrounded_DespiteUpwardVelocityAndDepenetration",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyMeleeHitPathPlayTests.FlinchAccumulation_ReachesStagger",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyMeleeHitPathPlayTests.PlayerHitboxOverlap_ResolvesEnemyDamageable",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyMeleeHitPathPlayTests.RealLifecycle_HpDown_PoiseStun_ThenDown_StateHolds",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyProjectilePlayerCombatTests.Projectile_Guard_ResultsInGuard_NoHpLoss",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyProjectilePlayerCombatTests.Projectile_JustGuard_NoHpDamage_ReturnsOwnerPoise",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyProjectilePlayerCombatTests.Projectile_NormalHit_DamagesPlayerHp",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyProjectilePlayerCombatTests.Projectile_StepInvincible_NoDamage_AndConsumed",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyProjectilePlayTests.FastProjectile_DoesNotTunnelThinWall",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyProjectilePlayTests.FastProjectile_PassesEnemy_HitsPlayerBehind",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyProjectilePlayTests.Projectile_DestroyedByWall",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyProjectilePlayTests.Projectile_DoesNotAdvance_WhilePaused",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyProjectilePlayTests.Projectile_ExpiresByLifetime",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyProjectilePlayTests.Projectile_HitsHostile_OnceThenDestroyed_CarriesJgReturnAndAttacker",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyProjectilePlayTests.Projectile_OwnerDestroyed_NoException_AttackerNull",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyProjectilePlayTests.Projectile_PassesThroughEnemyFaction",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.EnemyTestFieldPlayTests.Formations_SceneWideCounts_NoResidual_NoException",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.AreaRoundTrip_PreservesProgressVitalsAndDownTimers",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ArrivalAfterAbandonedTransition_DoesNotSelfActivate",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ArrivalFacing_AppliesEntryDefinitionToThePlayerToo",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ArrivalInitializationFailure_DoesNotCompleteRespawn",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ArrivalRunnerUnavailable_ResidentHostShowsAndRetriesRespawn",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ArrivalSceneFailsToInitialize_RespawnInputStillRetriesToCompletion",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.BootstrapAndDirectOpen_CreateOneReadySession",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.CameraTransition_PreservesBoundsAndShakeBase",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.CompletionCallback_CanRequestTravelWithoutOldRunCorruption",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.DeathAfterOneKill_PreservesVirtueAndReopensNormalEncounter",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.DelayedDestination_IsNeverActivatedBeforeRecovery",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.DirectOpenAreaA_WaitsForLateBootstrap",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.DirectOpenAreaB_WaitsForLateBootstrap",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.EncounterFeedback_IsConnectedBeforeTheFirstHit",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.ExplorationRoute_LeverOpensGateAndDoorTravelsBack",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.FirstRewardAfterLoad_ReachesInjectedStateAndHud",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.FrozenDuringTransition_PlayerDoesNotSlide",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.FullRoute_InvestigateOpenTravelFightAndReturn",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.GateOpened_MakesTheGatedRouteTraversable",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.HeldExitInput_DoesNotBounceBackOrStartEncounter",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.InvalidDestination_RecoversWithoutLosingSession",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.KeyboardAndGamepadInteract_ActOnceWithoutStep",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.MovementStepAndHitback_RespectWallsAndWaterBoundary",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.NavMeshFollow_DetoursAndUpdatesAfterDoorOpens",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.NewGameAndLegacyTrial_UseCorrectProgressScope",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.PauseAndLoading_StopActorsAndResumeWithoutResidue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.PauseAndLoadingRejectNewOperationsAndStaleInput",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RebuiltScenes_RunWithoutManualWiring",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RecoveryLoadThatNeverCompletes_FailsWithReasonAndOffersLauncherReturn",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RegistryTeardown_LeavesZeroWithoutClearingBeforeAssertion",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RepeatedTravelAndRespawn_LeaveOneOwnerAndNoOldColliders",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnArrivalNeverPrepares_ReturnsToRespawnScreen_NotRecovery",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnLoadFailure_ReturnsToRetryableRespawn_NotTerminalError",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnSubmit_DoesNotBecomeArrivalInteract",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnSubmitOwnership_HoldsInEitherUpdateOrder",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnSubmitOwnership_HoldsWhenResidentRunsFirst",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnSubmitOwnership_ResidentStaysOutWhenSceneIsHealthy",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.RespawnSubmitOwnership_TakesOverWhenSceneAcceptorIsDisabled",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.SameFramePlayerDeath_WinsOverClearInRealUpdateOrder",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.SpawnAndCombatCleanup_LeaveNoProjectileOrBoundary",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.TimedOutLoad_RecoversToOriginWithoutActivatingDestination",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.TravelWhileCompanionActing_ArrivesAsFollow",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.TrialLauncher_EntersFirstAreaAfterLateBootstrap",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P5ExplorationPlayTests.WalkingIntoTheExitAndHoldingEast_TravelsToB_ThroughTriggerAndRealInput",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.PlayerStepCollisionTests.Enemy_StopsAtWall",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.PlayerStepCollisionTests.Player_PassesThroughEnemy",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.PlayerStepCollisionTests.Player_StopsAtWall",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.PlayerVitalsSmokeTests.VsField_PlayerVitals_StartFull_AndDoNotMutateAsset",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.ReactionMotorPlayTests.Hitback_MovesXZ_KeepsY_ThenStops",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.RewardGrantPlayTests.Defeat_GrantsVirtue_ThroughRuntimeLifecycle",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.RewardGrantPlayTests.DestroyedCollector_LeavesNoSubscription",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.RewardGrantPlayTests.MissingReward_DoesNotThrow",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.SceneFlowManagerTests.LoadScene_WhileTransitioning_RejectsSecondRequest",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.VsFieldSmokeTests.VsField_HasPlayer_Camera_AndInputAvailable",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

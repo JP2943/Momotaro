@@ -1,0 +1,132 @@
+{
+    "id": "em1",
+    "mode": "EditMode",
+    "filter": "(P6CJustEvadeTests|PlayerEvadeTests)",
+    "startedAt": "2026-10-09T00:43:52.3177717Z",
+    "finishedAt": "2026-10-09T00:43:58.0164324Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "failed",
+    "termination": "completed",
+    "rootResultState": "Failed(Child)",
+    "expected": 0,
+    "passed": 9,
+    "failed": 10,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Boundaries_ConsistentAcrossDeltaTimes",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "0.05：無敵開始（含む）：攻撃者へ体幹反射しない。\r\n  Expected: 0\r\n  But was:  1\n  at Momotaro.Tests.EditMode.P6CJustEvadeTests.Boundaries_ConsistentAcrossDeltaTimes () [0x0031f] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\EditMode\\P6CJustEvadeTests.cs:158"
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Clear_OnAreaEntryAndRespawnReset",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "入場（通常移動・旅立ち）で消す。\r\n  Expected: False\r\n  But was:  True\n  at Momotaro.Tests.EditMode.P6CJustEvadeTests.Clear_OnAreaEntryAndRespawnReset () [0x0001c] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\EditMode\\P6CJustEvadeTests.cs:651"
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Consume_OnAcceptedStart_RejectedKeeps_NoRefund_LateHitKeepsBoost",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "段の開始で消費。\r\n  Expected: 1\r\n  But was:  0\n  at Momotaro.Tests.EditMode.P6CJustEvadeTests.Consume_OnAcceptedStart_RejectedKeeps_NoRefund_LateHitKeepsBoost () [0x00177] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\EditMode\\P6CJustEvadeTests.cs:425"
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Counter_OnePointFive_TwoSeconds_NoStack_OnlyNextNormalStage",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "段の開始で消費。\r\n  Expected: 1\r\n  But was:  0\n  at Momotaro.Tests.EditMode.P6CJustEvadeTests.Counter_OnePointFive_TwoSeconds_NoStack_OnlyNextNormalStage () [0x00318] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\EditMode\\P6CJustEvadeTests.cs:367"
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Damage_ProductWithGrowth_DefenseStunRounding_PoiseFlinchUnaffected",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "10 × 1.2 × 1.5 ＝ 18（両補正の積 1.80）。\r\n  Expected: 18.0d +/- 9.9999997473787516E-05d\r\n  But was:  12.000000953674316d\n  at Momotaro.Tests.EditMode.P6CJustEvadeTests.Damage_ProductWithGrowth_DefenseStunRounding_PoiseFlinchUnaffected () [0x0014d] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\EditMode\\P6CJustEvadeTests.cs:517"
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Data_ShippedValues_AndValidatorBounds",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.DefenseFlags_PreservedThroughSnapshotAndHitFactory",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Kibidango_NoStepOrGuardDuringUse_HitInterrupts_CounterUntouched_GrowthKept",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.MultiHitMultiEnemyProjectile_OnlyIFramesAvoid_NoFreeInvalidation",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "体幹反射なし。\r\n  Expected: 0\r\n  But was:  1\n  at Momotaro.Tests.EditMode.P6CJustEvadeTests.MultiHitMultiEnemyProjectile_OnlyIFramesAvoid_NoFreeInvalidation () [0x00184] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\EditMode\\P6CJustEvadeTests.cs:296"
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.NoReward_NotStepping_NonEnemy_NotSteppable_PostHitInvincibleOnly_AndClockStops",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "無敵で避けるが通常回避。\r\n  Expected: Evade\r\n  But was:  JustEvade\n  at Momotaro.Tests.EditMode.P6CJustEvadeTests.NoReward_NotStepping_NonEnemy_NotSteppable_PostHitInvincibleOnly_AndClockStops () [0x000fb] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\EditMode\\P6CJustEvadeTests.cs:181"
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.OncePerStep_NoDuplicateFromSameHitCollidersFramesOrReentry",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.OneStage_AllTargetsBoosted_NextStageAndReusedHitboxNormal",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "Expected: 15.0d +/- 9.9999997473787516E-05d\r\n  But was:  10.0d\n  at Momotaro.Tests.EditMode.P6CJustEvadeTests.OneStage_AllTargetsBoosted_NextStageAndReusedHitboxNormal () [0x0011c] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\EditMode\\P6CJustEvadeTests.cs:474"
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Priority_NoGuardianTransfer_NoDoubleReaction_DeathClearsSameFrame",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P6CJustEvadeTests.Unblockable_NormalGuardFails_JustGuardSucceeds_ExistingConditionsKept",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.Invincible_ButOutsideJustWindow_IsPlainEvade_NoCounter",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.Invincible_EvadesHit_NoHpNoStamina",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.JustEvade_NonEnemyContact_IsPlainEvade",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "Expected: Evade\r\n  But was:  JustEvade\n  at Momotaro.Tests.EditMode.PlayerEvadeTests.JustEvade_NonEnemyContact_IsPlainEvade () [0x0002f] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\EditMode\\PlayerEvadeTests.cs:202"
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.JustEvade_Window_NoReflectNoFlinch_NotifiesOnce_AndPublishesJustEvade",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "P6C：攻撃者へ体幹反射しない。\r\n  Expected: 0\r\n  But was:  1\n  at Momotaro.Tests.EditMode.PlayerEvadeTests.JustEvade_Window_NoReflectNoFlinch_NotifiesOnce_AndPublishesJustEvade () [0x000eb] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\EditMode\\PlayerEvadeTests.cs:191"
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.PlayerEvadeTests.NotInvincible_TakesDamage",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

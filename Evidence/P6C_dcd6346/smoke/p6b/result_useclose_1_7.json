@@ -1,0 +1,19 @@
+{
+  "mode": "useclose",
+  "platform": "WindowsPlayer",
+  "unity": "6000.3.20f1",
+  "isEditor": "false",
+  "processId": "17400",
+  "device": "X570-PG4 (MouseComputer Co.,Ltd.) / AMD Ryzen 7 3700X 8-Core Processor  / NVIDIA GeForce RTX 3060 Ti",
+  "slowIoMs": "0",
+  "titlePrewarmDone": "true",
+  "quitAtElapsed": "1.7",
+  "quitCommitted": "true",
+  "adventureId": "d93a89a23e19473eb66ddad59745b30a",
+  "kibidango": "2",
+  "area": "area_p6b_a",
+  "beforePlayerHp": "90",
+  "beforeCompanionDown": "false",
+  "beforeCompanionRecovery": "0",
+  "closeRequested": "true"
+}
