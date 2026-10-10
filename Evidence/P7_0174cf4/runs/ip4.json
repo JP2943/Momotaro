@@ -1,0 +1,24 @@
+{
+    "id": "ip4",
+    "mode": "PlayMode",
+    "filter": "P7WorldPlayTests.Dialogue_MouseClicksWhile",
+    "startedAt": "2026-10-10T11:22:39.0832542Z",
+    "finishedAt": "2026-10-10T11:22:53.3943465Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "failed",
+    "termination": "completed",
+    "rootResultState": "Failed(Child)",
+    "expected": 0,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_MouseClicksWhileExitSavePendingOrFailed_ChangeNothing_ThenBackToGameAndClose",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "保存待ちに AcceptQuest をクリック：会話は閉じない。\r\n  Expected: True\r\n  But was:  False\n  at Momotaro.Tests.PlayMode.P7WorldPlayTests+<>c__DisplayClass40_1.<Dialogue_MouseClicksWhileExitSavePendingOrFailed_ChangeNothing_ThenBackToGameAndClose>g__AssertUnchanged|3 (System.String label) [0x00001] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\PlayMode\\P7WorldPlayTests.cs:1023"
+        }
+    ]
+}

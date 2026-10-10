@@ -1,0 +1,78 @@
+{
+    "id": "rp17",
+    "mode": "PlayMode",
+    "filter": "P7WorldPlayTests",
+    "startedAt": "2026-10-10T11:23:47.9915255Z",
+    "finishedAt": "2026-10-10T11:24:49.4268770Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Chapter_RealBossKill_ClearsOnceWithRights_NoReviveAfterContinue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Chapter_SimultaneousDeath_KeepsClear_NoticeAfterRespawn",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_FreezesPlayerCompanionAndCounter_AndRespectsExitPause",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_MouseClicks_EveryChoiceKind_AppliesOnce_NoGuiError",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_MouseClicksWhileExitSavePendingOrFailed_ChangeNothing_ThenBackToGameAndClose",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_QuitMidDecision_ContinueIsNeutral_NoPendingAction",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_RealKeys_ReadAllChooseAndClose_NoSkipNoLeak",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_RefusedWhileBusyOrHitSameFrame_AndNotCarriedOver",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Quest_AcceptReachReportOnce_GrowWithReward_SurvivesContinue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Quest_PreAcceptCompletion_GateEvent_HardRoute_Discovery_SurvivesContinue",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

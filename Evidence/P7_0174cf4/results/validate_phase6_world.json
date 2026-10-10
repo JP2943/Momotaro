@@ -1,0 +1,18 @@
+{
+    "id": "w_validate_phase6_world",
+    "command": "run-op",
+    "status": "ok",
+    "message": "P6A 検証ワールドの検査を通りました（警告 1 件）。",
+    "startedAt": "2026-10-10T12:07:48.8465357Z",
+    "finishedAt": "2026-10-10T12:07:51.3809927Z",
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "expected": 0,
+    "termination": "",
+    "runLogPath": "",
+    "details": [
+        "[警告] 遭遇戦がありません（この Area に置かない構成なら想定どおり）。"
+    ]
+}

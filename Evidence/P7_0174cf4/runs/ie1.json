@@ -1,0 +1,66 @@
+{
+    "id": "ie1",
+    "mode": "EditMode",
+    "filter": "P7SaveTests",
+    "startedAt": "2026-10-10T11:17:51.9489639Z",
+    "finishedAt": "2026-10-10T11:17:57.9611276Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "failed",
+    "termination": "completed",
+    "rootResultState": "Failed(Child)",
+    "expected": 0,
+    "passed": 7,
+    "failed": 1,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Chapter_BossVictory_CommitsClearBossChapterAndRightsInOneUpdate",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Chapter_RightsAtCap_AddZero_ButMarkProcessed_AndNeverRegrantAfterUseAndReload",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Report_WriteFailure_KeepsRuntime_RetrySavesLatestWithoutRegrant",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Save_ChapterBossEncounterClearedAlone_IsRejected_NotRepaired",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "章ボスの遭遇戦のクリアだけ を拒否する。\r\n  Expected: False\r\n  But was:  True\n  at Momotaro.Tests.EditMode.P7SaveTests.AssertInvalid (Momotaro.Gameplay.Save.SaveSnapshot snap, System.String label) [0x00007] in C:\\Users\\naked\\Momotaro\\Assets\\_Project\\Tests\\EditMode\\P7SaveTests.cs:396"
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Save_RejectsInvalidStoryData",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Save_V3_MigratesToEmptyStory_AndStoryFieldInV3IsRejected",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Save_V4_RoundTripsNonInitialStoryValues",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.EditMode.P7SaveTests.UpdatesDuringWrite_AreSavedAfterwards_WithoutDuplication",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

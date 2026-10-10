@@ -1,0 +1,30 @@
+{
+    "id": "rp16",
+    "mode": "PlayMode",
+    "filter": "P7WorldPlayTests.Dialogue_Mouse",
+    "startedAt": "2026-10-10T11:15:36.7702943Z",
+    "finishedAt": "2026-10-10T11:15:55.3951682Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "ok",
+    "termination": "completed",
+    "rootResultState": "Passed",
+    "expected": 0,
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_MouseClicks_EveryChoiceKind_AppliesOnce_NoGuiError",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        },
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_MouseClicksWhileExitSavePendingOrFailed_ChangeNothing_ThenBackToGameAndClose",
+            "status": "Passed",
+            "resultState": "Passed",
+            "message": ""
+        }
+    ]
+}

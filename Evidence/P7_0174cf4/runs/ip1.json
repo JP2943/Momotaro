@@ -1,0 +1,24 @@
+{
+    "id": "ip1",
+    "mode": "PlayMode",
+    "filter": "P7WorldPlayTests.Dialogue_MouseClicks_Every",
+    "startedAt": "2026-10-10T11:18:04.9218488Z",
+    "finishedAt": "2026-10-10T11:18:16.6711960Z",
+    "unityVersion": "6000.3.20f1",
+    "status": "failed",
+    "termination": "completed",
+    "rootResultState": "Failed(Child)",
+    "expected": 0,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "inconclusive": 0,
+    "leaves": [
+        {
+            "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_MouseClicks_EveryChoiceKind_AppliesOnce_NoGuiError",
+            "status": "Failed",
+            "resultState": "Failed",
+            "message": "Unhandled log message: '[Error] GUI Error: You are pushing more GUIClips than you are popping. Make sure they are balanced.'. Use UnityEngine.TestTools.LogAssert.Expect\n  UnityEngine.GUIUtility:ProcessEvent (int,intptr,bool&)"
+        }
+    ]
+}

@@ -38,7 +38,7 @@
 | 依頼の状態（**P7**） | 上の「クエストの段階」を P7 の依頼に使う：0＝未受注、1＝受注済み、2＝報酬受領済み（「進行中」「報告可能」は受注済み＋条件の成立から**導出して保存しない**） | QuestId（P7 の依頼定義） | 0 | 受注の確定（0→1）・報告の確定（1→2。依頼報酬の GrantOnce と同じ更新）。断りは変えない | 同上。P7 の依頼は 0〜2、段階 2 ⇔ 依頼報酬 ID が付与済み（矛盾は Load 拒否） | RoundTrip／Validator／P7 02 |
 | 完了した必須イベント（**P7**） | `GameSessionState` のイベント集合 | EventId（P7 の既知イベント） | 空 | 会話の最後の決定（1 回だけ。開通する門の FlagId を同じ更新で記録） | 同上。未知 ID・重複は拒否。イベント完了 ⇔ 対応する開通の一致を検証。版 1〜3 は空 | RoundTrip／Validator／P7 03 |
 | 経路の記録（**P7**） | `GameSessionState` の章ごとの経路記録 | ChapterId ＋ 経路（標準／困難） | 未記録 | 通常の移動の到着確定（到着した Area と入口 ID）。FT・死亡再開・復旧・Load では更新しない | 同上。未知の章・経路値は拒否。版 1〜3 は未記録 | RoundTrip／P7 03 |
-| 章クリア（**P7**） | `GameSessionState` の章クリア記録（章 ID → クリア時の経路） | ChapterId（ボスの定義がある章） | 空 | 章ボスの遭遇戦の勝利（クリア・ボス撃破・権利追加と同じ更新） | 同上。章クリア ⇒ 処理済み章とボス撃破があることを検証。版 1〜3 は空 | RoundTrip／Validator／P7 04 |
+| 章クリア（**P7**） | `GameSessionState` の章クリア記録（章 ID → クリア時の経路） | ChapterId（ボスの定義がある章） | 空 | 章ボスの遭遇戦の勝利（クリア・ボス撃破・権利追加と同じ更新） | 同上。章クリア ⇒ 処理済み章。章ボスについて章クリア ⇔ ボス撃破 ⇔ 遭遇戦クリア（双方向。片方だけ・遭遇戦のクリアだけは拒否し補正しない。レビュー 8d78416 R3）。版 1〜3 は空 | RoundTrip／Validator／P7 04 |
 | 普通敵の復活周期 | `GameSessionState.RespawnCycle` | — | 0 | 休息・成長・死亡・旅立ちの成功（各 1 回） | 同上 | RoundTrip |
 | 調査済み地点 | `AreaRuntimeState` の調査記録 | 調査点 StableId（Area ごと） | 空 | 調査完了 | 同上。到着時に Holder へ Bind | RoundTrip |
 | 開通済みの仕掛け | `AreaRuntimeState` の FlagId 集合 | FlagId（Area ごと） | 空 | レバー・遭遇戦クリアの開通 | 同上。到着時に門へ `TryApplyOpened` | RoundTrip |
