@@ -144,6 +144,13 @@ namespace Momotaro.Infrastructure.World
         public static float VirtualHeight => Screen.height / UiScale;
 
         /// <summary>
+        /// テスト用：設定している間の描画で、この番号のボタンがクリックされたことにする（null なら無効。テストはマウス離しの GUI イベントの 1 回だけ設定する）。
+        /// 無効なボタン（<c>GUI.enabled</c> が false）には効かない。Editor の再生中は、ゲームの IMGUI のマウス位置が OS のカーソル位置から取られ、
+        /// 外からマウスのイベントを入れられないため、ボタンの当たり判定だけをこの口で置き換える（OnGUI・押された後の処理は実物のまま）。
+        /// </summary>
+        public static System.Func<int, bool> TestPressOverride;
+
+        /// <summary>
         /// 選択肢を 1 つ描く（選択中は印を付けて色を変える）。マウスで押されたら true。
         /// </summary>
         public bool DrawItem(int index, string label, bool enabled = true, float height = 30f)
@@ -158,6 +165,11 @@ namespace Momotaro.Infrastructure.World
             bool wasEnabled = GUI.enabled;
             GUI.enabled = wasEnabled && enabled;
             bool clicked = GUILayout.Button((selected ? "▶ " : "　") + label, GUILayout.Height(height));
+            if (!clicked && TestPressOverride != null && GUI.enabled && TestPressOverride(index))
+            {
+                clicked = true; // 押せる（有効な）ボタンだけ。
+            }
+
             GUI.enabled = wasEnabled;
             GUI.backgroundColor = previous;
             if (clicked)

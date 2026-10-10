@@ -164,6 +164,52 @@ namespace Momotaro.Tests.EditMode
             AssertInvalid(With(ok, hasStory: false), "story の無い保存に値がある");
         }
 
+        /// <summary>
+        /// P7 16（レビュー 8d78416 R3）：章ボスについて「章クリア ⇔ ボス撃破 ⇔ 遭遇戦クリア」を双方向に見る。
+        /// 章ボスの遭遇戦の<b>クリアだけ</b>が残った版 4 の保存（チェックサムは正しく計算し直したもの）は、検査でも候補 Session の構築でも拒否し、
+        /// 章クリアへ補正したり権利を付けたりしない。正常な章クリア・版 3 からの移行（処理済み章だけ）は従来どおり通る。
+        /// </summary>
+        [Test]
+        public void Save_ChapterBossEncounterClearedAlone_IsRejected_NotRepaired()
+        {
+            GameSessionState s = _f.NewSession();
+            _f.Arrive(s, F.Std, F.StdWest);
+            _f.Arrive(s, F.Merge, F.MergeFromStd);
+            _f.Arrive(s, F.BossArea, F.BossWest);
+            SaveSnapshot ok = SaveSnapshot.Capture(s, _f.Campaign, Party());
+            AssertValid(ok, "前提：章ボス前まで進んだ版 4");
+
+            // 遭遇戦のクリアだけ（撃破・章クリアなし）。
+            SaveSnapshot clearOnly = With(ok, areas: WithBossRecords(ok, F.BossArea.Value, F.BossId.Value, cleared: true, defeated: false));
+            AssertInvalid(clearOnly, "章ボスの遭遇戦のクリアだけ");
+
+            // JSON（チェックサムは正しく作り直す）から読んでも、候補 Session を作らない。
+            string json = SaveJsonCodec.Serialize(clearOnly, 1, DateTime.UnixEpoch);
+            Assert.IsTrue(SaveJsonCodec.TryDeserialize(json, out _, out SaveSnapshot read, out string error),
+                "前提：形式・チェックサムは正しい。" + error);
+            Assert.IsFalse(SessionRestorer.TryBuildCandidate(read, _f.Catalog, out GameSessionState candidate, out string why),
+                "遭遇戦のクリアだけの保存から候補 Session を作らない。");
+            Assert.IsNull(candidate, "補正した候補（章クリア・権利付与）を返さない。");
+            StringAssert.Contains(F.BossId.Value, why);
+
+            // 撃破とクリアはあるが章クリアが無い・撃破だけ・クリアと章クリアはあるが撃破が無い、も拒否。
+            AssertInvalid(With(ok, areas: WithBossRecords(ok, F.BossArea.Value, F.BossId.Value, cleared: true, defeated: true)),
+                "撃破とクリアだけ（章クリアなし）");
+            AssertInvalid(With(ok, areas: WithBossRecords(ok, F.BossArea.Value, F.BossId.Value, cleared: false, defeated: true)),
+                "撃破だけ");
+            SaveSnapshot full = SaveSnapshot.Capture(RichStorySession(), _f.Campaign, Party());
+            AssertValid(full, "正常な章クリア");
+            AssertInvalid(With(full, areas: WithBossRecords(full, F.BossArea.Value, F.BossId.Value, cleared: true, defeated: false)),
+                "章クリアとクリアはあるが撃破が無い");
+            AssertInvalid(With(full, areas: WithBossRecords(full, F.BossArea.Value, F.BossId.Value, cleared: false, defeated: true)),
+                "章クリアと撃破はあるがクリアが無い");
+
+            // 正常な章クリアは往復で通る。権利は保存の値のまま（Load で付与しない）。
+            GameSessionState loaded = RoundTrip(RichStorySession());
+            Assert.IsTrue(loaded.Story.IsChapterCleared(F.Chapter));
+            Assert.AreEqual(6, loaded.Progress.RefundRights);
+        }
+
         // ================================================================ 保存単位・失敗と再試行（P7 14）
 
         /// <summary>
@@ -381,6 +427,47 @@ namespace Momotaro.Tests.EditMode
                 list.Add(new AreaSaveRecord(a.AreaId, new List<string>(a.Investigated).ToArray(), flags.ToArray(),
                     new List<string>(a.ClearedEncounters).ToArray(), new List<string>(a.DefeatedBosses).ToArray(),
                     new List<string>(a.PickedPlacements).ToArray(), new List<KeyValuePair<string, int>>(a.FieldDefeats).ToArray()));
+            }
+
+            return list.ToArray();
+        }
+
+        /// <summary>指定 Area の章ボスの遭遇戦クリア・ボス撃破の記録を置き換える（Area の記録が無ければ足す）。</summary>
+        private static AreaSaveRecord[] WithBossRecords(SaveSnapshot s, string areaId, string bossId, bool cleared, bool defeated)
+        {
+            var list = new List<AreaSaveRecord>();
+            bool found = false;
+            foreach (AreaSaveRecord a in s.Areas)
+            {
+                if (a.AreaId != areaId)
+                {
+                    list.Add(a);
+                    continue;
+                }
+
+                found = true;
+                list.Add(new AreaSaveRecord(a.AreaId, new List<string>(a.Investigated).ToArray(), new List<string>(a.OpenedFlags).ToArray(),
+                    Toggle(a.ClearedEncounters, bossId, cleared), Toggle(a.DefeatedBosses, bossId, defeated),
+                    new List<string>(a.PickedPlacements).ToArray(), new List<KeyValuePair<string, int>>(a.FieldDefeats).ToArray()));
+            }
+
+            if (!found)
+            {
+                list.Add(new AreaSaveRecord(areaId, Array.Empty<string>(), Array.Empty<string>(),
+                    cleared ? new[] { bossId } : Array.Empty<string>(), defeated ? new[] { bossId } : Array.Empty<string>(),
+                    Array.Empty<string>(), Array.Empty<KeyValuePair<string, int>>()));
+            }
+
+            return list.ToArray();
+        }
+
+        private static string[] Toggle(IEnumerable<string> source, string value, bool present)
+        {
+            var list = new List<string>(source);
+            list.Remove(value);
+            if (present)
+            {
+                list.Add(value);
             }
 
             return list.ToArray();

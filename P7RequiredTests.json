@@ -1,7 +1,7 @@
 {
   "version": 1,
   "phase": "P7",
-  "note": "P7（会話と依頼と章進行）の必須テスト一覧。P7 仕様 v1.0 §12 の ID（P7 01〜P7 18）を実際の完全修飾テスト名へ対応させる。テストランナーの外で確認する要求（P7 17：Builder 再生成 build-phase7-world と検査 validate-phase7-world、既存必須一覧 P4／P5／P5.5／P6A／P6B／P6C の再照合、既存戦闘音と VFX の配線検査＝validate-phase6c 相当を validate-phase7-world が内包。P7 18：Windows 実ビルドの一連の試遊と別プロセス Continue＝ブリッジ op p7-player-smoke）は requirements に載せず、P7_受入条件対応表.md と P7_統合受入結果.md に証跡を記録する。",
+  "note": "P7（会話と依頼と章進行）の必須テスト一覧。P7 仕様 v1.0 §12 の ID（P7 01〜P7 18）を実際の完全修飾テスト名へ対応させる。テストランナーの外で確認する要求（P7 17：Builder 再生成 build-phase7-world と検査 validate-phase7-world、既存必須一覧 P4／P5／P5.5／P6A／P6B／P6C の再照合、既存戦闘音と VFX の配線検査＝validate-phase6c 相当を validate-phase7-world が内包。P7 18：Windows 実ビルドの一連の試遊と別プロセス Continue＝ブリッジ op p7-player-smoke）は requirements に載せず、P7_受入条件対応表.md と P7_統合受入結果.md に証跡を記録する。 レビュー 8d78416 の R1〜R3 の回帰テスト 3 件を追加（記録 003）。",
   "stages": [
     "P7-01",
     "P7-02",
@@ -420,6 +420,42 @@
       "mode": "PlayMode",
       "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_QuitMidDecision_ContinueIsNeutral_NoPendingAction",
       "requirementIds": [],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P701",
+      "stage": "P7-01",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_MouseClicks_EveryChoiceKind_AppliesOnce_NoGuiError",
+      "requirementIds": [
+        "P703",
+        "P704",
+        "P707",
+        "P710"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P702",
+      "stage": "P7-01",
+      "mode": "PlayMode",
+      "fullName": "Momotaro.Tests.PlayMode.P7WorldPlayTests.Dialogue_MouseClicksWhileExitSavePendingOrFailed_ChangeNothing_ThenBackToGameAndClose",
+      "requirementIds": [
+        "P715"
+      ],
+      "implemented": true,
+      "supportingTests": []
+    },
+    {
+      "requirementId": "P716",
+      "stage": "P7-02",
+      "mode": "EditMode",
+      "fullName": "Momotaro.Tests.EditMode.P7SaveTests.Save_ChapterBossEncounterClearedAlone_IsRejected_NotRepaired",
+      "requirementIds": [
+        "P711"
+      ],
       "implemented": true,
       "supportingTests": []
     }

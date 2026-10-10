@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using Momotaro.Core.Identification;
 using Momotaro.Data.Story;
 using Momotaro.Data.World;
@@ -66,6 +67,7 @@ namespace Momotaro.Tests.PlayMode
 
         private GameObject _bootstrap;
         private Keyboard _keyboard;
+        private GuiClicker _clicker;
         private string _saveDir;
 
         [SetUp]
@@ -103,6 +105,12 @@ namespace Momotaro.Tests.PlayMode
             }
 
             yield return null;
+            if (_clicker != null)
+            {
+                Object.Destroy(_clicker.gameObject);
+                _clicker = null;
+            }
+
             DestroyBootstrap();
             P55ResidentRig.Reset();
             ClearStatics();
@@ -825,6 +833,388 @@ namespace Momotaro.Tests.PlayMode
             Assert.AreEqual(cycle, Session().RespawnCycle, "普通敵を復活させない（周期を進めない）。");
         }
 
+        // ================================================================ レビュー 8d78416 R1・R2：マウスのクリック
+
+        /// <summary>
+        /// レビュー 8d78416 R1（P7 01・03・04・07・10）：会話の選択肢を<b>IMGUI のボタンのクリック</b>（マウス押下・離しの GUI イベント）で選ぶ。
+        /// 閉じる・イベント決定・依頼の話を聞く（画面の差し替え）・今は受けない・受ける・報告して受け取るの全種類で、描画中の例外・GUI のエラーが無く、
+        /// 確定は 1 回だけ（保存要求 1 件）で、閉じたら探索へ戻り停止の保持が外れる。閉じた後の同じ位置のクリックは何もしない。
+        /// </summary>
+        [UnityTest, Timeout(480000)]
+        public IEnumerator Dialogue_MouseClicks_EveryChoiceKind_AppliesOnce_NoGuiError()
+        {
+            yield return NewGame();
+            yield return WaitSaved("New Game");
+            CampaignDialogueService dialogue = Dialogue();
+            GameSessionState session = Session();
+            AddClicker(dialogue);
+
+            // 閉じる：何も変えない。
+            yield return TalkTo(Guide);
+            yield return AdvanceToChoices(dialogue);
+            int closes = dialogue.CloseCount;
+            yield return ClickChoice(dialogue, DialogueChoiceKind.Close, default);
+            Assert.IsFalse(dialogue.IsOpen, "クリックで閉じる。");
+            Assert.AreEqual(closes + 1, dialogue.CloseCount);
+            Assert.IsFalse(session.Story.IsEventCompleted(CliffGateEvent));
+            AssertBackToExploration();
+
+            // 閉じた後に同じ位置をクリックしても何も起きない。
+            int recorded = dialogue.ClickRecordedCount;
+            _clicker.Click(_clicker.LastIndex);
+            yield return WaitUntilOrTimeout(() => !_clicker.Busy, 3f);
+            for (int i = 0; i < 5; i++)
+            {
+                yield return null;
+            }
+            Assert.AreEqual(recorded, dialogue.ClickRecordedCount, "閉じた会話のボタンは押せない。");
+            Assert.IsFalse(dialogue.IsOpen);
+
+            // イベント決定：1 回だけ確定し、門が開く。
+            yield return TalkTo(Guide);
+            yield return AdvanceToChoices(dialogue);
+            int saves = session.Changes.AutosaveRequestCount;
+            yield return ClickChoice(dialogue, DialogueChoiceKind.ConfirmEvent, default);
+            Assert.IsTrue(session.Story.IsEventCompleted(CliffGateEvent), "クリックでイベントを確定。");
+            Assert.IsTrue(FlagDoor(CliffGateFlag).IsOpened);
+            Assert.AreEqual(saves + 1, session.Changes.AutosaveRequestCount, "保存要求は 1 件。");
+            Assert.IsFalse(dialogue.IsOpen);
+            AssertBackToExploration();
+
+            // 依頼の話を聞く（画面の差し替え）→ 今は受けない。
+            yield return TalkTo(Giver);
+            yield return AdvanceToChoices(dialogue);
+            DialogueScreen before = dialogue.Conversation.Current;
+            yield return ClickChoice(dialogue, DialogueChoiceKind.ListenQuest, QuestReach);
+            Assert.IsTrue(dialogue.IsOpen, "依頼の内容の画面へ（閉じない）。");
+            Assert.AreNotSame(before, dialogue.Conversation.Current, "画面が差し替わる。");
+            yield return AdvanceToChoices(dialogue);
+            yield return ClickChoice(dialogue, DialogueChoiceKind.DeclineQuest, default);
+            Assert.IsFalse(dialogue.IsOpen);
+            Assert.AreEqual(0, session.QuestStageOf(QuestReach), "今は受けない＝無変更。");
+            AssertBackToExploration();
+
+            // 受ける：1 回だけ。
+            yield return TalkTo(Giver);
+            yield return AdvanceToChoices(dialogue);
+            yield return ClickChoice(dialogue, DialogueChoiceKind.ListenQuest, QuestReach);
+            yield return AdvanceToChoices(dialogue);
+            saves = session.Changes.AutosaveRequestCount;
+            recorded = dialogue.ClickRecordedCount;
+            yield return ClickChoice(dialogue, DialogueChoiceKind.AcceptQuest, default);
+            Assert.AreEqual(QuestAcceptResult.Accepted, dialogue.LastAcceptResult);
+            Assert.AreEqual(1, session.QuestStageOf(QuestReach));
+            Assert.AreEqual(saves + 1, session.Changes.AutosaveRequestCount, "受注の保存要求は 1 件。");
+            Assert.AreEqual(recorded + 1, dialogue.ClickRecordedCount, "1 回のクリックで 1 回だけ記録。");
+            AssertBackToExploration();
+            yield return WaitSaved("受注");
+
+            // 合流点へ行って戻り、報告して受け取る：30 徳が 1 回だけ。
+            QuietFieldEnemies();
+            yield return SlideTo(ExitAEast, Key.D, Vector3.left, "A→B");
+            yield return SlideTo(ExitBEast, Key.D, Vector3.left, "B→C");
+            yield return InteractShrine(ShrineC);
+            CampaignShrineService shrines = BootstrapServices.Get<CampaignShrineService>();
+            Assert.AreEqual(ShrineMenuResult.FastTravelStarted, shrines.FastTravel(ShrineA), shrines.Message);
+            yield return WaitUntilOrTimeout(() => shrines.FastTravelCompletedCount > 0, 30f);
+            yield return WaitAreaReady(AreaA);
+            int total = session.Progress.TotalVirtue;
+            yield return TalkTo(Giver);
+            yield return AdvanceToChoices(dialogue);
+            saves = session.Changes.AutosaveRequestCount;
+            yield return ClickChoice(dialogue, DialogueChoiceKind.ReportQuest, QuestReach);
+            Assert.AreEqual(QuestReportResult.Reported, dialogue.LastReportResult);
+            Assert.AreEqual(total + 30, session.Progress.TotalVirtue, "30 徳が 1 回だけ。");
+            Assert.AreEqual(saves + 1, session.Changes.AutosaveRequestCount, "報告の保存要求は 1 件。");
+            Assert.IsFalse(dialogue.IsOpen);
+            AssertBackToExploration();
+
+            Assert.IsNull(_clicker.Error, "描画中に例外が出ない。");
+            Assert.Greater(_clicker.Delivered, 6, "前提：クリックを入れた。");
+        }
+
+        /// <summary>
+        /// レビュー 8d78416 R2（P7 02・15）：選択肢を出した会話の最中に終了前の保存が<b>書込中で止まっている間</b>と<b>失敗して選択を待っている間</b>は、
+        /// 会話のボタンをクリックしてもページ・依頼・徳・会話の開閉・停止の保持が変わらない（押下は記録もされず、戻った後に遅れて適用もされない）。
+        /// 「ゲームへ戻る」で会話へ戻り、その後はクリックで受注して閉じ、探索を再開できる。
+        /// </summary>
+        [UnityTest, Timeout(300000)]
+        public IEnumerator Dialogue_MouseClicksWhileExitSavePendingOrFailed_ChangeNothing_ThenBackToGameAndClose()
+        {
+            var fs = new GateFileSystem();
+            try
+            {
+                yield return NewGame(fs);
+                yield return WaitSaved("New Game");
+                CampaignDialogueService dialogue = Dialogue();
+                GameSessionState session = Session();
+                CampaignSaveService saves = Saves();
+                AddClicker(dialogue);
+
+                yield return TalkTo(Giver);
+                yield return AdvanceToChoices(dialogue);
+                yield return ChooseQuest(dialogue, DialogueChoiceKind.ListenQuest, QuestReach);
+                yield return AdvanceToChoices(dialogue);
+                Assert.IsTrue(HasChoice(dialogue, DialogueChoiceKind.AcceptQuest), "前提：受注の決定の直前。");
+                yield return null;
+
+                DialogueScreen screen = dialogue.Conversation.Current;
+                int page = dialogue.Conversation.PageIndex;
+                int virtue = session.Progress.TotalVirtue;
+                int closes = dialogue.CloseCount;
+                int recorded = dialogue.ClickRecordedCount;
+
+                // 1. 終了前の保存の書込を止める（保存待ち）。
+                fs.Block = true;
+                SaveExitOutcome outcome = SaveExitOutcome.TimedOut;
+                bool done = false;
+                saves.StartCoroutine(saves.SaveBeforeExit(o =>
+                {
+                    outcome = o;
+                    done = true;
+                }));
+                yield return WaitUntilOrTimeout(() => fs.Entered > 0 && GameModeProvider.Current.Current == GameMode.Paused, 10f);
+                Assert.Greater(fs.Entered, 0, "前提：書込に入った。");
+                Assert.AreEqual(GameMode.Paused, GameModeProvider.Current.Current, "前提：終了導線が Paused を上に乗せた。");
+
+                foreach (DialogueChoiceKind kind in new[] { DialogueChoiceKind.AcceptQuest, DialogueChoiceKind.DeclineQuest })
+                {
+                    yield return ClickChoice(dialogue, kind, default, expectApplied: false);
+                    AssertUnchanged("保存待ちに " + kind + " をクリック");
+                }
+
+                Assert.IsFalse(dialogue.IsOperable, "別の停止の最中は会話を操作できない。");
+
+                // 2. 書込を失敗させる（失敗時の選択を待つ）。
+                fs.FailWrites = true;
+                fs.Block = false;
+                yield return WaitUntilOrTimeout(() => done, 15f);
+                Assert.AreEqual(SaveExitOutcome.Failed, outcome, "前提：保存に失敗した。");
+                Assert.IsTrue(saves.AwaitingExitChoice, "前提：失敗時の選択を待っている。");
+                foreach (DialogueChoiceKind kind in new[] { DialogueChoiceKind.AcceptQuest, DialogueChoiceKind.DeclineQuest })
+                {
+                    yield return ClickChoice(dialogue, kind, default, expectApplied: false);
+                    AssertUnchanged("保存失敗の選択中に " + kind + " をクリック");
+                }
+
+
+                // 3. ゲームへ戻る：会話へ戻り、遅れてクリックが適用されることもない。
+                fs.FailWrites = false;
+                saves.ChooseBackToGame();
+                for (int i = 0; i < 5; i++)
+                {
+                    yield return null;
+                }
+
+                Assert.AreEqual(GameMode.Dialogue, GameModeProvider.Current.Current, "会話へ戻る。");
+                AssertUnchanged("ゲームへ戻った直後");
+                Assert.IsTrue(dialogue.IsOperable, "戻った会話は操作できる。");
+
+                // 4. クリックで受けて閉じ、探索へ。
+                yield return ClickChoice(dialogue, DialogueChoiceKind.AcceptQuest, default);
+                Assert.AreEqual(QuestAcceptResult.Accepted, dialogue.LastAcceptResult);
+                Assert.AreEqual(1, session.QuestStageOf(QuestReach));
+                Assert.IsFalse(dialogue.IsOpen);
+                AssertBackToExploration();
+                Assert.IsNull(_clicker.Error, "描画中に例外が出ない。");
+
+                void AssertUnchanged(string label)
+                {
+                    Assert.IsTrue(dialogue.IsOpen, label + "：会話は閉じない。");
+                    Assert.AreSame(screen, dialogue.Conversation.Current, label + "：画面は替わらない。");
+                    Assert.AreEqual(page, dialogue.Conversation.PageIndex, label + "：ページは進まない。");
+                    Assert.AreEqual(0, session.QuestStageOf(QuestReach), label + "：受注しない。");
+                    Assert.AreEqual(virtue, session.Progress.TotalVirtue, label + "：徳は変わらない。");
+                    Assert.AreEqual(closes, dialogue.CloseCount, label + "：閉じない。");
+                    Assert.AreEqual(recorded, dialogue.ClickRecordedCount, label + "：押下を記録しない（戻った後に遅れて適用しない）。");
+                    Assert.IsTrue(GameplayClockProvider.IsHeldBy(dialogue), label + "：会話の停止の保持はそのまま。");
+                }
+            }
+            finally
+            {
+                fs.Block = false;
+                fs.FailWrites = false;
+            }
+        }
+
+        private void AssertBackToExploration()
+        {
+            Assert.AreEqual(GameMode.Exploration, GameModeProvider.Current.Current, "探索へ戻る。");
+            Assert.IsFalse(GameplayClockProvider.IsFrozen, "停止の保持を外す。");
+        }
+
+        private void AddClicker(CampaignDialogueService dialogue)
+        {
+            var go = new GameObject("P7GuiClicker");
+            Object.DontDestroyOnLoad(go); // エリアの Scene が入れ替わっても残す（後片付けで消す）。
+            _clicker = go.AddComponent<GuiClicker>();
+            _clicker.Target = dialogue;
+        }
+
+        /// <summary>
+        /// 選択肢のボタンを IMGUI のクリック（マウス押下 → 離し）で押す。押下の適用は会話サービスの次の Update。
+        /// <paramref name="expectApplied"/> が true なら、記録されて会話が閉じるか画面が替わるまで待つ。
+        /// </summary>
+        private IEnumerator ClickChoice(CampaignDialogueService dialogue, DialogueChoiceKind kind, StableId target, bool expectApplied = true)
+        {
+            IReadOnlyList<DialogueChoice> choices = dialogue.Conversation.Current.Choices;
+            int index = -1;
+            for (int i = 0; i < choices.Count; i++)
+            {
+                if (choices[i].Kind == kind && (target.IsEmpty || choices[i].TargetId.Equals(target)))
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            Assert.GreaterOrEqual(index, 0, kind + " " + target.Value + " の選択肢がある。");
+            Assert.IsTrue(GuiClicker.Available, "前提：会話サービスの OnGUI がある。");
+            DialogueScreen screen = dialogue.Conversation.Current;
+            int recorded = dialogue.ClickRecordedCount;
+            _clicker.Click(index);
+            yield return WaitUntilOrTimeout(() => !_clicker.Busy, 3f);
+            Assert.IsFalse(_clicker.Busy, kind + "：クリックの GUI イベントを届けた（描画イベント " + _clicker.Repaints + " 回、届けた "
+                + _clicker.Delivered + " 回、例外=" + _clicker.Error + "）。");
+            if (expectApplied)
+            {
+                yield return WaitUntilOrTimeout(() => dialogue.ClickRecordedCount > recorded, 2f);
+                Assert.AreEqual(recorded + 1, dialogue.ClickRecordedCount, kind + "：クリックを記録した。例外=" + _clicker.Error);
+                yield return WaitUntilOrTimeout(() => !dialogue.IsOpen || !ReferenceEquals(screen, dialogue.Conversation.Current), 2f);
+            }
+
+            for (int i = 0; i < 3; i++)
+            {
+                yield return null;
+            }
+        }
+
+        /// <summary>
+        /// 選択肢のボタンを<b>IMGUI のマウスのクリック</b>で押す。自分の OnGUI（Unity の GUI の呼び出し）の中で会話サービスの OnGUI を呼び、
+        /// 配置（Layout）は毎回同じく、描画のイベント 1 回を<b>マウス離しのイベント</b>に置き換える。そのイベントの中で、指定の番号のボタンが
+        /// クリックされたことにする（<see cref="PadMenuNavigator.TestPressOverride"/>。無効なボタンには効かない）。
+        /// Editor の再生中はゲームの IMGUI のマウス位置が OS のカーソル位置から取られ、Game ビューへの SendEvent・入力キュー・GUI の開始し直しでは
+        /// 位置を入れられないことを 2026-10-10 に確かめたので、当たり判定だけを置き換える。OnGUI・押された後の処理（記録と適用）は実物を通る。
+        /// 描画中の例外は記録する。
+        /// </summary>
+        private sealed class GuiClicker : MonoBehaviour
+        {
+            private static readonly MethodInfo OnGuiMethod =
+                typeof(CampaignDialogueService).GetMethod("OnGUI", BindingFlags.NonPublic | BindingFlags.Instance);
+
+            public CampaignDialogueService Target;
+            public int Delivered;
+            public int Repaints;
+            public string Error;
+            private int _index = -1;
+
+            public static bool Available => OnGuiMethod != null;
+
+            public bool Busy => _index >= 0;
+
+            public int LastIndex { get; private set; } = -1;
+
+            public void Click(int index)
+            {
+                _index = index;
+                LastIndex = index;
+            }
+
+            private void OnGUI()
+            {
+                if (Target == null || !Target.isActiveAndEnabled)
+                {
+                    return;
+                }
+
+                Event real = Event.current;
+                if (real.type == EventType.Repaint)
+                {
+                    Repaints++;
+                }
+
+                if (_index >= 0 && real.type == EventType.Repaint)
+                {
+                    int index = _index;
+                    _index = -1;
+                    var up = new Event { type = EventType.MouseUp, button = 0, clickCount = 1 };
+                    Event.current = up;
+                    PadMenuNavigator.TestPressOverride = i => i == index;
+                    try
+                    {
+                        Invoke();
+                    }
+                    finally
+                    {
+                        PadMenuNavigator.TestPressOverride = null;
+                        Event.current = real;
+                    }
+
+                    Delivered++;
+                    return;
+                }
+
+                Invoke();
+            }
+
+            private void Invoke()
+            {
+                try
+                {
+                    OnGuiMethod.Invoke(Target, null);
+                }
+                catch (TargetInvocationException e)
+                {
+                    Error ??= e.InnerException != null ? e.InnerException.GetType().Name + ": " + e.InnerException.Message : e.Message;
+                }
+            }
+
+            private void OnDestroy() => PadMenuNavigator.TestPressOverride = null;
+        }
+
+        /// <summary>書込を止めたり失敗させたりできる保存先（実ファイルへ委ねる）。</summary>
+        private sealed class GateFileSystem : ISaveFileSystem
+        {
+            private readonly RealSaveFileSystem _real = new RealSaveFileSystem();
+            private volatile bool _block;
+            private volatile bool _fail;
+            private int _entered;
+
+            public bool Block { get => _block; set => _block = value; }
+            public bool FailWrites { get => _fail; set => _fail = value; }
+            public int Entered => System.Threading.Volatile.Read(ref _entered);
+
+            public bool Exists(string path) => _real.Exists(path);
+            public string ReadAllText(string path) => _real.ReadAllText(path);
+
+            public void WriteAllTextDurable(string path, string text)
+            {
+                if (_block || _fail)
+                {
+                    System.Threading.Interlocked.Increment(ref _entered);
+                }
+
+                long until = System.Diagnostics.Stopwatch.GetTimestamp() + System.Diagnostics.Stopwatch.Frequency * 30;
+                while (_block && System.Diagnostics.Stopwatch.GetTimestamp() < until)
+                {
+                    System.Threading.Thread.Sleep(5);
+                }
+
+                if (_fail)
+                {
+                    throw new IOException("P7 test: injected write failure");
+                }
+
+                _real.WriteAllTextDurable(path, text);
+            }
+
+            public void Replace(string source, string destination) => _real.Replace(source, destination);
+            public void Move(string source, string destination) => _real.Move(source, destination);
+            public void Delete(string path) => _real.Delete(path);
+            public void CreateDirectory(string path) => _real.CreateDirectory(path);
+            public System.IDisposable TryLock(string path) => _real.TryLock(path);
+        }
+
         // ================================================================ 補助：会話
 
         private IEnumerator PlaceAtVillager(StableId villagerId)
@@ -1189,9 +1579,13 @@ namespace Momotaro.Tests.PlayMode
 
         // ================================================================ 補助：起動・保存
 
-        private IEnumerator NewGame()
+        private IEnumerator NewGame(ISaveFileSystem fileSystem = null)
         {
             yield return StartBootstrap();
+            if (fileSystem != null)
+            {
+                Saves().FileSystemOverride = fileSystem; // 保存の調停役は New Game で作られる（その前に差す）。
+            }
             CampaignAdventureFlow flow = Saves().Flow;
             Assert.IsNotNull(flow);
             Assert.IsTrue(flow.TryNewGame(Catalog(), out string error), "New Game を受理する。理由=" + error);

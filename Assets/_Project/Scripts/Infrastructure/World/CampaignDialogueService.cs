@@ -68,6 +68,10 @@ namespace Momotaro.Infrastructure.World
         private GameSessionState _watchedSession;
         private float _noticeUntil;
 
+        // マウスで押された選択肢（OnGUI は記録だけ。適用は次の Update で、キー・パッドと同じ操作の入口を通す。レビュー 8d78416 R1・R2）。
+        private int _clickedChoice = -1;
+        private DialogueScreen _clickedScreen;
+
         /// <inheritdoc />
         public string ServiceName => "CampaignDialogue";
 
@@ -101,6 +105,16 @@ namespace Momotaro.Infrastructure.World
 
         /// <summary>入力の解放待ちか（開始直後。テスト用）。</summary>
         public bool AwaitingRelease => _awaitRelease;
+
+        /// <summary>
+        /// 会話を操作（次へ・選択・閉じる）してよいか。開いていて、<b>モードが Dialogue</b>（別の停止——終了導線の保存待ち・失敗時の選択・
+        /// メニュー——が上に乗っていない）で、開始の押下の解放待ちでないとき。キー・パッド・マウスのすべての操作がここを通る（レビュー 8d78416 R2）。
+        /// </summary>
+        public bool IsOperable =>
+            _open != null && !_awaitRelease && GameModeProvider.Current != null && GameModeProvider.Current.Current == GameMode.Dialogue;
+
+        /// <summary>マウスで押された選択肢の数（適用の前に記録した回数。診断・テスト用）。</summary>
+        public int ClickRecordedCount { get; private set; }
 
         /// <summary>短い通知（直近のもの）。</summary>
         public string Notice { get; private set; } = string.Empty;
@@ -336,7 +350,7 @@ namespace Momotaro.Infrastructure.World
         /// <summary>次のページへ（最後のページで選択肢が無ければ閉じる）。開いていなければ何もしない。</summary>
         public void Advance()
         {
-            if (_open == null)
+            if (!IsOperable)
             {
                 return;
             }
@@ -348,7 +362,7 @@ namespace Momotaro.Infrastructure.World
 
             if (!_open.Advance())
             {
-                Close();
+                CloseConversation();
             }
         }
 
@@ -357,7 +371,7 @@ namespace Momotaro.Infrastructure.World
         /// </summary>
         public bool Choose(int index)
         {
-            if (_open == null || !_open.ShowsChoices || index < 0 || index >= _open.Current.Choices.Count)
+            if (!IsOperable || !_open.ShowsChoices || index < 0 || index >= _open.Current.Choices.Count)
             {
                 return false;
             }
@@ -385,7 +399,7 @@ namespace Momotaro.Infrastructure.World
                         RememberReportable(session, story);
                     }
 
-                    Close();
+                    CloseConversation();
                     return true;
 
                 case DialogueChoiceKind.ReportQuest:
@@ -397,7 +411,7 @@ namespace Momotaro.Infrastructure.World
                         RememberReportable(session, story);
                     }
 
-                    Close();
+                    CloseConversation();
                     return true;
 
                 case DialogueChoiceKind.ConfirmEvent:
@@ -412,17 +426,30 @@ namespace Momotaro.Infrastructure.World
                         PostNotice(info.DisplayName);
                     }
 
-                    Close();
+                    CloseConversation();
                     return true;
 
                 default:
-                    Close(); // 閉じる・今は受けない：何も変えない。
+                    CloseConversation(); // 閉じる・今は受けない：何も変えない。
                     return true;
             }
         }
 
-        /// <summary>閉じる（何も変えない）。停止の保持を外し、自分が Dialogue にしていれば元のモードへ戻す。</summary>
+        /// <summary>
+        /// 閉じる（何も変えない）。停止の保持を外し、自分が Dialogue にしていれば元のモードへ戻す。
+        /// <b>操作できないとき（別の停止の最中・解放待ち）は何もしない</b>（<see cref="IsOperable"/>）。
+        /// </summary>
         public void Close()
+        {
+            if (!IsOperable)
+            {
+                return;
+            }
+
+            CloseConversation();
+        }
+
+        private void CloseConversation()
         {
             if (_open == null)
             {
@@ -430,6 +457,7 @@ namespace Momotaro.Infrastructure.World
             }
 
             _open = null;
+            ClearClick();
             _choicesShown = false;
             _awaitRelease = false;
             CloseCount++;
@@ -460,6 +488,7 @@ namespace Momotaro.Infrastructure.World
             }
 
             _open = null;
+            ClearClick();
             _ownsMode = false;
             _choicesShown = false;
             _awaitRelease = false;
@@ -472,6 +501,7 @@ namespace Momotaro.Infrastructure.World
         {
             if (_open == null)
             {
+                ClearClick();
                 return;
             }
 
@@ -485,11 +515,13 @@ namespace Momotaro.Infrastructure.World
             // 別の停止（終了導線の保存待ち・失敗時の選択など）が上に乗っている間は、会話を進めも閉じもしない。
             if (mode != GameMode.Dialogue)
             {
+                ClearClick(); // 停止中に押されたボタンを、戻った後に遅れて適用しない。
                 return;
             }
 
             if (_awaitRelease)
             {
+                ClearClick();
                 if (AnyConfirmHeld())
                 {
                     return;
@@ -510,9 +542,23 @@ namespace Momotaro.Infrastructure.World
             {
                 if (!_choicesShown)
                 {
+                    ClearClick();
                     _choicesShown = true;
                     _navigator.Reset(0); // 最後のページを開いた押下で選択まで進めない。
                     return;
+                }
+
+                // マウス：記録した画面がいまの画面のときだけ適用する（「依頼の話を聞く」で画面が替わった後の古い押下は捨てる）。
+                if (_clickedChoice >= 0)
+                {
+                    int clicked = _clickedChoice;
+                    bool sameScreen = ReferenceEquals(_clickedScreen, _open.Current);
+                    ClearClick();
+                    if (sameScreen)
+                    {
+                        Choose(clicked);
+                        return;
+                    }
                 }
 
                 int chosen = _navigator.Poll(_open.Current.Choices.Count, null, out bool cancelled);
@@ -528,10 +574,17 @@ namespace Momotaro.Infrastructure.World
                 return;
             }
 
+            ClearClick();
             if (AdvancePressed())
             {
                 Advance();
             }
+        }
+
+        private void ClearClick()
+        {
+            _clickedChoice = -1;
+            _clickedScreen = null;
         }
 
         // ---------------------------------------------------------------- 入力（物理ボタン。Action Map の切り替えに依存しない）
@@ -798,33 +851,41 @@ namespace Momotaro.Infrastructure.World
                 return;
             }
 
+            // 描画の途中で会話が閉じたり画面が替わったりしても後で破棄後の状態を読まないよう、描く内容を先に取り出す。
+            // 押されたボタンは記録だけして、適用は次の Update（キー・パッドと同じ操作の入口）で行う（レビュー 8d78416 R1）。
+            DialogueConversation view = _open;
+            DialogueScreen screen = view.Current;
+            bool showsChoices = view.ShowsChoices;
+            int choiceCount = showsChoices ? screen.Choices.Count : 0;
+            string speaker = "【" + screen.Speaker + "】";
+            string page = view.CurrentPage;
+            string hint = showsChoices
+                ? PadMenuNavigator.Hint
+                : "次へ：E／Enter／A（×）　閉じる：Esc／B（○）　（" + (view.PageIndex + 1) + "／" + screen.Pages.Count + "）";
+            bool clickable = IsOperable && _choicesShown;
+
             _navigator.BeginScaled();
             float width = Mathf.Min(PadMenuNavigator.VirtualWidth - 32f, 760f);
-            int choiceCount = _open.ShowsChoices ? _open.Current.Choices.Count : 0;
             float height = 150f + choiceCount * 34f;
             var area = new Rect((PadMenuNavigator.VirtualWidth - width) * 0.5f, PadMenuNavigator.VirtualHeight - height - 16f,
                 width, height);
             GUI.Box(area, GUIContent.none);
             GUILayout.BeginArea(new Rect(area.x + 14f, area.y + 8f, area.width - 28f, area.height - 16f));
-            GUILayout.Label("【" + _open.Current.Speaker + "】");
+            GUILayout.Label(speaker);
             var body = new GUIStyle(GUI.skin.label) { wordWrap = true };
-            GUILayout.Label(_open.CurrentPage, body, GUILayout.MinHeight(60f));
-            if (_open.ShowsChoices)
+            GUILayout.Label(page, body, GUILayout.MinHeight(60f));
+            for (int i = 0; i < choiceCount; i++)
             {
-                for (int i = 0; i < _open.Current.Choices.Count; i++)
+                if (_navigator.DrawItem(i, screen.Choices[i].Label, clickable) && clickable && _clickedChoice < 0)
                 {
-                    if (_navigator.DrawItem(i, _open.Current.Choices[i].Label) && !_awaitRelease)
-                    {
-                        Choose(i);
-                        break;
-                    }
+                    _clickedChoice = i;
+                    _clickedScreen = screen;
+                    ClickRecordedCount++;
                 }
             }
 
             GUILayout.FlexibleSpace();
-            GUILayout.Label(_open.ShowsChoices
-                ? PadMenuNavigator.Hint
-                : "次へ：E／Enter／A（×）　閉じる：Esc／B（○）　（" + (_open.PageIndex + 1) + "／" + _open.Current.Pages.Count + "）");
+            GUILayout.Label(hint);
             GUILayout.EndArea();
             _navigator.EndScaled();
         }

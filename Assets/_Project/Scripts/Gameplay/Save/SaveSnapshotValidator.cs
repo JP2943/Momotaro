@@ -427,15 +427,29 @@ namespace Momotaro.Gameplay.Save
                 }
             }
 
-            // 章ボスを倒した記録があるのに章クリアが無い（同じ更新で確定するので、片方だけの保存は作られない）。
+            // 章ボスを倒した記録・章ボスの遭遇戦のクリア記録があるのに章クリアが無い（3 つは同じ更新で確定するので、片方だけの保存は作られない）。
+            // 上の「章クリア ⇒ 撃破とクリア」と合わせて、章ボスについて<b>章クリア ⇔ ボス撃破 ⇔ 遭遇戦クリア</b>を双方向に見る。
+            // 遭遇戦のクリアだけが残った候補を採ると、遭遇戦は再開できず（AlreadyCleared）章の確定にも入らないので、章を完了できなくなる
+            // （レビュー 8d78416 R3）。補正（章クリアにする・権利を付ける）はしないで拒否する。版 1〜3 はこの検査の前に返っている（移行は空の物語）。
             if (story != null)
             {
                 foreach (ChapterInfo chapter in story.Chapters)
                 {
-                    if (!seenCleared.Contains(chapter.ChapterId.Value)
-                        && bosses.TryGetValue(chapter.BossAreaId.Value, out HashSet<string> b) && b.Contains(chapter.BossId.Value))
+                    if (seenCleared.Contains(chapter.ChapterId.Value))
+                    {
+                        continue;
+                    }
+
+                    string bossArea = chapter.BossAreaId.Value;
+                    if (bosses.TryGetValue(bossArea, out HashSet<string> b) && b.Contains(chapter.BossId.Value))
                     {
                         errors.Add("章ボス '" + chapter.BossId.Value + "' の撃破記録があるのに章 '" + chapter.ChapterId.Value + "' がクリアされていません。");
+                    }
+
+                    if (clears.TryGetValue(bossArea, out HashSet<string> c) && c.Contains(chapter.BossId.Value))
+                    {
+                        errors.Add("章ボスの遭遇戦 '" + chapter.BossId.Value + "' のクリア記録があるのに章 '" + chapter.ChapterId.Value
+                            + "' がクリアされていません。");
                     }
                 }
             }
